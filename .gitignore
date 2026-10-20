@@ -1,21 +1,36 @@
+# OS / editor
 .DS_Store
 *.swp
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+# Python
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
-.env
-.env.dev
-.env.prod
 
-var/
+# Node / frontend
 node_modules/
 dist/
+.wrangler/
+
+# Secrets / env（保留 *.example）
+.env
+.env.*
+!.env.example
+
+# Local data / captures
+var/
+.tmp/
+*.har
+
+# Desktop build
 apps/desktop/build/
 apps/desktop/electron/release-target.generated.cjs
+
+# Test / Playwright
 test-results/
 playwright-report/
