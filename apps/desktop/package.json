@@ -1,0 +1,88 @@
+{
+  "name": "@agentup/desktop",
+  "productName": "AgentUp",
+  "version": "0.1.0",
+  "description": "AgentUp desktop — 本机 AI Agent 工作台",
+  "author": "AgentUp",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "electron electron/main.cjs",
+    "pack:mac": "node ./electron/pack-mac.cjs",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@assistant-ui/ai-sdk": "^0.0.12",
+    "@assistant-ui/core": "^0.3.25",
+    "@assistant-ui/vue": "^0.0.2",
+    "@lucide/vue": "^1.54.0",
+    "@playwright/test": "^1.64.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/markdown-it": "^14.2.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/typescript-plugin": "^3.3.12",
+    "ai": "^7.0.137",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.15.3",
+    "highlight.js": "^11.12.0",
+    "markdown-it": "^15.0.2",
+    "mermaid": "^12.1.0",
+    "react": "^19.3.0",
+    "reka-ui": "^2.11.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4",
+    "vue": "^3.5.22",
+    "vue-i18n": "^11.4.14",
+    "vue-router": "^5.4.0",
+    "vue-tsc": "^3.3.11"
+  },
+  "build": {
+    "appId": "com.agentup.app",
+    "productName": "AgentUp",
+    "afterPack": "./electron/after-pack.cjs",
+    "directories": {
+      "output": "../../dist/mac"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/runtime/dist",
+        "to": "runtime/dist"
+      },
+      {
+        "from": "build/runtime/package.json",
+        "to": "runtime/package.json"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "AgentUp",
+        "schemes": ["agentup"]
+      }
+    ],
+    "mac": {
+      "icon": "electron/assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "AgentUp"
+    }
+  }
+}

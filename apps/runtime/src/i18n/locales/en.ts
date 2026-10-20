@@ -1,0 +1,40 @@
+/** runtime catalog (en); keys must match zh.ts. */
+export const en: Record<string, string> = {
+  "provider.vendor.ollama": "Ollama (local)",
+  "provider.vendor.zhipu": "Zhipu",
+  "provider.vendor.alibaba": "Alibaba Cloud",
+  "provider.vendor.bytedance": "ByteDance",
+  "provider.vendor.tencent": "Tencent Cloud",
+  "provider.vendor.custom": "Custom",
+
+  "provider.option.officialApi": "Official API",
+  "provider.option.localService": "Local service",
+  "provider.option.moonshotIntl": "Moonshot International",
+  "provider.option.moonshotCn": "Moonshot China",
+  "provider.option.qwenTokenPlanCn": "Qwen Token Plan China",
+  "provider.option.volcengineArk": "Volcengine Ark",
+  "provider.option.openaiCompatible": "OpenAI-compatible API",
+
+  "provider.template.ollama.label": "Ollama (local)",
+  "provider.template.ollama.hint": "After saving we fetch locally installed models; toggle them in the list above",
+  "provider.template.kimi-coding.hint": "Coding plan endpoint",
+  "provider.template.zai-coding-cn.hint": "China coding endpoint",
+  "provider.template.volcengine-ark.label": "ByteDance · Volcengine Ark",
+  "provider.template.volcengine-ark.hint": "Volcengine Ark coding endpoint",
+  "provider.template.tencent-tokenhub.label": "Tencent TokenHub",
+  "provider.template.tencent-tokenhub.hint": "OpenAI-compatible API",
+  "provider.template.tencent-coding.label": "Tencent Coding Plan",
+  "provider.template.tencent-coding.hint": "OpenAI-compatible coding plan API",
+  "provider.template.custom-openai.label": "Custom OpenAI Compatible",
+
+  "pa.defaultName": "Ace",
+  "pa.defaultInstructions":
+    "You are the user's private assistant in AgentUp. Focus on their goals, and use the Skills, AGENTS.md, and MCP they configured for you.",
+  "pa.err.nameLength": "Name must be 1–40 characters",
+  "pa.err.instructionsLength": "Instructions must be 1–20000 characters",
+  "pa.err.avatarType": "Avatar must be PNG, JPEG, or WebP",
+  "pa.err.avatarSize": "Avatar must be under 1MB",
+  "pa.err.avatarMismatch": "Avatar bytes do not match the image type",
+  "pa.err.invalidRequest": "Invalid request",
+  "pa.err.avatarRemoveUnsupported": "Removing the avatar is not supported",
+};

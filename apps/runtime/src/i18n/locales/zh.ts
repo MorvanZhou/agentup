@@ -1,0 +1,40 @@
+/** runtime 下发 / 落盘默认值 / 校验错误；不与 Desktop 词库合并。 */
+export const zh: Record<string, string> = {
+  "provider.vendor.ollama": "Ollama（本机）",
+  "provider.vendor.zhipu": "智谱",
+  "provider.vendor.alibaba": "阿里云",
+  "provider.vendor.bytedance": "字节跳动",
+  "provider.vendor.tencent": "腾讯云",
+  "provider.vendor.custom": "自定义",
+
+  "provider.option.officialApi": "官方 API",
+  "provider.option.localService": "本机服务",
+  "provider.option.moonshotIntl": "Moonshot 国际",
+  "provider.option.moonshotCn": "Moonshot 国内",
+  "provider.option.qwenTokenPlanCn": "Qwen Token Plan 国内",
+  "provider.option.volcengineArk": "火山方舟",
+  "provider.option.openaiCompatible": "OpenAI 兼容接口",
+
+  "provider.template.ollama.label": "Ollama（本机）",
+  "provider.template.ollama.hint": "保存后自动拉取本机已下载的模型，在上方列表里开关即可",
+  "provider.template.kimi-coding.hint": "编程套餐端点",
+  "provider.template.zai-coding-cn.hint": "国内 Coding 端点",
+  "provider.template.volcengine-ark.label": "字节 · 火山方舟",
+  "provider.template.volcengine-ark.hint": "火山方舟 Coding 端点",
+  "provider.template.tencent-tokenhub.label": "腾讯 TokenHub",
+  "provider.template.tencent-tokenhub.hint": "兼容 OpenAI 的接口",
+  "provider.template.tencent-coding.label": "腾讯 Coding Plan",
+  "provider.template.tencent-coding.hint": "兼容 OpenAI 的编程套餐接口",
+  "provider.template.custom-openai.label": "自定义 OpenAI Compatible",
+
+  "pa.defaultName": "小A",
+  "pa.defaultInstructions":
+    "你是用户在 AgentUp 中的私人助理。优先理解用户目标，使用用户为你配置的 Skills、AGENTS.md 和 MCP 完成任务。",
+  "pa.err.nameLength": "助理名称须为 1–40 个字符",
+  "pa.err.instructionsLength": "基础指令须为 1–20000 个字符",
+  "pa.err.avatarType": "头像只支持 PNG、JPEG 或 WebP",
+  "pa.err.avatarSize": "头像须小于 1MB",
+  "pa.err.avatarMismatch": "头像内容与图片格式不一致",
+  "pa.err.invalidRequest": "请求无效",
+  "pa.err.avatarRemoveUnsupported": "不支持移除头像",
+};

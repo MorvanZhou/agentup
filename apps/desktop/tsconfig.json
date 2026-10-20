@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "types": ["vite/client"],
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "vue": ["./node_modules/vue/dist/vue.d.mts"],
+      "vue-router": ["./node_modules/vue-router/dist/vue-router.d.ts"]
+    },
+    "plugins": [
+      {
+        "name": "@vue/typescript-plugin",
+        "languages": ["vue"]
+      }
+    ]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "tests/unit", "vite.config.ts", "vitest.config.ts"]
+}

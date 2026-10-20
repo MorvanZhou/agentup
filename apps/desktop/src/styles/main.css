@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "./hljs-github.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  色板对齐品牌 logo（暗底 / 奶油体 / 橙手）：
+  导航轨 ink · 列表/侧栏 paper · 会话主区 background · 品牌橙 accent / 己方气泡 primary
+*/
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-display: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* light：暖灰导航轨 · 奶油纸面 */
+  --color-ink: #efe9e0;
+  --color-shell-foreground: #1a1a1a;
+  --color-shell-muted: #8a8278;
+  /* 列表 / 侧栏（奶油白，呼应 logo 体色） */
+  --color-paper: #fffdf9;
+  --color-paper-deep: #efe6da;
+  --color-rule: #e6ddd0;
+  /* 品牌橙（logo 挥手） */
+  --color-accent: #ff7a1a;
+  --color-accent-deep: #e8680f;
+  --color-rust: #e24b4b;
+
+  /* 会话主区奶油底；己方气泡浅橙 */
+  --color-background: #f7f2ea;
+  --color-foreground: #1a1a1a;
+  --color-primary: #ffc48a;
+  --color-primary-foreground: #1a1a1a;
+  /* 浅橙气泡上的深字；暗色实心橙气泡见 .dark */
+  --color-on-primary: #1a1a1a;
+  --color-muted: #efe6da;
+  --color-muted-foreground: #8a8278;
+  --color-border: #e6ddd0;
+  --color-destructive: #e24b4b;
+  --color-ring: #ff7a1a;
+
+  --color-danger-soft: #ffecec;
+  --color-warning-soft: #fff4e5;
+  --color-success-soft: #e8f5ee;
+  --color-warning-foreground: #9a5b00;
+  --color-success-foreground: #1f6b45;
+  /* 代码块底（对齐 GitHub canvas / primer） */
+  --color-code: #f6f8fa;
+  --color-code-gutter: #656d76;
+
+  --animate-rise: rise 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-breathe: breathe 1.6s ease-in-out infinite;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+.dark {
+  /* 导航轨近 logo 黑 · 炭灰列表 · 更深主区 */
+  --color-ink: #0c0c0c;
+  --color-shell-foreground: #f7f2ea;
+  --color-shell-muted: #9a938a;
+  --color-paper: #1a1a1a;
+  --color-paper-deep: #242424;
+  --color-rule: #2e2e2e;
+  --color-accent: #ff7a1a;
+  --color-accent-deep: #ff8f3d;
+  --color-rust: #e24b4b;
+
+  --color-background: #121212;
+  --color-foreground: #f7f2ea;
+  --color-primary: #ff7a1a;
+  --color-primary-foreground: #ffffff;
+  --color-on-primary: #ffffff;
+  --color-muted: #242424;
+  --color-muted-foreground: #9a938a;
+  --color-border: #2e2e2e;
+  --color-destructive: #e24b4b;
+  --color-ring: #ff7a1a;
+
+  --color-danger-soft: #3a1515;
+  --color-warning-soft: #3a2a12;
+  --color-success-soft: #0f2e1c;
+  --color-warning-foreground: #e6c35c;
+  --color-success-foreground: #7ddeab;
+  --color-code: #0d1117;
+  --color-code-gutter: #7d8590;
+}
+
+@layer base {
+  :root {
+    color: var(--color-foreground);
+    background: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility sheet {
+  background-color: var(--color-paper);
+}
+
+@utility app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/*
+  Electron：-webkit-app-region:drag 会吞掉指针事件（与 z-index 无关）。
+  下拉/弹层经 Portal 挂到 body，点在 drag 区时 DismissableLayer 收不到
+  pointerdown，无法点外侧收起。浮层打开期间暂停拖拽即可。
+*/
+body:has([data-dismissable-layer]) .app-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Electron：红绿灯下方内容起点（与 main.cjs trafficLightPosition 同步） */
+.electron {
+  --app-titlebar-inset: 50px;
+}
+
+.electron .app-titlebar-pad {
+  padding-top: var(--app-titlebar-inset);
+}

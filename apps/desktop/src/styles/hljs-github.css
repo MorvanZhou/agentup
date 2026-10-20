@@ -1,0 +1,271 @@
+/*
+  highlight.js × GitHub Prettylights（官方 github / github-dark 主题）。
+  挂在 .aui-hljs / .aui-md 下，随 html.dark 切换，避免 Vue scoped 盖住暗色。
+*/
+
+.aui-hljs .hljs,
+.aui-md .hljs {
+  color: #24292e;
+  background: transparent;
+}
+
+.aui-hljs .hljs-doctag,
+.aui-hljs .hljs-keyword,
+.aui-hljs .hljs-meta .hljs-keyword,
+.aui-hljs .hljs-template-tag,
+.aui-hljs .hljs-template-variable,
+.aui-hljs .hljs-type,
+.aui-hljs .hljs-variable.language_,
+.aui-md .hljs-doctag,
+.aui-md .hljs-keyword,
+.aui-md .hljs-meta .hljs-keyword,
+.aui-md .hljs-template-tag,
+.aui-md .hljs-template-variable,
+.aui-md .hljs-type,
+.aui-md .hljs-variable.language_ {
+  color: #d73a49;
+}
+
+.aui-hljs .hljs-title,
+.aui-hljs .hljs-title.class_,
+.aui-hljs .hljs-title.class_.inherited__,
+.aui-hljs .hljs-title.function_,
+.aui-md .hljs-title,
+.aui-md .hljs-title.class_,
+.aui-md .hljs-title.class_.inherited__,
+.aui-md .hljs-title.function_ {
+  color: #6f42c1;
+}
+
+.aui-hljs .hljs-attr,
+.aui-hljs .hljs-attribute,
+.aui-hljs .hljs-literal,
+.aui-hljs .hljs-meta,
+.aui-hljs .hljs-number,
+.aui-hljs .hljs-operator,
+.aui-hljs .hljs-variable,
+.aui-hljs .hljs-selector-attr,
+.aui-hljs .hljs-selector-class,
+.aui-hljs .hljs-selector-id,
+.aui-md .hljs-attr,
+.aui-md .hljs-attribute,
+.aui-md .hljs-literal,
+.aui-md .hljs-meta,
+.aui-md .hljs-number,
+.aui-md .hljs-operator,
+.aui-md .hljs-variable,
+.aui-md .hljs-selector-attr,
+.aui-md .hljs-selector-class,
+.aui-md .hljs-selector-id {
+  color: #005cc5;
+}
+
+.aui-hljs .hljs-regexp,
+.aui-hljs .hljs-string,
+.aui-hljs .hljs-meta .hljs-string,
+.aui-md .hljs-regexp,
+.aui-md .hljs-string,
+.aui-md .hljs-meta .hljs-string {
+  color: #032f62;
+}
+
+.aui-hljs .hljs-built_in,
+.aui-hljs .hljs-symbol,
+.aui-md .hljs-built_in,
+.aui-md .hljs-symbol {
+  color: #e36209;
+}
+
+.aui-hljs .hljs-comment,
+.aui-hljs .hljs-code,
+.aui-hljs .hljs-formula,
+.aui-md .hljs-comment,
+.aui-md .hljs-code,
+.aui-md .hljs-formula {
+  color: #6a737d;
+}
+
+.aui-hljs .hljs-name,
+.aui-hljs .hljs-quote,
+.aui-hljs .hljs-selector-tag,
+.aui-hljs .hljs-selector-pseudo,
+.aui-md .hljs-name,
+.aui-md .hljs-quote,
+.aui-md .hljs-selector-tag,
+.aui-md .hljs-selector-pseudo {
+  color: #22863a;
+}
+
+.aui-hljs .hljs-subst,
+.aui-md .hljs-subst {
+  color: #24292e;
+}
+
+.aui-hljs .hljs-section,
+.aui-md .hljs-section {
+  color: #005cc5;
+  font-weight: 600;
+}
+
+.aui-hljs .hljs-bullet,
+.aui-md .hljs-bullet {
+  color: #735c0f;
+}
+
+.aui-hljs .hljs-emphasis,
+.aui-md .hljs-emphasis {
+  color: #24292e;
+  font-style: italic;
+}
+
+.aui-hljs .hljs-strong,
+.aui-md .hljs-strong {
+  color: #24292e;
+  font-weight: 600;
+}
+
+.aui-hljs .hljs-addition,
+.aui-md .hljs-addition {
+  color: #22863a;
+  background-color: #f0fff4;
+}
+
+.aui-hljs .hljs-deletion,
+.aui-md .hljs-deletion {
+  color: #b31d28;
+  background-color: #ffeef0;
+}
+
+/* GitHub Dark Prettylights */
+.dark .aui-hljs .hljs,
+.dark .aui-md .hljs {
+  color: #c9d1d9;
+  background: transparent;
+}
+
+.dark .aui-hljs .hljs-doctag,
+.dark .aui-hljs .hljs-keyword,
+.dark .aui-hljs .hljs-meta .hljs-keyword,
+.dark .aui-hljs .hljs-template-tag,
+.dark .aui-hljs .hljs-template-variable,
+.dark .aui-hljs .hljs-type,
+.dark .aui-hljs .hljs-variable.language_,
+.dark .aui-md .hljs-doctag,
+.dark .aui-md .hljs-keyword,
+.dark .aui-md .hljs-meta .hljs-keyword,
+.dark .aui-md .hljs-template-tag,
+.dark .aui-md .hljs-template-variable,
+.dark .aui-md .hljs-type,
+.dark .aui-md .hljs-variable.language_ {
+  color: #ff7b72;
+}
+
+.dark .aui-hljs .hljs-title,
+.dark .aui-hljs .hljs-title.class_,
+.dark .aui-hljs .hljs-title.class_.inherited__,
+.dark .aui-hljs .hljs-title.function_,
+.dark .aui-md .hljs-title,
+.dark .aui-md .hljs-title.class_,
+.dark .aui-md .hljs-title.class_.inherited__,
+.dark .aui-md .hljs-title.function_ {
+  color: #d2a8ff;
+}
+
+.dark .aui-hljs .hljs-attr,
+.dark .aui-hljs .hljs-attribute,
+.dark .aui-hljs .hljs-literal,
+.dark .aui-hljs .hljs-meta,
+.dark .aui-hljs .hljs-number,
+.dark .aui-hljs .hljs-operator,
+.dark .aui-hljs .hljs-variable,
+.dark .aui-hljs .hljs-selector-attr,
+.dark .aui-hljs .hljs-selector-class,
+.dark .aui-hljs .hljs-selector-id,
+.dark .aui-md .hljs-attr,
+.dark .aui-md .hljs-attribute,
+.dark .aui-md .hljs-literal,
+.dark .aui-md .hljs-meta,
+.dark .aui-md .hljs-number,
+.dark .aui-md .hljs-operator,
+.dark .aui-md .hljs-variable,
+.dark .aui-md .hljs-selector-attr,
+.dark .aui-md .hljs-selector-class,
+.dark .aui-md .hljs-selector-id {
+  color: #79c0ff;
+}
+
+.dark .aui-hljs .hljs-regexp,
+.dark .aui-hljs .hljs-string,
+.dark .aui-hljs .hljs-meta .hljs-string,
+.dark .aui-md .hljs-regexp,
+.dark .aui-md .hljs-string,
+.dark .aui-md .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+
+.dark .aui-hljs .hljs-built_in,
+.dark .aui-hljs .hljs-symbol,
+.dark .aui-md .hljs-built_in,
+.dark .aui-md .hljs-symbol {
+  color: #ffa657;
+}
+
+.dark .aui-hljs .hljs-comment,
+.dark .aui-hljs .hljs-code,
+.dark .aui-hljs .hljs-formula,
+.dark .aui-md .hljs-comment,
+.dark .aui-md .hljs-code,
+.dark .aui-md .hljs-formula {
+  color: #8b949e;
+}
+
+.dark .aui-hljs .hljs-name,
+.dark .aui-hljs .hljs-quote,
+.dark .aui-hljs .hljs-selector-tag,
+.dark .aui-hljs .hljs-selector-pseudo,
+.dark .aui-md .hljs-name,
+.dark .aui-md .hljs-quote,
+.dark .aui-md .hljs-selector-tag,
+.dark .aui-md .hljs-selector-pseudo {
+  color: #7ee787;
+}
+
+.dark .aui-hljs .hljs-subst,
+.dark .aui-md .hljs-subst {
+  color: #c9d1d9;
+}
+
+.dark .aui-hljs .hljs-section,
+.dark .aui-md .hljs-section {
+  color: #1f6feb;
+  font-weight: 600;
+}
+
+.dark .aui-hljs .hljs-bullet,
+.dark .aui-md .hljs-bullet {
+  color: #f2cc60;
+}
+
+.dark .aui-hljs .hljs-emphasis,
+.dark .aui-md .hljs-emphasis {
+  color: #c9d1d9;
+  font-style: italic;
+}
+
+.dark .aui-hljs .hljs-strong,
+.dark .aui-md .hljs-strong {
+  color: #c9d1d9;
+  font-weight: 600;
+}
+
+.dark .aui-hljs .hljs-addition,
+.dark .aui-md .hljs-addition {
+  color: #aff5b4;
+  background-color: #033a16;
+}
+
+.dark .aui-hljs .hljs-deletion,
+.dark .aui-md .hljs-deletion {
+  color: #ffdcd7;
+  background-color: #67060c;
+}

@@ -1,0 +1,15 @@
+packages:
+  - apps/runtime
+  - apps/desktop
+
+# IDE / Volar 从仓库根解析依赖；`*` 等同 shamefullyHoist，免维护白名单
+publicHoistPattern:
+  - "*"
+
+allowBuilds:
+  esbuild: true
+  electron: true
+  "@google/genai": false
+  protobufjs: false
+  # Windows 安装包工具；本仓库目前只打 mac，不跑其 postinstall
+  electron-winstaller: false
