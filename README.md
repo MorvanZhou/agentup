@@ -1,42 +1,64 @@
-# AgentUp Client
+# AgentUp
 
-Open-source **desktop** (Electron + Vue) and **runtime** (local Node supervisor + Pi) from [AgentUp](https://agentup.me).
+**Your AI companions — use AI the way you use WhatsApp.**
 
-This repository is a **mirror slice** of the private monorepo. Day-to-day development happens in the private tree; maintainers sync here with `sh/sync-public-client.sh`.
+Study, write, look things up, plan a trip. Each assistant handles one kind of job. When the ask spans topics, it brings in another helper.
 
-Synced from private commit `e72f00a` (`main`).
+- Add assistants to your contacts like friends
+- One assistant, one kind of chat. No mixing.
+- It can read files on your computer and save results there
 
-## What's included
+**[Download for Mac](https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg)** · **[agentup.me](https://agentup.me)** · **[Sign in](https://agentup.me/login)**
 
-- `apps/desktop` — UI shell
-- `apps/runtime` — loopback control plane client, sessions, approvals
-- Thin root: `pnpm` workspace, `sh/build-mac.sh`, `sh/start-desktop.sh`, `sh/test-desktop.sh`
+---
 
-## Not included
+## Add an assistant
 
-Control-plane API (`apps/backend`), https login facade (`apps/web`), deploy scripts, and example agent packages. Point the client at the official API/login URLs, or override:
+**Add them like friends. No setup maze.**
 
-```bash
-export AGENTUP_BACKEND_URL=https://api.example.com
-export AGENTUP_WEB_URL=https://www.example.com
-```
+You add a specialist that keeps getting better. When they improve, your side updates too. No redo.
 
-## Setup
+- **The right helper for each job** — Papers, code, and weather each get their own assistant.
+- **Add once, come back anytime** — Same kind of ask goes back to the same chat. When they update, you do nothing.
+- **Ready to chat when you find them** — They come ready to help. You do not need to learn settings first.
+
+## One chat at a time
+
+**Same question. Two ways to chat. Two answers.**
+
+Cram papers, code, and work plans into one assistant, and even “do I need an umbrella?” goes sideways. Chat separately, and the answer gets clear.
+
+- **Each assistant remembers one kind of thing** — Ask the weather helper, and it will not dig up last week’s paper chat.
+- **Chats stay separate** — Whoever you ask, only that chat’s history comes along.
+- **Same ask, different answers** — The all-in-one drifts. The right helper just tells you about the umbrella.
+
+## On your computer
+
+**More than chat. It can work on your PC.**
+
+The assistant runs on your own computer. It can see desktop files, then put a PPT or other results right back on your desktop.
+
+- **Sees your files** — Notes and research on your desktop can be opened and used.
+- **Works on your computer** — Organize, create, and save happen here, not only in a web chat.
+- **Results show up on your desktop** — Finished PPT and charts land in your folders, ready to open.
+
+Chats stay on your computer by default. We do not keep the message body. If an outside service is needed, only what the job needs goes out.
+
+---
+
+## This repository
+
+Open-source **desktop** (Electron + Vue) and **runtime** (local Node supervisor).
 
 ```bash
 pnpm install
-pnpm --filter @agentup/desktop exec playwright install chromium   # e2e only
-sh sh/start-desktop.sh --dev    # local Vite + runtime; control plane URLs from env-profiles
+sh sh/start-desktop.sh --dev    # local UI + runtime
 # or
-sh sh/build-mac.sh --dev        # unsigned macOS arm64 package under dist/mac/
+sh sh/build-mac.sh --dev        # unsigned macOS arm64 build → dist/mac/
 ```
 
-Requires Node + [pnpm](https://pnpm.io) (see root `packageManager` field).
+Requires Node and [pnpm](https://pnpm.io) (see `packageManager` in `package.json`).
 
-## Contributing
+Start by picking the right person for each job — add your first assistant today.
 
-Open PRs against this repo. Maintainers replay accepted changes into the private monorepo, then re-sync. Prefer small patches under `apps/desktop` / `apps/runtime`.
-
-## License
-
-See `LICENSE` if present. If missing, the license is still TBD in the upstream private repository.
+*Use AI like you message people.*
