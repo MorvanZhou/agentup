@@ -16,6 +16,12 @@ Study, write, look things up, plan a trip. Each assistant handles one kind of jo
 
 **[Download for Mac](https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg)** · **[agentup.me](https://agentup.me)**
 
+After installing to Applications, run this once in Terminal so macOS will open the app:
+
+```bash
+xattr -cr /Applications/AgentUp.app
+```
+
 <p align="center">
   <img src="docs/images/feature-hero.png" alt="AgentUp desktop — contacts and multi-assistant chat" width="640" />
 </p>

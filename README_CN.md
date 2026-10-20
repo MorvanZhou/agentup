@@ -14,7 +14,13 @@
 - 一个助手，一种聊天。互不掺和。
 - 能读你电脑上的文件，并把结果存回去
 
-**[下载 Mac 版](https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg)** · **[agentup.me](https://agentup.me)** 
+**[下载 Mac 版](https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg)** · **[agentup.me](https://agentup.me)**
+
+安装到「应用程序」后，在终端执行一次下面的命令，才能正常打开：
+
+```bash
+xattr -cr /Applications/AgentUp.app
+```
 
 <p align="center">
   <img src="docs/images/feature-hero.png" alt="AgentUp 桌面端 — 通讯录与多助手协作" width="640" />
