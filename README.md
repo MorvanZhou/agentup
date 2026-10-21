@@ -74,6 +74,21 @@ Chats stay on your computer by default. We do not keep the message body. If an o
 
 ---
 
+## What AgentUp is (and isn’t)
+
+> **Coding tools manage the workbench. AgentUp hosts the relationship.**
+
+| AgentUp is | AgentUp is not |
+|------------|----------------|
+| An IM for AI companions — add specialists like contacts | Another coding agent, IDE, or terminal agent manager |
+| One assistant, one kind of job; chats stay separate | One mega-assistant you keep loading with more skills |
+| Work on your computer; chats stay local by default | A cloud teammate that keeps going after you close the lid |
+| Specialists that improve for everyone who added them | A template store that clones a private copy into your account |
+
+Use AI like you message people — not like you open another developer tool.
+
+---
+
 ## This repository
 
 Open-source **desktop** (Electron + Vue) and **runtime** (local Node supervisor).
