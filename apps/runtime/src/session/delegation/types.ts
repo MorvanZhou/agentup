@@ -3,6 +3,9 @@
 /** 写入私人助理会话的异步完成通知 customType。 */
 export const DELEGATION_RESULT_CUSTOM_TYPE = "agentup.delegation_result";
 
+/** 每轮注入的相关专家卡片（Pi nextTurn custom message）。 */
+export const RELEVANT_AGENTS_CUSTOM_TYPE = "agentup.relevant_agents";
+
 export type DelegationStatus =
   | "pending_auth"
   | "running"
@@ -30,11 +33,17 @@ export type DelegationTask = {
   notified: boolean;
 };
 
+/** 已招募（或本机离线回退）专家名片；检索用语料。 */
 export type RecruitedAgentInfo = {
   agentId: string;
   name: string;
-  summary: string;
+  /** 职业 / 岗位。 */
+  role: string;
+  /** 人物背景（旧 summary）。 */
+  background: string;
   remark: string;
+  /** 派生 SYSTEM.md 全文；离线或打分用。 */
+  systemText?: string;
 };
 
 export type DelegateRunResult = {

@@ -79,7 +79,7 @@ export function useWorkspace(options: {
   function setTab(next: WorkspaceTab): void {
     if (tab.value === next) return;
     if (dirty.value) {
-      showToast("还有未保存的修改");
+      showToast("还有未保存的修改", "error");
       return;
     }
     tab.value = next;
@@ -91,7 +91,7 @@ export function useWorkspace(options: {
 
   async function openWithSystem(relativePath: string): Promise<void> {
     if (!window.agentUp?.openPath) {
-      showToast("请在 AgentUp 桌面应用中打开");
+      showToast("请在 AgentUp 桌面应用中打开", "error");
       return;
     }
     try {
@@ -104,7 +104,7 @@ export function useWorkspace(options: {
       );
       await window.agentUp.openPath(absolute);
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     }
   }
 
@@ -128,7 +128,7 @@ export function useWorkspace(options: {
       file.value = result;
       draft.value = result.kind === "text" ? result.text : "";
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       loading.value = false;
     }
@@ -146,7 +146,7 @@ export function useWorkspace(options: {
   function back(): void {
     if (previewPath.value) {
       if (dirty.value) {
-        showToast("还有未保存的修改");
+        showToast("还有未保存的修改", "error");
         return;
       }
       previewPath.value = "";
@@ -191,7 +191,7 @@ export function useWorkspace(options: {
         text: draft.value,
       };
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       saving.value = false;
     }
@@ -215,7 +215,7 @@ export function useWorkspace(options: {
       if (kind === "file") await openFile(target);
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     } finally {
       busy.value = false;
@@ -240,7 +240,7 @@ export function useWorkspace(options: {
       await loadDirectory();
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     } finally {
       busy.value = false;
@@ -273,7 +273,7 @@ export function useWorkspace(options: {
       await loadDirectory();
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       await loadDirectory();
       return false;
     } finally {
@@ -283,7 +283,7 @@ export function useWorkspace(options: {
 
   async function reveal(entry: WorkspaceEntry): Promise<void> {
     if (!window.agentUp?.revealInFolder) {
-      showToast("请在 AgentUp 桌面应用中打开");
+      showToast("请在 AgentUp 桌面应用中打开", "error");
       return;
     }
     try {
@@ -297,7 +297,7 @@ export function useWorkspace(options: {
       );
       await window.agentUp.revealInFolder(absolute);
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     }
   }
 

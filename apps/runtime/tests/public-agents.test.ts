@@ -18,7 +18,7 @@ it("proxies the public agent catalog without a bearer token", async () => {
         {
           agent_id: "weather",
           name: "天气播报员",
-          summary: "查天气",
+          background: "查天气",
           latest_version: 1,
           latest_digest: "d1",
           recruited: false,

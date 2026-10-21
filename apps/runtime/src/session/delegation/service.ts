@@ -7,6 +7,7 @@ import type { UIMessage } from "ai";
 
 import type { ModelConfig } from "../../config/load.js";
 import { HttpPackageSource, listAgents } from "../../control/client.js";
+import { composeSystemPrompt } from "../../local/agent-identity.js";
 import { ensurePersonalAssistant, PERSONAL_ASSISTANT_ID } from "../../local/personal-assistant.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import type { ApprovalBroker } from "../approval.js";
@@ -66,6 +67,35 @@ export class DelegationService {
     return set?.has(childAgentId) === true;
   }
 
+  /** 若 child 正作为某次委托的执行方，返回委托方 agentId。 */
+  findNestingParent(userId: string, childAgentId: string): string | undefined {
+    const prefix = `${userId}/`;
+    for (const [key, children] of this.nested) {
+      if (!key.startsWith(prefix) || !children.has(childAgentId)) continue;
+      const parentAgentId = key.slice(prefix.length);
+      if (parentAgentId) return parentAgentId;
+    }
+    return undefined;
+  }
+
+  /**
+   * 登记「父 turn 正在等子委托」。返回清理函数。
+   * HITL surface：子审批在父仍 busy 时挂到父会话，避免两侧栏/双 dock。
+   */
+  markNested(userId: string, parentAgentId: string, childAgentId: string): () => void {
+    const parent = parentKey(userId, parentAgentId);
+    let children = this.nested.get(parent);
+    if (!children) {
+      children = new Set();
+      this.nested.set(parent, children);
+    }
+    children.add(childAgentId);
+    return () => {
+      children.delete(childAgentId);
+      if (children.size === 0) this.nested.delete(parent);
+    };
+  }
+
   listTasks(
     userId: string,
     options: { unseenOnly?: boolean; status?: DelegationTask["status"] } = {},
@@ -100,12 +130,22 @@ export class DelegationService {
     if (token) {
       try {
         const agents = await listAgents(this.options.backendUrl, token, { recruited: true });
-        return agents.map((agent) => ({
-          agentId: agent.agentId,
-          name: agent.name,
-          summary: agent.summary,
-          remark: agent.remark,
-        }));
+        return agents.map((agent) => {
+          const name = agent.name.trim();
+          const role = agent.role.trim();
+          const background = agent.background.trim();
+          return {
+            agentId: agent.agentId,
+            name,
+            role,
+            background,
+            remark: agent.remark,
+            systemText:
+              name && role && background
+                ? composeSystemPrompt({ name, role, background }, "zh")
+                : undefined,
+          };
+        });
       } catch {
         // 退回本机已同步目录
       }
@@ -187,13 +227,7 @@ export class DelegationService {
     const task = this.store.get(taskId);
     if (!task) return;
 
-    const parent = parentKey(task.userId, task.fromAgentId);
-    let children = this.nested.get(parent);
-    if (!children) {
-      children = new Set();
-      this.nested.set(parent, children);
-    }
-    children.add(task.toAgentId);
+    const unmark = this.markNested(task.userId, task.fromAgentId, task.toAgentId);
 
     try {
       const outcome = await runDelegatedPrompt(
@@ -231,8 +265,7 @@ export class DelegationService {
         this.notifyParent(finished);
       }
     } finally {
-      children.delete(task.toAgentId);
-      if (children.size === 0) this.nested.delete(parent);
+      unmark();
     }
   }
 
@@ -320,17 +353,46 @@ function listLocalRecruited(userDataRoot: string, userId: string): RecruitedAgen
   const root = path.join(userDataRoot, "users", userId, "agents");
   if (!fs.existsSync(root)) return [];
   const result: RecruitedAgentInfo[] = [];
-  for (const name of fs.readdirSync(root)) {
-    if (!AGENT_ID.test(name)) continue;
-    const instance = path.join(root, name, "instance.json");
-    if (!fs.existsSync(instance)) continue;
-    const systemPath = path.join(root, name, "cwd", ".pi", "SYSTEM.md");
-    let summary = "";
-    if (fs.existsSync(systemPath)) {
-      const first = fs.readFileSync(systemPath, "utf8").split(/\r?\n/).find((line) => line.trim());
-      summary = first ? first.replace(/^#+\s*/, "").trim().slice(0, 200) : "";
+  for (const agentId of fs.readdirSync(root)) {
+    if (!AGENT_ID.test(agentId)) continue;
+    const agentRoot = path.join(root, agentId);
+    const instancePath = path.join(agentRoot, "instance.json");
+    if (!fs.existsSync(instancePath)) continue;
+    let stored: Record<string, unknown> = {};
+    try {
+      stored = JSON.parse(fs.readFileSync(instancePath, "utf8")) as Record<string, unknown>;
+    } catch {
+      stored = {};
     }
-    result.push({ agentId: name, name, summary, remark: "" });
+    const systemPath = path.join(agentRoot, "cwd", ".pi", "SYSTEM.md");
+    const systemText = fs.existsSync(systemPath)
+      ? fs.readFileSync(systemPath, "utf8").trim()
+      : "";
+    const name =
+      typeof stored.name === "string" && stored.name.trim() ? stored.name.trim() : agentId;
+    const role = typeof stored.role === "string" ? stored.role.trim() : "";
+    const fromCard =
+      typeof stored.background === "string"
+        ? stored.background.trim()
+        : typeof stored.summary === "string"
+          ? stored.summary.trim()
+          : "";
+    const fromSystem = systemText
+      ? systemText
+          .split(/\r?\n/)
+          .find((line) => line.trim())
+          ?.replace(/^#+\s*/, "")
+          .trim()
+          .slice(0, 200) || ""
+      : "";
+    result.push({
+      agentId,
+      name,
+      role,
+      background: fromCard || fromSystem,
+      remark: "",
+      ...(systemText ? { systemText } : {}),
+    });
   }
   return result;
 }

@@ -24,7 +24,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
           {
             agent_id: "respiratory-doctor",
             name: "呼吸科医生",
-            summary: "演示问诊",
+            background: "演示问诊",
             latest_version: 1,
             latest_digest: "abc",
             recruited: false,
@@ -116,7 +116,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
       return json({
         agent_id: "weather",
         name: "天气播报员",
-        summary: "演示天气",
+        background: "演示天气",
         version: 1,
         digest: "weather-digest",
       });

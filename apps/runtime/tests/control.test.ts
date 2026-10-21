@@ -38,7 +38,7 @@ it("syncs a recruited package from the control plane", async () => {
           {
             agent_id: "tax-advisor",
             name: "税务顾问",
-            summary: "公开",
+            background: "公开",
             latest_version: manifest.version,
             latest_digest: digest,
             recruited,
@@ -81,7 +81,7 @@ it("syncs a recruited package from the control plane", async () => {
           "x-package-version": String(manifest.version),
           "x-package-digest": digest,
           "x-package-name": encodeURIComponent("税务顾问"),
-          "x-package-summary": encodeURIComponent("公开"),
+          "x-package-background": encodeURIComponent("公开"),
         });
         res.end(body);
       });
@@ -97,7 +97,7 @@ it("syncs a recruited package from the control plane", async () => {
         agentId: "tax-advisor",
         name: "税务顾问",
         role: "",
-        summary: "公开",
+        background: "公开",
         latestVersion: 1,
         latestDigest: digest,
         recruited: false,

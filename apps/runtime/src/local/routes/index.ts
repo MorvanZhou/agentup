@@ -5,6 +5,7 @@ import { registerAgentsRoutes } from "./agents.js";
 import { registerAuthRoutes } from "./auth.js";
 import { registerHealthRoutes } from "./health.js";
 import { registerHitlRoutes } from "./hitl.js";
+import { registerLocalAgentsRoutes } from "./local-agents.js";
 import { registerPersonalAssistantRoutes } from "./personal-assistant.js";
 import { registerPreferencesRoutes } from "./preferences.js";
 import { registerSettingsRoutes } from "./settings.js";
@@ -19,6 +20,7 @@ export function registerLocalRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
   registerStateRoutes(app, deps);
   registerHitlRoutes(app, deps);
   registerPersonalAssistantRoutes(app, deps);
+  registerLocalAgentsRoutes(app, deps);
   registerAgentsRoutes(app, deps);
   registerWorkspaceRoutes(app, deps);
 }

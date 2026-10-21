@@ -3,28 +3,12 @@ import { computed } from "vue";
 
 import { t } from "../../../shared/model/ui-locale";
 
-type SectionId = "assistant" | "skills" | "rules" | "mcp" | "account" | "provider" | "appearance";
+type SectionId = "account" | "provider" | "appearance";
 
-const groups = computed(() => [
-  {
-    id: "assistant",
-    label: t("settingsGroupAssistant"),
-    items: [
-      { id: "assistant" as const, label: t("settingsAssistant") },
-      { id: "skills" as const, label: t("settingsSkills") },
-      { id: "rules" as const, label: t("settingsRules") },
-      { id: "mcp" as const, label: t("settingsMcp") },
-    ],
-  },
-  {
-    id: "app",
-    label: t("settingsGroupApp"),
-    items: [
-      { id: "account" as const, label: t("settingsAccount") },
-      { id: "provider" as const, label: t("settingsProvider") },
-      { id: "appearance" as const, label: t("settingsAppearance") },
-    ],
-  },
+const items = computed(() => [
+  { id: "account" as const, label: t("settingsAccount") },
+  { id: "provider" as const, label: t("settingsProvider") },
+  { id: "appearance" as const, label: t("settingsAppearance") },
 ]);
 
 defineProps<{ active: SectionId }>();
@@ -41,31 +25,18 @@ defineEmits<{ select: [id: SectionId] }>();
       {{ t("settingsTitle") }}
     </h2>
 
-    <div
-      class="app-no-drag flex gap-4 overflow-x-auto min-[730px]:flex-col min-[730px]:gap-5 min-[730px]:overflow-visible"
-    >
-      <section
-        v-for="group in groups"
-        :key="group.id"
-        class="flex shrink-0 flex-col gap-0.5 min-[730px]:w-full"
+    <div class="app-no-drag flex gap-1.5 overflow-x-auto min-[730px]:flex-col min-[730px]:gap-0.5 min-[730px]:overflow-visible">
+      <button
+        v-for="item in items"
+        :key="item.id"
+        type="button"
+        class="inline-flex min-h-8 shrink-0 items-center rounded-lg border-0 bg-transparent px-2.5 text-sm font-medium text-muted-foreground transition duration-200 hover:bg-accent/10 hover:text-accent min-[730px]:w-full min-[730px]:justify-start"
+        :class="{ 'bg-accent/10! text-accent!': item.id === active }"
+        :aria-current="item.id === active ? 'page' : undefined"
+        @click="$emit('select', item.id)"
       >
-        <h3 class="px-2.5 pb-1 text-xs font-medium tracking-wider text-muted-foreground">
-          {{ group.label }}
-        </h3>
-        <div class="flex gap-1 min-[730px]:ml-2 min-[730px]:flex-col min-[730px]:border-l min-[730px]:border-rule min-[730px]:pl-2">
-          <button
-            v-for="item in group.items"
-            :key="item.id"
-            type="button"
-            class="inline-flex min-h-8 shrink-0 items-center rounded-lg border-0 bg-transparent px-2.5 text-sm font-medium text-muted-foreground transition duration-200 hover:bg-accent/10 hover:text-accent min-[730px]:w-full min-[730px]:justify-start"
-            :class="{ 'bg-accent/10! text-accent!': item.id === active }"
-            :aria-current="item.id === active ? 'page' : undefined"
-            @click="$emit('select', item.id)"
-          >
-            {{ item.label }}
-          </button>
-        </div>
-      </section>
+        {{ item.label }}
+      </button>
     </div>
   </nav>
 </template>

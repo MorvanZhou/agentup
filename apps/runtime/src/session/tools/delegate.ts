@@ -2,6 +2,10 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import {
+  discoverRecruitedAgents,
+  formatAgentCardLine,
+} from "../delegation/discover.js";
+import {
   DelegationError,
   type DelegationService,
 } from "../delegation/service.js";
@@ -11,11 +15,19 @@ export const LIST_RECRUITED_AGENTS_TOOL = "list_recruited_agents";
 export const DELEGATE_TO_AGENT_TOOL = "delegate_to_agent";
 export const CHECK_DELEGATION_TOOL = "check_delegation";
 
-const ListParams = Type.Object({});
+const ListParams = Type.Object({
+  query: Type.Optional(
+    Type.String({
+      description:
+        "Optional search over name / role / background / remark. " +
+        "Omit when the roster is small; use a short query when many agents are recruited.",
+    }),
+  ),
+});
 
 const DelegateParams = Type.Object({
   agent_id: Type.String({
-    description: "已招募专家的 agent_id（先用 list_recruited_agents 查看）",
+    description: "已招募专家的 agent_id（先看本轮候选卡或 list_recruited_agents）",
   }),
   brief: Type.String({
     description:
@@ -48,16 +60,19 @@ export function createDelegateExtension(
         name: LIST_RECRUITED_AGENTS_TOOL,
         label: "List Recruited Agents",
         description:
-          "List agents the user has already recruited. Use before delegate_to_agent to pick a specialist by agent_id, name, and summary.",
+          "Find recruited specialist agents by optional query (name, role, background). " +
+          "Relevant candidates may already appear in context each turn; use this to refine or list more. " +
+          "Then call delegate_to_agent when a specialist fits.",
         parameters: ListParams,
         annotations: {
           readOnlyHint: true,
           openWorldHint: false,
           destructiveHint: false,
         },
-        async execute() {
-          const agents = await service.listRecruited(userId);
-          if (agents.length === 0) {
+        async execute(_toolCallId, params) {
+          const roster = await service.listRecruited(userId);
+          const others = roster.filter((agent) => agent.agentId !== agentId);
+          if (others.length === 0) {
             return {
               content: [
                 {
@@ -68,18 +83,40 @@ export function createDelegateExtension(
               details: { agents: [] },
             };
           }
-          const lines = agents.map((agent) => {
-            const label = agent.remark || agent.name;
-            return `- ${label} (agent_id: ${agent.agentId}): ${agent.summary || "（无简介）"}`;
-          });
+          const query = typeof params.query === "string" ? params.query : "";
+          const discovered = discoverRecruitedAgents(others, query);
+          if (discovered.agents.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: query.trim()
+                    ? `No recruited agents matched query: ${query.trim()}`
+                    : "No recruited agents to list.",
+                },
+              ],
+              details: { agents: [] },
+            };
+          }
+          const header =
+            discovered.mode === "sample"
+              ? "Recruited agents (partial — pass query to search):\n"
+              : discovered.mode === "search"
+                ? "Matching recruited agents:\n"
+                : "Recruited agents:\n";
+          const footer =
+            discovered.truncated && discovered.mode !== "all"
+              ? "\n\n(More available — refine with query.)"
+              : "";
+          const lines = discovered.agents.map(formatAgentCardLine);
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Recruited agents:\n${lines.join("\n")}`,
+                text: `${header}${lines.join("\n")}${footer}`,
               },
             ],
-            details: { agents },
+            details: { agents: discovered.agents },
           };
         },
       }),
@@ -90,9 +127,9 @@ export function createDelegateExtension(
         name: DELEGATE_TO_AGENT_TOOL,
         label: "Delegate To Agent",
         description:
-          "Delegate a bounded subtask to a recruited specialist agent. " +
-          "The user must approve the consultation. You keep ownership of the user-facing reply; " +
-          "synthesize the specialist's result for the user. Prefer wait=true for short tasks.",
+          "Delegate a bounded subtask to a recruited specialist when their role/background fits. " +
+          "Prefer this over guessing outside your expertise. The user must approve the consultation. " +
+          "You keep ownership of the user-facing reply; synthesize the specialist's result. Prefer wait=true for short tasks.",
         parameters: DelegateParams,
         annotations: {
           readOnlyHint: false,

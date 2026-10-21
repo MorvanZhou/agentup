@@ -46,7 +46,7 @@ export async function savePersonalAssistantProfile(
   http: RuntimeHttp,
   token: string,
   userId: string,
-  profile: { name: string; instructions: string; avatarDataUrl?: string },
+  profile: { name: string; role: string; background: string; avatarDataUrl?: string },
   locale?: UiLocale,
 ): Promise<PersonalAssistantProfile> {
   return readPersonalAssistantProfile(
@@ -56,7 +56,8 @@ export async function savePersonalAssistantProfile(
       {
         user_id: userId,
         name: profile.name,
-        instructions: profile.instructions,
+        role: profile.role,
+        background: profile.background,
         ...(profile.avatarDataUrl ? { avatar_data_url: profile.avatarDataUrl } : {}),
       },
       "PUT",

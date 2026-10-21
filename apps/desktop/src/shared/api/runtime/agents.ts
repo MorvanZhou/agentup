@@ -19,6 +19,148 @@ export async function agents(
   return payload.agents.map(readAgent);
 }
 
+export async function localAgents(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  options?: { q?: string },
+): Promise<AgentCard[]> {
+  const payload = await http.request(
+    `/agents/local${agentListQuery({ userId, q: options?.q })}`,
+    token,
+  );
+  if (!Array.isArray(payload.agents)) throw new DesktopApiError("本机 Agent 列表无效");
+  return payload.agents.map(readAgent);
+}
+
+export async function createLocalAgent(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  input: {
+    name: string;
+    role: string;
+    background: string;
+    rules?: string;
+    avatarDataUrl?: string;
+    skillPaths?: string[];
+    mcpServers?: Record<string, unknown>;
+  },
+): Promise<AgentCard> {
+  const payload = await http.request("/agents/local", token, {
+    user_id: userId,
+    name: input.name,
+    role: input.role,
+    background: input.background,
+    ...(input.rules?.trim() ? { rules: input.rules.trim() } : {}),
+    ...(input.avatarDataUrl ? { avatar_data_url: input.avatarDataUrl } : {}),
+    ...(input.skillPaths?.length ? { skill_paths: input.skillPaths } : {}),
+    ...(input.mcpServers && Object.keys(input.mcpServers).length
+      ? { mcp_servers: input.mcpServers }
+      : {}),
+  });
+  return readAgent(payload);
+}
+
+export async function getLocalAgent(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  agentId: string,
+): Promise<AgentCard> {
+  const payload = await http.request(
+    `/agents/local/${encodeURIComponent(agentId)}?user_id=${encodeURIComponent(userId)}`,
+    token,
+  );
+  return readAgent(payload);
+}
+
+export async function updateLocalAgent(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  agentId: string,
+  input: {
+    name: string;
+    role: string;
+    background: string;
+    rules?: string;
+    avatarDataUrl?: string;
+    skillPaths?: string[];
+    removeSkills?: string[];
+    /** 传入（含空对象）表示覆盖 mcp.json；undefined 表示不改 */
+    mcpServers?: Record<string, unknown>;
+  },
+): Promise<AgentCard> {
+  const payload = await http.request(
+    `/agents/local/${encodeURIComponent(agentId)}`,
+    token,
+    {
+      user_id: userId,
+      name: input.name,
+      role: input.role,
+      background: input.background,
+      ...(input.rules !== undefined ? { rules: input.rules } : {}),
+      ...(input.avatarDataUrl ? { avatar_data_url: input.avatarDataUrl } : {}),
+      ...(input.skillPaths?.length ? { skill_paths: input.skillPaths } : {}),
+      ...(input.removeSkills?.length ? { remove_skills: input.removeSkills } : {}),
+      ...(input.mcpServers !== undefined ? { mcp_servers: input.mcpServers } : {}),
+    },
+    "PUT",
+  );
+  return readAgent(payload);
+}
+
+export async function bindLocalPublishedAgent(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  agentId: string,
+  publishedAgentId: string,
+): Promise<AgentCard> {
+  const payload = await http.request(
+    `/agents/local/${encodeURIComponent(agentId)}/published`,
+    token,
+    { user_id: userId, published_agent_id: publishedAgentId },
+    "PUT",
+  );
+  return readAgent(payload);
+}
+
+export async function exportLocalAgentSkill(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  agentId: string,
+  skillName: string,
+  destination: string,
+): Promise<{ path: string }> {
+  const payload = await http.request(
+    `/agents/local/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(skillName)}/export`,
+    token,
+    { user_id: userId, destination },
+    "POST",
+  );
+  if (!payload || typeof payload !== "object" || typeof (payload as { path?: unknown }).path !== "string") {
+    throw new DesktopApiError("导出 Skill 响应无效");
+  }
+  return { path: (payload as { path: string }).path };
+}
+
+export async function deleteLocalAgent(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  agentId: string,
+): Promise<void> {
+  await http.request(
+    `/agents/local/${encodeURIComponent(agentId)}?user_id=${encodeURIComponent(userId)}`,
+    token,
+    undefined,
+    "DELETE",
+  );
+}
+
 /** 游客可读市场列表；无需账号 token。 */
 export async function publicAgents(
   http: RuntimeHttp,
@@ -73,20 +215,22 @@ export async function publish(
   agentDir: string,
   name: string,
   role: string,
-  summary: string,
+  background: string,
   agentId?: string,
+  rules = "",
 ): Promise<PublishedAgent> {
   const payload = await http.request("/agents/publish", token, {
     agent_dir: agentDir,
     name,
     role,
-    summary,
+    background,
+    rules,
     ...(agentId ? { agent_id: agentId } : {}),
   });
   if (
     typeof payload.agent_id !== "string" ||
     typeof payload.name !== "string" ||
-    typeof payload.summary !== "string" ||
+    typeof payload.background !== "string" ||
     typeof payload.version !== "number" ||
     typeof payload.digest !== "string"
   ) {
@@ -96,10 +240,70 @@ export async function publish(
     agentId: payload.agent_id,
     name: payload.name,
     role: typeof payload.role === "string" ? payload.role : "",
-    summary: payload.summary,
+    background: payload.background,
     version: payload.version,
     digest: payload.digest,
   };
+}
+
+/** 更新名片层（含规则 / 可选头像），不换运行包。 */
+export async function updateCard(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  input: {
+    name: string;
+    role: string;
+    background: string;
+    rules?: string;
+    avatarDataUrl?: string;
+  },
+): Promise<AgentCard> {
+  const payload = await http.request(
+    `/agents/${encodeURIComponent(agentId)}/card`,
+    token,
+    {
+      name: input.name,
+      role: input.role,
+      background: input.background,
+      rules: input.rules ?? "",
+      ...(input.avatarDataUrl ? { avatar_data_url: input.avatarDataUrl } : {}),
+    },
+    "PUT",
+  );
+  return readAgent(payload);
+}
+
+export async function importPublishedLocal(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  publishedAgentId: string,
+): Promise<AgentCard> {
+  const payload = await http.request("/agents/local/from-published", token, {
+    user_id: userId,
+    published_agent_id: publishedAgentId,
+  });
+  return readAgent(payload);
+}
+
+export async function exportPublishedSkill(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  skillName: string,
+  destination: string,
+): Promise<{ path: string }> {
+  const payload = await http.request(
+    `/agents/published/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(skillName)}/export`,
+    token,
+    { destination },
+    "POST",
+  );
+  if (!payload || typeof payload !== "object" || typeof (payload as { path?: unknown }).path !== "string") {
+    throw new DesktopApiError("导出 Skill 响应无效");
+  }
+  return { path: (payload as { path: string }).path };
 }
 
 export async function inspectAgent(

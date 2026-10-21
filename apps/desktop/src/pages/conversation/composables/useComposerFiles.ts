@@ -49,7 +49,7 @@ export function useComposerFiles(options: {
     const userId = options.userId.value;
     const agentId = options.agentId.value;
     if (!token || !userId || !agentId) {
-      showToast("尚未登录");
+      showToast("尚未登录", "error");
       return;
     }
     busy.value = true;
@@ -70,7 +70,7 @@ export function useComposerFiles(options: {
       }
       options.setText(text, cursor);
     } catch (error) {
-      showToast(error instanceof DesktopApiError ? error.message : "附件上传失败");
+      showToast(error instanceof DesktopApiError ? error.message : "附件上传失败", "error");
     } finally {
       busy.value = false;
     }

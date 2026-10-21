@@ -14,12 +14,21 @@ export interface Session {
 }
 
 export interface AgentCard {
-  kind?: "recruited" | "personal";
+  /** recruited=市场；personal=私人助理；local=本机私有（cwd/.pi 同构） */
+  kind?: "recruited" | "personal" | "local";
   agentId: string;
+  /** 工作规则（名片层 / 本机 AGENTS.md） */
+  rules?: string;
+  /** 仅 local：已安装到 cwd/.pi/skills 的技能名 */
+  skills?: string[];
+  /** 仅 local：cwd/.pi/mcp.json 的 mcpServers */
+  mcpServers?: Record<string, unknown>;
+  /** 仅 local：已绑定的市场 agent_id，再发布时升版 */
+  publishedAgentId?: string;
   name: string;
-  /** 开发者定义的岗位；用户不能改。私人助理为固定文案。 */
+  /** Agent 岗位。 */
   role: string;
-  summary: string;
+  background: string;
   latestVersion: number;
   latestDigest: string;
   localVersion: number;
@@ -58,7 +67,7 @@ export interface PublishedAgent {
   agentId: string;
   name: string;
   role: string;
-  summary: string;
+  background: string;
   version: number;
   digest: string;
 }
@@ -193,6 +202,7 @@ export const PERSONAL_ASSISTANT_ID = "personal-assistant";
 
 export interface PersonalAssistantProfile {
   name: string;
-  instructions: string;
+  role: string;
+  background: string;
   avatarUrl?: string;
 }

@@ -4,7 +4,7 @@ type AgentRecord = {
   agent_id: string;
   name: string;
   role: string;
-  summary: string;
+  background: string;
   latest_version: number;
   latest_digest: string;
   local_version: number;
@@ -91,7 +91,7 @@ export async function installRuntime(
       agent_id: "respiratory-doctor",
       name: "呼吸科医生",
       role: "医生",
-      summary: "演示用呼吸科问诊。",
+      background: "演示用呼吸科问诊。",
       latest_version: 1,
       latest_digest: "digest",
       local_version: 0,
@@ -107,7 +107,7 @@ export async function installRuntime(
       agent_id: "weather",
       name: "Weaty",
       role: "气象员",
-      summary: "演示用天气 Agent。按城市查询天气、预报和气候。",
+      background: "演示用天气 Agent。按城市查询天气、预报和气候。",
       latest_version: 1,
       latest_digest: "weather-digest",
       local_version: 0,
@@ -120,6 +120,48 @@ export async function installRuntime(
       updated_at: "2026-01-03T00:00:00Z",
     },
   ];
+  type LocalAgentRecord = {
+    agent_id: string;
+    name: string;
+    role: string;
+    background: string;
+    rules: string;
+    skills: string[];
+    mcp_servers: Record<string, unknown>;
+    published_agent_id: string | null;
+    latest_version: number;
+    latest_digest: string;
+    created_at: string;
+    updated_at: string;
+    avatar_url: string | null;
+  };
+  const localAgents: LocalAgentRecord[] = [];
+  let localSeq = 0;
+  const FAKE_AVATAR = "data:image/png;base64,iVBORw0KGgo=";
+
+  function localCard(agent: LocalAgentRecord) {
+    return {
+      kind: "local",
+      agent_id: agent.agent_id,
+      name: agent.name,
+      role: agent.role,
+      background: agent.background,
+      latest_version: agent.latest_version,
+      latest_digest: agent.latest_digest,
+      local_version: agent.latest_version,
+      recruited: true,
+      has_avatar: Boolean(agent.avatar_url),
+      avatar_url: agent.avatar_url,
+      remark: "",
+      recruit_count: 0,
+      created_at: agent.created_at,
+      updated_at: agent.updated_at,
+      rules: agent.rules,
+      skills: agent.skills,
+      mcp_servers: agent.mcp_servers,
+      published_agent_id: agent.published_agent_id,
+    };
+  }
   const ollamaTemplate = {
     id: "ollama",
     vendor_id: "ollama",
@@ -242,7 +284,8 @@ export async function installRuntime(
   let userMcpServers: Record<string, unknown> = {};
   let personalProfile = {
     name: "小A",
-    instructions: "你是用户在 AgentUp 中的私人助理。",
+    role: "我的助理",
+    background: "熟悉用户的工作习惯，擅长日常协作。",
     avatar_url: null as string | null,
   };
   let accountAvatarUrl: string | null = null;
@@ -265,10 +308,11 @@ export async function installRuntime(
     if (request.method() === "PUT" && path === "/personal-assistant/profile") {
       const body = request.postDataJSON() as {
         name?: string;
-        instructions?: string;
+        role?: string;
+        background?: string;
         avatar_data_url?: string | null;
       };
-      if (!body.name?.trim() || !body.instructions?.trim()) {
+      if (!body.name?.trim() || !body.role?.trim() || !body.background?.trim()) {
         return json(route, 400, { error: "请求无效" });
       }
       if (body.avatar_data_url === null) {
@@ -276,7 +320,8 @@ export async function installRuntime(
       }
       personalProfile = {
         name: body.name.trim(),
-        instructions: body.instructions.trim(),
+        role: body.role.trim(),
+        background: body.background.trim(),
         avatar_url:
           typeof body.avatar_data_url === "string"
             ? body.avatar_data_url
@@ -817,7 +862,7 @@ export async function installRuntime(
             return (
               agent.name.toLowerCase().includes(q) ||
               agent.role.toLowerCase().includes(q) ||
-              agent.summary.toLowerCase().includes(q) ||
+              agent.background.toLowerCase().includes(q) ||
               agent.agent_id.toLowerCase().includes(q)
             );
           })
@@ -834,7 +879,7 @@ export async function installRuntime(
           return (
             agent.name.toLowerCase().includes(q) ||
             agent.role.toLowerCase().includes(q) ||
-            agent.summary.toLowerCase().includes(q) ||
+            agent.background.toLowerCase().includes(q) ||
             agent.agent_id.toLowerCase().includes(q)
           );
         }),
@@ -849,7 +894,7 @@ export async function installRuntime(
           return (
             agent.name.toLowerCase().includes(q) ||
             agent.role.toLowerCase().includes(q) ||
-            agent.summary.toLowerCase().includes(q) ||
+            agent.background.toLowerCase().includes(q) ||
             agent.agent_id.toLowerCase().includes(q)
           );
         }),
@@ -907,20 +952,26 @@ export async function installRuntime(
     }
     if (request.method() === "POST" && path === "/agents/publish") {
       if (options?.publishError) return json(route, 403, { error: options.publishError });
-      const body = request.postDataJSON() as { name: string; role?: string; summary: string; agent_id?: string };
+      const body = request.postDataJSON() as {
+        name: string;
+        role?: string;
+        background: string;
+        agent_id?: string;
+        rules?: string;
+      };
       const version = body.agent_id ? 2 : 1;
       if (!agents.some((agent) => agent.agent_id === "writer")) {
         agents.push({
           agent_id: "writer",
           name: body.name,
           role: body.role ?? "",
-          summary: body.summary,
+          background: body.background,
           latest_version: version,
           latest_digest: "writer-digest",
           local_version: 0,
           recruited: false,
-          has_avatar: false,
-          avatar_url: null,
+          has_avatar: true,
+          avatar_url: FAKE_AVATAR,
           remark: "",
           recruit_count: 0,
           created_at: "2026-02-01T00:00:00Z",
@@ -930,21 +981,161 @@ export async function installRuntime(
         const agent = agents.find((item) => item.agent_id === "writer")!;
         agent.name = body.name;
         agent.role = body.role ?? "";
-        agent.summary = body.summary;
+        agent.background = body.background;
         agent.latest_version = version;
+        agent.has_avatar = true;
+        agent.avatar_url = agent.avatar_url ?? FAKE_AVATAR;
         agent.updated_at = "2026-02-02T00:00:00Z";
       }
       return json(route, 200, {
         agent_id: "writer",
         name: body.name,
-        summary: body.summary,
+        background: body.background,
         version,
         digest: "writer-digest",
       });
     }
+    const cardUpdate = path.match(/^\/agents\/([^/]+)\/card$/);
+    if (request.method() === "PUT" && cardUpdate) {
+      const agent = agents.find((item) => item.agent_id === cardUpdate[1]);
+      if (!agent) return json(route, 404, { error: "找不到这个 Agent" });
+      const body = request.postDataJSON() as {
+        name: string;
+        role?: string;
+        background: string;
+        rules?: string;
+        avatar_data_url?: string;
+      };
+      agent.name = body.name;
+      agent.role = body.role ?? "";
+      agent.background = body.background;
+      if (typeof body.avatar_data_url === "string" && body.avatar_data_url.length > 0) {
+        agent.has_avatar = true;
+        agent.avatar_url = body.avatar_data_url;
+      }
+      return json(route, 200, agent);
+    }
+    if (request.method() === "POST" && path === "/agents/local/from-published") {
+      const body = request.postDataJSON() as { published_agent_id?: string };
+      const published = agents.find((item) => item.agent_id === body.published_agent_id);
+      if (!published) return json(route, 404, { error: "找不到已发布 Agent" });
+      localSeq += 1;
+      const created: LocalAgentRecord = {
+        agent_id: `loc-writer${localSeq}`,
+        name: published.name,
+        role: published.role,
+        background: published.background,
+        rules: "",
+        skills: [],
+        mcp_servers: {},
+        published_agent_id: published.agent_id,
+        latest_version: published.latest_version,
+        latest_digest: published.latest_digest,
+        created_at: "2026-02-01T00:00:00Z",
+        updated_at: "2026-02-01T00:00:00Z",
+        avatar_url: published.avatar_url,
+      };
+      localAgents.push(created);
+      return json(route, 200, localCard(created));
+    }
+    if (request.method() === "GET" && path === "/agents/local") {
+      return json(route, 200, { agents: localAgents.map(localCard) });
+    }
+    if (request.method() === "POST" && path === "/agents/local") {
+      const body = request.postDataJSON() as {
+        name: string;
+        role?: string;
+        background: string;
+        rules?: string;
+        skill_paths?: string[];
+        mcp_servers?: Record<string, unknown>;
+        avatar_data_url?: string;
+      };
+      localSeq += 1;
+      const created: LocalAgentRecord = {
+        agent_id: `loc-writer${localSeq}`,
+        name: body.name,
+        role: body.role ?? "",
+        background: body.background,
+        rules: typeof body.rules === "string" ? body.rules : "",
+        skills: Array.isArray(body.skill_paths)
+          ? body.skill_paths.map((item) => item.split("/").pop() || item)
+          : [],
+        mcp_servers: body.mcp_servers && typeof body.mcp_servers === "object" ? body.mcp_servers : {},
+        published_agent_id: null,
+        latest_version: 1,
+        latest_digest: `local-digest-${localSeq}`,
+        created_at: "2026-02-01T00:00:00Z",
+        updated_at: "2026-02-01T00:00:00Z",
+        avatar_url:
+          typeof body.avatar_data_url === "string" && body.avatar_data_url.length > 0
+            ? body.avatar_data_url
+            : FAKE_AVATAR,
+      };
+      localAgents.push(created);
+      return json(route, 200, localCard(created));
+    }
+    const localOne = path.match(/^\/agents\/local\/([^/]+)$/);
+    if (localOne) {
+      const agent = localAgents.find((item) => item.agent_id === localOne[1]);
+      if (!agent) return json(route, 404, { error: "找不到本机 Agent" });
+      if (request.method() === "GET") return json(route, 200, localCard(agent));
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON() as {
+          name: string;
+          role?: string;
+          background: string;
+          rules?: string;
+          skill_paths?: string[];
+          remove_skills?: string[];
+          mcp_servers?: Record<string, unknown>;
+          avatar_data_url?: string;
+        };
+        agent.name = body.name;
+        agent.role = body.role ?? "";
+        agent.background = body.background;
+        if (typeof body.rules === "string") agent.rules = body.rules;
+        if (typeof body.avatar_data_url === "string" && body.avatar_data_url.length > 0) {
+          agent.avatar_url = body.avatar_data_url;
+        }
+        if (Array.isArray(body.remove_skills)) {
+          agent.skills = agent.skills.filter((name) => !body.remove_skills!.includes(name));
+        }
+        if (Array.isArray(body.skill_paths)) {
+          for (const skillPath of body.skill_paths) {
+            const label = skillPath.split("/").pop() || skillPath;
+            if (!agent.skills.includes(label)) agent.skills.push(label);
+          }
+        }
+        if (body.mcp_servers && typeof body.mcp_servers === "object") {
+          agent.mcp_servers = body.mcp_servers;
+        }
+        agent.updated_at = "2026-02-02T00:00:00Z";
+        return json(route, 200, localCard(agent));
+      }
+      if (request.method() === "DELETE") {
+        const index = localAgents.findIndex((item) => item.agent_id === localOne[1]);
+        if (index >= 0) localAgents.splice(index, 1);
+        return json(route, 200, { status: "ok" });
+      }
+    }
+    const localBind = path.match(/^\/agents\/local\/([^/]+)\/published$/);
+    if (request.method() === "PUT" && localBind) {
+      const agent = localAgents.find((item) => item.agent_id === localBind[1]);
+      if (!agent) return json(route, 404, { error: "找不到本机 Agent" });
+      const body = request.postDataJSON() as { published_agent_id: string };
+      agent.published_agent_id = body.published_agent_id;
+      return json(route, 200, localCard(agent));
+    }
     const directory = path.match(/^\/agents\/([^/]+)\/directory$/);
     if (request.method() === "POST" && directory) {
-      const agent = agents.find((item) => item.agent_id === directory[1]);
+      const agentId = directory[1]!;
+      if (agentId.startsWith("loc-")) {
+        const local = localAgents.find((item) => item.agent_id === agentId);
+        if (!local) return json(route, 404, { error: "找不到本机 Agent" });
+        return json(route, 200, { path: `/tmp/agentup/users/patient-a/agents/${agentId}` });
+      }
+      const agent = agents.find((item) => item.agent_id === agentId);
       if (!agent?.recruited) return json(route, 403, { error: "尚未招募" });
       return json(route, 200, { path: `/tmp/agentup/users/patient-a/agents/${agent.agent_id}` });
     }

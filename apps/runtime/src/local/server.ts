@@ -25,7 +25,7 @@ export interface LocalServerOptions {
 export function startLocalServer(config: LocalConfig, options: LocalServerOptions = {}): Promise<LocalServer> {
   if (config.host !== "127.0.0.1") return Promise.reject(new LocalError("只能监听 127.0.0.1", 500));
   const approvals = new ApprovalBroker(config.userDataRoot);
-  const askUser = new AskUserBroker();
+  const askUser = new AskUserBroker(config.userDataRoot);
   const readModel = options.readModel ?? (() => loadModelConfig(config.userDataRoot));
   let chats!: VisitChats;
   const delegation = new DelegationService({

@@ -7,7 +7,7 @@ import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../../../../../shared/model/p
 import { t } from "../../../../../shared/model/ui-locale";
 import { usePersonalAssistantSettings } from "../../../composables/usePersonalAssistantSettings";
 
-const { name, instructions, avatarUrl, loading, saving, load, chooseAvatar, commitField } =
+const { name, role, background, avatarUrl, loading, saving, load, chooseAvatar, commitField } =
   usePersonalAssistantSettings();
 const avatarInput = ref<HTMLInputElement>();
 const defaultAvatar = PERSONAL_ASSISTANT_DEFAULT_AVATAR;
@@ -83,29 +83,35 @@ function onAvatar(event: Event): void {
             <span class="font-normal text-xs text-muted-foreground">{{ t("assistantNameHint") }}</span>
           </label>
         </section>
-        <p class="m-0 -mt-4 text-sm text-muted-foreground">
-          <span class="font-medium text-foreground">{{ t("publishRole") }}</span>
-          <span class="mx-1.5" aria-hidden="true">·</span>
-          <span>{{ t("assistantRole") }}</span>
-          <span class="mt-1 block text-xs">{{ t("assistantRoleHint") }}</span>
-        </p>
+        <label class="grid gap-1.5 text-sm font-medium text-foreground">
+          {{ t("agentsLocalRole") }}
+          <input
+            v-model="role"
+            type="text"
+            maxlength="40"
+            :disabled="loading"
+            class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+            :placeholder="t('agentsLocalRolePlaceholder')"
+            @blur="commitField"
+          />
+        </label>
 
-        <!-- 基础指令 -->
+        <!-- 人物背景 -->
         <section class="grid gap-1.5 border-t border-rule pt-6">
           <label class="grid gap-1.5 text-sm font-medium text-foreground">
-            {{ t("assistantSystem") }}
+            {{ t("agentsLocalBackground") }}
             <textarea
-              v-model="instructions"
-              rows="14"
-              maxlength="20000"
+              v-model="background"
+              rows="6"
+              maxlength="300"
               :disabled="loading"
-              class="min-h-56 w-full resize-y rounded-lg border border-rule bg-paper px-3 py-2.5 text-sm leading-relaxed outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
-              :placeholder="t('assistantSystemPlaceholder')"
+              class="min-h-32 w-full resize-y rounded-lg border border-rule bg-paper px-3 py-2.5 text-sm leading-relaxed outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+              :placeholder="t('agentsLocalBackgroundPlaceholder')"
               @blur="commitField"
             />
           </label>
           <p class="m-0 text-xs leading-snug text-muted-foreground">
-            {{ t("assistantSystemHint") }}
+            {{ t("assistantBackgroundHint") }}
             <span v-if="saving" class="text-foreground">{{ t("saving") }}</span>
           </p>
         </section>

@@ -41,9 +41,9 @@ const updatedLabel = computed(() => formatAgentTime(props.agent.updatedAt));
         </div>
         <p
           class="m-0 mt-1.5 line-clamp-2 min-h-[calc(1.625em*2)] text-sm leading-relaxed text-muted-foreground"
-          :title="agent.summary"
+          :title="agent.background"
         >
-          {{ agent.summary }}
+          {{ agent.background }}
         </p>
       </div>
 

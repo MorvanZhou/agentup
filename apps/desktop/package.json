@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "description": "AgentUp desktop — 本机 AI Agent 工作台",
   "author": "AgentUp",
-  "license": "MIT",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",

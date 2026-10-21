@@ -32,6 +32,7 @@ const {
   unread,
   previews,
   lastActiveAt,
+  attention,
   session,
   selected,
   busyAgent,
@@ -41,10 +42,12 @@ const {
   setRemark,
   dismiss,
   refresh,
+  pullAttention,
 } = useDesktop();
 const chat = useAgentChat(undefined, {
   onTurnEnd(agentId, preview) {
     void recordTurnEnd(agentId, preview);
+    void pullAttention();
   },
 });
 const providerSettings = useProviderSettings();
@@ -56,24 +59,37 @@ onActivated(() => {
     return;
   }
   void providerSettings.load();
+  void pullAttention();
 });
 const visitedAgentIds = ref<string[]>([]);
-/** 各已挂载线程的 isRunning；侧栏用此替代未读角标。 */
+/** 各已挂载线程的 isRunning；与 runtime busy 合并进侧栏。 */
 const workingAgents = ref<Record<string, true>>({});
 
-const rows = computed(() =>
-  buildConversationRows({
+const rows = computed(() => {
+  const awaitingApproval = new Set([
+    ...Object.keys(chat.approvals.value),
+    ...attention.value.approvals.map((item) => item.agentId),
+  ]);
+  const awaitingAskUser = new Set([
+    ...Object.keys(chat.askUsers.value),
+    ...attention.value.askUsers.map((item) => item.agentId),
+  ]);
+  const working = new Set([
+    ...Object.keys(workingAgents.value),
+    ...attention.value.busyAgentIds,
+  ]);
+  return buildConversationRows({
     conversations: conversations.value,
     previews: previews.value,
     lastActiveAt: lastActiveAt.value,
     selectedId: selectedId.value,
     busyAgent: busyAgent.value,
     unread: unread.value,
-    awaitingApproval: Object.keys(chat.approvals.value),
-    awaitingAskUser: Object.keys(chat.askUsers.value),
-    working: Object.keys(workingAgents.value),
-  }),
-);
+    awaitingApproval,
+    awaitingAskUser,
+    working,
+  });
+});
 /** 尚无第三方招募时，侧栏展示去市场引导。 */
 const showRecruitNudge = computed(() => !hasRecruitedMarketAgent(conversations.value));
 const threads = computed(() => mountedThreads(visitedAgentIds.value, chat.loadEpoch.value));
@@ -144,7 +160,7 @@ function extrasFor(agentId: string): ThreadExtras {
     name: agent?.name ?? "",
     role: agent?.role ?? "",
     remark: agent?.remark ?? "",
-    summary: agent?.summary ?? "",
+    background: agent?.background ?? "",
     avatarUrl: agent?.avatarUrl,
     recruited: agent?.recruited ?? false,
     syncedVersion: agent ? synced.value[agent.agentId] ?? "" : "",
@@ -159,7 +175,7 @@ const emptyExtras = computed<ThreadExtras>(() => ({
   name: "",
   role: "",
   remark: "",
-  summary: "",
+  background: "",
   recruited: false,
   syncedVersion: "",
   busy: false,
@@ -168,12 +184,44 @@ const emptyExtras = computed<ThreadExtras>(() => ({
 }));
 
 function decide(agentId: string, allow: boolean, scope: ApprovalScope = "once"): void {
-  if (session.value) void chat.decide(agentId, session.value.token, allow, scope);
+  if (!session.value) return;
+  void chat.decide(agentId, session.value.token, allow, scope).then(() => pullAttention());
 }
 
 function answerAsk(agentId: string, answer: AskUserAnswer): void {
-  if (session.value) void chat.answerAsk(agentId, session.value.token, answer);
+  if (!session.value) return;
+  void chat.answerAsk(agentId, session.value.token, answer).then(() => pullAttention());
 }
+
+/** 冷启动 / 未挂载线程：用 runtime attention 补齐 HITL（只增不删，避免盖住流式尚未入 poll 的请求）。 */
+watch(
+  attention,
+  (snap) => {
+    for (const item of snap.approvals) {
+      // 已有同 id（例如父流先冒泡）则跳过，避免嵌套审批再挂到子 agent。
+      if (Object.values(chat.approvals.value).some((entry) => entry?.id === item.id)) continue;
+      const current = chat.approvals.value[item.agentId];
+      if (current) continue;
+      chat.setApproval(item.agentId, {
+        id: item.id,
+        toolCallId: item.toolCallId,
+        toolName: item.toolName,
+        args: item.args,
+      });
+    }
+    for (const item of snap.askUsers) {
+      if (Object.values(chat.askUsers.value).some((entry) => entry?.id === item.id)) continue;
+      const current = chat.askUsers.value[item.agentId];
+      if (current) continue;
+      chat.setAskUser(item.agentId, {
+        id: item.id,
+        toolCallId: item.toolCallId,
+        questions: item.questions,
+      });
+    }
+  },
+  { deep: true },
+);
 
 async function clearContext(agentId: string): Promise<void> {
   if (!session.value) return;
@@ -197,11 +245,11 @@ const threadRoster = computed((): ThreadRoster => ({
     name: agent.name,
     remark: agent.remark,
     avatarUrl: agent.avatarUrl,
-    available: agent.recruited === true || agent.kind === "personal",
+    available: agent.recruited === true || agent.kind === "personal" || agent.kind === "local",
   })),
   openAgent(agentId: string) {
     const agent = conversations.value.find((item) => item.agentId === agentId);
-    if (!agent || (agent.kind !== "personal" && !agent.recruited)) {
+    if (!agent || (agent.kind !== "personal" && agent.kind !== "local" && !agent.recruited)) {
       return "dismissed";
     }
     select(agent);

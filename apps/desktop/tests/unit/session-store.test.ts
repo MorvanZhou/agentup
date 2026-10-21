@@ -81,7 +81,6 @@ it("有 safeStorage 桥时经 IPC 读写，并清掉旧 localStorage", async () 
     clearSession: async () => {
       vault = null;
     },
-    selectAgentDirectory: async () => null,
     selectSkillPackage: async () => null,
     platform: "darwin",
     openVisitDirectory: async () => undefined,
@@ -107,7 +106,6 @@ it("首次 restore 会把旧 localStorage 迁进 safeStorage 桥", async () => {
     clearSession: async () => {
       vault = null;
     },
-    selectAgentDirectory: async () => null,
     selectSkillPackage: async () => null,
     platform: "darwin",
     openVisitDirectory: async () => undefined,

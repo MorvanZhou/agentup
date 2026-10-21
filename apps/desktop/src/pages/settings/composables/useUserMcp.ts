@@ -29,7 +29,7 @@ export function useUserMcp(api = new DesktopApi()) {
       snapshot = text.value;
       loaded = true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       loading.value = false;
     }
@@ -72,7 +72,7 @@ export function useUserMcp(api = new DesktopApi()) {
       } while (saveAgain || text.value !== snapshot);
       showToast("外部工具配置已保存", "success");
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       saving.value = false;
     }
@@ -95,11 +95,11 @@ function parseMcpServers(raw: string): Record<string, unknown> | undefined {
   try {
     parsed = JSON.parse(raw.trim() || "{}");
   } catch {
-    showToast("JSON 无效");
+    showToast("JSON 无效", "error");
     return undefined;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    showToast("服务配置必须是 JSON 对象");
+    showToast("服务配置必须是 JSON 对象", "error");
     return undefined;
   }
   return parsed as Record<string, unknown>;

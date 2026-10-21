@@ -23,7 +23,7 @@ export function useAccountSettings() {
     const next = nickname.value.trim();
     if (!next) {
       nickname.value = session.value.nickname;
-      showToast("昵称不能为空");
+      showToast("昵称不能为空", "error");
       return;
     }
     if (next === session.value.nickname) {
@@ -37,7 +37,7 @@ export function useAccountSettings() {
       showToast("昵称已更新", "success");
     } catch (caught) {
       nickname.value = session.value.nickname;
-      showToast(messageOf(caught, "昵称更新失败"));
+      showToast(messageOf(caught, "昵称更新失败"), "error");
     } finally {
       busy.value = false;
     }
@@ -46,7 +46,7 @@ export function useAccountSettings() {
   async function chooseAvatar(file?: File): Promise<void> {
     if (!file || !session.value || avatarBusy.value || busy.value) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      showToast("头像只支持 PNG、JPEG 或 WebP");
+      showToast("头像只支持 PNG、JPEG 或 WebP", "error");
       return;
     }
     avatarBusy.value = true;
@@ -60,6 +60,7 @@ export function useAccountSettings() {
         caught instanceof Error && !(caught instanceof DesktopApiError)
           ? caught.message
           : messageOf(caught, "头像更新失败"),
+        "error",
       );
     } finally {
       avatarBusy.value = false;

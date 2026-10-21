@@ -106,7 +106,7 @@ export function useProviderSettings(api = new DesktopApi()) {
         draftVendorId.value = next.vendors[0].id;
       }
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
       loaded.value = true;
@@ -145,22 +145,22 @@ export function useProviderSettings(api = new DesktopApi()) {
     if (!session.value || busy.value) return;
     const template = selectedTemplate.value;
     if (!template) {
-      showToast("请选择服务商");
+      showToast("请选择服务商", "error");
       return;
     }
     if (needsBaseUrl.value && !draftBaseUrl.value.trim()) {
-      showToast("请填写服务地址");
+      showToast("请填写服务地址", "error");
       return;
     }
     const isNew = !existingConnection.value;
     if (needsApiKey.value && isNew && !draftApiKey.value.trim()) {
-      showToast("请填写 API Key");
+      showToast("请填写 API Key", "error");
       return;
     }
     if (needsApiKey.value && draftApiKey.value.trim()) {
       const ready = await secretEncryptionReady();
       if (!ready && !import.meta.env.DEV) {
-        showToast("本机无法安全保存密钥");
+        showToast("本机无法安全保存密钥", "error");
         return;
       }
     }
@@ -196,7 +196,7 @@ export function useProviderSettings(api = new DesktopApi()) {
         await refreshModelsFor(template.id, { quiet: true });
       }
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }
@@ -212,7 +212,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       if (!options?.quiet) showToast("模型列表已更新", "success");
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     }
   }
@@ -224,7 +224,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       return Boolean(template?.supportsModelDiscovery);
     });
     if (!targets.length) {
-      showToast("当前没有可自动拉取模型的服务商");
+      showToast("当前没有可自动拉取模型的服务商", "error");
       return;
     }
     busy.value = true;
@@ -251,7 +251,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       }
       showToast("已移除服务商配置", "success");
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }
@@ -268,7 +268,7 @@ export function useProviderSettings(api = new DesktopApi()) {
         locale(),
       );
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }
@@ -288,7 +288,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       );
       showToast(`已切换到 ${model.name}`, "success");
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }

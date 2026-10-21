@@ -26,7 +26,8 @@ export function serializeAgentCard(
     agentId: string;
     name: string;
     role: string;
-    summary: string;
+    background: string;
+    rules?: string;
     latestVersion: number;
     latestDigest: string;
     recruited: boolean;
@@ -43,7 +44,8 @@ export function serializeAgentCard(
     agent_id: agent.agentId,
     name: agent.name,
     role: agent.role,
-    summary: agent.summary,
+    background: agent.background,
+    rules: agent.rules ?? "",
     latest_version: agent.latestVersion,
     latest_digest: agent.latestDigest,
     recruited: agent.recruited,

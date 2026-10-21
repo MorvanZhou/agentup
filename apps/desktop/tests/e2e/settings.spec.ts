@@ -6,10 +6,9 @@ import { installRuntime } from "./runtime";
 test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
-  await openUserMenu(page);
-  await page.getByRole("menuitem", { name: "设置" }).click();
+  await page.getByRole("link", { name: "Agents" }).click();
 
-  await expect(page.getByRole("heading", { name: "助理资料" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
   await expect(page.getByText("不会带给从市场招募的 Agent")).toBeVisible();
   const saved = page.waitForRequest((request) => {
     if (
@@ -18,16 +17,17 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
     ) {
       return false;
     }
-    const body = request.postDataJSON() as { name?: string; instructions?: string };
-    return body.name === "小舟" && body.instructions === "你是我的研究助理。";
+    const body = request.postDataJSON() as { name?: string; role?: string; background?: string };
+    return body.name === "小舟" && body.background === "擅长研究整理与资料分析。";
   });
   await page.getByLabel("名称").fill("小舟");
-  await page.getByLabel("基础指令").fill("你是我的研究助理。");
-  await page.getByLabel("基础指令").blur();
+  await page.getByLabel("人物背景").fill("擅长研究整理与资料分析。");
+  await page.getByRole("button", { name: "保存" }).click();
   expect((await saved).postDataJSON()).toEqual({
     user_id: "patient-a",
     name: "小舟",
-    instructions: "你是我的研究助理。",
+    role: "我的助理",
+    background: "擅长研究整理与资料分析。",
   });
   await expect(page.getByRole("status")).toHaveText("私人助理资料已保存");
 
@@ -36,14 +36,14 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
 
   await page.getByRole("button", { name: "会话菜单" }).click();
   await page.getByRole("menuitem", { name: "助理设置" }).click();
-  await expect(page).toHaveURL(/\/settings\?section=assistant/);
-  await expect(page.getByRole("heading", { name: "助理资料" })).toBeVisible();
+  await expect(page).toHaveURL(/\/agents\/assistant/);
+  await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "消息" }).click();
   await page.getByRole("button", { name: /^更多操作：小舟/ }).click();
   await page.getByRole("menuitem", { name: "助理设置" }).click();
-  await expect(page).toHaveURL(/\/settings\?section=assistant/);
-  await expect(page.getByRole("heading", { name: "助理资料" })).toBeVisible();
+  await expect(page).toHaveURL(/\/agents\/assistant/);
+  await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
 });
 
 test("更新账号昵称并刷新本机会话", async ({ page }) => {
@@ -136,39 +136,24 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
   await expect(page.getByRole("switch", { name: "停用 qwen3:4b" })).toBeVisible();
 });
 
-test("配置私人助理 Skills、偏好规则与外部工具", async ({ page }) => {
+test("配置私人助理 Skills、工作规则与外部工具", async ({ page }) => {
   await mockAgentUp(page, { selectSkillPackage: "/demo/skills/note-taker" });
   await installRuntime(page);
   await signIn(page);
-  await openUserMenu(page);
-  await page.getByRole("menuitem", { name: "设置" }).click();
-
-  const skillsLoaded = page.waitForResponse(
-    (response) => response.request().method() === "GET" && response.url().includes("/runtime/settings/skills"),
-  );
-  await page.getByRole("button", { name: "Skills" }).click();
-  await skillsLoaded;
-  await expect(page.getByRole("heading", { name: "Skills" })).toBeVisible();
+  await page.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("button", { name: "高级设置（可选）" }).click();
 
   const installed = page.waitForRequest(
     (request) => request.method() === "POST" && request.url().endsWith("/runtime/settings/skills/install"),
   );
-  await page.getByRole("button", { name: "上传 Skill" }).click();
+  await page.getByRole("button", { name: "添加 Skill" }).click();
   await page.getByRole("menuitem", { name: "选择文件夹" }).click();
   expect((await installed).postDataJSON()).toEqual({
     user_id: "patient-a",
     path: "/demo/skills/note-taker",
   });
-  await expect(page.getByRole("status")).toHaveText("已安装 note-taker");
-  await expect(page.getByRole("heading", { name: "note-taker" })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "停用 note-taker" })).toBeVisible();
-
-  const rulesLoaded = page.waitForResponse(
-    (response) => response.request().method() === "GET" && response.url().includes("/runtime/settings/agents-md"),
-  );
-  await page.getByRole("button", { name: "偏好规则" }).click();
-  await rulesLoaded;
-  await expect(page.getByRole("heading", { name: "偏好规则" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("已安装技能");
+  await expect(page.getByText("note-taker", { exact: true })).toBeVisible();
   const agentsContent = `# 私人助理规则
 
 回答简洁。
@@ -176,32 +161,23 @@ test("配置私人助理 Skills、偏好规则与外部工具", async ({ page })
   const agentsSaved = page.waitForRequest(
     (request) => request.method() === "PUT" && request.url().endsWith("/runtime/settings/agents-md"),
   );
-  await page.getByLabel("规则内容").fill(agentsContent);
-  await page.getByLabel("规则内容").blur();
-  expect((await agentsSaved).postDataJSON()).toEqual({
-    user_id: "patient-a",
-    content: agentsContent,
-  });
-  await expect(page.getByRole("status")).toHaveText("偏好规则已保存");
-
-  const mcpLoaded = page.waitForResponse(
-    (response) => response.request().method() === "GET" && response.url().includes("/runtime/settings/mcp"),
-  );
-  await page.getByRole("button", { name: "外部工具" }).click();
-  await mcpLoaded;
-  await expect(page.getByRole("heading", { name: "外部工具" })).toBeVisible();
+  await page.getByLabel("工作规则").fill(agentsContent);
   const mcpSaved = page.waitForRequest(
     (request) => request.method() === "PUT" && request.url().endsWith("/runtime/settings/mcp"),
   );
-  await page.getByLabel("服务配置").fill(`{
+  await page.getByLabel("MCP").fill(`{
   "notes": {
     "url": "http://127.0.0.1:9001/mcp"
   }
 }`);
-  await page.getByLabel("服务配置").blur();
+  await page.getByRole("button", { name: "保存" }).click();
+  expect((await agentsSaved).postDataJSON()).toEqual({
+    user_id: "patient-a",
+    content: agentsContent,
+  });
   expect((await mcpSaved).postDataJSON()).toEqual({
     user_id: "patient-a",
     mcp_servers: { notes: { url: "http://127.0.0.1:9001/mcp" } },
   });
-  await expect(page.getByRole("status")).toHaveText("外部工具配置已保存");
+  await expect(page.getByRole("status")).toHaveText("私人助理资料已保存");
 });

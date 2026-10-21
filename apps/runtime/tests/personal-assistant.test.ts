@@ -21,7 +21,7 @@ it("removes leftover cwd/.pi so personal config stays outside the work tree", ()
 
   ensurePersonalAssistant(data, "patient");
   expect(fs.existsSync(path.join(root, "cwd", ".pi"))).toBe(false);
-  expect(fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8")).toContain("私人助理");
+  expect(fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8")).toContain("岗位：我的助理");
 });
 
 it("migrates legacy personal resources into the private assistant directory", () => {
@@ -40,20 +40,23 @@ it("migrates legacy personal resources into the private assistant directory", ()
   expect(fs.existsSync(path.join(root, "sessions"))).toBe(true);
   expect(fs.existsSync(path.join(root, "cwd"))).toBe(true);
   expect(fs.existsSync(path.join(root, "cwd", ".pi"))).toBe(false);
-  expect(fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8")).toContain("私人助理");
+  expect(fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8")).toContain("岗位：我的助理");
 });
 
-it("stores editable profile and projects instructions into agentDir SYSTEM.md", () => {
+it("stores editable identity and projects a composed agentDir SYSTEM.md", () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-personal-profile-"));
   const saved = writePersonalAssistantProfile(data, "patient", {
     name: "小舟",
-    instructions: "你是我的研究助理。",
+    role: "研究助理",
+    background: "擅长整理学术资料。",
     avatarDataUrl: `data:image/png;base64,${Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64")}`,
   });
-  expect(saved).toMatchObject({ name: "小舟", instructions: "你是我的研究助理。" });
+  expect(saved).toMatchObject({ name: "小舟", role: "研究助理", background: "擅长整理学术资料。" });
   expect(saved.avatarUrl).toMatch(/^data:image\/png;base64,/);
   const root = ensurePersonalAssistant(data, "patient");
-  expect(fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8")).toBe("你是我的研究助理。\n");
+  expect(fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8")).toBe(
+    "你是小舟。岗位：研究助理。\n\n擅长整理学术资料。\n",
+  );
   expect(fs.existsSync(path.join(root, "cwd", ".pi"))).toBe(false);
   expect(readPersonalAssistantProfile(data, "patient").name).toBe("小舟");
   expect(personalAssistantVisit(data, "patient")).toMatchObject({
@@ -93,16 +96,40 @@ it("reads and updates the private assistant profile through the loopback API", a
       body: JSON.stringify({
         user_id: "patient",
         name: "小舟",
-        instructions: "你是我的研究助理。",
+        role: "研究助理",
+        background: "擅长整理学术资料。",
       }),
     });
     expect(saved.status).toBe(200);
     expect(await saved.json()).toMatchObject({
       name: "小舟",
-      instructions: "你是我的研究助理。",
+      role: "研究助理",
+      background: "擅长整理学术资料。",
       avatar_url: null,
     });
   } finally {
     await local.close();
   }
+});
+
+it("migrates legacy instructions into the unified identity profile", () => {
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-personal-identity-migrate-"));
+  const root = path.join(data, "users", "patient", "personal-assistant");
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "profile.json"),
+    JSON.stringify({ name: "旧助理", instructions: "旧版指令".repeat(100) }),
+  );
+
+  const profile = readPersonalAssistantProfile(data, "patient");
+  expect(profile).toMatchObject({
+    name: "旧助理",
+    role: "我的助理",
+    background: "旧版指令".repeat(75),
+  });
+  expect(JSON.parse(fs.readFileSync(path.join(root, "profile.json"), "utf8"))).toEqual({
+    name: "旧助理",
+    role: "我的助理",
+    background: "旧版指令".repeat(75),
+  });
 });

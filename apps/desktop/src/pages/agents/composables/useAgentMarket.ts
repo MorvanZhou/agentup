@@ -24,7 +24,7 @@ export function useAgentMarket(
         await api.sync(current.token, agentId, current.userId);
         await refresh();
       } catch (caught) {
-        showToast(messageOf(caught));
+        showToast(messageOf(caught), "error");
       } finally {
         busyAgentId.value = "";
       }
@@ -37,12 +37,12 @@ export function useAgentMarket(
     try {
       const directory = await api.visitDirectory(session.value.token, agentId, session.value.userId);
       if (!window.agentUp?.openVisitDirectory) {
-        showToast("请在 AgentUp 桌面应用中打开目录");
+        showToast("请在 AgentUp 桌面应用中打开目录", "error");
         return;
       }
       await window.agentUp.openVisitDirectory(directory);
     } catch (caught) {
-      showToast(caught instanceof Error && caught.message ? caught.message : messageOf(caught));
+      showToast(caught instanceof Error && caught.message ? caught.message : messageOf(caught), "error");
     } finally {
       busyAgentId.value = "";
     }
@@ -55,7 +55,7 @@ export function useAgentMarket(
       await api.dismiss(session.value.token, agentId, session.value.userId);
       await refresh();
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busyAgentId.value = "";
     }

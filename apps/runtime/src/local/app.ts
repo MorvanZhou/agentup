@@ -15,6 +15,7 @@ import {
   type LocalAppDeps,
   type LocalAppEnv,
 } from "./http.js";
+import { LocalAgentError } from "./local-agent.js";
 import { PersonalAssistantError } from "./personal-assistant.js";
 import { registerLocalRoutes } from "./routes/index.js";
 import { UserResourceError } from "./user-resources.js";
@@ -82,7 +83,7 @@ export function createLocalApp(deps: LocalAppDeps): Hono<LocalAppEnv> {
         ...(error.details.length ? { details: error.details } : {}),
       });
     }
-    if (error instanceof PersonalAssistantError) {
+    if (error instanceof PersonalAssistantError || error instanceof LocalAgentError) {
       return json(c, 400, { error: error.message });
     }
     if (error instanceof WorkspaceError) {

@@ -33,7 +33,7 @@ export function agentCard(value: unknown): AgentCard {
   if (
     typeof payload.agent_id !== "string" ||
     typeof payload.name !== "string" ||
-    typeof payload.summary !== "string" ||
+    typeof payload.background !== "string" ||
     typeof payload.latest_version !== "number" ||
     typeof payload.latest_digest !== "string" ||
     typeof payload.recruited !== "boolean" ||
@@ -55,11 +55,13 @@ export function agentCard(value: unknown): AgentCard {
   const updatedAt = typeof payload.updated_at === "string" ? payload.updated_at : "";
   const remark = typeof payload.remark === "string" ? payload.remark.trim().replace(/\s+/g, " ").slice(0, 40) : "";
   const role = typeof payload.role === "string" ? payload.role.trim().replace(/\s+/g, " ").slice(0, 40) : "";
+  const rules = typeof payload.rules === "string" ? payload.rules : "";
   return {
     agentId: payload.agent_id,
     name: payload.name,
     role,
-    summary: payload.summary,
+    background: payload.background,
+    rules,
     latestVersion: payload.latest_version,
     latestDigest: payload.latest_digest,
     recruited: payload.recruited,

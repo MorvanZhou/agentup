@@ -8,7 +8,7 @@ import { useDesktop } from "./desktop";
 
 const electron = navigator.userAgent.includes("Electron");
 const { session } = useDesktop();
-/** 会话页按用户缓存；切到市场/设置时不销毁，进行中的 stream 可接回。 */
+/** 会话页按用户缓存；切到市场 / Agents / 设置时不销毁，进行中的 stream 可接回。 */
 const conversationCacheKey = computed(() => `conversation:${session.value?.userId ?? "anon"}`);
 </script>
 

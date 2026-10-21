@@ -2,20 +2,34 @@ import { parseDocument } from "yaml";
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const USER_HEADER = "x-agentup-user-id";
-const ALLOWED_ROOT_FILES = new Set(["SYSTEM.md", "mcp.json", "settings.json"]);
-const ALLOWED_ROOT_DIRS = new Set(["skills", "rules", "hooks"]);
+const ALLOWED_ROOT_FILES = new Set(["SYSTEM.md", "AGENTS.md", "mcp.json", "settings.json"]);
+const ALLOWED_ROOT_DIRS = new Set(["skills", "hooks"]);
 
 export interface PackageIssue {
   path: string;
   message: string;
 }
 
-export function validateAgentPackage(files: Record<string, Uint8Array>): PackageIssue[] {
+export type ValidatePackageOptions = {
+  /**
+   * 发布源（`.agentup`）可不带 SYSTEM.md：身份由发布表单 compose。
+   * 上传/投影包默认仍要求非空 SYSTEM.md。
+   */
+  requireSystemMd?: boolean;
+};
+
+export function validateAgentPackage(
+  files: Record<string, Uint8Array>,
+  options: ValidatePackageOptions = {},
+): PackageIssue[] {
+  const requireSystemMd = options.requireSystemMd !== false;
   const issues: PackageIssue[] = [];
   validatePaths(files, issues);
   const system = files["SYSTEM.md"];
   if (!system) {
-    issues.push(issue("SYSTEM.md", "运行包缺少必备文件 SYSTEM.md"));
+    if (requireSystemMd) {
+      issues.push(issue("SYSTEM.md", "运行包缺少必备文件 SYSTEM.md"));
+    }
   } else {
     const text = decodeText("SYSTEM.md", system, issues);
     if (text !== undefined && !text.trim()) issues.push(issue("SYSTEM.md", "SYSTEM.md 不能为空"));
@@ -23,14 +37,19 @@ export function validateAgentPackage(files: Record<string, Uint8Array>): Package
   if (files["APPEND_SYSTEM.md"]) {
     issues.push(issue("APPEND_SYSTEM.md", "不再支持 APPEND_SYSTEM.md，请迁移为 SYSTEM.md"));
   }
+  const agents = files["AGENTS.md"];
+  if (agents) {
+    const text = decodeText("AGENTS.md", agents, issues);
+    if (text !== undefined && !text.trim()) issues.push(issue("AGENTS.md", "AGENTS.md 不能为空"));
+  }
   validateSkills(files, issues);
-  validateRules(files, issues);
   validateMcp(files["mcp.json"], issues);
   validateSettingsAndHooks(files, issues);
   return issues;
 }
 
 function validatePaths(files: Record<string, Uint8Array>, issues: PackageIssue[]): void {
+  let reportedRules = false;
   for (const filePath of Object.keys(files)) {
     const parts = filePath.split("/");
     if (
@@ -48,6 +67,13 @@ function validatePaths(files: Record<string, Uint8Array>, issues: PackageIssue[]
       continue;
     }
     const root = parts[0]!;
+    if (root === "rules") {
+      if (!reportedRules) {
+        issues.push(issue("rules/", "不再支持 rules/，请迁移为根目录 AGENTS.md"));
+        reportedRules = true;
+      }
+      continue;
+    }
     if (parts.length === 1) {
       // APPEND_SYSTEM.md 有专用迁移提示，不重复报「不允许的顶层文件」。
       if (!ALLOWED_ROOT_FILES.has(root) && root !== "APPEND_SYSTEM.md") {
@@ -98,34 +124,6 @@ function validateSkills(files: Record<string, Uint8Array>, issues: PackageIssue[
     optionalBoundedString(frontmatter, "compatibility", 500, filePath, issues);
     if (frontmatter.metadata !== undefined && !stringRecord(frontmatter.metadata)) {
       issues.push(issue(filePath, "metadata 必须是字符串到字符串的映射"));
-    }
-  }
-}
-
-function validateRules(files: Record<string, Uint8Array>, issues: PackageIssue[]): void {
-  for (const [filePath, content] of Object.entries(files)) {
-    if (!filePath.startsWith("rules/")) continue;
-    if (!filePath.endsWith(".mdc")) {
-      issues.push(issue(filePath, "rules/ 下只允许 .mdc 规则文件"));
-      continue;
-    }
-    const text = decodeText(filePath, content, issues);
-    if (text === undefined) continue;
-    const frontmatter = parseFrontmatter(filePath, text, issues);
-    if (!frontmatter) continue;
-    if (typeof frontmatter.alwaysApply !== "boolean") {
-      issues.push(issue(filePath, "alwaysApply 必须是布尔值"));
-    }
-    if (frontmatter.description !== undefined && typeof frontmatter.description !== "string") {
-      issues.push(issue(filePath, "description 必须是字符串"));
-    }
-    const globs = frontmatter.globs;
-    if (
-      globs !== undefined &&
-      typeof globs !== "string" &&
-      !(Array.isArray(globs) && globs.every((value) => typeof value === "string"))
-    ) {
-      issues.push(issue(filePath, "globs 必须是字符串或字符串数组"));
     }
   }
 }

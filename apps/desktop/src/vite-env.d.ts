@@ -25,8 +25,9 @@ interface Window {
     secretEncryptionReady?(): Promise<boolean>;
     encryptSecret?(plaintext: string): Promise<string>;
     decryptSecret?(cipher: string): Promise<string>;
-    selectAgentDirectory(): Promise<string | null>;
     selectSkillPackage(kind: "directory" | "zip"): Promise<string | null>;
+    /** 另存为对话框；返回绝对路径，取消为 null。 */
+    selectSavePath?(defaultName?: string): Promise<string | null>;
     openVisitDirectory(directory: string): Promise<void>;
     revealInFolder(target: string): Promise<void>;
     /** 用系统默认应用打开本机工作文件（cwd 内）。 */

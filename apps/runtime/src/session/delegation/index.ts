@@ -14,7 +14,18 @@ export {
   runDelegatedPrompt,
 } from "./run.js";
 export {
+  discoverRecruitedAgents,
+  formatAgentCardLine,
+  formatDiscoveredAgentsContext,
+  scoreAgent,
+  DISCOVER_SMALL_ROSTER,
+  DISCOVER_TOP_K,
+  type DiscoverMode,
+  type DiscoverResult,
+} from "./discover.js";
+export {
   DELEGATION_RESULT_CUSTOM_TYPE,
+  RELEVANT_AGENTS_CUSTOM_TYPE,
   type DelegateRunResult,
   type DelegationStatus,
   type DelegationTask,

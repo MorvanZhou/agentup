@@ -6,8 +6,8 @@ afterEach(() => {
   setToastOpen(false);
 });
 
-it("showToast opens an error toast by default", () => {
-  showToast("没有这个接口");
+it("showToast opens an error toast", () => {
+  showToast("没有这个接口", "error");
   expect(toastState).toMatchObject({
     open: true,
     message: "没有这个接口",
@@ -25,8 +25,8 @@ it("showToast can present a success toast", () => {
 });
 
 it("showToast ignores blank messages", () => {
-  showToast("保留");
-  showToast("   ");
+  showToast("保留", "error");
+  showToast("   ", "error");
   expect(toastState).toMatchObject({
     open: true,
     message: "保留",

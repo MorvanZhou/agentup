@@ -112,21 +112,84 @@ export async function setAgentRemark(
   return recruit(payload);
 }
 
+/** 更新名片层（name / role / background / rules / 可选 avatar），不换运行包。 */
+export async function updateAgentCard(
+  backendUrl: string,
+  token: string,
+  agentId: string,
+  input: {
+    name: string;
+    role: string;
+    background: string;
+    rules?: string;
+    avatar?: Uint8Array;
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<AgentCard> {
+  const form = new FormData();
+  form.set("name", input.name);
+  form.set("role", input.role);
+  form.set("background", input.background);
+  form.set("rules", input.rules ?? "");
+  if (input.avatar) {
+    form.set(
+      "avatar",
+      new Blob([Uint8Array.from(input.avatar)], { type: "application/octet-stream" }),
+      "avatar.bin",
+    );
+  }
+  const payload = await requestForm(
+    fetchImpl,
+    backendUrl,
+    "PUT",
+    `/v1/agents/${encodeURIComponent(agentId)}/card`,
+    form,
+    token,
+  );
+  return agentCard(payload);
+}
+
+/** 下载已发布包内单个 skill 为 zip。 */
+export async function downloadAgentSkill(
+  backendUrl: string,
+  token: string,
+  agentId: string,
+  skillName: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Uint8Array> {
+  const response = await fetchImpl(
+    `${backendUrl.replace(/\/$/, "")}/v1/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(skillName)}`,
+    {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}` },
+    },
+  );
+  if (!response.ok) {
+    throw new BackendClientError(
+      response.status === 404 ? "找不到该 Skill" : "下载 Skill 失败",
+      response.status,
+    );
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 export async function publishAgent(
   backendUrl: string,
   token: string,
   source: AgentPublishSource,
   name: string,
   role: string,
-  summary: string,
+  background: string,
   agentId?: string,
+  rules = "",
   fetchImpl: typeof fetch = fetch,
 ): Promise<PublishedAgent> {
   const archive = await packTarGz(source.files);
   const form = new FormData();
   form.set("name", name);
   form.set("role", role);
-  form.set("summary", summary);
+  form.set("background", background);
+  form.set("rules", rules);
   form.set(
     "archive",
     new Blob([Uint8Array.from(archive)], { type: "application/gzip" }),
@@ -154,7 +217,7 @@ export async function publishAgent(
     (agentId !== undefined && ready.agent_id !== agentId) ||
     typeof ready.agent_id !== "string" ||
     typeof ready.name !== "string" ||
-    typeof ready.summary !== "string" ||
+    typeof ready.background !== "string" ||
     typeof ready.digest !== "string" ||
     typeof manifest !== "object" ||
     manifest === null
@@ -173,7 +236,7 @@ export async function publishAgent(
     agentId: ready.agent_id,
     name: ready.name,
     role: typeof ready.role === "string" ? ready.role : "",
-    summary: ready.summary,
+    background: ready.background,
     version: manifestRecord.version,
     digest: ready.digest,
   };

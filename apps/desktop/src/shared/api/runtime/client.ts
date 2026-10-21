@@ -102,7 +102,7 @@ export class DesktopApi {
   savePersonalAssistantProfile(
     token: string,
     userId: string,
-    profile: { name: string; instructions: string; avatarDataUrl?: string },
+    profile: { name: string; role: string; background: string; avatarDataUrl?: string },
     locale?: UiLocale,
   ): Promise<PersonalAssistantProfile> {
     return settingsApi.savePersonalAssistantProfile(this.http, token, userId, profile, locale);
@@ -113,6 +113,71 @@ export class DesktopApi {
     options?: { userId?: string; q?: string; recruited?: boolean },
   ): Promise<AgentCard[]> {
     return agentsApi.agents(this.http, token, options);
+  }
+
+  localAgents(token: string, userId: string, options?: { q?: string }): Promise<AgentCard[]> {
+    return agentsApi.localAgents(this.http, token, userId, options);
+  }
+
+  createLocalAgent(
+    token: string,
+    userId: string,
+    input: {
+      name: string;
+      role: string;
+      background: string;
+      rules?: string;
+      avatarDataUrl?: string;
+      skillPaths?: string[];
+      mcpServers?: Record<string, unknown>;
+    },
+  ): Promise<AgentCard> {
+    return agentsApi.createLocalAgent(this.http, token, userId, input);
+  }
+
+  getLocalAgent(token: string, userId: string, agentId: string): Promise<AgentCard> {
+    return agentsApi.getLocalAgent(this.http, token, userId, agentId);
+  }
+
+  updateLocalAgent(
+    token: string,
+    userId: string,
+    agentId: string,
+    input: {
+      name: string;
+      role: string;
+      background: string;
+      rules?: string;
+      avatarDataUrl?: string;
+      skillPaths?: string[];
+      removeSkills?: string[];
+      mcpServers?: Record<string, unknown>;
+    },
+  ): Promise<AgentCard> {
+    return agentsApi.updateLocalAgent(this.http, token, userId, agentId, input);
+  }
+
+  bindLocalPublishedAgent(
+    token: string,
+    userId: string,
+    agentId: string,
+    publishedAgentId: string,
+  ): Promise<AgentCard> {
+    return agentsApi.bindLocalPublishedAgent(this.http, token, userId, agentId, publishedAgentId);
+  }
+
+  exportLocalAgentSkill(
+    token: string,
+    userId: string,
+    agentId: string,
+    skillName: string,
+    destination: string,
+  ): Promise<{ path: string }> {
+    return agentsApi.exportLocalAgentSkill(this.http, token, userId, agentId, skillName, destination);
+  }
+
+  deleteLocalAgent(token: string, userId: string, agentId: string): Promise<void> {
+    return agentsApi.deleteLocalAgent(this.http, token, userId, agentId);
   }
 
   publicAgents(options?: { q?: string }): Promise<AgentCard[]> {
@@ -249,6 +314,10 @@ export class DesktopApi {
     return agentsApi.dismiss(this.http, token, agentId, userId);
   }
 
+  attention(token: string, userId: string): Promise<chatApi.AttentionSnapshot> {
+    return chatApi.attention(this.http, token, userId);
+  }
+
   decideApproval(
     token: string,
     approvalId: string,
@@ -267,10 +336,38 @@ export class DesktopApi {
     agentDir: string,
     name: string,
     role: string,
-    summary: string,
+    background: string,
     agentId?: string,
+    rules = "",
   ): Promise<PublishedAgent> {
-    return agentsApi.publish(this.http, token, agentDir, name, role, summary, agentId);
+    return agentsApi.publish(this.http, token, agentDir, name, role, background, agentId, rules);
+  }
+
+  updateAgentCard(
+    token: string,
+    agentId: string,
+    input: {
+      name: string;
+      role: string;
+      background: string;
+      rules?: string;
+      avatarDataUrl?: string;
+    },
+  ): Promise<AgentCard> {
+    return agentsApi.updateCard(this.http, token, agentId, input);
+  }
+
+  importPublishedLocal(token: string, userId: string, publishedAgentId: string): Promise<AgentCard> {
+    return agentsApi.importPublishedLocal(this.http, token, userId, publishedAgentId);
+  }
+
+  exportPublishedSkill(
+    token: string,
+    agentId: string,
+    skillName: string,
+    destination: string,
+  ): Promise<{ path: string }> {
+    return agentsApi.exportPublishedSkill(this.http, token, agentId, skillName, destination);
   }
 
   inspectAgent(token: string, agentDir: string): Promise<AgentSourcePreview> {

@@ -1,6 +1,10 @@
 import type { UIMessage } from "ai";
 
-import { parseHistory, type AskUserAnswer } from "../../model/chat";
+import {
+  parseHistory,
+  type AgentUpAskUserData,
+  type AskUserAnswer,
+} from "../../model/chat";
 import {
   PERSONAL_ASSISTANT_ID,
   type InvocableSkill,
@@ -19,6 +23,87 @@ function sessionModelPath(agentId: string, userId: string, locale?: UiLocale): s
   return agentId === PERSONAL_ASSISTANT_ID
     ? `/personal-assistant/session/model?${params}`
     : `/agents/${encodeURIComponent(agentId)}/session/model?${params}`;
+}
+
+export type AttentionApproval = {
+  id: string;
+  agentId: string;
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+};
+
+export type AttentionAskUser = {
+  id: string;
+  agentId: string;
+  toolCallId: string;
+  questions: AgentUpAskUserData["questions"];
+};
+
+export type AttentionSnapshot = {
+  busyAgentIds: string[];
+  approvals: AttentionApproval[];
+  askUsers: AttentionAskUser[];
+};
+
+/** 侧栏 / Dock：runtime busy + 仍可闭合的 HITL。 */
+export async function attention(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+): Promise<AttentionSnapshot> {
+  const payload = await http.request(
+    `/attention?user_id=${encodeURIComponent(userId)}`,
+    token,
+  );
+  const busyRaw = payload.busy_agent_ids;
+  const busyAgentIds = Array.isArray(busyRaw)
+    ? busyRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  const approvals: AttentionApproval[] = [];
+  if (Array.isArray(payload.approvals)) {
+    for (const raw of payload.approvals) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      if (
+        typeof item.id !== "string" ||
+        typeof item.agent_id !== "string" ||
+        typeof item.tool_call_id !== "string" ||
+        typeof item.tool_name !== "string"
+      ) {
+        continue;
+      }
+      approvals.push({
+        id: item.id,
+        agentId: item.agent_id,
+        toolCallId: item.tool_call_id,
+        toolName: item.tool_name,
+        args: item.args,
+      });
+    }
+  }
+  const askUsers: AttentionAskUser[] = [];
+  if (Array.isArray(payload.ask_users)) {
+    for (const raw of payload.ask_users) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      if (
+        typeof item.id !== "string" ||
+        typeof item.agent_id !== "string" ||
+        typeof item.tool_call_id !== "string" ||
+        !Array.isArray(item.questions)
+      ) {
+        continue;
+      }
+      askUsers.push({
+        id: item.id,
+        agentId: item.agent_id,
+        toolCallId: item.tool_call_id,
+        questions: item.questions as AgentUpAskUserData["questions"],
+      });
+    }
+  }
+  return { busyAgentIds, approvals, askUsers };
 }
 
 export async function decideApproval(

@@ -8,20 +8,22 @@ import { readUiLocale, t } from "../../../shared/model/ui-locale";
 
 type Snapshot = {
   name: string;
-  instructions: string;
+  role: string;
+  background: string;
   avatarUrl?: string;
 };
 
 export function usePersonalAssistantSettings(api = new DesktopApi()) {
   const desktop = useDesktop();
   const name = ref("");
-  const instructions = ref("");
+  const role = ref("");
+  const background = ref("");
   const avatarUrl = ref<string>();
   const avatarChange = ref<string>();
   const loading = ref(false);
   const saving = ref(false);
   let loaded = false;
-  let snapshot: Snapshot = { name: "", instructions: "" };
+  let snapshot: Snapshot = { name: "", role: "", background: "" };
   let saveAgain = false;
 
   async function load(force = false): Promise<void> {
@@ -34,17 +36,19 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
         readUiLocale(),
       );
       name.value = profile.name;
-      instructions.value = profile.instructions;
+      role.value = profile.role;
+      background.value = profile.background;
       avatarUrl.value = profile.avatarUrl;
       avatarChange.value = undefined;
       snapshot = {
         name: profile.name,
-        instructions: profile.instructions,
+        role: profile.role,
+        background: profile.background,
         ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
       };
       loaded = true;
     } catch (caught) {
-      showToast(messageOf(caught, t("assistantProfileLoadFailed")));
+      showToast(messageOf(caught, t("assistantProfileLoadFailed")), "error");
     } finally {
       loading.value = false;
     }
@@ -53,7 +57,7 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
   async function chooseAvatar(file?: File): Promise<void> {
     if (!file || loading.value) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      showToast(t("assistantAvatarType"));
+      showToast(t("assistantAvatarType"), "error");
       return;
     }
     try {
@@ -62,7 +66,7 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
       avatarUrl.value = dataUrl;
       await saveIfChanged();
     } catch (caught) {
-      showToast(caught instanceof Error ? caught.message : t("assistantAvatarCompressFailed"));
+      showToast(caught instanceof Error ? caught.message : t("assistantAvatarCompressFailed"), "error");
     }
   }
 
@@ -73,8 +77,8 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
   async function saveIfChanged(): Promise<void> {
     if (!desktop.session.value || !loaded || loading.value) return;
     if (!isDirty()) return;
-    if (!name.value.trim() || !instructions.value.trim()) {
-      showToast(t("assistantProfileRequired"));
+    if (!name.value.trim() || !role.value.trim() || !background.value.trim()) {
+      showToast(t("assistantProfileRequired"), "error");
       return;
     }
     if (saving.value) {
@@ -88,7 +92,8 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
         saveAgain = false;
         const submitted = {
           name: name.value,
-          instructions: instructions.value,
+          role: role.value,
+          background: background.value,
           avatarDataUrl: avatarChange.value,
         };
         const saved = await api.savePersonalAssistantProfile(
@@ -96,30 +101,31 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
           desktop.session.value.userId,
           {
             name: submitted.name,
-            instructions: submitted.instructions,
+            role: submitted.role,
+            background: submitted.background,
             ...(submitted.avatarDataUrl ? { avatarDataUrl: submitted.avatarDataUrl } : {}),
           },
           readUiLocale(),
         );
         // 保存期间用户可能继续编辑：只回写仍与提交值一致的字段，避免冲掉新输入。
         if (name.value === submitted.name) name.value = saved.name;
-        if (instructions.value === submitted.instructions) {
-          instructions.value = saved.instructions;
-        }
+        if (role.value === submitted.role) role.value = saved.role;
+        if (background.value === submitted.background) background.value = saved.background;
         if (avatarChange.value === submitted.avatarDataUrl) {
           avatarUrl.value = saved.avatarUrl;
           avatarChange.value = undefined;
         }
         snapshot = {
           name: saved.name,
-          instructions: saved.instructions,
+          role: saved.role,
+          background: saved.background,
           ...(saved.avatarUrl ? { avatarUrl: saved.avatarUrl } : {}),
         };
         await desktop.refresh();
       } while (saveAgain || isDirty());
       showToast(t("assistantProfileSaved"), "success");
     } catch (caught) {
-      showToast(messageOf(caught, t("assistantProfileSaveFailed")));
+      showToast(messageOf(caught, t("assistantProfileSaveFailed")), "error");
     } finally {
       saving.value = false;
     }
@@ -128,14 +134,16 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
   function isDirty(): boolean {
     return (
       name.value !== snapshot.name ||
-      instructions.value !== snapshot.instructions ||
+      role.value !== snapshot.role ||
+      background.value !== snapshot.background ||
       Boolean(avatarChange.value)
     );
   }
 
   return {
     name,
-    instructions,
+    role,
+    background,
     avatarUrl,
     loading,
     saving,

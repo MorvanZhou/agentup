@@ -21,9 +21,10 @@ import type { DelegationService } from "./delegation/index.js";
 import { healInterruptedSessionTools } from "./history.js";
 import { mergeVisitMcp, projectVisitMcp } from "./mcp.js";
 import { openModelRuntime } from "./model-runtime.js";
+import { formatCollaborationPrompt } from "./collaboration-prompt.js";
 import { ensureCwdLayout, formatCwdLayoutPrompt } from "./cwd-layout.js";
 import { buildSessionPlan } from "./plan.js";
-import { formatRulesAppend, loadVisitAlwaysApplyRules } from "./rules.js";
+import { projectVisitAgentsMd } from "./agents-md.js";
 import { writeSessionModelRef } from "./session-model.js";
 import { createSummaryExtension } from "./summary.js";
 import {
@@ -45,6 +46,7 @@ export async function openSession(
   fs.mkdirSync(plan.cwd, { recursive: true });
   ensureCwdLayout(plan.cwd);
   const personal = visit.kind === "personal";
+  if (!personal) projectVisitAgentsMd(visit.root);
   const resourceRoot = personal ? visit.root : undefined;
   const packageSkills = path.join(plan.cwd, ".pi", "skills");
   const personalSkills = resourceRoot ? path.join(resourceRoot, "skills") : undefined;
@@ -98,13 +100,10 @@ export async function openSession(
         diagnostics: loaded.diagnostics,
       };
     },
-    // 平台 cwd 规范对私人助理与第三方共用；第三方另追加运行包 `.pi/rules`。
+    // 平台 cwd 规范 +（有委托时）协作策略；工作规则由 agentDir AGENTS.md 加载。
     appendSystemPromptOverride: (base) => {
       const parts = [...base, formatCwdLayoutPrompt()];
-      if (!personal) {
-        const rulesText = formatRulesAppend(loadVisitAlwaysApplyRules(plan.cwd));
-        if (rulesText) parts.push(rulesText);
-      }
+      if (delegation) parts.push(formatCollaborationPrompt());
       return parts;
     },
   });
@@ -112,7 +111,11 @@ export async function openSession(
   const { runtime, model: registered } = await openModelRuntime(plan);
   const tools = plan.tools.length > 0 ? plan.tools : undefined;
   const sessionManager = SessionManager.continueRecent(plan.cwd, plan.sessionDir);
-  healInterruptedSessionTools(sessionManager);
+  const skipToolCallIds = new Set<string>([
+    ...approvals.pendingToolCallIds(visit.userId, visit.agentId),
+    ...askUser.pendingToolCallIds(visit.userId, visit.agentId),
+  ]);
+  healInterruptedSessionTools(sessionManager, { skipToolCallIds });
   // 锚定本 Pi session 使用的 AgentUp 模型（sidecar；空会话也能落盘）
   const sessionFile = sessionManager.getSessionFile();
   if (sessionFile) {

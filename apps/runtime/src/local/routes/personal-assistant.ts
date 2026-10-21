@@ -44,7 +44,8 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     const profile = readPersonalAssistantProfile(config.userDataRoot, userId, locale);
     return json(c, 200, {
       name: profile.name,
-      instructions: profile.instructions,
+      role: profile.role,
+      background: profile.background,
       avatar_url: profile.avatarUrl ?? null,
     });
   });
@@ -63,7 +64,8 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
       userId,
       {
         name: text(body, "name"),
-        instructions: text(body, "instructions"),
+        role: text(body, "role"),
+        background: text(body, "background"),
         ...(avatarDataUrl !== undefined ? { avatarDataUrl } : {}),
       },
       locale,
@@ -71,7 +73,8 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     chats.invalidatePersonalAssistant(userId);
     return json(c, 200, {
       name: profile.name,
-      instructions: profile.instructions,
+      role: profile.role,
+      background: profile.background,
       avatar_url: profile.avatarUrl ?? null,
     });
   });

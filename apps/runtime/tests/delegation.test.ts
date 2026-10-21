@@ -164,6 +164,9 @@ it("lists local recruited agents from instance directories", async () => {
     `${JSON.stringify({
       user_id: "patient",
       agent_id: "weather",
+      name: "天气通",
+      role: "气象顾问",
+      background: "本地天气预报",
       package_version: 1,
       package_digest: "abc",
       project_trust: "granted",
@@ -171,7 +174,10 @@ it("lists local recruited agents from instance directories", async () => {
       model_capabilities: [],
     })}\n`,
   );
-  fs.writeFileSync(path.join(agentRoot, "cwd", ".pi", "SYSTEM.md"), "# 天气助手\n查天气\n");
+  fs.writeFileSync(
+    path.join(agentRoot, "cwd", ".pi", "SYSTEM.md"),
+    "你是天气通。岗位：气象顾问。\n\n本地天气预报\n",
+  );
 
   const service = new DelegationService({
     userDataRoot: root,
@@ -182,7 +188,13 @@ it("lists local recruited agents from instance directories", async () => {
   });
   const agents = await service.listRecruited("patient");
   expect(agents).toEqual([
-    expect.objectContaining({ agentId: "weather", name: "weather", summary: "天气助手" }),
+    expect.objectContaining({
+      agentId: "weather",
+      name: "天气通",
+      role: "气象顾问",
+      background: "本地天气预报",
+      systemText: expect.stringContaining("气象顾问"),
+    }),
   ]);
 });
 
@@ -214,6 +226,23 @@ it("persists delegation allow in state.json", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-state-"));
   setDelegationAllow(root, "patient", "weather", "session");
   expect(getDelegationAllow(root, "patient", "weather")).toBe("session");
+});
+
+it("tracks nesting parent for HITL surface", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-nested-"));
+  const service = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => testModel(),
+    approvals: new ApprovalBroker(),
+    askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
+  });
+  expect(service.findNestingParent("patient", "weather")).toBeUndefined();
+  const unmark = service.markNested("patient", "personal-assistant", "weather");
+  expect(service.isNestedUnder("patient", "personal-assistant", "weather")).toBe(true);
+  expect(service.findNestingParent("patient", "weather")).toBe("personal-assistant");
+  unmark();
+  expect(service.findNestingParent("patient", "weather")).toBeUndefined();
 });
 
 function testModel() {

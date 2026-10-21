@@ -31,10 +31,16 @@ export function agentListQuery(options?: { userId?: string; q?: string; recruite
 export function readAgent(item: unknown): AgentCard {
   if (typeof item !== "object" || item === null) throw new DesktopApiError("Agent 列表无效");
   const agent = item as Record<string, unknown>;
+  const background =
+    typeof agent.background === "string"
+      ? agent.background
+      : typeof agent.summary === "string"
+        ? agent.summary
+        : null;
   if (
     typeof agent.agent_id !== "string" ||
     typeof agent.name !== "string" ||
-    typeof agent.summary !== "string" ||
+    background === null ||
     typeof agent.latest_version !== "number" ||
     typeof agent.latest_digest !== "string" ||
     typeof agent.recruited !== "boolean" ||
@@ -58,12 +64,28 @@ export function readAgent(item: unknown): AgentCard {
   const remark =
     typeof agent.remark === "string" ? agent.remark.trim().replace(/\s+/g, " ").slice(0, 40) : "";
   const role = typeof agent.role === "string" ? agent.role.trim().replace(/\s+/g, " ").slice(0, 40) : "";
+  const kind = agent.kind === "local" ? "local" : agent.kind === "personal" ? "personal" : "recruited";
+  const rules = typeof agent.rules === "string" ? agent.rules : undefined;
+  const skills =
+    Array.isArray(agent.skills) && agent.skills.every((item) => typeof item === "string")
+      ? (agent.skills as string[]).map((item) => item.trim()).filter(Boolean)
+      : undefined;
+  const mcpServers =
+    agent.mcp_servers &&
+    typeof agent.mcp_servers === "object" &&
+    !Array.isArray(agent.mcp_servers)
+      ? (agent.mcp_servers as Record<string, unknown>)
+      : undefined;
+  const publishedAgentId =
+    typeof agent.published_agent_id === "string" && agent.published_agent_id.trim()
+      ? agent.published_agent_id.trim()
+      : undefined;
   return {
-    kind: "recruited",
+    kind,
     agentId: agent.agent_id,
     name: agent.name,
     role,
-    summary: agent.summary,
+    background,
     latestVersion: agent.latest_version,
     latestDigest: agent.latest_digest,
     localVersion,
@@ -74,20 +96,26 @@ export function readAgent(item: unknown): AgentCard {
     createdAt,
     updatedAt,
     ...(avatarUrl ? { avatarUrl } : {}),
+    ...(rules ? { rules } : {}),
+    ...(skills ? { skills } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
+    ...(publishedAgentId ? { publishedAgentId } : {}),
   };
 }
 
 export function readPersonalAssistantProfile(payload: Record<string, unknown>): PersonalAssistantProfile {
   if (
     typeof payload.name !== "string" ||
-    typeof payload.instructions !== "string" ||
+    typeof payload.role !== "string" ||
+    typeof payload.background !== "string" ||
     (payload.avatar_url !== null && payload.avatar_url !== undefined && typeof payload.avatar_url !== "string")
   ) {
     throw new DesktopApiError(t("assistantProfileInvalid"));
   }
   return {
     name: payload.name,
-    instructions: payload.instructions,
+    role: payload.role,
+    background: payload.background,
     ...(typeof payload.avatar_url === "string" && payload.avatar_url ? { avatarUrl: payload.avatar_url } : {}),
   };
 }

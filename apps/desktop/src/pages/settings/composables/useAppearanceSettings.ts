@@ -39,7 +39,7 @@ export function useAppearanceSettings(api = new DesktopApi()) {
       writeThemeMirror(session.value.userId, prefs.themeMode);
       await applyUiLocale(prefs.uiLocale);
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }
@@ -68,7 +68,7 @@ export function useAppearanceSettings(api = new DesktopApi()) {
       themeMode.value = previous;
       applyTheme(previous);
       writeThemeMirror(session.value.userId, previous);
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }

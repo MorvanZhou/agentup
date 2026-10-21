@@ -64,7 +64,7 @@ const actionItems = computed((): AppDropdownItem[] =>
 
 function onAction(id: string): void {
   if (id === "assistant-settings") {
-    void router.push({ name: "settings", query: { section: "assistant" } });
+    void router.push({ name: "agents-assistant" });
     return;
   }
   if (id === "start") emit("start");
@@ -102,10 +102,12 @@ function onAction(id: string): void {
       </span>
       <span class="grid min-w-0 content-center gap-0.5 leading-snug">
         <strong class="flex min-w-0 items-baseline gap-1.5 overflow-hidden text-sm font-medium text-foreground">
-          <span class="min-w-0 truncate">{{ displayName }}</span>
+          <!-- 名字优先完整显示；岗位吃剩余宽度并可截断 -->
+          <span class="max-w-[70%] shrink-0 truncate" :title="displayName">{{ displayName }}</span>
           <span
             v-if="row.agent.role"
-            class="shrink-0 truncate text-xs font-normal text-muted-foreground"
+            class="min-w-0 flex-1 truncate text-xs font-normal text-muted-foreground"
+            :title="row.agent.role"
           >
             {{ row.agent.role }}
           </span>

@@ -10,7 +10,7 @@ import { expect, it } from "vitest";
 import { BackendClientError, publishAgent } from "../src/control/client.js";
 import { unpackTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
-import { AgentSourceError, loadAgentSource } from "../src/package/source.js";
+import { AgentSourceError, loadAgentSource, preparePublishSource } from "../src/package/source.js";
 
 const agentDir = path.resolve(import.meta.dirname, "../../agent_examples/respiratory-doctor/agent");
 const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/weather/agent");
@@ -21,14 +21,15 @@ const cryptoPriceDir = path.resolve(import.meta.dirname, "../../agent_examples/c
 it("loads the respiratory doctor package directly from agent", () => {
   const source = loadAgentSource(agentDir);
   expect(Object.keys(source.files).sort()).toEqual([
-    "SYSTEM.md",
+    "AGENTS.md",
     "mcp.json",
     "skills/respiratory-consult/SKILL.md",
   ]);
+  expect(source.files["SYSTEM.md"]).toBeUndefined();
   expect(source.avatar).toBeInstanceOf(Uint8Array);
   expect(source.avatarMime).toBe("image/png");
-  const prompt = Buffer.from(source.files["SYSTEM.md"]!).toString("utf8");
-  expect(prompt).toContain("线下就医");
+  const rules = Buffer.from(source.files["AGENTS.md"]!).toString("utf8");
+  expect(rules).toContain("线下就医");
   const mcp = JSON.parse(Buffer.from(source.files["mcp.json"]!).toString("utf8")) as {
     mcpServers: { respiratory: { url: string; headers?: unknown } };
   };
@@ -36,10 +37,21 @@ it("loads the respiratory doctor package directly from agent", () => {
   expect(mcp.mcpServers.respiratory.headers).toBeUndefined();
 });
 
+it("composes SYSTEM.md from publish identity fields", () => {
+  const source = preparePublishSource(
+    agentDir,
+    { name: "呼吸科医生", role: "医生", background: "演示问诊用呼吸健康咨询助理。" },
+    "zh",
+  );
+  expect(Buffer.from(source.files["SYSTEM.md"]!).toString("utf8")).toBe(
+    "你是呼吸科医生。岗位：医生。\n\n演示问诊用呼吸健康咨询助理。\n",
+  );
+});
+
 it("loads and runs the weather source without MCP", () => {
   const source = loadAgentSource(weatherDir);
   expect(Object.keys(source.files).sort()).toEqual([
-    "SYSTEM.md",
+    "AGENTS.md",
     "skills/check-weather/SKILL.md",
     "skills/check-weather/scripts/check-weather.mjs",
   ]);
@@ -48,7 +60,7 @@ it("loads and runs the weather source without MCP", () => {
 
   const output = execFileSync(
     process.execPath,
-    [path.join(weatherDir, ".agentUp", "skills", "check-weather", "scripts", "check-weather.mjs"), "杭州"],
+    [path.join(weatherDir, ".agentup", "skills", "check-weather", "scripts", "check-weather.mjs"), "杭州"],
     { encoding: "utf8" },
   );
   const weather = JSON.parse(output) as Record<string, unknown>;
@@ -81,7 +93,7 @@ it("loads and runs the weather source without MCP", () => {
 it("loads and runs the exchange-rate source without MCP", () => {
   const source = loadAgentSource(exchangeRateDir);
   expect(Object.keys(source.files).sort()).toEqual([
-    "SYSTEM.md",
+    "AGENTS.md",
     "skills/check-exchange-rate/SKILL.md",
     "skills/check-exchange-rate/scripts/check-exchange-rate.mjs",
   ]);
@@ -93,7 +105,7 @@ it("loads and runs the exchange-rate source without MCP", () => {
     [
       path.join(
         exchangeRateDir,
-        ".agentUp",
+        ".agentup",
         "skills",
         "check-exchange-rate",
         "scripts",
@@ -123,7 +135,7 @@ it("loads and runs the exchange-rate source without MCP", () => {
 it("loads and runs the world-clock source without MCP", () => {
   const source = loadAgentSource(worldClockDir);
   expect(Object.keys(source.files).sort()).toEqual([
-    "SYSTEM.md",
+    "AGENTS.md",
     "skills/check-world-clock/SKILL.md",
     "skills/check-world-clock/scripts/check-world-clock.mjs",
   ]);
@@ -133,7 +145,7 @@ it("loads and runs the world-clock source without MCP", () => {
   const output = execFileSync(
     process.execPath,
     [
-      path.join(worldClockDir, ".agentUp", "skills", "check-world-clock", "scripts", "check-world-clock.mjs"),
+      path.join(worldClockDir, ".agentup", "skills", "check-world-clock", "scripts", "check-world-clock.mjs"),
       "东京",
     ],
     { encoding: "utf8" },
@@ -149,7 +161,7 @@ it("loads and runs the world-clock source without MCP", () => {
 it("loads and runs the crypto-price source without MCP", () => {
   const source = loadAgentSource(cryptoPriceDir);
   expect(Object.keys(source.files).sort()).toEqual([
-    "SYSTEM.md",
+    "AGENTS.md",
     "skills/check-crypto-price/SKILL.md",
     "skills/check-crypto-price/scripts/check-crypto-price.mjs",
   ]);
@@ -159,7 +171,7 @@ it("loads and runs the crypto-price source without MCP", () => {
   const output = execFileSync(
     process.execPath,
     [
-      path.join(cryptoPriceDir, ".agentUp", "skills", "check-crypto-price", "scripts", "check-crypto-price.mjs"),
+      path.join(cryptoPriceDir, ".agentup", "skills", "check-crypto-price", "scripts", "check-crypto-price.mjs"),
       "BTC",
     ],
     { encoding: "utf8" },
@@ -172,9 +184,8 @@ it("loads and runs the crypto-price source without MCP", () => {
 
 it("rejects a package that chooses the user", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-source-"));
-  const packageRoot = path.join(dir, ".agentUp");
+  const packageRoot = path.join(dir, ".agentup");
   fs.mkdirSync(packageRoot, { recursive: true });
-  fs.copyFileSync(path.join(agentDir, ".agentUp", "SYSTEM.md"), path.join(packageRoot, "SYSTEM.md"));
   fs.writeFileSync(
     path.join(packageRoot, "mcp.json"),
     JSON.stringify({ mcpServers: { respiratory: { url: "http://127.0.0.1:8788/mcp", headers: { "X-AgentUp-User-Id": "forged" } } } }),
@@ -192,7 +203,11 @@ it("rejects a package that chooses the user", () => {
 });
 
 it("publishes the pi files and checks the digest", async () => {
-  const source = loadAgentSource(agentDir);
+  const source = preparePublishSource(
+    agentDir,
+    { name: "呼吸科医生", role: "医生", background: "演示问诊" },
+    "zh",
+  );
   const manifest = { version: 1, tools: [], modelCapabilities: [] };
   const digest = packageDigest(manifest, source.files);
   let postedArchive: Uint8Array | undefined;
@@ -203,10 +218,12 @@ it("publishes the pi files and checks the digest", async () => {
     postedArchive = files.archive;
     postedAvatar = Boolean(files.avatar?.byteLength);
     json(res, 200, {
+      job_id: "job-1",
+      status: "ready",
       agent_id: "generated-id",
       name: "呼吸科医生",
       role: "医生",
-      summary: "演示问诊",
+      background: "演示问诊",
       manifest: {
         version: 1,
         tools: [],
@@ -229,7 +246,7 @@ it("publishes the pi files and checks the digest", async () => {
       agentId: "generated-id",
       name: "呼吸科医生",
       role: "医生",
-      summary: "演示问诊",
+      background: "演示问诊",
       version: 1,
       digest,
     });
@@ -245,6 +262,7 @@ it("publishes the pi files and checks the digest", async () => {
       "医生",
       "演示问诊",
       undefined,
+      "",
       async () => new Response(JSON.stringify({ ...publishedBody(source), digest: "0".repeat(64) }), { status: 200 }),
     )).rejects.toBeInstanceOf(BackendClientError);
   } finally {
@@ -257,7 +275,7 @@ function publishedBody(source: ReturnType<typeof loadAgentSource>) {
     agent_id: "generated-id",
     name: "呼吸科医生",
     role: "医生",
-    summary: "演示问诊",
+    background: "演示问诊",
     manifest: { version: 1 },
     digest: packageDigest({ version: 1, tools: [], modelCapabilities: [] }, source.files),
   };

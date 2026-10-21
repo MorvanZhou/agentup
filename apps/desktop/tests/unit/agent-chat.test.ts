@@ -51,6 +51,39 @@ it("clearHistory deletes remote history and reloads empty cache", async () => {
   expect(chat.histories.value.weather).toEqual([]);
 });
 
+it("setApproval keeps a single slot per approval id across agents", () => {
+  const chat = useAgentChat(new DesktopApi("http://runtime", vi.fn()));
+  const approval = {
+    id: "appr-shared",
+    toolCallId: "call-1",
+    toolName: "bash",
+    args: { command: "pwd" },
+  };
+  chat.setApproval("weather", approval);
+  chat.setApproval("personal-assistant", approval);
+  expect(chat.approvals.value.weather).toBeUndefined();
+  expect(chat.approvals.value["personal-assistant"]).toMatchObject(approval);
+});
+
+it("decide clears the approval id from every agent slot", async () => {
+  const fetchImpl = vi.fn().mockResolvedValueOnce(Response.json({ decided: true }));
+  const chat = useAgentChat(new DesktopApi("http://runtime", fetchImpl));
+  const approval = {
+    id: "appr-1",
+    toolCallId: "call-1",
+    toolName: "bash",
+    args: { command: "pwd" },
+  };
+  // 模拟旧路径双写后 decide 仍应清干净。
+  chat.approvals.value = {
+    weather: approval,
+    "personal-assistant": approval,
+  };
+  await chat.decide("personal-assistant", "token", true, "once");
+  expect(chat.approvals.value.weather).toBeUndefined();
+  expect(chat.approvals.value["personal-assistant"]).toBeUndefined();
+});
+
 it("clearContext and clearHistory drop pending askUser and approval", async () => {
   const fetchImpl = vi
     .fn()

@@ -36,7 +36,7 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
         readUiLocale(),
       );
     } catch (caught) {
-      showToast(caught instanceof DesktopApiError ? caught.message : "加载模型失败");
+      showToast(caught instanceof DesktopApiError ? caught.message : "加载模型失败", "error");
     } finally {
       busy.value = false;
       loaded.value = true;
@@ -57,7 +57,7 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
         readUiLocale(),
       );
     } catch (caught) {
-      showToast(caught instanceof DesktopApiError ? caught.message : "切换模型失败");
+      showToast(caught instanceof DesktopApiError ? caught.message : "切换模型失败", "error");
     } finally {
       busy.value = false;
     }

@@ -21,7 +21,7 @@ import { projectVisitMcp } from "../mcp.js";
 import { openModelRuntime } from "../model-runtime.js";
 import { ensureCwdLayout, formatCwdLayoutPrompt } from "../cwd-layout.js";
 import { buildSessionPlan } from "../plan.js";
-import { formatRulesAppend, loadVisitAlwaysApplyRules } from "../rules.js";
+import { projectVisitAgentsMd } from "../agents-md.js";
 import {
   AskUserBroker,
   createAskUserExtension,
@@ -83,6 +83,7 @@ export async function runDelegatedPrompt(
   fs.mkdirSync(sessionDir, { recursive: true });
   fs.mkdirSync(plan.cwd, { recursive: true });
   ensureCwdLayout(plan.cwd);
+  if (visit.kind !== "personal") projectVisitAgentsMd(visit.root);
 
   const mcpConfig = projectVisitMcp(plan.cwd, visit.userId);
   const mcpEnabled = mcpConfig.servers.length > 0;
@@ -111,12 +112,7 @@ export async function runDelegatedPrompt(
       }),
       diagnostics: loaded.diagnostics,
     }),
-    appendSystemPromptOverride: (base) => {
-      const parts = [...base, formatCwdLayoutPrompt()];
-      const rulesText = formatRulesAppend(loadVisitAlwaysApplyRules(plan.cwd));
-      if (rulesText) parts.push(rulesText);
-      return parts;
-    },
+    appendSystemPromptOverride: (base) => [...base, formatCwdLayoutPrompt()],
   });
   await resourceLoader.reload();
   const { runtime, model: registered } = await openModelRuntime(plan);

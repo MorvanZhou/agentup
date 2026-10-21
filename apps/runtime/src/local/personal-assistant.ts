@@ -4,6 +4,14 @@ import path from "node:path";
 import { t, type UiLocale } from "../i18n/index.js";
 import type { Visit } from "../package/sync.js";
 import { ensureCwdLayout } from "../session/cwd-layout.js";
+import {
+  AgentIdentityError,
+  BACKGROUND_MAX,
+  composeSystemPrompt,
+  normalizeAgentBackground,
+  normalizeAgentName,
+  normalizeAgentRole,
+} from "./agent-identity.js";
 
 export const PERSONAL_ASSISTANT_ID = "personal-assistant";
 
@@ -13,13 +21,15 @@ export class PersonalAssistantError extends Error {}
 
 export interface PersonalAssistantProfile {
   name: string;
-  instructions: string;
+  role: string;
+  background: string;
   avatarUrl?: string;
 }
 
 interface StoredProfile {
   name: string;
-  instructions: string;
+  role: string;
+  background: string;
   avatar_mime?: string;
   avatar_file?: string;
 }
@@ -52,10 +62,12 @@ export function ensurePersonalAssistant(
   if (!fs.existsSync(path.join(root, "profile.json"))) {
     writeStoredProfile(root, {
       name: t("pa.defaultName", locale),
-      instructions: t("pa.defaultInstructions", locale),
+      role: t("pa.defaultRole", locale),
+      background: t("pa.defaultBackground", locale),
     });
   }
-  syncSystemPrompt(root, readStoredProfile(root));
+  const stored = localizeFactoryDefaults(readStoredProfile(root), locale);
+  syncSystemPrompt(root, composeSystemPrompt(stored, locale));
   return root;
 }
 
@@ -65,10 +77,11 @@ export function readPersonalAssistantProfile(
   locale: UiLocale = "zh",
 ): PersonalAssistantProfile {
   const root = ensurePersonalAssistant(userDataRoot, userId, locale);
-  const stored = readStoredProfile(root);
+  const stored = localizeFactoryDefaults(readStoredProfile(root), locale);
   return {
-    name: localizeDefaultName(stored.name, locale),
-    instructions: localizeDefaultInstructions(stored.instructions, locale),
+    name: stored.name,
+    role: stored.role,
+    background: stored.background,
     ...(stored.avatar_file && stored.avatar_mime
       ? { avatarUrl: avatarDataUrl(root, stored.avatar_file, stored.avatar_mime) }
       : {}),
@@ -78,17 +91,22 @@ export function readPersonalAssistantProfile(
 export function writePersonalAssistantProfile(
   userDataRoot: string,
   userId: string,
-  input: { name: string; instructions: string; avatarDataUrl?: string },
+  input: { name: string; role: string; background: string; avatarDataUrl?: string },
   locale: UiLocale = "zh",
 ): PersonalAssistantProfile {
   const root = ensurePersonalAssistant(userDataRoot, userId, locale);
-  const name = input.name.trim().replace(/\s+/g, " ");
-  const instructions = input.instructions.trim();
-  if (!name || name.length > 40) {
-    throw new PersonalAssistantError(t("pa.err.nameLength", locale));
-  }
-  if (!instructions || instructions.length > 20_000) {
-    throw new PersonalAssistantError(t("pa.err.instructionsLength", locale));
+  let name: string;
+  let role: string;
+  let background: string;
+  try {
+    name = normalizeAgentName(input.name, locale);
+    role = normalizeAgentRole(input.role, locale);
+    background = normalizeAgentBackground(input.background, locale);
+  } catch (error) {
+    if (error instanceof AgentIdentityError) {
+      throw new PersonalAssistantError(error.message);
+    }
+    throw error;
   }
   const previous = readStoredProfile(root);
   let avatarMime = previous.avatar_mime;
@@ -102,11 +120,12 @@ export function writePersonalAssistantProfile(
   }
   const stored: StoredProfile = {
     name,
-    instructions,
+    role,
+    background,
     ...(avatarMime && avatarFile ? { avatar_mime: avatarMime, avatar_file: avatarFile } : {}),
   };
   writeStoredProfile(root, stored);
-  syncSystemPrompt(root, stored);
+  syncSystemPrompt(root, composeSystemPrompt({ name, role, background }, locale));
   return readPersonalAssistantProfile(userDataRoot, userId, locale);
 }
 
@@ -130,18 +149,33 @@ function readStoredProfile(root: string): StoredProfile {
     const parsed = JSON.parse(fs.readFileSync(path.join(root, "profile.json"), "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("shape");
     const value = parsed as Record<string, unknown>;
-    if (typeof value.name !== "string" || typeof value.instructions !== "string") throw new Error("shape");
-    return {
+    if (typeof value.name !== "string") throw new Error("shape");
+    const legacyInstructions = typeof value.instructions === "string" ? value.instructions : undefined;
+    const role = typeof value.role === "string" ? value.role : t("pa.defaultRole", "zh");
+    const background =
+      typeof value.background === "string"
+        ? value.background
+        : legacyInstructions !== undefined
+          ? legacyInstructions.slice(0, BACKGROUND_MAX)
+          : undefined;
+    if (background === undefined) throw new Error("shape");
+    const profile: StoredProfile = {
       name: value.name,
-      instructions: value.instructions,
+      role,
+      background,
       ...(typeof value.avatar_mime === "string" && typeof value.avatar_file === "string"
         ? { avatar_mime: value.avatar_mime, avatar_file: value.avatar_file }
         : {}),
     };
+    if (typeof value.role !== "string" || typeof value.background !== "string") {
+      writeStoredProfile(root, profile);
+    }
+    return profile;
   } catch {
     return {
       name: t("pa.defaultName", "zh"),
-      instructions: t("pa.defaultInstructions", "zh"),
+      role: t("pa.defaultRole", "zh"),
+      background: t("pa.defaultBackground", "zh"),
     };
   }
 }
@@ -154,11 +188,11 @@ function writeStoredProfile(root: string, profile: StoredProfile): void {
 }
 
 /** 投影到 Pi agentDir（`.runtime/SYSTEM.md`），不在 cwd 内，避免模型改写。 */
-function syncSystemPrompt(root: string, profile: StoredProfile): void {
+function syncSystemPrompt(root: string, systemPrompt: string): void {
   const file = path.join(root, ".runtime", "SYSTEM.md");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = `${file}.tmp`;
-  fs.writeFileSync(temporary, `${profile.instructions.trim()}\n`, { mode: 0o600 });
+  fs.writeFileSync(temporary, `${systemPrompt.trim()}\n`, { mode: 0o600 });
   fs.renameSync(temporary, file);
 }
 
@@ -222,12 +256,20 @@ function localizeDefaultName(name: string, locale: UiLocale): string {
   return name;
 }
 
-function localizeDefaultInstructions(instructions: string, locale: UiLocale): string {
-  if (
-    instructions === t("pa.defaultInstructions", "zh") ||
-    instructions === t("pa.defaultInstructions", "en")
-  ) {
-    return t("pa.defaultInstructions", locale);
-  }
-  return instructions;
+function localizeFactoryDefaults(profile: StoredProfile, locale: UiLocale): StoredProfile {
+  return {
+    ...profile,
+    name: localizeDefaultName(profile.name, locale),
+    role: localizeDefaultValue(profile.role, "pa.defaultRole", locale),
+    background: localizeDefaultValue(profile.background, "pa.defaultBackground", locale),
+  };
+}
+
+function localizeDefaultValue(
+  value: string,
+  key: "pa.defaultRole" | "pa.defaultBackground",
+  locale: UiLocale,
+): string {
+  if (value === t(key, "zh") || value === t(key, "en")) return t(key, locale);
+  return value;
 }

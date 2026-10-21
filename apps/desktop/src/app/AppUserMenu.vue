@@ -14,7 +14,6 @@ import {
 import UserAvatar from "../shared/components/UserAvatar.vue";
 import { isAccountSession, isGuestSession, sessionDisplayNickname } from "../shared/model/session";
 import { t } from "../shared/model/ui-locale";
-import { runWithAccount } from "./auth-gate";
 import { useDesktop } from "./desktop";
 
 const router = useRouter();
@@ -22,16 +21,9 @@ const { session, logout } = useDesktop();
 const open = ref(false);
 const displayName = computed(() => sessionDisplayNickname(session.value));
 
-function goPublish(): void {
-  open.value = false;
-  void runWithAccount("agent.publish", async () => {
-    await router.push({ name: "agents", query: { tab: "owned" } });
-  });
-}
-
 function goSettings(): void {
   open.value = false;
-  void router.push({ name: "settings", query: { section: "assistant" } });
+  void router.push({ name: "settings", query: { section: "account" } });
 }
 
 function goLogin(): void {
@@ -48,7 +40,11 @@ function signOut(): void {
   void (async () => {
     await logout();
     const name = router.currentRoute.value.name;
-    if (name === "login" || name === "publish-new" || name === "publish-edit") {
+    if (
+      name === "login" ||
+      name === "agents-owned-new" ||
+      name === "agents-owned-edit"
+    ) {
       await router.replace({ name: "conversation" });
     }
   })();
@@ -80,12 +76,6 @@ function signOut(): void {
           @select="goSettings"
         >
           {{ t("menuSettings") }}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          class="flex min-h-8 cursor-pointer items-center rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
-          @select="goPublish"
-        >
-          {{ t("menuPublish") }}
         </DropdownMenuItem>
         <DropdownMenuItem
           v-if="isGuestSession(session)"

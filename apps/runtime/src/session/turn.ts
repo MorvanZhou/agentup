@@ -11,7 +11,12 @@ import {
   materializePromptImages,
   type PromptAttachment,
 } from "./attachments.js";
-import type { DelegationService } from "./delegation/index.js";
+import {
+  discoverRecruitedAgents,
+  formatDiscoveredAgentsContext,
+  RELEVANT_AGENTS_CUSTOM_TYPE,
+  type DelegationService,
+} from "./delegation/index.js";
 import { expandSkillReferences } from "./expand-skills.js";
 import { PiUIMessageProjector } from "./frames.js";
 import { openSession } from "./open.js";
@@ -32,6 +37,8 @@ export type PromptOptions = {
 export interface PromptSession {
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(text: string, options?: PromptOptions): Promise<void>;
+  /** 注入下一轮 LLM 上下文（不写进用户原文）；见 Pi deliverAs nextTurn。 */
+  sendCustomMessage?: AgentSession["sendCustomMessage"];
   /** 中断当前 turn，并等到会话空闲。 */
   abort(): Promise<void>;
   dispose(): void;
@@ -88,6 +95,17 @@ export class VisitChats {
 
   busy(userId: string, agentId: string, kind: Visit["kind"] = "recruited"): boolean {
     return this.sessions.get(visitKey(userId, agentId, kind))?.busy === true;
+  }
+
+  /** 当前用户下主会话正在跑 turn 的 agentId（侧栏 working）。 */
+  busyAgentIds(userId: string): string[] {
+    const ids: string[] = [];
+    for (const [key, slot] of this.sessions) {
+      if (!slot.busy) continue;
+      const [uid, , agentId] = key.split("/");
+      if (uid === userId && agentId) ids.push(agentId);
+    }
+    return ids;
   }
 
   /**
@@ -231,6 +249,27 @@ export class VisitChats {
           // 任意位置的 `/name`|/skill:name` 由 harness 展开，避免依赖 Pi 仅识别行首 `/skill:`。
           const skills = slot.session.resourceLoader?.getSkills().skills ?? [];
           const expanded = expandSkillReferences(promptText || "(图片附件)", skills);
+          // 每轮检索已招募专家，经 nextTurn custom message 注入模型上下文（不污染用户落盘原文）。
+          if (this.delegation && slot.session.sendCustomMessage) {
+            try {
+              const roster = await this.delegation.listRecruited(visit.userId);
+              const others = roster.filter((agent) => agent.agentId !== visit.agentId);
+              const discovered = discoverRecruitedAgents(others, promptText);
+              const block = formatDiscoveredAgentsContext(discovered);
+              if (block) {
+                await slot.session.sendCustomMessage(
+                  {
+                    customType: RELEVANT_AGENTS_CUSTOM_TYPE,
+                    content: block,
+                    display: false,
+                  },
+                  { deliverAs: "nextTurn" },
+                );
+              }
+            } catch {
+              // 发现失败不阻断对话；模型仍可主动 list_recruited_agents。
+            }
+          }
           await slot.session.prompt(expanded, {
             expandPromptTemplates: false,
             ...(images.length > 0 ? { images } : {}),
@@ -268,7 +307,8 @@ export class VisitChats {
 }
 
 function visitKey(userId: string, agentId: string, kind: Visit["kind"] = "recruited"): string {
-  return `${userId}/${kind === "personal" ? "personal" : "recruited"}/${agentId}`;
+  const bucket = kind === "personal" ? "personal" : kind === "local" ? "local" : "recruited";
+  return `${userId}/${bucket}/${agentId}`;
 }
 
 /** 编辑旧 user message 重发前：navigateTree 回退对话，checkpoint 扩展顺带还原文件。 */

@@ -13,8 +13,9 @@ import {
   recruitAgent,
   setAgentRemark,
   unrecruitAgent,
+  updateAgentCard,
 } from "../../control/client.js";
-import { loadAgentSource } from "../../package/source.js";
+import { loadAgentSource, preparePublishSource } from "../../package/source.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
@@ -22,6 +23,7 @@ import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from 
 import { clearContext, clearHistory, readHistory } from "../../session/history.js";
 import { setVisitSessionModel } from "../../session/session-model.js";
 import { listVisitSkills } from "../../session/skills.js";
+import { isLocalAgentId, localAgentVisit } from "../local-agent.js";
 import { readLocalPackageVersions } from "../local-versions.js";
 import {
   bearer,
@@ -40,6 +42,24 @@ import {
 import { promptRewind, promptText, streamPrompt } from "../prompt.js";
 import { serializeAgentCard, sessionModelBody } from "../serialize.js";
 import { clearAgentChatUi, forgetAgent } from "../state.js";
+
+function visitKind(agentId: string): Visit["kind"] {
+  return isLocalAgentId(agentId) ? "local" : "recruited";
+}
+
+/** 本机私有跳过控制面 sync；市场 Agent 仍投影 .pi。 */
+async function resolveVisit(
+  userDataRoot: string,
+  backendUrl: string,
+  token: string,
+  userId: string,
+  agentId: string,
+): Promise<Visit> {
+  if (isLocalAgentId(agentId)) {
+    return localAgentVisit(userDataRoot, userId, agentId);
+  }
+  return new Runtime(new HttpPackageSource(backendUrl, token), userDataRoot).sync(userId, agentId);
+}
 
 export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
   const { config, chats, approvals, delegation, readModel } = deps;
@@ -69,7 +89,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
         agent_id: agent.agentId,
         name: agent.name,
         role: agent.role,
-        summary: agent.summary,
+        background: agent.background,
         latest_version: agent.latestVersion,
         latest_digest: agent.latestDigest,
         recruited: agent.recruited,
@@ -98,23 +118,50 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
 
   app.post("/agents/publish", async (c) => {
     const body = await readJson(c);
+    const locale = uiLocaleFromRequest(c);
+    const name = text(body, "name");
+    const role = text(body, "role");
+    const background = optionalText(body, "background") ?? text(body, "summary");
+    const rules = optionalText(body, "rules") ?? "";
     const published = await publishAgent(
       config.backendUrl,
       bearer(c),
-      loadAgentSource(text(body, "agent_dir")),
-      text(body, "name"),
-      text(body, "role"),
-      text(body, "summary"),
+      preparePublishSource(text(body, "agent_dir"), { name, role, background }, locale),
+      name,
+      role,
+      background,
       optionalText(body, "agent_id"),
+      rules,
     );
     return json(c, 200, {
       agent_id: published.agentId,
       name: published.name,
       role: published.role,
-      summary: published.summary,
+      background: published.background,
       version: published.version,
       digest: published.digest,
     });
+  });
+
+  /** 仅更新名片层（含规则），不换运行包。 */
+  app.put("/agents/:agentId/card", async (c) => {
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const body = await readJson(c);
+    const avatarDataUrl = optionalText(body, "avatar_data_url");
+    let avatar: Uint8Array | undefined;
+    if (avatarDataUrl) {
+      const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(avatarDataUrl);
+      if (!match) throw new LocalError("头像无效", 400);
+      avatar = Uint8Array.from(Buffer.from(match[1]!.replace(/\s/g, ""), "base64"));
+    }
+    const card = await updateAgentCard(config.backendUrl, bearer(c), agentId, {
+      name: text(body, "name"),
+      role: text(body, "role"),
+      background: optionalText(body, "background") ?? text(body, "summary"),
+      rules: typeof body.rules === "string" ? body.rules : "",
+      ...(avatar ? { avatar } : {}),
+    });
+    return json(c, 200, serializeAgentCard(card, 0));
   });
 
   app.post("/agents/:agentId/context", async (c) => {
@@ -122,9 +169,10 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const agentId = requireAgentId(c.req.param("agentId"));
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    await chats.abort(userId, agentId);
+    const kind = visitKind(agentId);
+    await chats.abort(userId, agentId, kind);
     clearContext(config.userDataRoot, userId, agentId);
-    chats.release(userId, agentId);
+    chats.release(userId, agentId, kind);
     approvals.clearSessionAllow(userId, agentId);
     return json(c, 200, { cleared: true });
   });
@@ -135,6 +183,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const userId = requireUserId(c.req.query("user_id") ?? null);
     const visitRoot = path.join(config.userDataRoot, "users", userId, "agents", agentId);
     const visit: Visit = {
+      kind: visitKind(agentId),
       userId,
       agentId,
       root: visitRoot,
@@ -192,7 +241,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
       const cwd = path.join(visitRoot, "cwd");
       const sessionDir = path.join(visitRoot, "sessions");
       setVisitSessionModel(config.userDataRoot, cwd, sessionDir, ref);
-      chats.invalidate(userId, agentId);
+      chats.invalidate(userId, agentId, visitKind(agentId));
       return json(c, 200, sessionModelBody(config.userDataRoot, cwd, sessionDir, locale));
     } catch (error) {
       if (error instanceof ConfigError) throw new LocalError(error.message, 400);
@@ -204,9 +253,10 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     bearer(c);
     const agentId = requireAgentId(c.req.param("agentId"));
     const userId = requirePathUserId(c.req.query("user_id") ?? "");
-    await chats.abort(userId, agentId);
+    const kind = visitKind(agentId);
+    await chats.abort(userId, agentId, kind);
     clearHistory(config.userDataRoot, userId, agentId);
-    chats.release(userId, agentId);
+    chats.release(userId, agentId, kind);
     approvals.clearSessionAllow(userId, agentId);
     clearAgentChatUi(config.userDataRoot, userId, agentId);
     return json(c, 200, { cleared: true });
@@ -277,6 +327,9 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
+    if (isLocalAgentId(agentId)) {
+      throw new LocalError("本机 Agent 请使用删除，而非解雇", 400);
+    }
     chats.release(userId, agentId);
     await unrecruitAgent(config.backendUrl, token, agentId);
     removeVisitRoot(config.userDataRoot, userId, agentId);
@@ -289,10 +342,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    const visit = await new Runtime(new HttpPackageSource(config.backendUrl, token), config.userDataRoot).sync(
-      userId,
-      agentId,
-    );
+    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
     delegation.bindAuth(userId, token);
     try {
       await streamPrompt(
@@ -317,10 +367,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    const visit = await new Runtime(new HttpPackageSource(config.backendUrl, token), config.userDataRoot).sync(
-      userId,
-      agentId,
-    );
+    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
     return json(c, 200, { path: visit.root });
   });
 
@@ -329,10 +376,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    const visit = await new Runtime(new HttpPackageSource(config.backendUrl, token), config.userDataRoot).sync(
-      userId,
-      agentId,
-    );
+    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
     return json(c, 200, {
       user_id: visit.userId,
       agent_id: visit.agentId,

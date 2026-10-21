@@ -22,7 +22,7 @@ export function useUserAgentsMd(api = new DesktopApi()) {
       snapshot = text.value;
       loaded = true;
     } catch (caught) {
-      showToast(messageOf(caught, t("rulesLoadFailed")));
+      showToast(messageOf(caught, t("rulesLoadFailed")), "error");
     } finally {
       loading.value = false;
     }
@@ -55,7 +55,7 @@ export function useUserAgentsMd(api = new DesktopApi()) {
       } while (saveAgain || text.value !== snapshot);
       showToast(t("rulesSaved"), "success");
     } catch (caught) {
-      showToast(messageOf(caught, t("rulesSaveFailed")));
+      showToast(messageOf(caught, t("rulesSaveFailed")), "error");
     } finally {
       saving.value = false;
     }

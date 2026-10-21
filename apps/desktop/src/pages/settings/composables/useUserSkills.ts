@@ -19,7 +19,7 @@ export function useUserSkills(api = new DesktopApi()) {
       skills.value = await api.userSkills(session.value.token, session.value.userId);
       loaded = true;
     } catch (caught) {
-      showToast(messageOf(caught, "技能列表加载失败"));
+      showToast(messageOf(caught, "技能列表加载失败"), "error");
     } finally {
       busy.value = false;
     }
@@ -29,7 +29,7 @@ export function useUserSkills(api = new DesktopApi()) {
     if (!session.value || busy.value) return;
     const bridge = window.agentUp;
     if (!bridge?.selectSkillPackage) {
-      showToast("当前环境无法选择本地文件");
+      showToast("当前环境无法选择本地文件", "error");
       return;
     }
     const packagePath = await bridge.selectSkillPackage(kind);
@@ -46,7 +46,7 @@ export function useUserSkills(api = new DesktopApi()) {
       loaded = true;
       showToast(expectName ? `已更新 ${skill.name}` : `已安装 ${skill.name}`, "success");
     } catch (caught) {
-      showToast(messageOf(caught, expectName ? "技能更新失败" : "技能安装失败"));
+      showToast(messageOf(caught, expectName ? "技能更新失败" : "技能安装失败"), "error");
     } finally {
       busy.value = false;
     }
@@ -59,7 +59,7 @@ export function useUserSkills(api = new DesktopApi()) {
       const saved = await api.setUserSkillEnabled(session.value.token, session.value.userId, name, enabled);
       skills.value = skills.value.map((skill) => (skill.name === name ? saved : skill));
     } catch (caught) {
-      showToast(messageOf(caught, "切换激活状态失败"));
+      showToast(messageOf(caught, "切换激活状态失败"), "error");
       skills.value = await api.userSkills(session.value.token, session.value.userId);
     } finally {
       busy.value = false;
@@ -74,7 +74,7 @@ export function useUserSkills(api = new DesktopApi()) {
       skills.value = skills.value.filter((skill) => skill.name !== name);
       showToast("技能已删除", "success");
     } catch (caught) {
-      showToast(messageOf(caught, "技能删除失败"));
+      showToast(messageOf(caught, "技能删除失败"), "error");
     } finally {
       busy.value = false;
     }

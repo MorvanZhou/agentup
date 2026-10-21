@@ -106,7 +106,7 @@ const menuItems = computed<AppDropdownItem[]>(() => [
 
 function onSelect(id: string): void {
   if (id === "assistant-settings") {
-    void router.push({ name: "settings", query: { section: "assistant" } });
+    void router.push({ name: "agents-assistant" });
     return;
   }
   if (!actions) return;
@@ -147,7 +147,7 @@ async function runClearContext(): Promise<void> {
   try {
     await actions.value.clearContext();
   } catch (error) {
-    showToast(error instanceof Error && error.message ? error.message : t("threadNewFailed"));
+    showToast(error instanceof Error && error.message ? error.message : t("threadNewFailed"), "error");
   }
 }
 
@@ -157,7 +157,7 @@ async function confirmClearHistoryAction(): Promise<void> {
   try {
     await actions.value.clearHistory();
   } catch (error) {
-    showToast(error instanceof Error && error.message ? error.message : t("threadClearFailed"));
+    showToast(error instanceof Error && error.message ? error.message : t("threadClearFailed"), "error");
   }
 }
 
@@ -168,7 +168,7 @@ async function confirmRemark(): Promise<void> {
     await actions.value.setRemark(remarkDraft.value);
     remarkOpen.value = false;
   } catch (error) {
-    showToast(error instanceof Error && error.message ? error.message : t("threadRemarkFailed"));
+    showToast(error instanceof Error && error.message ? error.message : t("threadRemarkFailed"), "error");
   } finally {
     savingRemark.value = false;
   }
@@ -180,7 +180,7 @@ async function confirmDismissAction(): Promise<void> {
   try {
     await actions.value.dismiss();
   } catch (error) {
-    showToast(error instanceof Error && error.message ? error.message : t("threadDismissFailed"));
+    showToast(error instanceof Error && error.message ? error.message : t("threadDismissFailed"), "error");
   }
 }
 </script>

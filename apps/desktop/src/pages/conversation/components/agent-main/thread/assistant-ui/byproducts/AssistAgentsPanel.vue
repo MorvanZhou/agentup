@@ -79,7 +79,7 @@ function toggle(assist: AssistAgentRef): void {
 function goToAgent(assist: AssistAgentRef): void {
   const result = roster.value.openAgent(assist.agentId);
   if (result === "dismissed") {
-    showToast(t("assistDismissed"));
+    showToast(t("assistDismissed"), "error");
   }
 }
 
@@ -98,7 +98,7 @@ function canOpenProcess(assist: AssistAgentRef): boolean {
 function openProcess(assist: AssistAgentRef): void {
   const taskId = processTaskId(assist);
   if (!taskId) {
-    showToast(t("assistNoTaskId"));
+    showToast(t("assistNoTaskId"), "error");
     return;
   }
   delegation.value.openProcess({

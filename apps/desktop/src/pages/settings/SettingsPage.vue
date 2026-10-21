@@ -1,30 +1,29 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import SettingsSidebar from "./components/SettingsSidebar.vue";
 import AccountSettings from "./components/sections/app-settings/AccountSettings.vue";
 import AppearanceSettings from "./components/sections/app-settings/AppearanceSettings.vue";
 import ProviderSettings from "./components/sections/app-settings/ProviderSettings.vue";
-import AssistantProfileSettings from "./components/sections/my-assistant/AssistantProfileSettings.vue";
-import McpSettings from "./components/sections/my-assistant/McpSettings.vue";
-import RulesSettings from "./components/sections/my-assistant/RulesSettings.vue";
-import SkillsSettings from "./components/sections/my-assistant/SkillsSettings.vue";
 
-type SectionId = "assistant" | "account" | "appearance" | "provider" | "skills" | "rules" | "mcp";
+type SectionId = "account" | "appearance" | "provider";
 
-const SECTIONS = new Set<SectionId>([
-  "assistant",
-  "account",
-  "appearance",
-  "provider",
-  "skills",
-  "rules",
-  "mcp",
-]);
+const SECTIONS = new Set<SectionId>(["account", "appearance", "provider"]);
+const MOVED_TO_AGENTS = new Set(["assistant", "skills", "rules", "mcp"]);
 
 const route = useRoute();
 const router = useRouter();
+
+watch(
+  () => route.query.section,
+  (value) => {
+    if (typeof value === "string" && MOVED_TO_AGENTS.has(value)) {
+      void router.replace({ name: "agents-assistant" });
+    }
+  },
+  { immediate: true },
+);
 
 const section = computed<SectionId>({
   get() {
@@ -32,7 +31,7 @@ const section = computed<SectionId>({
     if (value === "model") return "provider";
     return typeof value === "string" && SECTIONS.has(value as SectionId)
       ? (value as SectionId)
-      : "assistant";
+      : "appearance";
   },
   set(id) {
     void router.replace({ name: "settings", query: { section: id } });
@@ -49,11 +48,7 @@ const section = computed<SectionId>({
       <SettingsSidebar :active="section" @select="section = $event" />
     </aside>
 
-    <AssistantProfileSettings v-if="section === 'assistant'" />
-    <SkillsSettings v-else-if="section === 'skills'" />
-    <RulesSettings v-else-if="section === 'rules'" />
-    <McpSettings v-else-if="section === 'mcp'" />
-    <AccountSettings v-else-if="section === 'account'" />
+    <AccountSettings v-if="section === 'account'" />
     <ProviderSettings v-else-if="section === 'provider'" />
     <AppearanceSettings v-else />
   </div>

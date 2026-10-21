@@ -26,6 +26,7 @@ export {
   verifyEmail,
 } from "./auth-api.js";
 export {
+  downloadAgentSkill,
   listAgents,
   listOwnedAgents,
   listPublicAgents,
@@ -33,6 +34,7 @@ export {
   recruitAgent,
   setAgentRemark,
   unrecruitAgent,
+  updateAgentCard,
 } from "./agents-api.js";
 export { getPreferences, putPreferences } from "./preferences-api.js";
 export { HttpPackageSource } from "./package-source.js";

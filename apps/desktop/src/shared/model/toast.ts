@@ -12,7 +12,7 @@ const state = reactive({
 /** 供 App 绑定 AppToast；调用方请用 showToast / setToastOpen。 */
 export const toastState = readonly(state);
 
-export function showToast(message: string, tone: ToastTone = "error", duration = 4000): void {
+export function showToast(message: string, tone: ToastTone, duration = 4000): void {
   const text = message.trim();
   if (!text) return;
   state.message = text;

@@ -9,7 +9,7 @@ import { validateAgentPackage } from "./validate.js";
 export interface PackageRelease {
   agentId: string;
   name: string;
-  summary: string;
+  background: string;
   manifest: PackageManifest;
   files: Record<string, Uint8Array>;
   digest: string;
@@ -21,7 +21,8 @@ export interface PackageSource {
 }
 
 export interface Visit {
-  kind?: "recruited" | "personal";
+  /** recruited=市场投影；personal=私人助理；local=本机私有（cwd/.pi 与公开同构） */
+  kind?: "recruited" | "personal" | "local";
   userId: string;
   agentId: string;
   root: string;
@@ -63,15 +64,35 @@ export class Runtime {
     const cwd = path.join(visitRoot, "cwd");
     const pi = path.join(cwd, ".pi");
     if (projectionIsCurrent(visitRoot, userId, release) && sameTree(readTree(pi), release.files)) {
-      return visitFromInstance(visitRoot);
+      const visit = visitFromInstance(visitRoot);
+      projectReleaseAgentsMd(visitRoot, release.files);
+      return visit;
     }
     fs.mkdirSync(sessions, { recursive: true });
     fs.mkdirSync(cwd, { recursive: true });
     ensureCwdLayout(cwd);
     replacePi(cwd, release);
     writeInstance(visitRoot, userId, release);
+    projectReleaseAgentsMd(visitRoot, release.files);
     return visitFromInstance(visitRoot);
   }
+}
+
+/** 包内 AGENTS.md → visit `.runtime/AGENTS.md`（Pi agentDir）。 */
+function projectReleaseAgentsMd(visitRoot: string, files: Record<string, Uint8Array>): void {
+  const runtimeDir = path.join(visitRoot, ".runtime");
+  const target = path.join(runtimeDir, "AGENTS.md");
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  const raw = files["AGENTS.md"];
+  if (!raw || !Buffer.from(raw).toString("utf8").trim()) {
+    if (fs.existsSync(target)) fs.rmSync(target, { force: true });
+    return;
+  }
+  const text = Buffer.from(raw).toString("utf8");
+  const body = text.endsWith("\n") ? text : `${text}\n`;
+  const temporary = `${target}.tmp`;
+  fs.writeFileSync(temporary, body, { mode: 0o600 });
+  fs.renameSync(temporary, target);
 }
 
 function requireDigest(release: PackageRelease): void {
@@ -155,8 +176,9 @@ function projectionIsCurrent(visitRoot: string, userId: string, release: Package
 function visitFromInstance(visitRoot: string): Visit {
   const data = readInstance(path.join(visitRoot, "instance.json"));
   if (!data) throw new PackageMismatch("instance.json 无法读取");
+  const kind = data.kind === "local" ? "local" : "recruited";
   return {
-    kind: "recruited",
+    kind,
     userId: String(data.user_id),
     agentId: String(data.agent_id),
     root: visitRoot,

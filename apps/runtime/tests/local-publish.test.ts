@@ -32,7 +32,7 @@ it("publishes a selected agent directory and a later version", async () => {
       agent_id: "generated-id",
       name: fields.name,
       role: fields.role,
-      summary: fields.summary,
+      background: fields.background,
       manifest: { version, tools: [], model_capabilities: [] },
       digest: packageDigest(manifest, unpacked),
       byte_size: archive.byteLength,
@@ -46,7 +46,7 @@ it("publishes a selected agent directory and a later version", async () => {
   });
   const nextDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-weather-v2-"));
   fs.cpSync(weatherDir, nextDir, { recursive: true });
-  fs.appendFileSync(path.join(nextDir, ".agentUp", "SYSTEM.md"), "\n第二版\n");
+  fs.appendFileSync(path.join(nextDir, ".agentup", "AGENTS.md"), "\n第二版\n");
   try {
     expect(await inspect(local.url, weatherDir, "owner")).toMatchObject({
       status: 200,
@@ -64,6 +64,69 @@ it("publishes a selected agent directory and a later version", async () => {
       status: 400,
       error: "Agent 目录不存在",
     });
+  } finally {
+    await local.close();
+    await close(backend);
+  }
+});
+
+it("updates card without republishing the package", async () => {
+  let cardName = "Weaty";
+  let cardBackground = "演示天气";
+  let cardRules = "";
+  const backend = await listen(async (req, res) => {
+    const url = req.url ?? "";
+    if (req.method === "PUT" && url === "/v1/agents/generated-id/card") {
+      const { fields } = await readMultipart(req);
+      cardName = fields.name ?? cardName;
+      cardBackground = fields.background ?? cardBackground;
+      cardRules = fields.rules ?? "";
+      return json(res, 200, {
+        agent_id: "generated-id",
+        name: cardName,
+        role: fields.role ?? "",
+        background: cardBackground,
+        rules: cardRules,
+        latest_version: 1,
+        latest_digest: "digest-v1",
+        recruited: false,
+        has_avatar: false,
+        avatar_url: null,
+        remark: "",
+        recruit_count: 0,
+        created_at: "2026-02-01T00:00:00Z",
+        updated_at: "2026-02-01T00:00:00Z",
+      });
+    }
+    return json(res, 404, { error: "没有这个接口" });
+  });
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot: fs.mkdtempSync(path.join(os.tmpdir(), "agentup-card-update-")),
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const response = await fetch(`${local.url}/agents/generated-id/card`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", authorization: "Bearer owner" },
+      body: JSON.stringify({
+        name: "Weaty 改名",
+        role: "气象员",
+        background: "只改名片",
+        rules: "保持简洁",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      agent_id: "generated-id",
+      name: "Weaty 改名",
+      background: "只改名片",
+      latest_version: 1,
+      latest_digest: "digest-v1",
+    });
+    expect(cardName).toBe("Weaty 改名");
+    expect(cardRules).toBe("保持简洁");
   } finally {
     await local.close();
     await close(backend);
@@ -91,8 +154,8 @@ it("passes publish ownership errors through the local API", async () => {
 
 it("returns structured package validation details from inspect", async () => {
   const broken = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-broken-"));
-  fs.mkdirSync(path.join(broken, ".agentUp"), { recursive: true });
-  fs.writeFileSync(path.join(broken, ".agentUp", "APPEND_SYSTEM.md"), "旧系统提示\n");
+  fs.mkdirSync(path.join(broken, ".agentup"), { recursive: true });
+  fs.writeFileSync(path.join(broken, ".agentup", "APPEND_SYSTEM.md"), "旧系统提示\n");
   const local = await startLocalServer({
     backendUrl: "http://127.0.0.1:9",
     userDataRoot: fs.mkdtempSync(path.join(os.tmpdir(), "agentup-publish-")),
@@ -105,10 +168,14 @@ it("returns structured package validation details from inspect", async () => {
       status: 400,
       error: "运行包校验失败",
     });
-    expect(result.details).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: "SYSTEM.md" }),
-      expect.objectContaining({ path: "APPEND_SYSTEM.md" }),
-    ]));
+    expect(result.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "APPEND_SYSTEM.md" })]),
+    );
+    expect(result.details).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "SYSTEM.md", message: expect.stringContaining("缺少") }),
+      ]),
+    );
   } finally {
     await local.close();
   }
@@ -131,7 +198,7 @@ async function publish(base: string, agentDir: string, token: string, agentId: s
       agent_dir: agentDir,
       name: "Weaty",
       role: "气象员",
-      summary: "演示天气",
+      background: "演示天气",
       ...(agentId ? { agent_id: agentId } : {}),
     }),
   });

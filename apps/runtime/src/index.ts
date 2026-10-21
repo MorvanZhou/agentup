@@ -28,6 +28,7 @@ export {
   registerAccount,
   setAgentRemark,
   unrecruitAgent,
+  updateAgentCard,
   type AgentCard,
   type PublishedAgent,
   type Recruit,
@@ -37,7 +38,12 @@ export {
   type UserPreferences,
 } from "./control/client.js";
 export { packageDigest } from "./package/digest.js";
-export { AgentSourceError, loadAgentSource, type AgentPublishSource } from "./package/source.js";
+export {
+  AgentSourceError,
+  loadAgentSource,
+  preparePublishSource,
+  type AgentPublishSource,
+} from "./package/source.js";
 export {
   NotRecruited,
   PackageMismatch,

@@ -8,7 +8,7 @@ export interface ThreadExtras {
   role: string;
   /** 本机备注名；空表示未设置。 */
   remark: string;
-  summary: string;
+  background: string;
   avatarUrl?: string;
   recruited: boolean;
   syncedVersion: string;
@@ -24,7 +24,7 @@ const empty: ThreadExtras = {
   name: "",
   role: "",
   remark: "",
-  summary: "",
+  background: "",
   recruited: false,
   syncedVersion: "",
   busy: false,

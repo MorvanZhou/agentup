@@ -19,13 +19,13 @@ export function useOpenWorkspaceFile(options?: { api?: DesktopApi; agentId?: Ref
     const path = relativePath.replace(/^@/, "").trim();
     if (!path) return;
     if (!window.agentUp?.openPath) {
-      showToast("请在 AgentUp 桌面应用中打开");
+      showToast("请在 AgentUp 桌面应用中打开", "error");
       return;
     }
     const token = session.value?.token ?? "";
     const userId = session.value?.userId ?? "";
     if (!token || !userId || !agentId.value) {
-      showToast("未登录或会话无效");
+      showToast("未登录或会话无效", "error");
       return;
     }
     try {
@@ -39,10 +39,10 @@ export function useOpenWorkspaceFile(options?: { api?: DesktopApi; agentId?: Ref
       await window.agentUp.openPath(absolute);
     } catch (caught) {
       if (caught instanceof DesktopApiError) {
-        showToast(caught.message);
+        showToast(caught.message, "error");
         return;
       }
-      showToast(caught instanceof Error && caught.message ? caught.message : "无法打开文件");
+      showToast(caught instanceof Error && caught.message ? caught.message : "无法打开文件", "error");
     }
   }
 

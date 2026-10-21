@@ -48,20 +48,15 @@ export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 export async function mockAgentUp(
   page: Page,
   options: {
-    selectAgentDirectory?: string | null;
     selectSkillPackage?: string | null;
     recordOpenedVisit?: boolean;
   } = {},
 ): Promise<void> {
-  const selectAgentDirectory = options.selectAgentDirectory ?? null;
   const selectSkillPackage = options.selectSkillPackage ?? null;
   const recordOpenedVisit = options.recordOpenedVisit ?? false;
   await page.addInitScript(
-    ({
-      selectAgentDirectory: directory,
-      selectSkillPackage: skillPackage,
-      recordOpenedVisit: record,
-    }) => {
+    ({ selectSkillPackage: skillPackage, recordOpenedVisit: record }) => {
+      const existing = window.agentUp;
       window.agentUp = {
         platform: "darwin",
         readSession: async () => {
@@ -74,8 +69,10 @@ export async function mockAgentUp(
         clearSession: async () => {
           localStorage.removeItem("agentup.session");
         },
-        selectAgentDirectory: async () => directory,
-        selectSkillPackage: async () => skillPackage,
+        selectSkillPackage:
+          skillPackage !== null
+            ? async () => skillPackage
+            : existing?.selectSkillPackage ?? (async () => null),
         openVisitDirectory: async (path) => {
           if (record) window.openedVisit = path;
         },
@@ -95,21 +92,32 @@ export async function mockAgentUp(
         webUrl: async () => "http://127.0.0.1:3000",
       };
     },
-    { selectAgentDirectory, selectSkillPackage, recordOpenedVisit },
+    { selectSkillPackage, recordOpenedVisit },
   );
 }
 
-/** 发布流程：选目录固定返回演示路径。 */
-export async function mockDirectoryPicker(page: Page): Promise<void> {
-  await mockAgentUp(page, { selectAgentDirectory: "/demo/writer/agent" });
-}
-
 export async function openOwnedAgents(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Agent 市场" }).click();
-  await page.getByRole("button", { name: "我发布的" }).click();
+  await page.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("link", { name: "我发布的" }).click();
 }
 
 export async function openPublishNew(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Agent 市场" }).click();
+  await page.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("link", { name: "我发布的" }).click();
   await page.getByRole("link", { name: "发布 Agent" }).click();
+}
+
+/** 给 Agent 编辑表单选一张最小合法 PNG 头像（可选）。 */
+export async function pickAgentAvatar(page: Page): Promise<void> {
+  // 1×1 PNG
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.locator('input[type="file"][accept*="image"]').setInputFiles({
+    name: "avatar.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await expect(page.getByRole("button", { name: "更换头像" })).toBeVisible();
 }

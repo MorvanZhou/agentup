@@ -136,7 +136,7 @@ it("proxies login, owned agents, and remark through the loopback API", async () 
           agent_id: "weather",
           name: "Weaty",
           role: "气象员",
-          summary: "查天气",
+          background: "查天气",
           latest_version: 1,
           latest_digest: "d1",
           recruited: true,

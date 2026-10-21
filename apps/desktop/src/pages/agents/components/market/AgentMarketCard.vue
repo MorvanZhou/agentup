@@ -2,19 +2,29 @@
 import { EllipsisIcon, FolderOpenIcon, UserMinusIcon, UserPlusIcon } from "@lucide/vue";
 import { computed, ref } from "vue";
 
-import AgentAvatar from "../../../shared/components/AgentAvatar.vue";
-import AppDialog from "../../../shared/components/AppDialog.vue";
-import AppDropdownMenu, { type AppDropdownItem } from "../../../shared/components/AppDropdownMenu.vue";
-import type { AgentCard } from "../../../shared/model/runtime";
-import { formatAgentTime } from "../../../shared/model/time";
-import { t, tf } from "../../../shared/model/ui-locale";
+import AgentAvatar from "../../../../shared/components/AgentAvatar.vue";
+import AppDialog from "../../../../shared/components/AppDialog.vue";
+import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
+import type { AgentCard } from "../../../../shared/model/runtime";
+import { formatAgentTime } from "../../../../shared/model/time";
+import { t, tf } from "../../../../shared/model/ui-locale";
 
-const props = defineProps<{ agent: AgentCard; busy: boolean }>();
+const props = withDefaults(
+  defineProps<{
+    agent: AgentCard;
+    busy: boolean;
+    /** market：只招募/标已招；manage：开目录与解雇 */
+    surface?: "market" | "manage";
+  }>(),
+  { surface: "market" },
+);
 const emit = defineEmits<{ recruit: [agentId: string]; open: [agentId: string]; dismiss: [agentId: string] }>();
 
 const confirmDismiss = ref(false);
 
 const updatedLabel = computed(() => formatAgentTime(props.agent.updatedAt));
+const showManageMenu = computed(() => props.surface === "manage" && props.agent.recruited);
+const showRecruit = computed(() => props.surface === "market" && !props.agent.recruited);
 
 const menuItems = computed((): AppDropdownItem[] => [
   { id: "open", label: t("agentsOpenDir"), icon: FolderOpenIcon, disabled: props.busy },
@@ -75,7 +85,7 @@ function confirmDismissAction(): void {
               {{ t("agentsRecruited") }}
             </span>
           </div>
-          <AppDropdownMenu v-if="agent.recruited" :items="menuItems" @select="onSelect">
+          <AppDropdownMenu v-if="showManageMenu" :items="menuItems" @select="onSelect">
             <template #trigger>
               <button
                 type="button"
@@ -88,7 +98,7 @@ function confirmDismissAction(): void {
             </template>
           </AppDropdownMenu>
           <button
-            v-else
+            v-else-if="showRecruit"
             type="button"
             :disabled="busy"
             class="inline-flex min-h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
@@ -100,7 +110,7 @@ function confirmDismissAction(): void {
           </button>
         </div>
         <p class="m-0 mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-          {{ agent.summary }}
+          {{ agent.background }}
         </p>
       </div>
 

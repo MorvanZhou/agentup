@@ -1,7 +1,8 @@
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onScopeDispose, ref, watch } from "vue";
 
-import { totalUnread } from "../pages/conversation/model/conversation-row";
+import { totalBlocked } from "../pages/conversation/model/conversation-row";
 import { DesktopApi, DesktopApiError } from "../shared/api/runtime";
+import type { AttentionSnapshot } from "../shared/api/runtime/chat";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/personal-assistant-default";
 import {
   PERSONAL_ASSISTANT_ID,
@@ -26,6 +27,14 @@ import { bindAuthGate, runWithAccount } from "./auth-gate";
 import { clearSession, ensureGuestSession, readSession, saveSession } from "./session-store";
 import { applyTheme, clearThemeMirror, readThemeMirror, writeThemeMirror } from "./theme";
 
+const ATTENTION_POLL_MS = 2_500;
+
+const emptyAttention = (): AttentionSnapshot => ({
+  busyAgentIds: [],
+  approvals: [],
+  askUsers: [],
+});
+
 export function useDesktopApp(api = new DesktopApi()) {
   const session = ref<Session | null>(readSession());
   const agents = ref<AgentCard[]>([]);
@@ -39,6 +48,9 @@ export function useDesktopApp(api = new DesktopApi()) {
   const skipEditResendConfirm = ref(false);
   const busy = ref(false);
   const busyAgent = ref("");
+  /** runtime 汇总：busy + 可闭合 HITL（侧栏 / Dock 真相源之一）。 */
+  const attention = ref<AttentionSnapshot>(emptyAttention());
+  let attentionPoll: ReturnType<typeof setInterval> | undefined;
 
   const conversations = computed(() => [
     personalAssistantCard(personalAssistant.value),
@@ -48,6 +60,18 @@ export function useDesktopApp(api = new DesktopApi()) {
   const selected = computed(() =>
     conversations.value.find((agent) => agent.agentId === selectedId.value),
   );
+  const blockedAgentIds = computed(() => {
+    const ids = new Set<string>();
+    for (const item of attention.value.approvals) ids.add(item.agentId);
+    for (const item of attention.value.askUsers) ids.add(item.agentId);
+    return ids;
+  });
+  const blockedCount = computed(() =>
+    totalBlocked(
+      attention.value.approvals.map((item) => item.agentId),
+      attention.value.askUsers.map((item) => item.agentId),
+    ),
+  );
 
   onMounted(() => {
     if (session.value) void refresh();
@@ -55,12 +79,32 @@ export function useDesktopApp(api = new DesktopApi()) {
   });
 
   watch(
-    unread,
+    blockedCount,
     (value) => {
-      syncAppBadge(totalUnread(value));
+      syncAppBadge(value);
     },
-    { deep: true, immediate: true },
+    { immediate: true },
   );
+
+  watch(
+    () => (session.value ? `${session.value.userId}:${session.value.token}` : ""),
+    (key) => {
+      stopAttentionPoll();
+      if (!key) {
+        attention.value = emptyAttention();
+        return;
+      }
+      void pullAttention();
+      attentionPoll = setInterval(() => {
+        void pullAttention();
+      }, ATTENTION_POLL_MS);
+    },
+    { immediate: true },
+  );
+
+  onScopeDispose(() => {
+    stopAttentionPoll();
+  });
 
   async function establishAccount(next: Session): Promise<void> {
     const previous = session.value;
@@ -68,7 +112,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       try {
         await api.migrateGuestUser(next.token, GUEST_USER_ID, next.userId);
       } catch (caught) {
-        showToast(messageOf(caught));
+        showToast(messageOf(caught), "error");
       }
     }
     session.value = next;
@@ -93,7 +137,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       await establishAccount(next);
       return null;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return null;
     } finally {
       busy.value = false;
@@ -105,7 +149,7 @@ export function useDesktopApp(api = new DesktopApi()) {
     try {
       await establishAccount(next);
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }
@@ -119,10 +163,10 @@ export function useDesktopApp(api = new DesktopApi()) {
     busy.value = true;
     try {
       await api.resendVerification(email, password, turnstileToken);
-      showToast("验证邮件已发送");
+      showToast("验证邮件已发送", "success");
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     } finally {
       busy.value = false;
@@ -136,7 +180,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       await establishAccount(next);
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     } finally {
       busy.value = false;
@@ -147,10 +191,10 @@ export function useDesktopApp(api = new DesktopApi()) {
     busy.value = true;
     try {
       await api.forgotPassword(email, turnstileToken);
-      showToast("若账号存在，重置邮件已发送");
+      showToast("若账号存在，重置邮件已发送", "success");
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     } finally {
       busy.value = false;
@@ -164,7 +208,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       await establishAccount(next);
       return true;
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     } finally {
       busy.value = false;
@@ -181,13 +225,13 @@ export function useDesktopApp(api = new DesktopApi()) {
     const url = browserLoginUrl;
     const open = window.agentUp?.openExternal;
     if (!url || !open) {
-      showToast(t("loginFailed"));
+      showToast(t("loginFailed"), "error");
       return;
     }
     try {
       await open(url);
     } catch (caught) {
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
     }
   }
 
@@ -220,7 +264,7 @@ export function useDesktopApp(api = new DesktopApi()) {
   async function loginWithBrowser(): Promise<boolean> {
     const bridge = window.agentUp;
     if (!bridge?.oauthLoopbackStart || !bridge.openExternal || !bridge.oauthLoopbackWait) {
-      showToast(t("loginDesktopOnly"));
+      showToast(t("loginDesktopOnly"), "error");
       return false;
     }
     const flight = ++browserLoginFlight;
@@ -252,7 +296,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       const raw = caught instanceof Error ? caught.message : "";
       if (raw === "已取消登录") return false;
       const message = caught instanceof Error && caught.message ? caught.message : messageOf(caught);
-      if (message) showToast(message);
+      if (message) showToast(message, "error");
       return false;
     } finally {
       if (flight === browserLoginFlight) {
@@ -283,14 +327,17 @@ export function useDesktopApp(api = new DesktopApi()) {
       personalAssistant.value = null;
     }
 
-    if (guest) {
-      agents.value = [];
-    } else {
-      try {
-        agents.value = await api.agents(token, { userId });
-      } catch {
-        agents.value = [];
+    try {
+      const local = await api.localAgents(token, userId);
+      if (guest) {
+        agents.value = local;
+      } else {
+        const market = await api.agents(token, { userId });
+        // 本机私有在前；市场列表不含 loc-*，直接拼接
+        agents.value = [...local, ...market];
       }
+    } catch {
+      agents.value = [];
     }
 
     synced.value = Object.fromEntries(
@@ -309,6 +356,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       previews.value = {};
       lastActiveAt.value = {};
     }
+    await pullAttention();
     await syncPreferences(token, userId, guest);
     if (!conversations.value.some((agent) => agent.agentId === selectedId.value)) {
       selectedId.value = conversations.value[0]?.agentId ?? "";
@@ -365,7 +413,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       return true;
     } catch (caught) {
       await applyUiLocale(previous);
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       return false;
     }
   }
@@ -384,7 +432,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       await applyUiLocale(prefs.uiLocale);
     } catch (caught) {
       skipEditResendConfirm.value = previous;
-      showToast(messageOf(caught));
+      showToast(messageOf(caught), "error");
       throw caught;
     }
   }
@@ -397,7 +445,8 @@ export function useDesktopApp(api = new DesktopApi()) {
   async function start(agent: AgentCard): Promise<void> {
     if (!session.value) return;
     select(agent);
-    if (agent.kind === "personal") return;
+    // 私人助理 / 本机私有已可聊，无需招募
+    if (agent.kind === "personal" || agent.kind === "local") return;
     await runWithAccount("agent.recruit", async () => {
       const current = session.value;
       if (!current || isGuestSession(current)) return;
@@ -409,7 +458,7 @@ export function useDesktopApp(api = new DesktopApi()) {
         await refresh();
         selectedId.value = agent.agentId;
       } catch (caught) {
-        showToast(messageOf(caught));
+        showToast(messageOf(caught), "error");
       } finally {
         busyAgent.value = "";
       }
@@ -463,6 +512,23 @@ export function useDesktopApp(api = new DesktopApi()) {
     await persistState(next, previews.value, lastActiveAt.value);
   }
 
+  async function pullAttention(): Promise<void> {
+    if (!session.value) {
+      attention.value = emptyAttention();
+      return;
+    }
+    try {
+      attention.value = await api.attention(session.value.token, session.value.userId);
+    } catch {
+      /* 保持上一帧；下次轮询再对齐 */
+    }
+  }
+
+  function stopAttentionPoll(): void {
+    if (attentionPoll) clearInterval(attentionPoll);
+    attentionPoll = undefined;
+  }
+
   /** 设置账号级备注名（backend 招募关系）；空字符串表示清除。 */
   async function setRemark(agentId: string, remark: string): Promise<void> {
     if (!session.value || isGuestSession(session.value)) return;
@@ -511,6 +577,8 @@ export function useDesktopApp(api = new DesktopApi()) {
     unread.value = {};
     previews.value = {};
     lastActiveAt.value = {};
+    attention.value = emptyAttention();
+    stopAttentionPoll();
     themeMode.value = "system";
     skipEditResendConfirm.value = false;
     clearThemeMirror();
@@ -539,12 +607,16 @@ export function useDesktopApp(api = new DesktopApi()) {
     unread,
     previews,
     lastActiveAt,
+    attention,
+    blockedAgentIds,
+    blockedCount,
     themeMode,
     uiLocale,
     setUiLocale,
     skipEditResendConfirm,
     busy,
     busyAgent,
+    pullAttention,
     authenticate,
     completeSession,
     resendVerification,
@@ -570,12 +642,13 @@ export function useDesktopApp(api = new DesktopApi()) {
 
 function personalAssistantCard(profile: PersonalAssistantProfile | null): AgentCard {
   const avatarUrl = profile?.avatarUrl || PERSONAL_ASSISTANT_DEFAULT_AVATAR;
+  // 名称以 profile 为准（runtime 已按 locale 解析出厂默认）；勿再二次改写，否则与设置页不一致。
   return {
     kind: "personal",
     agentId: PERSONAL_ASSISTANT_ID,
-    name: personalAssistantDisplayName(profile?.name),
-    role: t("assistantRole"),
-    summary: t("personalAssistantSummary"),
+    name: profile?.name?.trim() || t("assistantNamePlaceholder"),
+    role: profile?.role || t("assistantRole"),
+    background: profile?.background || t("personalAssistantSummary"),
     latestVersion: 1,
     latestDigest: "personal-assistant-v1",
     localVersion: 1,
@@ -587,14 +660,6 @@ function personalAssistantCard(profile: PersonalAssistantProfile | null): AgentC
     createdAt: "",
     updatedAt: "",
   };
-}
-
-/** 出厂默认名随界面语言；用户自定义名原样显示。 */
-function personalAssistantDisplayName(name: string | undefined): string {
-  if (!name || name === "我的助理" || name === "My assistant" || name === "小A" || name === "Ace") {
-    return t("assistantNamePlaceholder");
-  }
-  return name;
 }
 
 function messageOf(caught: unknown): string {

@@ -285,9 +285,14 @@ export function projectHistory(
 
 /**
  * 把会话里「有 toolCall、无 toolResult」的悬空调用补成中断结果。
- * 进程退出后 AskUserBroker / 审批等待已不存在，无法继续原 turn；不愈合则下次 prompt 会卡在残缺工具链上。
+ * 进程退出后多数等待已无法继续；不愈合则下次 prompt 会卡在残缺工具链上。
+ * `skipToolCallIds`：盘上仍可闭合的 HITL（审批 / ask_user），留给用户拍板（策略 A）。
  */
-export function healInterruptedSessionTools(manager: SessionManager): number {
+export function healInterruptedSessionTools(
+  manager: SessionManager,
+  options: { skipToolCallIds?: ReadonlySet<string> } = {},
+): number {
+  const skip = options.skipToolCallIds ?? new Set<string>();
   const pending = new Map<string, string>();
   for (const message of buildSessionContext(manager.getEntries()).messages) {
     if (!message || typeof message !== "object") continue;
@@ -313,6 +318,7 @@ export function healInterruptedSessionTools(manager: SessionManager): number {
   const now = Date.now();
   let healed = 0;
   for (const [toolCallId, toolName] of pending) {
+    if (skip.has(toolCallId)) continue;
     // 与 ask_user 一样软中断：不标 isError，避免模型把「应用退出」当成工具硬失败。
     manager.appendMessage({
       role: "toolResult",

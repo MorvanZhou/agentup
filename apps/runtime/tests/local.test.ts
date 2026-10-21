@@ -44,7 +44,7 @@ it("lets two accounts recruit one agent and sync separate visits", async () => {
           {
             agent_id: "respiratory-doctor",
             name: "呼吸科医生",
-            summary: "演示问诊",
+            background: "演示问诊",
             latest_version: manifest.version,
             latest_digest: digest,
             recruited: recruited.has(token),
@@ -93,7 +93,7 @@ it("lets two accounts recruit one agent and sync separate visits", async () => {
           "x-package-version": String(manifest.version),
           "x-package-digest": digest,
           "x-package-name": encodeURIComponent("呼吸科医生"),
-          "x-package-summary": encodeURIComponent("演示问诊"),
+          "x-package-background": encodeURIComponent("演示问诊"),
         });
         res.end(body);
       });

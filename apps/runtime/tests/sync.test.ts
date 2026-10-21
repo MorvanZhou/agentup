@@ -22,7 +22,7 @@ function release(version: number, text: string, packageDigestValue = packageDige
   return {
     agentId: "tax-advisor",
     name: "税务顾问",
-    summary: text,
+    background: text,
     manifest: manifest(version),
     files: files(text),
     digest: packageDigestValue,

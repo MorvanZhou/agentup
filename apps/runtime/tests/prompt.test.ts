@@ -411,7 +411,7 @@ function backendHandler(req: http.IncomingMessage, res: http.ServerResponse): vo
     json(res, 200, {
       agent_id: "respiratory-doctor",
       name: "呼吸科医生",
-      summary: "演示问诊",
+      background: "演示问诊",
       manifest: { version: manifest.version, tools: manifest.tools, model_capabilities: manifest.modelCapabilities },
       files: { "SYSTEM.md": files["SYSTEM.md"].toString("base64") },
       digest,

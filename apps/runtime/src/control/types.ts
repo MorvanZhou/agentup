@@ -16,7 +16,7 @@ export interface PublishedAgent {
   agentId: string;
   name: string;
   role: string;
-  summary: string;
+  background: string;
   version: number;
   digest: string;
 }
@@ -26,7 +26,9 @@ export interface AgentCard {
   name: string;
   /** 开发者定义的岗位，用户不能改。 */
   role: string;
-  summary: string;
+  background: string;
+  /** 工作规则（名片层）；可空。 */
+  rules: string;
   latestVersion: number;
   latestDigest: string;
   recruited: boolean;

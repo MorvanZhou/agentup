@@ -35,7 +35,7 @@ export function useAgentChat(
       loadEpoch.value = { ...loadEpoch.value, [agentId]: (loadEpoch.value[agentId] ?? 0) + 1 };
     } catch (error) {
       loaded.delete(key);
-      showToast(error instanceof DesktopApiError ? error.message : "聊天记录读取失败");
+      showToast(error instanceof DesktopApiError ? error.message : "聊天记录读取失败", "error");
     }
   }
 
@@ -65,7 +65,15 @@ export function useAgentChat(
       approvals.value = next;
       return;
     }
-    approvals.value = { ...approvals.value, [agentId]: approval };
+    // 同一 id 只挂一个 agent（嵌套 HITL 曾被流+attention 双写到父子两端）。
+    const next = { ...approvals.value };
+    for (const [otherId, existing] of Object.entries(next)) {
+      if (otherId !== agentId && existing?.id === approval.id) {
+        delete next[otherId];
+      }
+    }
+    next[agentId] = approval;
+    approvals.value = next;
   }
 
   function setAskUser(agentId: string, askUser: AgentUpAskUserData | undefined): void {
@@ -75,7 +83,14 @@ export function useAgentChat(
       askUsers.value = next;
       return;
     }
-    askUsers.value = { ...askUsers.value, [agentId]: askUser };
+    const next = { ...askUsers.value };
+    for (const [otherId, existing] of Object.entries(next)) {
+      if (otherId !== agentId && existing?.id === askUser.id) {
+        delete next[otherId];
+      }
+    }
+    next[agentId] = askUser;
+    askUsers.value = next;
   }
 
   async function decide(
@@ -87,7 +102,7 @@ export function useAgentChat(
     const approval = approvals.value[agentId];
     if (!approval) return;
     await api.decideApproval(token, approval.id, allow, scope);
-    setApproval(agentId, undefined);
+    clearApprovalById(approval.id);
   }
 
   async function answerAsk(
@@ -98,7 +113,31 @@ export function useAgentChat(
     const askUser = askUsers.value[agentId];
     if (!askUser) return;
     await api.answerAskUser(token, askUser.id, answer);
-    setAskUser(agentId, undefined);
+    clearAskUserById(askUser.id);
+  }
+
+  function clearApprovalById(id: string): void {
+    const next = { ...approvals.value };
+    let changed = false;
+    for (const [key, existing] of Object.entries(next)) {
+      if (existing?.id === id) {
+        delete next[key];
+        changed = true;
+      }
+    }
+    if (changed) approvals.value = next;
+  }
+
+  function clearAskUserById(id: string): void {
+    const next = { ...askUsers.value };
+    let changed = false;
+    for (const [key, existing] of Object.entries(next)) {
+      if (existing?.id === id) {
+        delete next[key];
+        changed = true;
+      }
+    }
+    if (changed) askUsers.value = next;
   }
 
   function syncMessages(agentId: string, messages: UIMessage[]): void {
@@ -155,6 +194,7 @@ export function useAgentChat(
             task.status === "completed"
               ? `「${label}」已完成委托任务`
               : `「${label}」委托失败`,
+            task.status === "completed" ? "success" : "error",
           );
           if (task.fromAgentId) reloadIds.add(task.fromAgentId);
         }

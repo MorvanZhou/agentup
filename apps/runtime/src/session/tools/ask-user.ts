@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
+import { readHitlPending, writeHitlAskUsers } from "../hitl-pending.js";
+import { hasDanglingToolCall, repairOrphanAskUser } from "../hitl-repair.js";
+
 export const ASK_USER_TOOL = "ask_user";
 
 export type AskUserOption = {
@@ -80,13 +83,35 @@ export class AskUserBroker {
     string,
     { request: AskUserRequest; resolve: (answer: AskUserAnswer) => void; cleanup: () => void }
   >();
+  /** 进程重启后仍可回答的孤儿提问（无 Promise）。 */
+  private readonly orphans = new Map<string, AskUserRequest>();
   private readonly listeners = new Set<(request: AskUserRequest) => void>();
+  private readonly restoredUsers = new Set<string>();
+
+  constructor(private readonly userDataRoot?: string) {}
+
+  /** 载入盘上仍悬空的 ask_user（A：已愈合的丢弃）。 */
+  restoreUser(userId: string): void {
+    if (!this.userDataRoot || !userId || this.restoredUsers.has(userId)) return;
+    this.restoredUsers.add(userId);
+    const stored = readHitlPending(this.userDataRoot, userId);
+    for (const request of stored.askUsers) {
+      if (this.pending.has(request.id) || this.orphans.has(request.id)) continue;
+      if (!hasDanglingToolCall(this.userDataRoot, request.userId, request.agentId, request.toolCallId)) {
+        continue;
+      }
+      this.orphans.set(request.id, request);
+    }
+    this.persistUser(userId);
+  }
 
   request(request: Omit<AskUserRequest, "id">, signal?: AbortSignal): Promise<AskUserAnswer> {
     const value = { ...request, id: randomUUID() };
+    this.restoredUsers.add(value.userId);
     return new Promise((resolve) => {
       const abort = () => {
         this.pending.delete(value.id);
+        this.persistUser(value.userId);
         resolve({ kind: "cancelled" });
       };
       const cleanup = () => signal?.removeEventListener("abort", abort);
@@ -96,25 +121,66 @@ export class AskUserBroker {
       }
       signal?.addEventListener("abort", abort, { once: true });
       this.pending.set(value.id, { request: value, resolve, cleanup });
+      this.persistUser(value.userId);
       for (const listener of this.listeners) listener(value);
     });
   }
 
   answer(id: string, answer: AskUserAnswer): boolean {
     const pending = this.pending.get(id);
-    if (!pending) return false;
-    if (answer.kind === "answers" && answer.items.length !== pending.request.questions.length) {
+    if (pending) {
+      if (answer.kind === "answers" && answer.items.length !== pending.request.questions.length) {
+        return false;
+      }
+      this.pending.delete(id);
+      pending.cleanup();
+      pending.resolve(answer);
+      this.persistUser(pending.request.userId);
+      return true;
+    }
+    const orphan = this.orphans.get(id);
+    if (!orphan || !this.userDataRoot) return false;
+    if (answer.kind === "answers" && answer.items.length !== orphan.questions.length) {
       return false;
     }
-    this.pending.delete(id);
-    pending.cleanup();
-    pending.resolve(answer);
+    repairOrphanAskUser(this.userDataRoot, orphan, answer);
+    this.orphans.delete(id);
+    this.persistUser(orphan.userId);
     return true;
+  }
+
+  listPending(userId: string): AskUserRequest[] {
+    if (this.userDataRoot) this.restoreUser(userId);
+    const byId = new Map<string, AskUserRequest>();
+    for (const { request } of this.pending.values()) {
+      if (request.userId === userId) byId.set(request.id, request);
+    }
+    for (const request of this.orphans.values()) {
+      if (request.userId === userId) byId.set(request.id, request);
+    }
+    return [...byId.values()];
+  }
+
+  pendingToolCallIds(userId: string, agentId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const request of this.listPending(userId)) {
+      if (request.agentId === agentId) ids.add(request.toolCallId);
+    }
+    return ids;
   }
 
   subscribe(listener: (request: AskUserRequest) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  private persistUser(userId: string): void {
+    if (!this.userDataRoot || !userId) return;
+    const askUsers = [
+      ...[...this.pending.values()].map((entry) => entry.request).filter((item) => item.userId === userId),
+      ...[...this.orphans.values()].filter((item) => item.userId === userId),
+    ];
+    writeHitlAskUsers(this.userDataRoot, userId, askUsers);
   }
 }
 

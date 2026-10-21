@@ -64,7 +64,7 @@ export function buildConversationRows(input: {
         unread: input.unread[agent.agentId] ?? 0,
         hasUpdate: agent.latestVersion > agent.localVersion,
         lastActiveAt: input.lastActiveAt[agent.agentId] ?? 0,
-        searchText: `${agent.remark}\n${agent.name}\n${agent.role}\n${agent.summary}\n${preview}`.toLowerCase(),
+        searchText: `${agent.remark}\n${agent.name}\n${agent.role}\n${agent.background}\n${preview}`.toLowerCase(),
       } satisfies ConversationRow,
     };
   });
@@ -96,7 +96,7 @@ export function unreadLabel(count: number): string {
   return count > 9 ? "9+" : String(count);
 }
 
-/** 导航 / Dock 用：各 agent 未读条数之和。 */
+/** 导航 / Dock 用：各 agent 未读条数之和（侧栏红点仍用；Dock 改用 totalBlocked）。 */
 export function totalUnread(unread: Record<string, number>): number {
   let sum = 0;
   for (const count of Object.values(unread)) {
@@ -105,6 +105,20 @@ export function totalUnread(unread: Record<string, number>): number {
     }
   }
   return sum;
+}
+
+/** Dock / 导航角标：有待审批或 ask_user 的 Agent 个数。 */
+export function totalBlocked(
+  awaitingApproval: ReadonlySet<string> | readonly string[],
+  awaitingAskUser: ReadonlySet<string> | readonly string[] = [],
+): number {
+  const ids = new Set<string>(
+    awaitingApproval instanceof Set ? awaitingApproval : awaitingApproval,
+  );
+  for (const id of awaitingAskUser instanceof Set ? awaitingAskUser : awaitingAskUser) {
+    ids.add(id);
+  }
+  return ids.size;
 }
 
 /** 侧栏副文案：待审批 / 待回答优先于消息预览。 */

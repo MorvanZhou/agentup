@@ -106,16 +106,14 @@ export function setUserSkillEnabled(
 }
 
 /**
- * 从本机文件夹或 zip 安装 skill 包。
+ * 将 Skill 文件夹或 zip 安装到任意 `skills/` 父目录（私人助理或本机 Agent 的 `.pi/skills`）。
  * `expectName` 用于「更新」：包内 name 必须与目标技能一致。
  */
-export async function installUserSkillPackage(
-  userDataRoot: string,
-  userId: string,
+export async function installSkillPackageTo(
+  skillsParentDir: string,
   packagePath: string,
   options: { expectName?: string } = {},
-): Promise<UserSkill> {
-  validateUserId(userId);
+): Promise<{ name: string; description: string }> {
   if (!packagePath || typeof packagePath !== "string") throw new UserResourceError("路径无效");
   const resolved = path.resolve(packagePath);
   if (!fs.existsSync(resolved)) throw new UserResourceError("Skill 包不存在");
@@ -149,28 +147,45 @@ export async function installUserSkillPackage(
     }).filter((issue) => issue.path.startsWith("skills/"));
     if (issues.length) throw new UserResourceError("技能校验失败", issues);
 
-    const target = path.join(userSkillsDir(userDataRoot, userId), name);
-    const parent = userSkillsDir(userDataRoot, userId);
+    const parent = path.resolve(skillsParentDir);
     fs.mkdirSync(parent, { recursive: true });
+    const target = path.join(parent, name);
+    if (!target.startsWith(`${parent}${path.sep}`)) {
+      throw new UserResourceError("请求无效");
+    }
     const temporary = path.join(parent, `.install-${randomUUID()}`);
     fs.mkdirSync(temporary, { recursive: true });
     copyTree(skillRoot, temporary, SKILL_PACKAGE_MAX_BYTES);
     if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
     fs.renameSync(temporary, target);
 
-    const userRoot = userResourceRoot(userDataRoot, userId);
-    const state = readSkillsState(userRoot);
-    if (state.enabled[name] === undefined) state.enabled[name] = true;
-    writeSkillsState(userRoot, state);
-
-    return {
-      name,
-      description: skillDescription(content),
-      enabled: state.enabled[name] !== false,
-    };
+    return { name, description: skillDescription(content) };
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });
   }
+}
+
+/**
+ * 从本机文件夹或 zip 安装到私人助理 skills。
+ * `expectName` 用于「更新」：包内 name 必须与目标技能一致。
+ */
+export async function installUserSkillPackage(
+  userDataRoot: string,
+  userId: string,
+  packagePath: string,
+  options: { expectName?: string } = {},
+): Promise<UserSkill> {
+  validateUserId(userId);
+  const installed = await installSkillPackageTo(userSkillsDir(userDataRoot, userId), packagePath, options);
+  const userRoot = userResourceRoot(userDataRoot, userId);
+  const state = readSkillsState(userRoot);
+  if (state.enabled[installed.name] === undefined) state.enabled[installed.name] = true;
+  writeSkillsState(userRoot, state);
+  return {
+    name: installed.name,
+    description: installed.description,
+    enabled: state.enabled[installed.name] !== false,
+  };
 }
 
 export function deleteUserSkill(userDataRoot: string, userId: string, name: string): void {

@@ -8,6 +8,7 @@ import {
   conversationPreviewLabel,
   filterConversationRows,
   hasRecruitedMarketAgent,
+  totalBlocked,
   totalUnread,
   unreadLabel,
 } from "../../src/pages/conversation/model/conversation-row.js";
@@ -15,7 +16,7 @@ import type { AgentCard } from "../../src/shared/model/runtime.js";
 
 function card(partial: Partial<AgentCard> & Pick<AgentCard, "agentId" | "name">): AgentCard {
   return {
-    summary: "",
+    background: "",
     latestVersion: 1,
     latestDigest: "d",
     localVersion: 1,
@@ -33,7 +34,7 @@ function card(partial: Partial<AgentCard> & Pick<AgentCard, "agentId" | "name">)
 it("joins agent meta with cached previews and UI flags into one row", () => {
   const rows = buildConversationRows({
     conversations: [
-      card({ agentId: "a", name: "天气", summary: "日报", remark: "小天气", latestVersion: 2, localVersion: 1 }),
+      card({ agentId: "a", name: "天气", background: "日报", remark: "小天气", latestVersion: 2, localVersion: 1 }),
     ],
     previews: { a: "明天 晴吗" },
     lastActiveAt: { a: 100 },
@@ -138,8 +139,8 @@ it("orders rows by lastActiveAt like WeChat chat list", () => {
 it("filters rows by precomputed searchText", () => {
   const rows = buildConversationRows({
     conversations: [
-      card({ agentId: "a", name: "天气助手", summary: "预报" }),
-      card({ agentId: "b", name: "记账", summary: "开销", remark: "日常账本" }),
+      card({ agentId: "a", name: "天气助手", background: "预报" }),
+      card({ agentId: "b", name: "记账", background: "开销", remark: "日常账本" }),
     ],
     previews: { b: "买菜花了 20" },
     lastActiveAt: {},
@@ -175,6 +176,12 @@ it("sums unread across agents", () => {
   expect(totalUnread({})).toBe(0);
   expect(totalUnread({ a: 3, b: 2 })).toBe(5);
   expect(totalUnread({ a: 0, b: -1, c: 1.8 })).toBe(1);
+});
+
+it("counts blocked agents once even if both approval and ask_user", () => {
+  expect(totalBlocked([], [])).toBe(0);
+  expect(totalBlocked(["a", "b"], ["b", "c"])).toBe(3);
+  expect(totalBlocked(new Set(["a"]), new Set(["a"]))).toBe(1);
 });
 
 it("treats only personal assistant as no market recruits", () => {

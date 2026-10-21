@@ -30,7 +30,7 @@ const recruitNudgeVisible = computed(
 );
 
 function goMarket(): void {
-  void router.push({ name: "agents" });
+  void router.push({ name: "market" });
 }
 </script>
 

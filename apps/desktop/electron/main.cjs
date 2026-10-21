@@ -18,6 +18,7 @@ const {
 const { createSecretCrypto } = require("./secret-crypto.cjs");
 const { createSessionVault } = require("./session-vault.cjs");
 const { mergeShellEnv, resolveUserShellEnv } = require("./shell-env.cjs");
+const { childAlive, stopChildProcess } = require("./stop-child.cjs");
 
 const runtimeHost = "127.0.0.1";
 const runtimePort = process.env.AGENTUP_RUNTIME_PORT || "47391";
@@ -189,14 +190,6 @@ app.whenReady().then(async () => {
     const fromEnv = process.env.AGENTUP_WEB_URL?.trim();
     return (fromEnv || releaseWebUrl || "http://127.0.0.1:3000").replace(/\/$/, "");
   });
-  ipcMain.handle("agentup:select-agent-directory", async () => {
-    const window = BrowserWindow.getFocusedWindow();
-    const result = await dialog.showOpenDialog(window, {
-      title: "上传 Agent 运行包",
-      properties: ["openDirectory"],
-    });
-    return result.canceled ? null : result.filePaths[0] ?? null;
-  });
   ipcMain.handle("agentup:select-skill-package", async (_event, kind) => {
     const window = BrowserWindow.getFocusedWindow();
     if (kind !== "directory" && kind !== "zip") throw new Error("选择类型无效");
@@ -212,6 +205,17 @@ app.whenReady().then(async () => {
             filters: [{ name: "ZIP", extensions: ["zip"] }],
           });
     return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+  ipcMain.handle("agentup:select-save-path", async (_event, defaultName) => {
+    const window = BrowserWindow.getFocusedWindow();
+    const suggested =
+      typeof defaultName === "string" && defaultName.trim() ? defaultName.trim() : "skill.zip";
+    const result = await dialog.showSaveDialog(window, {
+      title: "导出 Skill",
+      defaultPath: suggested,
+      filters: [{ name: "ZIP", extensions: ["zip"] }],
+    });
+    return result.canceled ? null : result.filePath ?? null;
   });
   ipcMain.handle("agentup:open-visit-directory", async (_event, directory) => {
     if (typeof directory !== "string") throw new Error("目录无效");
@@ -271,8 +275,25 @@ app.whenReady().then(async () => {
   createWindow();
 });
 
+/** 退出时先 SIGTERM，超时再 SIGKILL，避免关窗/Cmd+Q 后 runtime 孤儿占端口。 */
+let stoppingRuntime = false;
+
+async function stopRuntime() {
+  const child = runtime;
+  runtime = null;
+  await stopChildProcess(child, { logInfo, logError });
+}
+
+app.on("before-quit", (event) => {
+  if (!runtime || !childAlive(runtime) || stoppingRuntime) return;
+  event.preventDefault();
+  stoppingRuntime = true;
+  void stopRuntime().finally(() => {
+    app.quit();
+  });
+});
+
 app.on("window-all-closed", () => {
-  if (runtime) runtime.kill();
   app.quit();
 });
 

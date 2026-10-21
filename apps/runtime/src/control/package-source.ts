@@ -43,7 +43,7 @@ export class HttpPackageSource implements PackageSource {
     const versionHeader = response.headers.get("x-package-version");
     const digest = response.headers.get("x-package-digest") ?? "";
     const name = decodeHeader(response.headers.get("x-package-name")) || agentId;
-    const summary = decodeHeader(response.headers.get("x-package-summary"));
+    const background = decodeHeader(response.headers.get("x-package-background"));
     const version = versionHeader ? Number(versionHeader) : NaN;
     if (!Number.isInteger(version) || version < 1 || !digest) {
       throw new BackendClientError("运行包响应头无效", 502);
@@ -51,7 +51,7 @@ export class HttpPackageSource implements PackageSource {
     const release: PackageRelease = {
       agentId: response.headers.get("x-agent-id") || agentId,
       name,
-      summary,
+      background,
       manifest: { version, tools: [], modelCapabilities: [] },
       files,
       digest,
