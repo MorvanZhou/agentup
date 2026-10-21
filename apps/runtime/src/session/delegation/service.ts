@@ -6,7 +6,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { UIMessage } from "ai";
 
 import type { ModelConfig } from "../../config/load.js";
-import { HttpPackageSource, listAgents } from "../../control/client.js";
+import { HttpPackageSource } from "../../control/client.js";
 import { composeSystemPrompt } from "../../local/agent-identity.js";
 import {
   isLocalAgentId,
@@ -136,8 +136,9 @@ export class DelegationService {
   }
 
   /**
-   * 委托 / 发现用的可用专家池：本机私有 Agents（loc-*）∪ 已招募市场 Agents。
-   * 登录后不能只拉 backend，否则本地图图等永远不进 list / 检索。
+   * 委托 / 发现用的可用专家池：只读本机。
+   * 招募时已 sync 到 `users/<uid>/agents/<id>/`；本机私有为 `loc-*`。
+   * 不打 backend，避免登录态漏本地、也避免发现依赖网络。
    */
   async listRecruited(userId: string): Promise<RecruitedAgentInfo[]> {
     const byId = new Map<string, RecruitedAgentInfo>();
@@ -145,42 +146,12 @@ export class DelegationService {
     for (const card of listLocalAgents(this.options.userDataRoot, userId)) {
       byId.set(card.agentId, fromLocalCard(card));
     }
-
-    let remoteOk = false;
-    const token = this.tokens.get(userId);
-    if (token) {
-      try {
-        const agents = await listAgents(this.options.backendUrl, token, { recruited: true });
-        remoteOk = true;
-        for (const agent of agents) {
-          const name = agent.name.trim();
-          const role = agent.role.trim();
-          const background = agent.background.trim();
-          byId.set(agent.agentId, {
-            agentId: agent.agentId,
-            name,
-            role,
-            background,
-            remark: agent.remark,
-            systemText:
-              name && role && background
-                ? composeSystemPrompt({ name, role, background }, "zh")
-                : undefined,
-          });
-        }
-      } catch {
-        // 退回本机已同步的市场 Agent
-      }
+    for (const item of listDiskSyncedAgents(this.options.userDataRoot, userId)) {
+      if (!byId.has(item.agentId)) byId.set(item.agentId, item);
     }
 
-    if (!remoteOk) {
-      for (const item of listDiskSyncedAgents(this.options.userDataRoot, userId)) {
-        if (!byId.has(item.agentId)) byId.set(item.agentId, item);
-      }
-    }
-
-    return [...byId.values()].sort((a, b) =>
-      a.name.localeCompare(b.name, "zh") || a.agentId.localeCompare(b.agentId, "en"),
+    return [...byId.values()].sort(
+      (a, b) => a.name.localeCompare(b.name, "zh") || a.agentId.localeCompare(b.agentId, "en"),
     );
   }
 

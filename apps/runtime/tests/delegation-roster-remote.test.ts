@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
 vi.mock("../src/control/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/control/client.js")>();
@@ -20,12 +20,8 @@ import {
   formatDiscoveredAgentsContext,
 } from "../src/session/delegation/discover.js";
 
-afterEach(() => {
-  vi.mocked(listAgents).mockReset();
-});
-
-it("keeps local agents in roster when backend recruited list succeeds", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-remote-"));
+it("lists roster from local disk only and does not call backend listAgents", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-local-only-"));
   const now = new Date().toISOString();
   const localId = "loc-abcd1234ef";
   const localRoot = path.join(root, "users", "patient", "agents", localId);
@@ -50,23 +46,24 @@ it("keeps local agents in roster when backend recruited list succeeds", async ()
     })}\n`,
   );
 
-  vi.mocked(listAgents).mockResolvedValue([
-    {
-      agentId: "hJsAC7Ph",
-      name: "Weaty",
-      role: "气象学家",
-      background: "天气查询",
-      rules: "",
-      latestVersion: 1,
-      latestDigest: "d",
-      recruited: true,
-      hasAvatar: false,
-      remark: "",
-      recruitCount: 1,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ]);
+  const marketRoot = path.join(root, "users", "patient", "agents", "hJsAC7Ph");
+  fs.mkdirSync(path.join(marketRoot, "cwd", ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(marketRoot, "instance.json"),
+    `${JSON.stringify({
+      user_id: "patient",
+      agent_id: "hJsAC7Ph",
+      package_version: 1,
+      package_digest: "m",
+      project_trust: "granted",
+      tools: [],
+      model_capabilities: [],
+    })}\n`,
+  );
+  fs.writeFileSync(
+    path.join(marketRoot, "cwd", ".pi", "SYSTEM.md"),
+    "你是 Weaty。岗位：气象学家。\n\n天气查询\n",
+  );
 
   const service = new DelegationService({
     userDataRoot: root,
@@ -82,10 +79,11 @@ it("keeps local agents in roster when backend recruited list succeeds", async ()
     approvals: new ApprovalBroker(),
     askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
   });
+  // 即使绑了 token，发现仍只走本机。
   service.bindAuth("patient", "token");
 
   const agents = await service.listRecruited("patient");
-  expect(vi.mocked(listAgents)).toHaveBeenCalled();
+  expect(vi.mocked(listAgents)).not.toHaveBeenCalled();
   expect(agents.map((item) => item.agentId).sort()).toEqual(["hJsAC7Ph", localId].sort());
 
   const discovered = discoverRecruitedAgents(agents, "帮我画信息图");
