@@ -57,6 +57,20 @@ You add a specialist that keeps getting better. When they improve, your side upd
 - **Add once, come back anytime** — Same kind of ask goes back to the same chat. When they update, you do nothing.
 - **Ready to chat when you find them** — They come ready to help. You do not need to learn settings first.
 
+## Build your own Agent team
+
+**Assemble a squad. Each has a craft. They can work together.**
+
+Organize your own Agent team. Every assistant brings their own skills; when a job spans roles, they talk to each other and solve it together.
+
+<p align="center">
+  <img src="docs/images/feature-agent-team.png" alt="Build an Agent team with specialties that collaborate" width="640" />
+</p>
+
+- **Each one owns a craft** — Product, design, frontend, backend, app — separate jobs.
+- **Your contacts are the squad** — Added assistants sit together in the list, ready to open.
+- **They collaborate to finish the job** — Tell your personal assistant the goal; they pull the right teammates in.
+
 ## One chat at a time
 
 **Same question. Two ways to chat. Two answers.**
