@@ -8,6 +8,12 @@ import type { UIMessage } from "ai";
 import type { ModelConfig } from "../../config/load.js";
 import { HttpPackageSource, listAgents } from "../../control/client.js";
 import { composeSystemPrompt } from "../../local/agent-identity.js";
+import {
+  isLocalAgentId,
+  listLocalAgents,
+  localAgentVisit,
+  type LocalAgentCard,
+} from "../../local/local-agent.js";
 import { ensurePersonalAssistant, PERSONAL_ASSISTANT_ID } from "../../local/personal-assistant.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import type { ApprovalBroker } from "../approval.js";
@@ -33,9 +39,13 @@ export type DelegationServiceOptions = {
   askUser: AskUserBroker;
   /**
    * 异步完成后作废委托方内存会话，便于历史重载看见通知。
-   * kind: personal | recruited
+   * kind: personal | recruited | local
    */
-  invalidateVisit?: (userId: string, agentId: string, kind: "personal" | "recruited") => void;
+  invalidateVisit?: (
+    userId: string,
+    agentId: string,
+    kind: "personal" | "recruited" | "local",
+  ) => void;
 };
 
 /** 任一 Visit 委托已招募 Agent：鉴权、开专家子会话、回注结果。 */
@@ -125,16 +135,28 @@ export class DelegationService {
     return readDelegationHistory(visitRoot, taskId, cwd);
   }
 
+  /**
+   * 委托 / 发现用的可用专家池：本机私有 Agents（loc-*）∪ 已招募市场 Agents。
+   * 登录后不能只拉 backend，否则本地图图等永远不进 list / 检索。
+   */
   async listRecruited(userId: string): Promise<RecruitedAgentInfo[]> {
+    const byId = new Map<string, RecruitedAgentInfo>();
+
+    for (const card of listLocalAgents(this.options.userDataRoot, userId)) {
+      byId.set(card.agentId, fromLocalCard(card));
+    }
+
+    let remoteOk = false;
     const token = this.tokens.get(userId);
     if (token) {
       try {
         const agents = await listAgents(this.options.backendUrl, token, { recruited: true });
-        return agents.map((agent) => {
+        remoteOk = true;
+        for (const agent of agents) {
           const name = agent.name.trim();
           const role = agent.role.trim();
           const background = agent.background.trim();
-          return {
+          byId.set(agent.agentId, {
             agentId: agent.agentId,
             name,
             role,
@@ -144,13 +166,22 @@ export class DelegationService {
               name && role && background
                 ? composeSystemPrompt({ name, role, background }, "zh")
                 : undefined,
-          };
-        });
+          });
+        }
       } catch {
-        // 退回本机已同步目录
+        // 退回本机已同步的市场 Agent
       }
     }
-    return listLocalRecruited(this.options.userDataRoot, userId);
+
+    if (!remoteOk) {
+      for (const item of listDiskSyncedAgents(this.options.userDataRoot, userId)) {
+        if (!byId.has(item.agentId)) byId.set(item.agentId, item);
+      }
+    }
+
+    return [...byId.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "zh") || a.agentId.localeCompare(b.agentId, "en"),
+    );
   }
 
   /**
@@ -179,7 +210,10 @@ export class DelegationService {
 
     const roster = await this.listRecruited(input.userId);
     const card = roster.find((item) => item.agentId === input.toAgentId);
-    const toAgentName = card?.name || card?.remark || input.toAgentId;
+    if (!card) {
+      throw new DelegationError("目标不在可用 Agents 列表中（需为本机或已招募专家）");
+    }
+    const toAgentName = card.remark || card.name || input.toAgentId;
     const wait = input.wait !== false;
 
     const task = this.store.create({
@@ -270,6 +304,13 @@ export class DelegationService {
   }
 
   private async syncVisit(userId: string, agentId: string): Promise<Visit> {
+    if (isLocalAgentId(agentId)) {
+      try {
+        return localAgentVisit(this.options.userDataRoot, userId, agentId);
+      } catch {
+        throw new DelegationError("找不到本机 Agent");
+      }
+    }
     const token = this.tokens.get(userId);
     if (token) {
       return new Runtime(
@@ -285,7 +326,7 @@ export class DelegationService {
     }
     const data = JSON.parse(fs.readFileSync(instance, "utf8")) as Record<string, unknown>;
     return {
-      kind: "recruited",
+      kind: data.kind === "local" ? "local" : "recruited",
       userId,
       agentId,
       root,
@@ -335,7 +376,7 @@ export class DelegationService {
       this.options.invalidateVisit?.(
         task.userId,
         task.fromAgentId,
-        personal ? "personal" : "recruited",
+        personal ? "personal" : isLocalAgentId(task.fromAgentId) ? "local" : "recruited",
       );
     } catch {
       // 通知失败不改变任务终态；桌面仍可通过 /delegations 拉取。
@@ -349,12 +390,30 @@ function parentKey(userId: string, agentId: string): string {
   return `${userId}/${agentId}`;
 }
 
-function listLocalRecruited(userDataRoot: string, userId: string): RecruitedAgentInfo[] {
+function fromLocalCard(card: LocalAgentCard): RecruitedAgentInfo {
+  const name = card.name.trim();
+  const role = card.role.trim();
+  const background = card.background.trim();
+  return {
+    agentId: card.agentId,
+    name,
+    role,
+    background,
+    remark: "",
+    systemText:
+      name && role && background
+        ? composeSystemPrompt({ name, role, background }, "zh")
+        : undefined,
+  };
+}
+
+/** 离线 / API 失败时：扫本机已投影的市场 Agent（跳过 loc-*，那些由 listLocalAgents 覆盖）。 */
+function listDiskSyncedAgents(userDataRoot: string, userId: string): RecruitedAgentInfo[] {
   const root = path.join(userDataRoot, "users", userId, "agents");
   if (!fs.existsSync(root)) return [];
   const result: RecruitedAgentInfo[] = [];
   for (const agentId of fs.readdirSync(root)) {
-    if (!AGENT_ID.test(agentId)) continue;
+    if (!AGENT_ID.test(agentId) || isLocalAgentId(agentId)) continue;
     const agentRoot = path.join(root, agentId);
     const instancePath = path.join(agentRoot, "instance.json");
     if (!fs.existsSync(instancePath)) continue;
@@ -364,6 +423,7 @@ function listLocalRecruited(userDataRoot: string, userId: string): RecruitedAgen
     } catch {
       stored = {};
     }
+    if (stored.kind === "local") continue;
     const systemPath = path.join(agentRoot, "cwd", ".pi", "SYSTEM.md");
     const systemText = fs.existsSync(systemPath)
       ? fs.readFileSync(systemPath, "utf8").trim()

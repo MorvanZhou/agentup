@@ -155,7 +155,7 @@ it("enriches delegate approval args with agent_name for the UI", async () => {
   });
 });
 
-it("lists local recruited agents from instance directories", async () => {
+it("lists disk-synced market agents when offline", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-list-"));
   const agentRoot = path.join(root, "users", "patient", "agents", "weather");
   fs.mkdirSync(path.join(agentRoot, "cwd", ".pi"), { recursive: true });
@@ -196,6 +196,71 @@ it("lists local recruited agents from instance directories", async () => {
       systemText: expect.stringContaining("气象顾问"),
     }),
   ]);
+});
+
+it("includes local private agents in the roster alongside disk-synced market agents", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-local-"));
+  const now = new Date().toISOString();
+  const localId = "loc-abcd1234ef";
+  const localRoot = path.join(root, "users", "patient", "agents", localId);
+  fs.mkdirSync(path.join(localRoot, "cwd", ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(localRoot, "instance.json"),
+    `${JSON.stringify({
+      kind: "local",
+      user_id: "patient",
+      agent_id: localId,
+      name: "图图",
+      role: "信息图大师",
+      background: "根据资料绘制信息图",
+      package_version: 1,
+      package_digest: "localdigest",
+      active_session_id: "main",
+      tools: [],
+      model_capabilities: ["tools"],
+      project_trust: "granted",
+      created_at: now,
+      updated_at: now,
+    })}\n`,
+  );
+  fs.writeFileSync(
+    path.join(localRoot, "cwd", ".pi", "SYSTEM.md"),
+    "你是图图。岗位：信息图大师。\n\n根据资料绘制信息图\n",
+  );
+
+  const marketRoot = path.join(root, "users", "patient", "agents", "hJsAC7Ph");
+  fs.mkdirSync(path.join(marketRoot, "cwd", ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(marketRoot, "instance.json"),
+    `${JSON.stringify({
+      user_id: "patient",
+      agent_id: "hJsAC7Ph",
+      package_version: 1,
+      package_digest: "m",
+      project_trust: "granted",
+      tools: [],
+      model_capabilities: [],
+    })}\n`,
+  );
+  fs.writeFileSync(
+    path.join(marketRoot, "cwd", ".pi", "SYSTEM.md"),
+    "你是 Weaty。岗位：气象学家。\n\n天气查询\n",
+  );
+
+  const service = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => testModel(),
+    approvals: new ApprovalBroker(),
+    askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
+  });
+  const agents = await service.listRecruited("patient");
+  expect(agents.map((item) => item.agentId).sort()).toEqual(["hJsAC7Ph", localId].sort());
+  expect(agents.find((item) => item.agentId === localId)).toMatchObject({
+    name: "图图",
+    role: "信息图大师",
+    background: "根据资料绘制信息图",
+  });
 });
 
 it("registers delegate tools for any visit agent", async () => {

@@ -60,9 +60,9 @@ export function createDelegateExtension(
         name: LIST_RECRUITED_AGENTS_TOOL,
         label: "List Recruited Agents",
         description:
-          "Find recruited specialist agents by optional query (name, role, background). " +
-          "Relevant candidates may already appear in context each turn; use this to refine or list more. " +
-          "Then call delegate_to_agent when a specialist fits.",
+          "List available specialist agents (local private + market recruited) by optional query " +
+          "(name, role, background). Relevant candidates may already appear in context each turn; " +
+          "use this to refine or list more. Then call delegate_to_agent when a specialist fits.",
         parameters: ListParams,
         annotations: {
           readOnlyHint: true,

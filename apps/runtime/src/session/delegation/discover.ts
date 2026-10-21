@@ -104,7 +104,7 @@ export function formatDiscoveredAgentsContext(result: DiscoverResult): string {
   return [
     "# Relevant recruited agents",
     "",
-    "Candidates from the user's recruited contact list. When a specialist's role or background fits the task, prefer list_recruited_agents / delegate_to_agent (user approval required). You keep ownership of the user-facing reply.",
+    "Candidates from the user's contact list (local private + market recruited). When a specialist's role or background fits the task, prefer list_recruited_agents / delegate_to_agent (user approval required). You keep ownership of the user-facing reply.",
     "",
     ...lines,
   ].join("\n") + footer;
