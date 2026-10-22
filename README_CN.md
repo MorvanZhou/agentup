@@ -14,7 +14,7 @@
 - 一个助手，一种聊天。互不掺和。
 - 能读你电脑上的文件，并把结果存回去
 
-**[下载 Mac 版](https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg)** · **[agentup.me](https://agentup.me)**
+**[下载桌面版](https://github.com/MorvanZhou/agentup/releases)** · **[agentup.me](https://agentup.me)**
 
 安装到「应用程序」后，在终端执行一次下面的命令，才能正常打开：
 
@@ -112,6 +112,7 @@ pnpm install
 sh sh/start-desktop.sh --dev    # 本地界面 + 运行时
 # 或
 sh sh/build-mac.sh --dev        # 未签名的 macOS arm64 构建 → dist/mac/
+sh sh/build-win.sh --dev        # 未签名的 Windows x64 NSIS → dist/win/（须在 Windows 上执行）
 ```
 
 需要 Node 和 [pnpm](https://pnpm.io)（见 `package.json` 里的 `packageManager`）。

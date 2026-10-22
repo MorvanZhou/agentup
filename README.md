@@ -14,7 +14,7 @@ Study, write, look things up, plan a trip. Each assistant handles one kind of jo
 - One assistant, one kind of chat. No mixing.
 - It can read files on your computer and save results there
 
-**[Download for Mac](https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg)** · **[agentup.me](https://agentup.me)**
+**[Download App](https://github.com/MorvanZhou/agentup/releases)** · **[agentup.me](https://agentup.me)**
 
 After installing to Applications, run this once in Terminal so macOS will open the app:
 
@@ -112,6 +112,7 @@ pnpm install
 sh sh/start-desktop.sh --dev    # local UI + runtime
 # or
 sh sh/build-mac.sh --dev        # unsigned macOS arm64 build → dist/mac/
+sh sh/build-win.sh --dev        # unsigned Windows x64 NSIS → dist/win/ (run on Windows)
 ```
 
 Requires Node and [pnpm](https://pnpm.io) (see `packageManager` in `package.json`).
