@@ -1,6 +1,10 @@
 /**
- * 把 pnpm deploy 出的 node_modules 解成「无外逃 symlink」的实体树。
- * Node fs.cpSync({ dereference: true }) 对目录 symlink 仍会保留链接，不可靠。
+ * 把 pnpm deploy 出的 node_modules 改成可随安装包分发的形态：
+ * - 保留 .pnpm 实体 + 顶层相对 symlink（体积≈本机 deploy，约一份依赖）
+ * - 禁止残留指向构建机绝对路径的 symlink（否则装到别的机器 runtime 会挂）
+ *
+ * 注意：Node fs.cpSync({ dereference: true }) 对目录 symlink 不可靠，且全量
+ * 解引用会把同一包拷多份，dmg 从 ~160MB 膨胀到 220MB+。
  */
 const {
   cpSync,
@@ -12,6 +16,7 @@ const {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
 } = require("node:fs");
 const path = require("node:path");
 
@@ -23,63 +28,91 @@ function materializeModules(srcRoot, destRoot) {
   if (!existsSync(srcRoot)) {
     throw new Error(`source node_modules 不存在：${srcRoot}`);
   }
+  const srcReal = realpathSync(srcRoot);
   rmSync(destRoot, { recursive: true, force: true });
   mkdirSync(destRoot, { recursive: true });
-  const seen = new Set();
-  copyTree(srcRoot, destRoot, seen);
+
+  // 1) 先拷实体文件 / 目录，跳过 symlink（.pnpm 里的真文件会进来）
+  copyRealEntries(srcRoot, destRoot);
+
+  // 2) 把 symlink 改写成 dest 树内的相对链接；偶发外链再实体拷贝
+  recreateSymlinks(srcRoot, destRoot, srcReal, destRoot);
 
   const escaped = findEscapingSymlinks(destRoot);
   if (escaped.length > 0) {
     const sample = escaped.slice(0, 8).join("\n  ");
     throw new Error(
-      `materialize 后仍有 ${escaped.length} 个指向包外的 symlink（打包必挂）。例如：\n  ${sample}`,
+      `materialize 后仍有 ${escaped.length} 个指向包外的 symlink。例如：\n  ${sample}`,
     );
   }
 }
 
 /**
- * @param {string} src
- * @param {string} dest
- * @param {Set<string>} seen
+ * @param {string} srcDir
+ * @param {string} destDir
  */
-function copyTree(src, dest, seen) {
-  const st = lstatSync(src);
-  if (st.isSymbolicLink()) {
-    const real = realpathSync(src);
-    // 同一真实目录被多处 link 时只展开一次内容，其余做成相对 symlink（仍在 dest 树内）
-    if (statSync(real).isDirectory()) {
-      if (seen.has(real)) {
-        // 已展开过：直接再走一遍实体拷贝（体积换可移植；避免相对 symlink 算错）
-        copyDirContents(real, dest, seen);
-        return;
-      }
-      seen.add(real);
-      mkdirSync(dest, { recursive: true });
-      copyDirContents(real, dest, seen);
-      return;
+function copyRealEntries(srcDir, destDir) {
+  mkdirSync(destDir, { recursive: true });
+  for (const name of readdirSync(srcDir)) {
+    const srcPath = path.join(srcDir, name);
+    const destPath = path.join(destDir, name);
+    const st = lstatSync(srcPath);
+    if (st.isSymbolicLink()) continue;
+    if (st.isDirectory()) {
+      copyRealEntries(srcPath, destPath);
+    } else {
+      cpSync(srcPath, destPath);
     }
-    mkdirSync(path.dirname(dest), { recursive: true });
-    cpSync(real, dest);
-    return;
   }
-  if (st.isDirectory()) {
-    mkdirSync(dest, { recursive: true });
-    copyDirContents(src, dest, seen);
-    return;
-  }
-  mkdirSync(path.dirname(dest), { recursive: true });
-  cpSync(src, dest);
 }
 
 /**
  * @param {string} srcDir
  * @param {string} destDir
- * @param {Set<string>} seen
+ * @param {string} srcRootReal
+ * @param {string} destRoot
  */
-function copyDirContents(srcDir, destDir, seen) {
+function recreateSymlinks(srcDir, destDir, srcRootReal, destRoot) {
   for (const name of readdirSync(srcDir)) {
-    copyTree(path.join(srcDir, name), path.join(destDir, name), seen);
+    const srcPath = path.join(srcDir, name);
+    const destPath = path.join(destDir, name);
+    const st = lstatSync(srcPath);
+    if (st.isSymbolicLink()) {
+      const real = realpathSync(srcPath);
+      if (isInside(srcRootReal, real)) {
+        const destTarget = path.join(destRoot, path.relative(srcRootReal, real));
+        if (!existsSync(destTarget)) {
+          throw new Error(`symlink 目标未拷入：${srcPath} → ${real}（期望 ${destTarget}）`);
+        }
+        mkdirSync(path.dirname(destPath), { recursive: true });
+        if (existsSync(destPath)) rmSync(destPath, { recursive: true, force: true });
+        const rel = path.relative(path.dirname(destPath), destTarget);
+        // Windows 上目录链接用 'junction' 需绝对路径；'dir'/'file' 相对路径在 GHA 可用
+        const linkType = statSync(real).isDirectory() ? "dir" : "file";
+        symlinkSync(rel, destPath, linkType);
+      } else if (statSync(real).isDirectory()) {
+        mkdirSync(destPath, { recursive: true });
+        copyRealEntries(real, destPath);
+      } else {
+        mkdirSync(path.dirname(destPath), { recursive: true });
+        cpSync(real, destPath);
+      }
+      continue;
+    }
+    if (st.isDirectory()) {
+      recreateSymlinks(srcPath, destPath, srcRootReal, destRoot);
+    }
   }
+}
+
+/**
+ * @param {string} root
+ * @param {string} candidate
+ */
+function isInside(root, candidate) {
+  if (candidate === root) return true;
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  return candidate.startsWith(prefix);
 }
 
 /**
@@ -102,8 +135,14 @@ function findEscapingSymlinks(root) {
           bad.push(`${full} -> ${target}`);
           continue;
         }
-        const resolved = path.resolve(path.dirname(full), target);
-        if (!resolved.startsWith(rootReal + path.sep) && resolved !== rootReal) {
+        let resolved;
+        try {
+          resolved = realpathSync(full);
+        } catch {
+          bad.push(`${full} -> ${target} (dangling)`);
+          continue;
+        }
+        if (!isInside(rootReal, resolved)) {
           bad.push(`${full} -> ${target}`);
         }
       } else if (st.isDirectory()) {
