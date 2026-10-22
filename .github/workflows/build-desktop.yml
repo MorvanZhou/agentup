@@ -72,6 +72,41 @@ jobs:
           fi
           sh "${{ matrix.script }}" "${env_flag}"
 
+      - name: Verify runtime node_modules is portable
+        shell: bash
+        run: |
+          set -euo pipefail
+          modules=""
+          if [ "${{ matrix.platform }}" = "mac" ]; then
+            modules="$(find dist/mac -type d -path '*/Resources/runtime/node_modules' | head -1)"
+          else
+            modules="$(find dist/win -type d -path '*/resources/runtime/node_modules' | head -1 || true)"
+            if [ -z "$modules" ]; then
+              modules="$(find dist/win -type d -path '*/resources/runtime/node_modules' 2>/dev/null | head -1 || true)"
+            fi
+            # NSIS 打包前的未压缩目录
+            if [ -z "$modules" ]; then
+              modules="$(find dist/win -type d -name node_modules -path '*/runtime/node_modules' | head -1)"
+            fi
+          fi
+          if [ -z "$modules" ] || [ ! -d "$modules" ]; then
+            echo "找不到打包后的 runtime/node_modules" >&2
+            find dist -type d -name runtime 2>/dev/null | head -20 >&2 || true
+            exit 1
+          fi
+          echo "→ 校验 $modules"
+          node -e '
+            const { findEscapingSymlinks } = require("./apps/desktop/electron/materialize-modules.cjs");
+            const root = process.argv[1];
+            const bad = findEscapingSymlinks(root);
+            if (bad.length) {
+              console.error("仍有指向包外的 symlink（安装后 runtime 会挂）:");
+              for (const line of bad.slice(0, 20)) console.error(" ", line);
+              process.exit(1);
+            }
+            console.log("ok: 无外逃 symlink");
+          ' "$modules"
+
       - name: Report package sizes
         shell: bash
         run: |
