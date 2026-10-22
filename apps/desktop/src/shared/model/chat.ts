@@ -35,6 +35,11 @@ export type AgentUpDelegationStartedData = {
   wait: boolean;
 };
 
+/** 当前会话模型服务不可用（transient；桌面 toast）。 */
+export type AgentUpModelUnavailableData = {
+  message: string;
+};
+
 /** 单题答案；整批取消用 cancelled。 */
 export type AskUserItemAnswer =
   | { kind: "selection"; selections: string[] }
@@ -290,4 +295,12 @@ export function isAgentUpDelegationStarted(
     typeof record.wait === "boolean" &&
     (record.toolCallId === undefined || typeof record.toolCallId === "string")
   );
+}
+
+export function isAgentUpModelUnavailable(
+  data: unknown,
+): data is AgentUpModelUnavailableData {
+  if (typeof data !== "object" || data === null) return false;
+  const record = data as Record<string, unknown>;
+  return typeof record.message === "string" && record.message.trim().length > 0;
 }

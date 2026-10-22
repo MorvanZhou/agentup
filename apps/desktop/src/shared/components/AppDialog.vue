@@ -30,7 +30,7 @@ defineEmits<{ "update:open": [value: boolean] }>();
     <DialogPortal>
       <DialogOverlay class="app-no-drag fixed inset-0 z-40 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none" />
       <DialogContent
-        class="app-no-drag fixed left-1/2 top-1/2 z-50 grid -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-rule bg-paper text-foreground shadow-xl outline-none"
+        class="app-no-drag fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-rule bg-paper text-foreground shadow-xl outline-none"
         :class="
           size === 'lg'
             ? 'max-h-[min(85dvh,44rem)] w-[min(calc(100vw-2rem),40rem)]'
@@ -38,7 +38,7 @@ defineEmits<{ "update:open": [value: boolean] }>();
         "
       >
         <!-- 弹窗页头：可选 leading（如 Agent 头像） -->
-        <header class="flex items-start gap-3 px-4 pt-3 pb-1">
+        <header class="flex shrink-0 items-start gap-3 px-4 pt-3 pb-1">
           <div v-if="$slots.leading" class="mt-0.5 shrink-0">
             <slot name="leading" />
           </div>
@@ -55,15 +55,16 @@ defineEmits<{ "update:open": [value: boolean] }>();
             <XIcon class="size-4" />
           </DialogClose>
         </header>
-        <!-- 弹窗内容（无 default slot 时不占位，避免确认框出现空白带） -->
-        <div v-if="$slots.default" class="min-h-0 overflow-y-auto px-4 py-2">
+        <!-- 弹窗内容：超长时在中间区域滚动，页头/页脚固定 -->
+        <div v-if="$slots.default" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2">
           <slot />
         </div>
         <!-- 弹窗操作 -->
-        <footer v-if="$slots.footer" class="flex w-full flex-wrap justify-end gap-2 px-4 py-3">
+        <footer v-if="$slots.footer" class="flex w-full shrink-0 flex-wrap justify-end gap-2 px-4 py-3">
           <slot name="footer" />
         </footer>
       </DialogContent>
+
     </DialogPortal>
   </DialogRoot>
 </template>

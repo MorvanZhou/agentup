@@ -30,8 +30,6 @@ import {
 } from "../tools/index.js";
 import type { DelegationProgressHub } from "./progress.js";
 
-const DEFAULT_TIMEOUT_MS = 180_000;
-
 export type DelegationRunOutcome = {
   text: string;
   error?: string;
@@ -73,8 +71,8 @@ export async function runDelegatedPrompt(
   askUser: AskUserBroker,
   options: {
     taskId: string;
+    /** 父 turn / 工具 signal：用户停止主对话时一并中止子委托（无默认硬超时）。 */
     signal?: AbortSignal;
-    timeoutMs?: number;
     progress?: DelegationProgressHub;
   },
 ): Promise<DelegationRunOutcome> {
@@ -147,43 +145,45 @@ export async function runDelegatedPrompt(
     }
   });
 
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const timeout = AbortSignal.timeout(timeoutMs);
-  const signal = options.signal
-    ? AbortSignal.any([options.signal, timeout])
-    : timeout;
-
+  const signal = options.signal;
   const onAbort = () => {
     void session.abort().catch(() => undefined);
   };
-  if (signal.aborted) onAbort();
-  else signal.addEventListener("abort", onAbort, { once: true });
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
 
   try {
     const promptText = formatDelegationPrompt(brief);
     await session.prompt(promptText);
+    const text = texts.join("").trim() || collectBranchText(sessionManager);
+    // prompt 在 abort 后可能不抛错，只留下空/半截正文 —— 以父 signal 为准。
+    if (signal?.aborted) {
+      const message = "用户已取消";
+      if (progress) progress.write(options.taskId, projector.finish(message));
+      return { text, error: message };
+    }
     if (progress) {
       progress.write(options.taskId, projector.finish());
     }
-    const text = texts.join("").trim() || collectBranchText(sessionManager);
     if (!text) {
       return { text: "", error: "专家未返回可用结果" };
     }
     return { text };
   } catch (error) {
-    const message =
-      signal.aborted && timeout.aborted
-        ? `委托超时（>${Math.round(timeoutMs / 1000)}s）`
-        : error instanceof Error && error.message
-          ? error.message
-          : "委托执行失败";
+    const message = signal?.aborted
+      ? "用户已取消"
+      : error instanceof Error && error.message
+        ? error.message
+        : "委托执行失败";
     if (progress) {
       progress.write(options.taskId, projector.finish(message));
     }
     const partial = texts.join("").trim();
     return { text: partial, error: message };
   } finally {
-    signal.removeEventListener("abort", onAbort);
+    signal?.removeEventListener("abort", onAbort);
     unsubscribe();
     progress?.finish(options.taskId);
     session.dispose();

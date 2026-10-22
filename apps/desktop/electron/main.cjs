@@ -8,6 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { applyAppBadge } = require("./app-badge.cjs");
+const { ensureRuntimeModules } = require("./ensure-runtime-modules.cjs");
 const { applicationMenuTemplate } = require("./menu.cjs");
 const { initLogger, logError, logInfo, logPath } = require("./logger.cjs");
 const {
@@ -141,7 +142,23 @@ app.whenReady().then(async () => {
   const shellEnv = await resolveUserShellEnv({ logInfo, logError });
   Object.assign(process.env, mergeShellEnv(process.env, shellEnv));
 
-  runtime = spawnRuntime();
+  let packagedRuntimeRoot = null;
+  if (app.isPackaged) {
+    try {
+      packagedRuntimeRoot = ensureRuntimeModules({
+        runtimeRoot: path.join(process.resourcesPath, "runtime"),
+        userDataRoot: app.getPath("userData"),
+        appVersion: app.getVersion(),
+        logInfo,
+        logError,
+      });
+    } catch (error) {
+      logError(`展开 runtime 依赖失败：${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  runtime = spawnRuntime(packagedRuntimeRoot);
   runtime.on("exit", (code, signal) => {
     logError(`runtime 退出：code=${code ?? "null"} signal=${signal ?? "null"}`);
   });
@@ -297,12 +314,15 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-function spawnRuntime() {
+/**
+ * @param {string | null} packagedRuntimeRoot 打包态经 ensureRuntimeModules 解析后的 runtime 根
+ */
+function spawnRuntime(packagedRuntimeRoot) {
   const env = { ...process.env };
   if (!env.AGENTUP_BACKEND_URL?.trim()) {
     env.AGENTUP_BACKEND_URL = releaseBackendUrl;
   }
-  const cli = runtimeCliPath();
+  const cli = runtimeCliPath(packagedRuntimeRoot);
   logInfo(`spawn runtime cli=${cli} backend=${env.AGENTUP_BACKEND_URL}`);
   if (app.isPackaged) {
     env.ELECTRON_RUN_AS_NODE = "1";
@@ -312,7 +332,7 @@ function spawnRuntime() {
     return spawn(process.execPath, [cli], {
       stdio: ["ignore", stdout, stderr],
       env,
-      cwd: path.join(process.resourcesPath, "runtime"),
+      cwd: packagedRuntimeRoot || path.join(process.resourcesPath, "runtime"),
     });
   }
   return spawn(process.env.AGENTUP_NODE || "node", [cli], {
@@ -321,9 +341,13 @@ function spawnRuntime() {
   });
 }
 
-function runtimeCliPath() {
+/**
+ * @param {string | null} packagedRuntimeRoot
+ */
+function runtimeCliPath(packagedRuntimeRoot) {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "runtime", "dist", "local", "cli.js");
+    const root = packagedRuntimeRoot || path.join(process.resourcesPath, "runtime");
+    return path.join(root, "dist", "local", "cli.js");
   }
   return path.join(__dirname, "../../runtime/dist/local/cli.js");
 }
@@ -386,16 +410,21 @@ async function waitForOwnRuntime() {
           lastError = `spawn 已退出 code=${runtime.exitCode ?? "null"}（端口 ${runtimePort} 被其他 AgentUp/runtime 占用）`;
           break;
         }
-        // 开发态再核对 backend：正式版 runtime 连的是生产 API，换票码会「无效或已过期」
+        // 开发态核对 backend：仅用于发现「端口被正式版占用」；本机不连服务器时跳过，勿挡本地使用
         if (!app.isPackaged) {
           const expectedBackend = (process.env.AGENTUP_BACKEND_URL || releaseBackendUrl || "").replace(/\/$/, "");
           if (expectedBackend) {
+            let backendPayload;
             try {
-              const [viaRuntime, viaBackend] = await Promise.all([
-                fetch(`${runtimeUrl}/auth/turnstile`).then((r) => r.json()),
-                fetch(`${expectedBackend}/v1/auth/turnstile`).then((r) => r.json()),
-              ]);
-              if (JSON.stringify(viaRuntime) !== JSON.stringify(viaBackend)) {
+              const backendRes = await fetch(`${expectedBackend}/v1/auth/turnstile`);
+              if (!backendRes.ok) throw new Error(`backend turnstile status=${backendRes.status}`);
+              backendPayload = await backendRes.json();
+            } catch {
+              return true;
+            }
+            try {
+              const viaRuntime = await fetch(`${runtimeUrl}/auth/turnstile`).then((r) => r.json());
+              if (JSON.stringify(viaRuntime) !== JSON.stringify(backendPayload)) {
                 lastError = `runtime 连的不是 ${expectedBackend}（可能仍是占用端口的正式版 AgentUp）`;
                 break;
               }

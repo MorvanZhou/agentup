@@ -84,15 +84,8 @@ export class ApprovalBroker {
       if (allowed && isCommandTool(pending.request.toolName) && (scope === "session" || scope === "agent")) {
         this.grant(pending.request.userId, pending.request.agentId, scope);
       }
-      if (
-        allowed &&
-        isDelegationTool(pending.request.toolName) &&
-        (scope === "session" || scope === "agent")
-      ) {
-        const toAgentId = targetAgentId(pending.request.args);
-        if (toAgentId) {
-          this.grantDelegation(pending.request.userId, toAgentId, scope);
-        }
+      if (allowed && isDelegationTool(pending.request.toolName)) {
+        this.applyDelegationGrant(pending.request, scope);
       }
       pending.resolve(allowed);
       this.persistUser(pending.request.userId);
@@ -106,9 +99,8 @@ export class ApprovalBroker {
       if (isCommandTool(orphan.toolName) && (scope === "session" || scope === "agent")) {
         this.grant(orphan.userId, orphan.agentId, scope);
       }
-      if (isDelegationTool(orphan.toolName) && (scope === "session" || scope === "agent")) {
-        const toAgentId = targetAgentId(orphan.args);
-        if (toAgentId) this.grantDelegation(orphan.userId, toAgentId, scope);
+      if (isDelegationTool(orphan.toolName)) {
+        this.applyDelegationGrant(orphan, scope);
       }
     }
     this.persistUser(orphan.userId);
@@ -141,7 +133,12 @@ export class ApprovalBroker {
     return this.commandScope(userId, agentId) !== undefined;
   }
 
-  allowsDelegation(userId: string, toAgentId: string): boolean {
+  /**
+   * 会诊是否已放行：`agent` 级记在 fromAgentId（可调任何人）；
+   * `session` 级记在 toAgentId（本对话仅此专家）。
+   */
+  allowsDelegation(userId: string, fromAgentId: string, toAgentId: string): boolean {
+    if (this.delegationScope(userId, fromAgentId) === "agent") return true;
     return this.delegationScope(userId, toAgentId) !== undefined;
   }
 
@@ -196,12 +193,28 @@ export class ApprovalBroker {
     this.memoryAllow.set(key, scope);
   }
 
-  private grantDelegation(userId: string, toAgentId: string, scope: "session" | "agent"): void {
-    if (this.userDataRoot) {
-      setDelegationAllow(this.userDataRoot, userId, toAgentId, scope);
+  /**
+   * session → key=toAgentId；agent → key=fromAgentId（该助手可调任何人）。
+   */
+  private applyDelegationGrant(
+    request: Pick<ApprovalRequest, "userId" | "agentId" | "args">,
+    scope: ApprovalScope,
+  ): void {
+    if (scope === "agent") {
+      this.grantDelegation(request.userId, request.agentId, "agent");
       return;
     }
-    const key = delegationKey(userId, toAgentId);
+    if (scope !== "session") return;
+    const toAgentId = targetAgentId(request.args);
+    if (toAgentId) this.grantDelegation(request.userId, toAgentId, "session");
+  }
+
+  private grantDelegation(userId: string, agentId: string, scope: "session" | "agent"): void {
+    if (this.userDataRoot) {
+      setDelegationAllow(this.userDataRoot, userId, agentId, scope);
+      return;
+    }
+    const key = delegationKey(userId, agentId);
     if (this.memoryDelegationAllow.get(key) === "agent" && scope === "session") return;
     this.memoryDelegationAllow.set(key, scope);
   }
@@ -211,9 +224,9 @@ export class ApprovalBroker {
     return this.memoryAllow.get(visitKey(userId, agentId));
   }
 
-  private delegationScope(userId: string, toAgentId: string): "session" | "agent" | undefined {
-    if (this.userDataRoot) return getDelegationAllow(this.userDataRoot, userId, toAgentId);
-    return this.memoryDelegationAllow.get(delegationKey(userId, toAgentId));
+  private delegationScope(userId: string, agentId: string): "session" | "agent" | undefined {
+    if (this.userDataRoot) return getDelegationAllow(this.userDataRoot, userId, agentId);
+    return this.memoryDelegationAllow.get(delegationKey(userId, agentId));
   }
 }
 
@@ -236,7 +249,7 @@ export function createApprovalExtension(
       }
       if (isDelegationTool(event.toolName)) {
         const toAgentId = targetAgentId(event.input);
-        if (toAgentId && broker.allowsDelegation(userId, toAgentId)) {
+        if (toAgentId && broker.allowsDelegation(userId, agentId, toAgentId)) {
           return undefined;
         }
       }

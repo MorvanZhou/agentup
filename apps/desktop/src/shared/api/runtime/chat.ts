@@ -198,6 +198,20 @@ export async function setSessionModel(
   return readSessionModelState(payload);
 }
 
+/** 停止本机会话当前 turn，并等到 runtime busy 解开。 */
+export async function abortTurn(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  userId: string,
+): Promise<void> {
+  const endpoint =
+    agentId === PERSONAL_ASSISTANT_ID
+      ? "/personal-assistant/abort"
+      : `/agents/${encodeURIComponent(agentId)}/abort`;
+  await http.request(endpoint, token, { user_id: userId });
+}
+
 export async function clearContext(
   http: RuntimeHttp,
   token: string,

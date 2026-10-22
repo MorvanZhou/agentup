@@ -15,7 +15,9 @@ import {
   unrecruitAgent,
   updateAgentCard,
 } from "../../control/client.js";
+import type { AgentCard } from "../../control/types.js";
 import { loadAgentSource, preparePublishSource } from "../../package/source.js";
+import { BackendClientError } from "../../control/client.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
@@ -23,6 +25,8 @@ import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from 
 import { clearContext, clearHistory, readHistory } from "../../session/history.js";
 import { setVisitSessionModel } from "../../session/session-model.js";
 import { listVisitSkills } from "../../session/skills.js";
+import { ensureCachedAvatar, readCachedAvatarDataUrl } from "../cached-avatar.js";
+import { listDiskSyncedAgents } from "../disk-synced-agents.js";
 import { isLocalAgentId, localAgentVisit } from "../local-agent.js";
 import { readLocalPackageVersions } from "../local-versions.js";
 import {
@@ -47,7 +51,10 @@ function visitKind(agentId: string): Visit["kind"] {
   return isLocalAgentId(agentId) ? "local" : "recruited";
 }
 
-/** 本机私有跳过控制面 sync；市场 Agent 仍投影 .pi。 */
+/**
+ * 解析对话用 visit：本机私有不经控制面；市场 Agent 优先 sync，
+ * 控制面不可达时回落本机已投影目录（本地 App 离线可聊）。
+ */
 async function resolveVisit(
   userDataRoot: string,
   backendUrl: string,
@@ -58,7 +65,17 @@ async function resolveVisit(
   if (isLocalAgentId(agentId)) {
     return localAgentVisit(userDataRoot, userId, agentId);
   }
-  return new Runtime(new HttpPackageSource(backendUrl, token), userDataRoot).sync(userId, agentId);
+  try {
+    return await new Runtime(new HttpPackageSource(backendUrl, token), userDataRoot).sync(
+      userId,
+      agentId,
+    );
+  } catch (error) {
+    // 控制面任意失败（断网 / 5xx / 鉴权）且本机已有投影 → 离线可聊；未招募仍抛 NotRecruited
+    const disk = Runtime.openDiskVisit(userDataRoot, userId, agentId);
+    if (disk && error instanceof BackendClientError) return disk;
+    throw error;
+  }
 }
 
 export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
@@ -73,11 +90,70 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
   app.get("/agents", async (c) => {
     const q = c.req.query("q") ?? undefined;
     const recruited = c.req.query("recruited") === "true" ? true : undefined;
-    const agents = await listAgents(config.backendUrl, bearer(c), { q, recruited });
     const userId = c.req.query("user_id") ?? "";
+    const token = bearer(c);
+    let agents: AgentCard[];
+    let fromDisk = false;
+    try {
+      agents = await listAgents(config.backendUrl, token, { q, recruited });
+    } catch (error) {
+      // 控制面不可达：用本机已投影的招募 Agent，避免侧栏被桌面 refresh 清空
+      if (!userId) throw error;
+      fromDisk = true;
+      const needle = q?.trim().toLowerCase() ?? "";
+      agents = listDiskSyncedAgents(config.userDataRoot, userId)
+        .filter((agent) => {
+          // 磁盘投影均为已招募；未带 recruited=true 时也只回这些，市场浏览离线为空属预期
+          if (!needle) return true;
+          return `${agent.name}\n${agent.role}\n${agent.background}`.toLowerCase().includes(needle);
+        })
+        .map(
+          (agent): AgentCard => ({
+            agentId: agent.agentId,
+            name: agent.name,
+            role: agent.role,
+            background: agent.background,
+            rules: "",
+            latestVersion: agent.packageVersion,
+            latestDigest: agent.packageDigest,
+            recruited: true,
+            hasAvatar: false,
+            remark: agent.remark,
+            recruitCount: 0,
+            createdAt: "",
+            updatedAt: "",
+          }),
+        );
+    }
     const localVersions = userId ? readLocalPackageVersions(config.userDataRoot, userId) : {};
+    const withAvatars = userId
+      ? await Promise.all(
+          agents.map(async (agent) => {
+            if (fromDisk) {
+              const cached = readCachedAvatarDataUrl(config.userDataRoot, userId, agent.agentId);
+              return cached ? { ...agent, hasAvatar: true, avatarUrl: cached } : agent;
+            }
+            // 已招募 / 本机已投影：把头像落到 visit，离线侧栏可继续用
+            const shouldPersist = agent.recruited || Boolean(localVersions[agent.agentId]);
+            if (shouldPersist && agent.hasAvatar && agent.avatarUrl) {
+              const cached = await ensureCachedAvatar(
+                config.userDataRoot,
+                userId,
+                agent.agentId,
+                agent.avatarUrl,
+              );
+              if (cached) return { ...agent, hasAvatar: true, avatarUrl: cached };
+            }
+            const cached = readCachedAvatarDataUrl(config.userDataRoot, userId, agent.agentId);
+            if (cached) return { ...agent, hasAvatar: true, avatarUrl: cached };
+            return agent;
+          }),
+        )
+      : agents;
     return json(c, 200, {
-      agents: agents.map((agent) => serializeAgentCard(agent, localVersions[agent.agentId] ?? 0)),
+      agents: withAvatars.map((agent) =>
+        serializeAgentCard(agent, localVersions[agent.agentId] ?? 0),
+      ),
     });
   });
 
@@ -162,6 +238,16 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
       ...(avatar ? { avatar } : {}),
     });
     return json(c, 200, serializeAgentCard(card, 0));
+  });
+
+  /** 停止当前 turn，并等到 busy 解开（桌面点停止后应先调此接口再重发）。 */
+  app.post("/agents/:agentId/abort", async (c) => {
+    bearer(c);
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const body = await readJson(c);
+    const userId = requirePathUserId(text(body, "user_id"));
+    await chats.abort(userId, agentId, visitKind(agentId));
+    return json(c, 200, { aborted: true });
   });
 
   app.post("/agents/:agentId/context", async (c) => {
@@ -342,6 +428,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
+    const locale = uiLocaleFromRequest(c);
     const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
     delegation.bindAuth(userId, token);
     try {
@@ -355,6 +442,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
         promptRewind(body),
         parsePromptAttachments(body),
         config.userDataRoot,
+        locale,
       );
     } finally {
       delegation.unbindAuth(userId);
@@ -377,6 +465,18 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
     const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
+    // 运行包不含头像；同步后尽量把 statics 头像落到本机
+    if (!isLocalAgentId(agentId)) {
+      try {
+        const cards = await listAgents(config.backendUrl, token, { recruited: true });
+        const card = cards.find((item) => item.agentId === agentId);
+        if (card?.hasAvatar && card.avatarUrl) {
+          await ensureCachedAvatar(config.userDataRoot, userId, agentId, card.avatarUrl);
+        }
+      } catch {
+        /* 头像缓存失败不阻断 sync */
+      }
+    }
     return json(c, 200, {
       user_id: visit.userId,
       agent_id: visit.agentId,

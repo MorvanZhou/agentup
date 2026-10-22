@@ -136,6 +136,20 @@ export class PiUIMessageProjector {
     ];
   }
 
+  /**
+   * 模型服务不可用：写入助手正文 + transient，供桌面 toast；不标 incomplete/error，避免与正文重复。
+   */
+  modelUnavailable(notice: string): UIMessageChunk[] {
+    return [
+      ...this.textDelta(notice),
+      {
+        type: "data-agentup-model-unavailable",
+        data: { message: notice },
+        transient: true,
+      } as UIMessageChunk,
+    ];
+  }
+
   finish(errorText?: string): UIMessageChunk[] {
     const chunks: UIMessageChunk[] = [...this.closeOpenParts()];
     // extension 的 entry_appended 可能早于/晚于消费者订阅窗口；finish 再兜底一次主产物引用

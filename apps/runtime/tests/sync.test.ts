@@ -125,4 +125,22 @@ describe("runtime sync", () => {
     await expect(runtime.sync("stranger", "tax-advisor")).rejects.toBeInstanceOf(NotRecruited);
     expect(fs.existsSync(data)).toBe(false);
   });
+
+  it("openDiskVisit returns the projected visit without calling the package source", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-runtime-"));
+    const published = release(1, "第一版");
+    const runtime = new Runtime(source(new Set(["patient:tax-advisor"]), published), root);
+    const synced = await runtime.sync("patient", "tax-advisor");
+
+    expect(Runtime.openDiskVisit(root, "patient", "tax-advisor")).toMatchObject({
+      kind: "recruited",
+      userId: "patient",
+      agentId: "tax-advisor",
+      root: synced.root,
+      packageVersion: 1,
+      packageDigest: published.digest,
+    });
+    expect(Runtime.openDiskVisit(root, "patient", "missing")).toBeNull();
+    expect(Runtime.openDiskVisit(root, "other", "tax-advisor")).toBeNull();
+  });
 });

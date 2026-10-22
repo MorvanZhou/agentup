@@ -8,8 +8,11 @@ export interface ThreadActions {
   clearingHistory: boolean;
   setRemark: (remark: string) => Promise<void>;
   dismiss: () => Promise<void>;
-  /** 停止本轮：收起 HITL 浮层并 cancelRun（AskUser 等待时 isRunning 可能已是 false）。 */
-  stopTurn: () => void;
+  /**
+   * 停止本轮：收起 HITL 浮层，并等到 runtime busy 解开。
+   * Composer 会先 cancelRun，再 await 本方法。
+   */
+  stopTurn: () => Promise<void>;
 }
 
 export const threadActionsKey = Symbol("threadActions") as InjectionKey<

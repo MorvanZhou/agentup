@@ -423,6 +423,10 @@ export class DesktopApi {
     return chatApi.setSessionModel(this.http, token, agentId, userId, ref, locale);
   }
 
+  abortTurn(token: string, agentId: string, userId: string): Promise<void> {
+    return chatApi.abortTurn(this.http, token, agentId, userId);
+  }
+
   clearContext(token: string, agentId: string, userId: string): Promise<void> {
     return chatApi.clearContext(this.http, token, agentId, userId);
   }

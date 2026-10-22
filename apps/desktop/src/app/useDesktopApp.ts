@@ -52,11 +52,16 @@ export function useDesktopApp(api = new DesktopApi()) {
   const attention = ref<AttentionSnapshot>(emptyAttention());
   let attentionPoll: ReturnType<typeof setInterval> | undefined;
 
+  /** 侧栏会话：私人助理 + 本机私有 + 已招募；不依赖控制面是否在线。 */
   const conversations = computed(() => [
     personalAssistantCard(personalAssistant.value),
-    ...agents.value.filter((agent) => agent.recruited),
+    ...agents.value.filter(
+      (agent) => agent.kind === "local" || agent.kind === "personal" || agent.recruited,
+    ),
   ]);
-  const discoveries = computed(() => agents.value.filter((agent) => !agent.recruited));
+  const discoveries = computed(() =>
+    agents.value.filter((agent) => agent.kind !== "local" && agent.kind !== "personal" && !agent.recruited),
+  );
   const selected = computed(() =>
     conversations.value.find((agent) => agent.agentId === selectedId.value),
   );
@@ -327,18 +332,22 @@ export function useDesktopApp(api = new DesktopApi()) {
       personalAssistant.value = null;
     }
 
+    // 本机优先：侧栏 / 对话不依赖登录或控制面；各路失败互不影响
+    let local: AgentCard[] = [];
     try {
-      const local = await api.localAgents(token, userId);
-      if (guest) {
-        agents.value = local;
-      } else {
-        const market = await api.agents(token, { userId });
-        // 本机私有在前；市场列表不含 loc-*，直接拼接
-        agents.value = [...local, ...market];
-      }
+      local = await api.localAgents(token, userId);
     } catch {
-      agents.value = [];
+      local = [];
     }
+    let remote: AgentCard[] = [];
+    try {
+      // 游客也会请求：控制面失败时 runtime 回落磁盘已投影，仍可列出本机会话
+      remote = await api.agents(token, { userId });
+    } catch {
+      remote = [];
+    }
+    const seen = new Set(local.map((agent) => agent.agentId));
+    agents.value = [...local, ...remote.filter((agent) => !seen.has(agent.agentId))];
 
     synced.value = Object.fromEntries(
       agents.value

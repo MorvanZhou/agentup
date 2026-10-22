@@ -118,6 +118,69 @@ it("asks approval for delegate_to_agent and remembers session allow", async () =
   expect(seen).not.toHaveBeenCalled();
 });
 
+it("agent-scoped delegation allow lets the from agent call anyone", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-open-"));
+  const broker = new ApprovalBroker(root);
+  let handler:
+    | ((event: Record<string, unknown>, context: { signal?: AbortSignal }) => Promise<unknown>)
+    | undefined;
+  const extension = createApprovalExtension(broker, "patient", PERSONAL_ASSISTANT_ID);
+  await extension({
+    on(event: string, value: typeof handler) {
+      if (event === "tool_call") handler = value;
+      return vi.fn();
+    },
+  } as never);
+
+  broker.subscribe((request) => {
+    broker.decide(request.id, true, "agent");
+  });
+  await expect(
+    handler!(
+      {
+        type: "tool_call",
+        toolCallId: "d1",
+        toolName: DELEGATE_TO_AGENT_TOOL,
+        input: { agent_id: "weather", brief: "查天气" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(getDelegationAllow(root, "patient", PERSONAL_ASSISTANT_ID)).toBe("agent");
+  expect(getDelegationAllow(root, "patient", "weather")).toBeUndefined();
+
+  const seen = vi.fn();
+  broker.subscribe(seen);
+  await expect(
+    handler!(
+      {
+        type: "tool_call",
+        toolCallId: "d2",
+        toolName: DELEGATE_TO_AGENT_TOOL,
+        input: { agent_id: "coder", brief: "写代码" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).not.toHaveBeenCalled();
+
+  // 新对话清掉 session，不影响 agent 级「可调任何人」
+  broker.clearSessionAllow("patient", PERSONAL_ASSISTANT_ID);
+  await expect(
+    handler!(
+      {
+        type: "tool_call",
+        toolCallId: "d3",
+        toolName: DELEGATE_TO_AGENT_TOOL,
+        input: { agent_id: "researcher", brief: "调研" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).not.toHaveBeenCalled();
+  expect(getDelegationAllow(root, "patient", PERSONAL_ASSISTANT_ID)).toBe("agent");
+});
+
 it("enriches delegate approval args with agent_name for the UI", async () => {
   const broker = new ApprovalBroker();
   let handler:

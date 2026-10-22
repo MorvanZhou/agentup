@@ -10,7 +10,11 @@ export type UserState = {
   /** 侧栏排序用：各 Agent 最近一轮对话结束时间（毫秒）。 */
   lastActiveAt: Record<string, number>;
   commandAllow: Record<string, CommandAllowScope>;
-  /** 私人助理委托某专家：key 为 toAgentId。 */
+  /**
+   * 会诊授权：
+   * - `session`：key = toAgentId（本对话仅此专家）
+   * - `agent`：key = fromAgentId（该助手可调任何人，跨对话保留）
+   */
   delegationAllow: Record<string, CommandAllowScope>;
 };
 
@@ -95,7 +99,7 @@ export function clearSessionCommandAllow(
   return writeState(userDataRoot, userId, { ...current, commandAllow });
 }
 
-/** 解雇时清掉该 Agent 的未读、预览、最近活跃、命令授权与会诊授权。 */
+/** 解雇时清掉该 Agent 的未读、预览、最近活跃、命令授权与会诊授权（含以其为 from 的可调任何人）。 */
 export function forgetAgent(userDataRoot: string, userId: string, agentId: string): UserState {
   if (!AGENT_ID.test(agentId)) throw new StateError("本机状态无效");
   const current = readState(userDataRoot, userId);
@@ -121,30 +125,33 @@ export function forgetAgent(userDataRoot: string, userId: string, agentId: strin
 export function getDelegationAllow(
   userDataRoot: string,
   userId: string,
-  toAgentId: string,
+  agentId: string,
 ): CommandAllowScope | undefined {
-  return readState(userDataRoot, userId).delegationAllow[toAgentId];
+  return readState(userDataRoot, userId).delegationAllow[agentId];
 }
 
-/** 授予跨 Agent 委托授权；已有 agent 级时不会被 session 降级。 */
+/**
+ * 授予会诊授权；已有 agent 级时不会被 session 降级。
+ * session 的 key 为 toAgentId；agent 的 key 为 fromAgentId。
+ */
 export function setDelegationAllow(
   userDataRoot: string,
   userId: string,
-  toAgentId: string,
+  agentId: string,
   scope: CommandAllowScope,
 ): UserState {
-  if (!AGENT_ID.test(toAgentId)) throw new StateError("本机状态无效");
+  if (!AGENT_ID.test(agentId)) throw new StateError("本机状态无效");
   const current = readState(userDataRoot, userId);
-  const previous = current.delegationAllow[toAgentId];
+  const previous = current.delegationAllow[agentId];
   if (previous === "agent" && scope === "session") return current;
   if (previous === scope) return current;
   return writeState(userDataRoot, userId, {
     ...current,
-    delegationAllow: { ...current.delegationAllow, [toAgentId]: scope },
+    delegationAllow: { ...current.delegationAllow, [agentId]: scope },
   });
 }
 
-/** 私人助理新对话：去掉全部 session 级会诊授权，保留 agent 级。 */
+/** 私人助理新对话：去掉全部 session 级会诊授权，保留 agent 级（可调任何人）。 */
 export function clearSessionDelegationAllow(userDataRoot: string, userId: string): UserState {
   const current = readState(userDataRoot, userId);
   let changed = false;

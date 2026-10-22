@@ -7,6 +7,7 @@ import type { DynamicToolUIPart, UIDataTypes, UIMessage, UIMessagePart, UITools 
 import { ensurePersonalAssistant } from "../local/personal-assistant.js";
 import { clearCheckpoints } from "./checkpoint.js";
 import { DELEGATION_RESULT_CUSTOM_TYPE } from "./delegation/types.js";
+import { isModelServiceUnavailable, modelUnavailableNotice } from "./model-unavailable.js";
 import { stampNewSessionModel } from "./session-model.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE, parseSummaryEntryData } from "./summary.js";
 
@@ -233,6 +234,17 @@ export function projectHistory(
       const error = (raw as { errorMessage?: unknown }).errorMessage;
       if (typeof error === "string" && error) {
         assistant.metadata = { ...(typeof assistant.metadata === "object" && assistant.metadata ? assistant.metadata : {}), error };
+        // 模型连不上时 Pi 只留空 assistant + errorMessage；补一条可读正文（重开历史也能看到）。
+        if (
+          isModelServiceUnavailable(error) &&
+          !assistant.parts.some((part) => part.type === "text" && Boolean(part.text?.trim()))
+        ) {
+          assistant.parts.push({
+            type: "text",
+            text: modelUnavailableNotice(),
+            state: "done",
+          });
+        }
       }
       const summary = parseSummaryEntryData((raw as { __agentUpSummary?: unknown }).__agentUpSummary);
       if (summary) {

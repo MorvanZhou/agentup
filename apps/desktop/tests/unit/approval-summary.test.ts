@@ -114,7 +114,8 @@ describe("summarizeApproval", () => {
     expect(summary.title).toBe("想请 Agent「天气助手」帮忙");
     expect(summary.target).toBe("查一下北京明天天气");
     expect(summary.target).not.toContain("weather");
-    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session"]);
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
+    expect(summary.scopes.find((item) => item.scope === "agent")?.label).toBe("可调任何人");
   });
 
   it("委托审批缺少名称时标题不暴露 id", () => {

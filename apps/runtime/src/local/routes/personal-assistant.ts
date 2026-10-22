@@ -182,10 +182,20 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     return json(c, 200, { deleted: true });
   });
 
+  /** 停止当前 turn，并等到 busy 解开（桌面点停止后应先调此接口再重发）。 */
+  app.post("/personal-assistant/abort", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    await chats.abort(userId, PERSONAL_ASSISTANT_ID, "personal");
+    return json(c, 200, { aborted: true });
+  });
+
   app.post("/personal-assistant/prompt", async (c) => {
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requireUserId(text(body, "user_id"));
+    const locale = uiLocaleFromRequest(c);
     delegation.bindAuth(userId, token);
     try {
       await streamPrompt(
@@ -198,6 +208,7 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
         promptRewind(body),
         parsePromptAttachments(body),
         config.userDataRoot,
+        locale,
       );
     } finally {
       delegation.unbindAuth(userId);

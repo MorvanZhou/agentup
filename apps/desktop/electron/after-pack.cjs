@@ -1,6 +1,7 @@
 const { existsSync } = require("node:fs");
 const path = require("node:path");
 const { materializeModules } = require("./materialize-modules.cjs");
+const { packRuntimeModules } = require("./pack-runtime-modules.cjs");
 const { pruneRuntimeModules } = require("./prune-runtime-modules.cjs");
 
 /**
@@ -10,6 +11,9 @@ const { pruneRuntimeModules } = require("./prune-runtime-modules.cjs");
  *
  * pnpm deploy 的 node_modules 大量是指向本机构建目录的绝对 symlink；
  * 必须 materialize 成实体树，否则装到其他机器上 runtime 立刻 ERR_MODULE_NOT_FOUND。
+ *
+ * 松散 node_modules 上万小文件会让 NSIS 逐文件解压极慢；materialize 后打成
+ * node_modules.tgz（单文件），安装期 / 首次启动再展开。
  */
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
@@ -35,4 +39,9 @@ exports.default = async function afterPack(context) {
   pruneRuntimeModules(srcModules);
   console.log("→ materialize runtime node_modules（解开绝对 symlink）");
   materializeModules(srcModules, destModules);
+  console.log("→ pack runtime node_modules → node_modules.tgz（加速 NSIS/DMG）");
+  const { archiveBytes } = await packRuntimeModules(runtimeRoot, {
+    tarRequireFrom: path.join(__dirname, "..", "build", "runtime"),
+  });
+  console.log(`→ packed node_modules.tgz ${(archiveBytes / 1024 / 1024).toFixed(1)} MB`);
 };

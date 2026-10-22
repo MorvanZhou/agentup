@@ -25,11 +25,12 @@ function commandScopes(): ApprovalScopeOption[] {
   ];
 }
 
-/** 会诊委托：仅 once / session，不对专家做永久互调。 */
+/** 会诊委托：once / session（本专家）/ agent（该助手可调任何人）。 */
 function delegationScopes(): ApprovalScopeOption[] {
   return [
     { scope: "once", label: t("approvalScopeOnce") },
     { scope: "session", label: t("approvalScopeSession") },
+    { scope: "agent", label: t("approvalScopeDelegationAgent") },
   ];
 }
 

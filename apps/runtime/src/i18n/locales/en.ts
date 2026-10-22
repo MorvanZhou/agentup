@@ -62,4 +62,6 @@ export const en: Record<string, string> = {
   "la.err.skillNotFound": "Skill not found",
   "la.err.skillExportPath": "Export path must be a .zip file",
   "la.err.skillExportFailed": "Failed to export skill",
+
+  "chat.modelUnavailable": "The current model service is unavailable. Please try switching models.",
 };

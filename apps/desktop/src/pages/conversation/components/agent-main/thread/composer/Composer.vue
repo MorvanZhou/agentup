@@ -206,10 +206,11 @@ function onCaretRect(rect: CaretClientRect | null): void {
   caretRect.value = rect;
 }
 
-function onStopTurn() {
-  actions?.value.stopTurn();
+async function onStopTurn() {
+  // 先断客户端流（触发 prompt signal abort），再等 runtime busy 真正解开。
   aui.thread.cancelRun();
   aui.composer.cancel();
+  await actions?.value.stopTurn();
 }
 
 /** 非图片走芯片；图片仍交给附件条。捕获阶段拦截以免 adapter 拒收非图。 */

@@ -129,20 +129,25 @@ function setWorking(agentId: string, running: boolean): void {
 }
 
 // 先拉完历史再挂载线程，避免 AISDKChat 带着空 messages 起了又收不到 history。
+// 本机私有 / 私人助理不依赖招募态；未招募的市场卡片不进会话。
 watch(
   [
     () => session.value?.token,
     () => session.value?.userId,
     () => selected.value?.agentId,
+    () => selected.value?.kind,
     () => selected.value?.recruited,
   ],
-  ([token, userId, agentId, recruited]: [
+  ([token, userId, agentId, kind, recruited]: [
+    string | undefined,
     string | undefined,
     string | undefined,
     string | undefined,
     boolean | undefined,
   ]) => {
-    if (!token || !userId || !agentId || !recruited) return;
+    const usable =
+      kind === "personal" || kind === "local" || recruited === true;
+    if (!token || !userId || !agentId || !usable) return;
     chat.watchDelegations(agentId, token, userId);
     void chat.load(agentId, token, userId).then(() => {
       if (chat.isLoaded(agentId, userId)) {
@@ -223,6 +228,11 @@ watch(
   { deep: true },
 );
 
+async function abortTurn(agentId: string): Promise<void> {
+  if (!session.value) return;
+  await chat.abortTurn(agentId, session.value.token, session.value.userId);
+}
+
 async function clearContext(agentId: string): Promise<void> {
   if (!session.value) return;
   await chat.clearContext(agentId, session.value.token, session.value.userId);
@@ -293,6 +303,7 @@ const threadRoster = computed((): ThreadRoster => ({
           :active="selected?.agentId === thread.agentId"
           :approval="chat.approvals.value[thread.agentId]"
           :ask-user="chat.askUsers.value[thread.agentId]"
+          :abort-turn="() => abortTurn(thread.agentId)"
           :clear-context="() => clearContext(thread.agentId)"
           :clear-history="() => clearHistory(thread.agentId)"
           :set-remark="(remark) => setRemark(thread.agentId, remark)"

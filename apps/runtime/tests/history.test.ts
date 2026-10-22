@@ -276,6 +276,21 @@ it("projectHistory marks dangling tool parts even without healing", () => {
   ]);
 });
 
+it("fills empty connection-error assistants with model-unavailable notice", () => {
+  const messages = projectHistory([
+    { role: "user", content: "日本汇率", timestamp: 1 },
+    {
+      ...assistantBase,
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: "Connection error.",
+      content: [],
+      timestamp: 2,
+    },
+  ]);
+  expect(textOf(messages[1]!)).toContain("切换模型");
+});
+
 it("serves history per user from local files only", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-history-"));
   const a = visitDirs(root, "user-a");

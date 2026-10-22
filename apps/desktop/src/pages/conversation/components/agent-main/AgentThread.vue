@@ -13,12 +13,15 @@ import {
   isAgentUpApproval,
   isAgentUpAskUser,
   isAgentUpDelegationStarted,
+  isAgentUpModelUnavailable,
   lastMessagePreview,
   type AgentUpApprovalData,
   type AgentUpAskUserData,
   type ApprovalScope,
   type AskUserAnswer,
 } from "../../../../shared/model/chat";
+import { showToast } from "../../../../shared/model/toast";
+import { t } from "../../../../shared/model/ui-locale";
 import { useWorkspacePaneWidth } from "../../composables/usePaneWidth";
 import { clampWorkspaceWidth } from "../../model/pane-width";
 import { clearProcessFoldState } from "../../model/process-fold-state";
@@ -53,6 +56,7 @@ const props = withDefaults(
     approval?: AgentUpApprovalData;
     askUser?: AgentUpAskUserData;
     runtimeBaseUrl?: string;
+    abortTurn?: () => Promise<void>;
     clearContext?: () => Promise<void>;
     clearHistory?: () => Promise<void>;
     setRemark?: (remark: string) => Promise<void>;
@@ -158,8 +162,14 @@ const threadActions = computed<ThreadActions>(() => ({
     if (!props.dismiss) return;
     await props.dismiss();
   },
-  stopTurn() {
+  async stopTurn() {
     dismissHitl();
+    if (!props.abortTurn) return;
+    try {
+      await props.abortTurn();
+    } catch {
+      // 停止失败不挡 UI；重发时 transport 仍会 409→abort→重试。
+    }
   },
 }));
 provide(threadActionsKey, threadActions);
@@ -228,6 +238,12 @@ const config = AuiConfig({
         isAgentUpDelegationStarted(part.data)
       ) {
         delegationApi.value.registerStarted(part.data);
+      }
+      if (
+        part.type === "data-agentup-model-unavailable" &&
+        isAgentUpModelUnavailable(part.data)
+      ) {
+        showToast(part.data.message || t("modelUnavailable"), "error");
       }
     },
     onFinish({ messages }) {

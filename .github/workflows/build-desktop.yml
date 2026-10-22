@@ -72,29 +72,42 @@ jobs:
           fi
           sh "${{ matrix.script }}" "${env_flag}"
 
-      - name: Verify runtime node_modules is portable
+      - name: Verify runtime node_modules archive is portable
         shell: bash
         run: |
           set -euo pipefail
-          modules=""
+          runtime=""
+          archive=""
           if [ "${{ matrix.platform }}" = "mac" ]; then
-            modules="$(find dist/mac -type d -path '*/Resources/runtime/node_modules' | head -1)"
+            runtime="$(find dist/mac -type d -path '*/Resources/runtime' | head -1)"
           else
-            modules="$(find dist/win -type d -path '*/resources/runtime/node_modules' | head -1 || true)"
-            if [ -z "$modules" ]; then
-              modules="$(find dist/win -type d -path '*/resources/runtime/node_modules' 2>/dev/null | head -1 || true)"
-            fi
-            # NSIS 打包前的未压缩目录
-            if [ -z "$modules" ]; then
-              modules="$(find dist/win -type d -name node_modules -path '*/runtime/node_modules' | head -1)"
+            # NSIS 安装后会展开；校验 win-unpacked（打包中间态）里的 tgz
+            runtime="$(find dist/win -type d -path '*/resources/runtime' | head -1 || true)"
+            if [ -z "$runtime" ]; then
+              runtime="$(find dist/win -type d -name runtime -path '*/resources/runtime' | head -1 || true)"
             fi
           fi
-          if [ -z "$modules" ] || [ ! -d "$modules" ]; then
-            echo "找不到打包后的 runtime/node_modules" >&2
+          if [ -n "$runtime" ] && [ -f "$runtime/node_modules.tgz" ]; then
+            archive="$runtime/node_modules.tgz"
+          fi
+          if [ -z "$archive" ]; then
+            echo "找不到打包后的 runtime/node_modules.tgz" >&2
             find dist -type d -name runtime 2>/dev/null | head -20 >&2 || true
+            find dist -name 'node_modules.tgz' 2>/dev/null | head -20 >&2 || true
             exit 1
           fi
-          echo "→ 校验 $modules"
+          echo "→ 校验 $archive ($(du -h "$archive" | awk '{print $1}'))"
+          # 抽样列出归档内容，确认是单包而非空档
+          count="$(tar -tzf "$archive" | wc -l | tr -d ' ')"
+          if [ "$count" -lt 100 ]; then
+            echo "node_modules.tgz 条目过少：$count" >&2
+            exit 1
+          fi
+          echo "ok: archive entries=$count"
+          # 解压到临时目录，确认无外逃 symlink（follow 打包后通常已无 symlink）
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          tar -xzf "$archive" -C "$tmp"
           node -e '
             const { findEscapingSymlinks } = require("./apps/desktop/electron/materialize-modules.cjs");
             const root = process.argv[1];
@@ -105,7 +118,7 @@ jobs:
               process.exit(1);
             }
             console.log("ok: 无外逃 symlink");
-          ' "$modules"
+          ' "$tmp/node_modules"
 
       - name: Report package sizes
         shell: bash

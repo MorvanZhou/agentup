@@ -50,6 +50,34 @@ export class Runtime {
     return this.apply(userId, await this.source.getPackage(agentId));
   }
 
+  /**
+   * 打开本机已投影的市场 Agent（不打控制面）。
+   * 供离线对话 / 委托在 sync 失败时回落。
+   */
+  static openDiskVisit(userDataRoot: string, userId: string, agentId: string): Visit | null {
+    try {
+      validateSegment(userId);
+      validateSegment(agentId);
+    } catch {
+      return null;
+    }
+    const visitRoot = path.join(userDataRoot, "users", userId, "agents", agentId);
+    const instancePath = path.join(visitRoot, "instance.json");
+    const pi = path.join(visitRoot, "cwd", ".pi");
+    if (!fs.existsSync(instancePath) || !fs.existsSync(pi) || !fs.statSync(pi).isDirectory()) {
+      return null;
+    }
+    const data = readInstance(instancePath);
+    if (!data || data.kind === "local") return null;
+    if (String(data.user_id) !== userId || String(data.agent_id) !== agentId) return null;
+    if (data.project_trust !== "granted") return null;
+    try {
+      return visitFromInstance(visitRoot);
+    } catch {
+      return null;
+    }
+  }
+
   async apply(userId: string, release: PackageRelease): Promise<Visit> {
     requireDigest(release);
     validateRelativeFiles(release.files);

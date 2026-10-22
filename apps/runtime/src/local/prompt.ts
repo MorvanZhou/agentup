@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { pipeUIMessageStreamToResponse } from "ai";
 
 import type { ModelConfig } from "../config/load.js";
+import type { UiLocale } from "../i18n/locale.js";
 import { AttachmentError, type PromptAttachment } from "../session/attachments.js";
 import { resolveVisitModelConfig } from "../session/session-model.js";
 import { ChatBusy, VisitChats, type PromptRewind } from "../session/turn.js";
@@ -20,6 +21,7 @@ export async function streamPrompt(
   rewind?: PromptRewind,
   attachments: readonly PromptAttachment[] = [],
   userDataRoot?: string,
+  locale?: UiLocale | string | null,
 ): Promise<void> {
   const model = userDataRoot
     ? resolveVisitModelConfig(userDataRoot, visit)
@@ -33,7 +35,15 @@ export async function streamPrompt(
   socket?.once("close", onClientGone);
   res.once("close", onClientGone);
   try {
-    const stream = await chats.promptStream(visit, model, text, cancel.signal, rewind, attachments);
+    const stream = await chats.promptStream(
+      visit,
+      model,
+      text,
+      cancel.signal,
+      rewind,
+      attachments,
+      locale,
+    );
     await pipeUIMessageStreamToResponse({ response: res, stream });
   } catch (error) {
     if (res.headersSent) {

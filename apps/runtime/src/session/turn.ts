@@ -5,6 +5,7 @@ import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-
 import { createUIMessageStream, type UIMessageChunk } from "ai";
 
 import type { ModelConfig } from "../config/load.js";
+import type { UiLocale } from "../i18n/locale.js";
 import type { Visit } from "../package/sync.js";
 import { ApprovalBroker } from "./approval.js";
 import {
@@ -19,6 +20,11 @@ import {
 } from "./delegation/index.js";
 import { expandSkillReferences } from "./expand-skills.js";
 import { PiUIMessageProjector } from "./frames.js";
+import {
+  isModelServiceUnavailable,
+  isUserCancelError,
+  modelUnavailableNotice,
+} from "./model-unavailable.js";
 import { openSession } from "./open.js";
 import { AskUserBroker } from "./tools/index.js";
 
@@ -152,6 +158,7 @@ export class VisitChats {
     signal?: AbortSignal,
     rewind?: PromptRewind,
     attachments: readonly PromptAttachment[] = [],
+    locale?: UiLocale | string | null,
   ) {
     const key = visitKey(visit.userId, visit.agentId, visit.kind);
     const nextModelKey = slotModelKey(model);
@@ -186,7 +193,22 @@ export class VisitChats {
         const write = (chunks: UIMessageChunk[]) => {
           for (const chunk of chunks) writer.write(chunk);
         };
-        const unsubscribe = slot.session.subscribe((event) => write(projector.project(event)));
+        let lastModelError = "";
+        let sawAssistantText = false;
+        const unsubscribe = slot.session.subscribe((event) => {
+          trackModelFailure(event, (error) => {
+            lastModelError = error;
+          });
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta" &&
+            typeof event.assistantMessageEvent.delta === "string" &&
+            event.assistantMessageEvent.delta.length > 0
+          ) {
+            sawAssistantText = true;
+          }
+          write(projector.project(event));
+        });
         const unsubscribeApproval = this.approvals?.subscribe((request) => {
           if (request.userId !== visit.userId) return;
           if (
@@ -274,10 +296,26 @@ export class VisitChats {
             expandPromptTemplates: false,
             ...(images.length > 0 ? { images } : {}),
           });
-          write(projector.finish());
+          if (
+            !sawAssistantText &&
+            lastModelError &&
+            isModelServiceUnavailable(lastModelError)
+          ) {
+            const notice = modelUnavailableNotice(locale);
+            write(projector.modelUnavailable(notice));
+            write(projector.finish());
+          } else {
+            write(projector.finish());
+          }
         } catch (error) {
-          const message = error instanceof Error && error.message ? error.message : "对话失败";
-          write(projector.finish(message));
+          const raw = error instanceof Error && error.message ? error.message : "对话失败";
+          if (isModelServiceUnavailable(raw) && !isUserCancelError(raw)) {
+            const notice = modelUnavailableNotice(locale);
+            if (!sawAssistantText) write(projector.modelUnavailable(notice));
+            write(projector.finish(notice));
+          } else {
+            write(projector.finish(raw));
+          }
         } finally {
           // busy 跟 Pi prompt 对齐，不跟 HTTP 消费者断开（onEnd/cancel）对齐；
           // 停止时由 signal / VisitChats.abort 调用 session.abort()，再在这里清 busy。
@@ -303,6 +341,29 @@ export class VisitChats {
     this.sessions.delete(key);
     const [userId, , agentId] = key.split("/");
     if (userId && agentId) this.approvals?.clearSessionAllow(userId, agentId);
+  }
+}
+
+/** 从 Pi 事件里收集最近一次模型失败文案（含 auto-retry）。 */
+function trackModelFailure(
+  event: AgentSessionEvent,
+  setError: (message: string) => void,
+): void {
+  if (event.type === "auto_retry_start" && event.errorMessage) {
+    setError(event.errorMessage);
+    return;
+  }
+  if (event.type === "auto_retry_end") {
+    if (!event.success && event.finalError) setError(event.finalError);
+    return;
+  }
+  if (event.type !== "entry_appended") return;
+  const entry = event.entry;
+  if (entry.type !== "message") return;
+  const message = entry.message as { role?: string; errorMessage?: unknown };
+  if (message.role !== "assistant") return;
+  if (typeof message.errorMessage === "string" && message.errorMessage.trim()) {
+    setError(message.errorMessage.trim());
   }
 }
 

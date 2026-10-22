@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 
 import type { WorkspaceFile } from "../../../../../shared/api/runtime/workspace";
+import ImagePreview from "../../../../../shared/components/ImagePreview.vue";
 import { t } from "../../../../../shared/model/ui-locale";
 import { highlightCodeHtml, languageFromPath } from "../../../model/highlight-code";
 import { formatBytes } from "../../../model/workspace-path";
@@ -16,6 +17,8 @@ const emit = defineEmits<{
   "update:draft": [value: string];
 }>();
 
+const previewOpen = ref(false);
+
 /** 编辑器用行拆分：保留末尾空行，与 textarea 对齐。 */
 const lines = computed(() => {
   if (!props.draft) return [""];
@@ -26,6 +29,23 @@ const language = computed(() =>
   props.file?.path ? languageFromPath(props.file.path) : undefined,
 );
 const html = computed(() => highlightCodeHtml(props.draft, language.value));
+const imageSrc = computed(() => {
+  const file = props.file;
+  if (!file || file.kind !== "image") return "";
+  return `data:${file.mediaType};base64,${file.dataBase64}`;
+});
+
+watch(imageSrc, () => {
+  previewOpen.value = false;
+});
+
+function openImagePreview(): void {
+  if (!imageSrc.value) return;
+  // 推迟到本次 click 冒泡结束后再挂遮罩，避免同一次点击立刻关掉
+  window.setTimeout(() => {
+    previewOpen.value = true;
+  }, 0);
+}
 </script>
 
 <template>
@@ -62,16 +82,24 @@ const html = computed(() => highlightCodeHtml(props.draft, language.value));
       </div>
     </div>
     <div v-else-if="file?.kind === 'image'" class="min-h-0 flex-1 overflow-auto p-3">
-      <img
-        :src="`data:${file.mediaType};base64,${file.dataBase64}`"
-        alt=""
-        class="max-w-full"
-      />
+      <button
+        type="button"
+        class="block max-w-full cursor-zoom-in rounded-lg border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        :aria-label="t('msgImagePreview')"
+        @click="openImagePreview"
+      >
+        <img :src="imageSrc" alt="" class="max-w-full" draggable="false" />
+      </button>
     </div>
     <!-- 无法预览（点击列表项时已优先走系统默认应用） -->
     <div v-else-if="file" class="grid gap-1 px-3 py-6 text-sm">
       <p class="font-medium text-foreground">{{ file.kind === "too-large" ? t("wsTooLarge") : t("wsCannotPreview") }}</p>
       <p class="text-muted-foreground">{{ formatBytes(file.size) }}</p>
     </div>
+    <ImagePreview
+      v-model:open="previewOpen"
+      :src="imageSrc"
+      :alt="t('msgImagePreview')"
+    />
   </div>
 </template>

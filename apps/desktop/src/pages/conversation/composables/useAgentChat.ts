@@ -39,6 +39,12 @@ export function useAgentChat(
     }
   }
 
+  async function abortTurn(agentId: string, token: string, userId: string): Promise<void> {
+    setApproval(agentId, undefined);
+    setAskUser(agentId, undefined);
+    await api.abortTurn(token, agentId, userId);
+  }
+
   async function clearContext(agentId: string, token: string, userId: string): Promise<void> {
     // 先收起浮层，避免接口失败时问卷/审批仍挂着。
     setApproval(agentId, undefined);
@@ -229,6 +235,7 @@ export function useAgentChat(
     askUsers,
     loadEpoch,
     load,
+    abortTurn,
     clearContext,
     clearHistory,
     isLoaded,

@@ -61,4 +61,6 @@ export const zh: Record<string, string> = {
   "la.err.skillNotFound": "找不到该 Skill",
   "la.err.skillExportPath": "导出路径须为 .zip 文件",
   "la.err.skillExportFailed": "导出 Skill 失败",
+
+  "chat.modelUnavailable": "当前模型服务不可用，请尝试切换模型。",
 };

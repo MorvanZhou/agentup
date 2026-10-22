@@ -8,6 +8,7 @@ import type { UIMessage } from "ai";
 import type { ModelConfig } from "../../config/load.js";
 import { HttpPackageSource } from "../../control/client.js";
 import { composeSystemPrompt } from "../../local/agent-identity.js";
+import { listDiskSyncedAgents } from "../../local/disk-synced-agents.js";
 import {
   isLocalAgentId,
   listLocalAgents,
@@ -147,7 +148,15 @@ export class DelegationService {
       byId.set(card.agentId, fromLocalCard(card));
     }
     for (const item of listDiskSyncedAgents(this.options.userDataRoot, userId)) {
-      if (!byId.has(item.agentId)) byId.set(item.agentId, item);
+      if (byId.has(item.agentId)) continue;
+      byId.set(item.agentId, {
+        agentId: item.agentId,
+        name: item.name,
+        role: item.role,
+        background: item.background,
+        remark: item.remark,
+        ...(item.systemText ? { systemText: item.systemText } : {}),
+      });
     }
 
     return [...byId.values()].sort(
@@ -284,31 +293,23 @@ export class DelegationService {
     }
     const token = this.tokens.get(userId);
     if (token) {
-      return new Runtime(
-        new HttpPackageSource(this.options.backendUrl, token),
-        this.options.userDataRoot,
-      ).sync(userId, agentId);
+      try {
+        return await new Runtime(
+          new HttpPackageSource(this.options.backendUrl, token),
+          this.options.userDataRoot,
+        ).sync(userId, agentId);
+      } catch {
+        const disk = Runtime.openDiskVisit(this.options.userDataRoot, userId, agentId);
+        if (disk) return disk;
+        throw new DelegationError("同步 Agent 失败，且本机无可用投影");
+      }
     }
     // 无令牌时仅使用本机已投影的 visit（异步后台可能已解绑 token）。
-    const root = path.join(this.options.userDataRoot, "users", userId, "agents", agentId);
-    const instance = path.join(root, "instance.json");
-    if (!fs.existsSync(instance)) {
+    const disk = Runtime.openDiskVisit(this.options.userDataRoot, userId, agentId);
+    if (!disk) {
       throw new DelegationError("尚未同步该 Agent，请先打开或同步后再委托");
     }
-    const data = JSON.parse(fs.readFileSync(instance, "utf8")) as Record<string, unknown>;
-    return {
-      kind: data.kind === "local" ? "local" : "recruited",
-      userId,
-      agentId,
-      root,
-      packageVersion: typeof data.package_version === "number" ? data.package_version : 0,
-      packageDigest: typeof data.package_digest === "string" ? data.package_digest : "",
-      tools: Array.isArray(data.tools) ? data.tools.map(String) : [],
-      modelCapabilities: Array.isArray(data.model_capabilities)
-        ? data.model_capabilities.map(String)
-        : [],
-      projectTrust: typeof data.project_trust === "string" ? data.project_trust : "granted",
-    };
+    return disk;
   }
 
   /** 把异步结果写入委托方当前会话，供下次上下文与历史展示。 */
@@ -376,54 +377,4 @@ function fromLocalCard(card: LocalAgentCard): RecruitedAgentInfo {
         ? composeSystemPrompt({ name, role, background }, "zh")
         : undefined,
   };
-}
-
-/** 离线 / API 失败时：扫本机已投影的市场 Agent（跳过 loc-*，那些由 listLocalAgents 覆盖）。 */
-function listDiskSyncedAgents(userDataRoot: string, userId: string): RecruitedAgentInfo[] {
-  const root = path.join(userDataRoot, "users", userId, "agents");
-  if (!fs.existsSync(root)) return [];
-  const result: RecruitedAgentInfo[] = [];
-  for (const agentId of fs.readdirSync(root)) {
-    if (!AGENT_ID.test(agentId) || isLocalAgentId(agentId)) continue;
-    const agentRoot = path.join(root, agentId);
-    const instancePath = path.join(agentRoot, "instance.json");
-    if (!fs.existsSync(instancePath)) continue;
-    let stored: Record<string, unknown> = {};
-    try {
-      stored = JSON.parse(fs.readFileSync(instancePath, "utf8")) as Record<string, unknown>;
-    } catch {
-      stored = {};
-    }
-    if (stored.kind === "local") continue;
-    const systemPath = path.join(agentRoot, "cwd", ".pi", "SYSTEM.md");
-    const systemText = fs.existsSync(systemPath)
-      ? fs.readFileSync(systemPath, "utf8").trim()
-      : "";
-    const name =
-      typeof stored.name === "string" && stored.name.trim() ? stored.name.trim() : agentId;
-    const role = typeof stored.role === "string" ? stored.role.trim() : "";
-    const fromCard =
-      typeof stored.background === "string"
-        ? stored.background.trim()
-        : typeof stored.summary === "string"
-          ? stored.summary.trim()
-          : "";
-    const fromSystem = systemText
-      ? systemText
-          .split(/\r?\n/)
-          .find((line) => line.trim())
-          ?.replace(/^#+\s*/, "")
-          .trim()
-          .slice(0, 200) || ""
-      : "";
-    result.push({
-      agentId,
-      name,
-      role,
-      background: fromCard || fromSystem,
-      remark: "",
-      ...(systemText ? { systemText } : {}),
-    });
-  }
-  return result;
 }
