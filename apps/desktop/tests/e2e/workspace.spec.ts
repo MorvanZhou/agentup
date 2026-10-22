@@ -34,14 +34,14 @@ test("会话右侧可以浏览并编辑工作空间", async ({ page }) => {
   );
   await page.getByRole("button", { name: "保存" }).click();
   expect((await saved).postDataJSON()).toMatchObject({
-    path: "DELIVERABLES/note.txt",
+    path: "ARTIFACT/note.txt",
     text: "更新后的记录",
   });
   await page.getByRole("button", { name: "返回" }).click();
 
   await page.getByRole("button", { name: "更多操作：note.txt" }).click();
   const revealed = page.waitForFunction(() =>
-    window.openedVisit?.endsWith("/DELIVERABLES/note.txt"),
+    window.openedVisit?.endsWith("/ARTIFACT/note.txt"),
   );
   await page.getByRole("menuitem", { name: "在 Finder 中显示" }).click();
   await revealed;

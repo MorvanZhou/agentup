@@ -31,8 +31,8 @@ it("lists and edits cwd files while hiding .pi/WORK and refusing escapes", () =>
 
   const listed = listWorkspace(agentWorkspaceCwd(root, "patient-a", "weather"), "");
   expect(listed.entries.map((entry) => entry.name)).toEqual([
+    "ARTIFACT",
     "ATTACHMENTS",
-    "DELIVERABLES",
     "linked",
     "reports",
     ".keep",
@@ -93,7 +93,7 @@ it("serves workspace routes for a recruited cwd and the personal assistant", asy
     const rootEntries = (listed.body.entries as Array<{ name: string }>).map((entry) => entry.name);
     expect(rootEntries).toContain("note.txt");
     expect(rootEntries).toContain("ATTACHMENTS");
-    expect(rootEntries).toContain("DELIVERABLES");
+    expect(rootEntries).toContain("ARTIFACT");
     expect(rootEntries).not.toContain("WORK");
     expect(rootEntries).not.toContain(".pi");
     const escaped = await get(local.url, "/agents/weather/workspace/file?user_id=patient-a&path=.pi/SYSTEM.md", "token");
@@ -104,31 +104,31 @@ it("serves workspace routes for a recruited cwd and the personal assistant", asy
     const created = await post(
       local.url,
       "/agents/weather/workspace",
-      { user_id: "patient-a", path: "DELIVERABLES/draft.txt", kind: "file" },
+      { user_id: "patient-a", path: "ARTIFACT/draft.txt", kind: "file" },
       "token",
     );
-    expect(created).toMatchObject({ status: 200, path: "DELIVERABLES/draft.txt" });
+    expect(created).toMatchObject({ status: 200, path: "ARTIFACT/draft.txt" });
     const saved = await put(
       local.url,
       "/agents/weather/workspace/file",
-      { user_id: "patient-a", path: "DELIVERABLES/draft.txt", text: "正文" },
+      { user_id: "patient-a", path: "ARTIFACT/draft.txt", text: "正文" },
       "token",
     );
     expect(saved).toMatchObject({ status: 200, size: Buffer.byteLength("正文") });
-    expect(fs.readFileSync(path.join(cwd, "DELIVERABLES", "draft.txt"), "utf8")).toBe("正文");
+    expect(fs.readFileSync(path.join(cwd, "ARTIFACT", "draft.txt"), "utf8")).toBe("正文");
 
     const absolute = await get(
       local.url,
-      "/agents/weather/workspace/absolute?user_id=patient-a&path=DELIVERABLES/draft.txt",
+      "/agents/weather/workspace/absolute?user_id=patient-a&path=ARTIFACT/draft.txt",
       "token",
     );
     expect(absolute.status).toBe(200);
-    expect(absolute.body.path).toBe(fs.realpathSync(path.join(cwd, "DELIVERABLES", "draft.txt")));
+    expect(absolute.body.path).toBe(fs.realpathSync(path.join(cwd, "ARTIFACT", "draft.txt")));
 
     const personal = await get(local.url, "/personal-assistant/workspace?user_id=patient-a", "token");
     expect(personal.status).toBe(200);
     const personalEntries = (personal.body.entries as Array<{ name: string }>).map((entry) => entry.name);
-    expect(personalEntries).toEqual(["ATTACHMENTS", "DELIVERABLES"]);
+    expect(personalEntries).toEqual(["ARTIFACT", "ATTACHMENTS"]);
     const personalRoot = path.join(root, "users", "patient-a", "personal-assistant");
     expect(fs.existsSync(path.join(personalRoot, "cwd"))).toBe(true);
     expect(fs.existsSync(path.join(personalRoot, ".runtime"))).toBe(true);

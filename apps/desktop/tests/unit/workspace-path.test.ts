@@ -19,13 +19,13 @@ it("joins, splits, and formats workspace paths", () => {
   expect(formatBytes(2 * 1024 * 1024)).toBe("2.0 MB");
 });
 
-it("scopes workspace tabs to DELIVERABLES and ATTACHMENTS", () => {
-  expect(workspaceTabRoot("deliverables")).toBe("DELIVERABLES");
+it("scopes workspace tabs to ARTIFACT and ATTACHMENTS", () => {
+  expect(workspaceTabRoot("artifact")).toBe("ARTIFACT");
   expect(workspaceTabRoot("attachments")).toBe("ATTACHMENTS");
-  expect(isUnderWorkspaceTab("DELIVERABLES", "DELIVERABLES")).toBe(true);
-  expect(isUnderWorkspaceTab("DELIVERABLES/a.txt", "DELIVERABLES")).toBe(true);
-  expect(isUnderWorkspaceTab("ATTACHMENTS", "DELIVERABLES")).toBe(false);
-  expect(workspaceTabTitle("DELIVERABLES", "DELIVERABLES", "AI 产物")).toBe("AI 产物");
-  expect(workspaceTabTitle("DELIVERABLES/reports", "DELIVERABLES", "AI 产物")).toBe("reports");
-  expect(workspaceTabTitle("DELIVERABLES/a.txt", "DELIVERABLES", "AI 产物", "a.txt")).toBe("a.txt");
+  expect(isUnderWorkspaceTab("ARTIFACT", "ARTIFACT")).toBe(true);
+  expect(isUnderWorkspaceTab("ARTIFACT/a.txt", "ARTIFACT")).toBe(true);
+  expect(isUnderWorkspaceTab("ATTACHMENTS", "ARTIFACT")).toBe(false);
+  expect(workspaceTabTitle("ARTIFACT", "ARTIFACT", "AI 产物")).toBe("AI 产物");
+  expect(workspaceTabTitle("ARTIFACT/reports", "ARTIFACT", "AI 产物")).toBe("reports");
+  expect(workspaceTabTitle("ARTIFACT/a.txt", "ARTIFACT", "AI 产物", "a.txt")).toBe("a.txt");
 });

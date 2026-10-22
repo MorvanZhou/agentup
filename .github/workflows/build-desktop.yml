@@ -1,0 +1,80 @@
+# 独立桌面安装包构建（mac arm64 + Windows x64 NSIS）。
+# 不上传 R2；正式 downloads.agentup.me 仍走本机 sh/build-mac.sh + sh/upload-mac.sh。
+name: Build Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      desktop_env:
+        description: "打进包内的控制面 / 登录门面环境"
+        required: true
+        default: prod
+        type: choice
+        options:
+          - prod
+          - dev
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            script: sh/build-mac.sh
+            artifact_path: dist/mac
+            artifact_name: agentup-mac-arm64
+          - os: windows-latest
+            script: sh/build-win.sh
+            artifact_path: dist/win
+            artifact_name: agentup-win-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installers
+        shell: bash
+        env:
+          # CI 未签名；避免 electron-builder 在 Windows 上尝试签名
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          env_flag="--prod"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.desktop_env }}" = "dev" ]; then
+            env_flag="--dev"
+          fi
+          sh "${{ matrix.script }}" "${env_flag}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14

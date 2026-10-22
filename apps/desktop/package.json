@@ -12,6 +12,7 @@
     "build": "vite build",
     "start": "electron electron/main.cjs",
     "pack:mac": "node ./electron/pack-mac.cjs",
+    "pack:win": "node ./electron/pack-win.cjs",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },
@@ -47,7 +48,7 @@
     "productName": "AgentUp",
     "afterPack": "./electron/after-pack.cjs",
     "directories": {
-      "output": "../../dist/mac"
+      "output": "../../dist/${os}"
     },
     "files": [
       "electron/**/*",
@@ -83,6 +84,23 @@
     },
     "dmg": {
       "title": "AgentUp"
+    },
+    "win": {
+      "icon": "electron/assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-${version}-setup.${ext}"
     }
   }
 }

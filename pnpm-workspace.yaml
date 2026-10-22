@@ -11,5 +11,5 @@ allowBuilds:
   electron: true
   "@google/genai": false
   protobufjs: false
-  # Windows 安装包工具；本仓库目前只打 mac，不跑其 postinstall
+  # Squirrel 工具链；本仓 Windows 走 NSIS，不跑其 postinstall
   electron-winstaller: false

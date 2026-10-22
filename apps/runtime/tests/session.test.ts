@@ -223,7 +223,7 @@ it("passes the explicit session plan to the Pi SDK", async () => {
   // 第三方 visit 不拼私人助理规则；私人助理 AGENTS.md 由 agentDir 原生加载；无委托时只追加 cwd 规范。
   const appended = withAgents.resourceLoader.options.appendSystemPromptOverride?.(["base"]);
   expect(appended?.[0]).toBe("base");
-  expect(appended?.[1]).toContain("DELIVERABLES");
+  expect(appended?.[1]).toContain("ARTIFACT");
   expect(appended?.[1]).toContain("WORK");
   expect(appended).toHaveLength(2);
   expect(withAgents.resourceLoader.options.agentsFilesOverride).toBeUndefined();
@@ -242,7 +242,7 @@ it("appends collaboration policy when delegation is wired", async () => {
   };
   const appended = withDelegation.resourceLoader.options.appendSystemPromptOverride?.(["base"]);
   expect(appended).toHaveLength(3);
-  expect(appended?.[1]).toContain("DELIVERABLES");
+  expect(appended?.[1]).toContain("ARTIFACT");
   expect(appended?.[2]).toContain("AgentUp Collaboration");
   expect(appended?.[2]).toContain("delegate_to_agent");
 });

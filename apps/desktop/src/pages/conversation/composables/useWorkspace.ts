@@ -21,8 +21,8 @@ export function useWorkspace(options: {
   api?: DesktopApi;
 }) {
   const api = options.api ?? new DesktopApi();
-  const tab = ref<WorkspaceTab>("deliverables");
-  const directory = ref(workspaceTabRoot("deliverables"));
+  const tab = ref<WorkspaceTab>("artifact");
+  const directory = ref(workspaceTabRoot("artifact"));
   const entries = ref<WorkspaceEntry[]>([]);
   const loading = ref(false);
   const error = ref("");
@@ -48,7 +48,7 @@ export function useWorkspace(options: {
     () => previewing.value || (directory.value !== "" && directory.value !== tabRoot.value),
   );
   /** 附件 Tab 以浏览/管理上传为主，不提供新建。 */
-  const canCreate = computed(() => tab.value === "deliverables" && !previewing.value);
+  const canCreate = computed(() => tab.value === "artifact" && !previewing.value);
 
   async function loadDirectory(next = directory.value): Promise<void> {
     const root = tabRoot.value;
@@ -307,9 +307,9 @@ export function useWorkspace(options: {
       previewPath.value = "";
       file.value = null;
       draft.value = "";
-      tab.value = "deliverables";
-      directory.value = workspaceTabRoot("deliverables");
-      void loadDirectory(workspaceTabRoot("deliverables"));
+      tab.value = "artifact";
+      directory.value = workspaceTabRoot("artifact");
+      void loadDirectory(workspaceTabRoot("artifact"));
     },
     { immediate: true },
   );

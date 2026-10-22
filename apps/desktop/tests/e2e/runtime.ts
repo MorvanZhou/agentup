@@ -1362,7 +1362,7 @@ function seedWorkspace(): WorkspaceNode {
       ".pi": { kind: "dir", children: { "SYSTEM.md": { kind: "file", text: "hidden" } } },
       WORK: { kind: "dir", children: { "scratch.ts": { kind: "file", text: "temp" } } },
       ATTACHMENTS: { kind: "dir", children: {} },
-      DELIVERABLES: {
+      ARTIFACT: {
         kind: "dir",
         children: {
           "note.txt": { kind: "file", text: "门诊记录" },

@@ -416,7 +416,7 @@
   "toolTerminated": "Stopped",
   "toolTerminatedDetail": "{detail} · Stopped",
   "settingsNavAria": "Settings sections",
-  "wsDeliverables": "AI output",
+  "wsArtifact": "AI output",
   "wsAttachments": "Uploads",
   "publishUpdated": "Updated {time}",
   "toolGenerating": "Generating…",

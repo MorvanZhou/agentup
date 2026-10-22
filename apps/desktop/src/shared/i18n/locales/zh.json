@@ -416,7 +416,7 @@
   "toolTerminated": "已终止",
   "toolTerminatedDetail": "{detail} · 已终止",
   "settingsNavAria": "设置分区",
-  "wsDeliverables": "AI 产物",
+  "wsArtifact": "AI 产物",
   "wsAttachments": "我上传的",
   "publishUpdated": "更新于 {time}",
   "toolGenerating": "生成中…",
