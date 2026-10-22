@@ -1,5 +1,8 @@
 # 独立桌面安装包构建（mac arm64 + Windows x64 NSIS）。
 # 不上传 R2；正式 downloads.agentup.me 仍走本机 sh/build-mac.sh + sh/upload-mac.sh。
+#
+# - workflow_dispatch / tag：产物进 Actions Artifacts
+# - 仅 push tag（v*）：额外挂到对应 GitHub Release Assets
 name: Build Desktop
 
 on:
@@ -32,16 +35,10 @@ jobs:
         include:
           - os: macos-14
             script: sh/build-mac.sh
-            # 只传安装包，不传 mac/ 未打包 .app（体积约等于再拷一份）
-            artifact_path: |
-              dist/mac/*.dmg
-              dist/mac/*.zip
-            artifact_name: agentup-mac-arm64
+            platform: mac
           - os: windows-latest
             script: sh/build-win.sh
-            # 只传 NSIS，不传 win-unpacked/
-            artifact_path: dist/win/*-setup.exe
-            artifact_name: agentup-win-x64
+            platform: win
 
     runs-on: ${{ matrix.os }}
 
@@ -82,11 +79,60 @@ jobs:
           if [ -d dist/mac ]; then ls -lh dist/mac/*.{dmg,zip} 2>/dev/null || ls -lh dist/mac; fi
           if [ -d dist/win ]; then ls -lh dist/win/*-setup.exe 2>/dev/null || ls -lh dist/win; fi
 
-      - name: Upload artifacts
+      # mac：dmg / zip 分两个 artifact，便于分别下载
+      - name: Upload mac dmg
+        if: matrix.platform == 'mac'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          name: agentup-mac-arm64-dmg
+          path: dist/mac/*.dmg
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+      - name: Upload mac zip
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentup-mac-arm64-zip
+          path: dist/mac/*.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      # win：只传 NSIS，不传 win-unpacked/
+      - name: Upload win setup
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentup-win-x64-setup
+          path: dist/win/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  # tag 构建成功后，把安装包挂到 GitHub Release（与 Actions Artifact 是两套东西）
+  release:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: agentup-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          # 若 Release 已存在（先建了 tag/Release），则只补传 Assets；否则自动创建
+          generate_release_notes: true
