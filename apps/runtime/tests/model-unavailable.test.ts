@@ -4,7 +4,7 @@ import {
   isModelServiceUnavailable,
   isUserCancelError,
   modelUnavailableNotice,
-} from "../src/session/model-unavailable.js";
+} from "../src/session/model/unavailable.js";
 
 it("detects connection / ollama failures as model unavailable", () => {
   expect(isModelServiceUnavailable("Connection error.")).toBe(true);

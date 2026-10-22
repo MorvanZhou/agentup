@@ -9,7 +9,7 @@ import {
   personalAssistantVisit,
   readPersonalAssistantProfile,
   writePersonalAssistantProfile,
-} from "../src/local/personal-assistant.js";
+} from "../src/local/assistant/personal-assistant.js";
 import { startLocalServer } from "../src/local/server.js";
 
 it("removes leftover cwd/.pi so personal config stays outside the work tree", () => {

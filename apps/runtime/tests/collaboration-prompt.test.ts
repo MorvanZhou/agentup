@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { formatCollaborationPrompt } from "../src/session/collaboration-prompt.js";
+import { formatCollaborationPrompt } from "../src/session/delegation/collaboration-prompt.js";
 
 it("describes collaboration bias and discovery tools", () => {
   const text = formatCollaborationPrompt();

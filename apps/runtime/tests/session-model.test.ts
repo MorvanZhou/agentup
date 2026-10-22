@@ -8,14 +8,14 @@ import {
   setModelEnabled,
   upsertProviderConnection,
 } from "../src/config/provider.js";
-import { clearContext } from "../src/session/history.js";
+import { clearContext } from "../src/session/history/history.js";
 import {
   peekVisitModelRef,
   readSessionModelRef,
   resolveVisitModelRef,
   setVisitSessionModel,
   writeSessionModelRef,
-} from "../src/session/session-model.js";
+} from "../src/session/model/session-model.js";
 
 function tmpRoot(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agentup-session-model-"));

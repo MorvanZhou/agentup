@@ -13,15 +13,15 @@ import {
 
 import type { ModelConfig } from "../../config/load.js";
 import type { Visit } from "../../package/sync.js";
-import { ApprovalBroker, createApprovalExtension } from "../approval.js";
-import { createCheckpointExtension } from "../checkpoint-ext.js";
-import { PiUIMessageProjector } from "../frames.js";
-import { projectHistoryFromManager } from "../history.js";
-import { projectVisitMcp } from "../mcp.js";
-import { openModelRuntime } from "../model-runtime.js";
-import { ensureCwdLayout, formatCwdLayoutPrompt } from "../cwd-layout.js";
+import { ApprovalBroker, createApprovalExtension } from "../hitl/approval.js";
+import { createCheckpointExtension } from "../checkpoint/extension.js";
+import { PiUIMessageProjector } from "../history/frames.js";
+import { projectHistoryFromManager } from "../history/history.js";
+import { projectVisitMcp } from "../workspace/mcp.js";
+import { openModelRuntime } from "../model/runtime.js";
+import { ensureCwdLayout, formatCwdLayoutPrompt } from "../workspace/cwd-layout.js";
 import { buildSessionPlan } from "../plan.js";
-import { projectVisitAgentsMd } from "../agents-md.js";
+import { projectVisitAgentsMd } from "../workspace/agents-md.js";
 import {
   AskUserBroker,
   createAskUserExtension,
@@ -71,6 +71,8 @@ export async function runDelegatedPrompt(
   askUser: AskUserBroker,
   options: {
     taskId: string;
+    /** 委托方 agentId：HITL 冒泡归属，与直聊同 agent 隔离。 */
+    parentAgentId: string;
     /** 父 turn / 工具 signal：用户停止主对话时一并中止子委托（无默认硬超时）。 */
     signal?: AbortSignal;
     progress?: DelegationProgressHub;
@@ -83,6 +85,11 @@ export async function runDelegatedPrompt(
   ensureCwdLayout(plan.cwd);
   if (visit.kind !== "personal") projectVisitAgentsMd(visit.root);
 
+  const hitl = {
+    origin: "delegation" as const,
+    taskId: options.taskId,
+    parentAgentId: options.parentAgentId,
+  };
   const mcpConfig = projectVisitMcp(plan.cwd, visit.userId);
   const mcpEnabled = mcpConfig.servers.length > 0;
   const settingsManager = SettingsManager.create(plan.cwd, plan.agentDir, { projectTrusted: true });
@@ -95,11 +102,11 @@ export async function runDelegatedPrompt(
     additionalSkillPaths: fs.existsSync(packageSkills) ? [packageSkills] : [],
     extensionFactories: [
       createWebToolsExtension(),
-      createAskUserExtension(askUser, visit.userId, visit.agentId),
+      createAskUserExtension(askUser, visit.userId, visit.agentId, hitl),
       createTodoExtension(),
       createCheckpointExtension(visit.root),
       ...(mcpEnabled ? [createMcpExtension({ loadConfig: () => mcpConfig })] : []),
-      createApprovalExtension(approvals, visit.userId, visit.agentId, {}),
+      createApprovalExtension(approvals, visit.userId, visit.agentId, { hitl }),
     ],
     disabledBuiltinExtensions: mcpEnabled ? [] : ["mcp"],
     skillsOverride: (loaded) => ({

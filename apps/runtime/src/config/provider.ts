@@ -8,6 +8,14 @@ import {
   supportsModelDiscovery,
 } from "./discover-models.js";
 import {
+  DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_TOKENS,
+  peekTemplateModelLimits,
+  removeProviderCatalog,
+  resolveModelLimits,
+  syncProviderCatalog,
+} from "./model-catalog.js";
+import {
   getProviderTemplate,
   listProviderTemplateViews,
   listVendorGroups,
@@ -190,6 +198,7 @@ export function upsertProviderConnection(
     if (!activeModel) activeModel = ref;
   }
   persist(userDataRoot, { version: FILE_VERSION, connections, enabledModels, activeModel });
+  syncProviderCatalog(userDataRoot, next.templateId, knownModelIdsForConnection(next));
   return readProviderSettings(userDataRoot, process.env, input.locale ?? "zh");
 }
 
@@ -205,6 +214,7 @@ export function deleteProviderConnection(
   let activeModel = stored.activeModel?.templateId === templateId ? null : stored.activeModel;
   if (!activeModel && enabledModels.length > 0) activeModel = enabledModels[0]!;
   persist(userDataRoot, { version: FILE_VERSION, connections, enabledModels, activeModel });
+  removeProviderCatalog(userDataRoot, templateId);
   return readProviderSettings(userDataRoot, process.env, locale);
 }
 
@@ -270,6 +280,8 @@ export async function refreshProviderModels(
     enabledModels = [...enabledModels, activeModel];
   }
   persist(userDataRoot, { version: FILE_VERSION, connections, enabledModels, activeModel });
+  const saved = connections.find((item) => item.templateId === id);
+  if (saved) syncProviderCatalog(userDataRoot, id, knownModelIdsForConnection(saved));
   return readProviderSettings(userDataRoot, process.env, locale);
 }
 
@@ -348,7 +360,7 @@ export function touchActiveModel(userDataRoot: string, ref: ModelRef): void {
   });
 }
 
-/** 设备级回落：activeModel（最近使用）→ enabled 第一个。会话级解析见 session/session-model。 */
+/** 设备级回落：activeModel（最近使用）→ enabled 第一个。会话级解析见 session/model/session-model。 */
 export function loadModelConfig(userDataRoot: string, env: NodeJS.ProcessEnv = process.env): ModelConfig {
   const override = envOverrides(env);
   if (override.model) {
@@ -391,6 +403,7 @@ export function loadModelConfigFromRef(
   if (template.requiresApiKey && !apiKey) {
     throw new ConfigError("当前服务商缺少 API Key，请重新保存密钥");
   }
+  const limits = resolveModelLimits(userDataRoot, template.id, model.modelId);
   return {
     providerId: template.piProviderId,
     templateId: template.id,
@@ -399,20 +412,43 @@ export function loadModelConfigFromRef(
     baseUrl: connection.baseUrl || template.defaultBaseUrl,
     kind: template.kind,
     profileId: model.templateId,
+    contextWindow: limits.contextWindow,
+    maxTokens: limits.maxTokens,
   };
 }
 
 function modelConfigFromEnvOverride(override: ReturnType<typeof envOverrides>): ModelConfig {
   const provider = override.provider || "ollama";
   const template = getProviderTemplate(provider);
+  const templateId = template?.id ?? provider;
+  const modelId = override.model!;
+  const limits =
+    peekTemplateModelLimits(templateId, modelId) ?? {
+      name: modelId,
+      contextWindow: DEFAULT_CONTEXT_WINDOW,
+      maxTokens: DEFAULT_MAX_TOKENS,
+    };
   return {
     providerId: template?.piProviderId ?? provider,
-    templateId: template?.id ?? provider,
-    modelId: override.model!,
+    templateId,
+    modelId,
     apiKey: override.apiKey || (template?.requiresApiKey === false ? PLACEHOLDER_KEY : ""),
     baseUrl: override.baseUrl || template?.defaultBaseUrl,
     kind: template?.kind ?? "custom-openai",
+    contextWindow: limits.contextWindow,
+    maxTokens: limits.maxTokens,
   };
+}
+
+function knownModelIdsForConnection(connection: ProviderConnection): string[] {
+  const template = getProviderTemplate(connection.templateId);
+  const ids = [
+    ...(template?.models ?? []).map((model) => model.id),
+    ...(connection.discoveredModelIds ?? []),
+    ...(connection.customModelIds ?? []),
+  ];
+  if (ids.length === 0 && template?.defaultModelId) ids.push(template.defaultModelId);
+  return ids;
 }
 
 function buildAvailableModels(stored: StoredFile, locale: UiLocale): AvailableModelView[] {

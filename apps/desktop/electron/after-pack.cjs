@@ -5,15 +5,23 @@ const { packRuntimeModules } = require("./pack-runtime-modules.cjs");
 const { pruneRuntimeModules } = require("./prune-runtime-modules.cjs");
 
 /**
- * electron-builder 会按 .gitignore 跳过 node_modules；打包后再拷入已裁剪的 runtime 依赖。
- * mac:   <Product>.app/Contents/Resources/runtime
- * win:   resources/runtime
+ * electron-builder afterPack：把 runtime 依赖塞进安装包。
  *
- * pnpm deploy 的 node_modules 大量是指向本机构建目录的绝对 symlink；
- * 必须 materialize 成实体树，否则装到其他机器上 runtime 立刻 ERR_MODULE_NOT_FOUND。
+ * 流水线（改顺序/步骤前请读 pack-runtime-modules.cjs 文件头「打包注意事项」）
+ * 1. prune  — 去掉文档 / sourcemap / @types（build-mac/win 已预裁，此处再跑防漏）
+ * 2. materialize — 绝对 symlink → 包内相对 symlink（体积≈一份 .pnpm）
+ * 3. pack tgz — 打成 node_modules.tgz 并删松散树（加速 NSIS / DMG 拷贝）
  *
- * 松散 node_modules 上万小文件会让 NSIS 逐文件解压极慢；materialize 后打成
- * node_modules.tgz（单文件），安装期 / 首次启动再展开。
+ * 为何不进 app.asar / 不写 extraResources 的 node_modules
+ * - electron-builder 会按 .gitignore 跳过 node_modules，故在 afterPack 再拷。
+ * - runtime 子进程 ELECTRON_RUN_AS_NODE=1，不能依赖 asar 虚拟文件系统。
+ * - package.json extraResources 只放 dist + package.json；node_modules 由此处注入。
+ *
+ * 产物路径
+ * - mac: <Product>.app/Contents/Resources/runtime/{dist,package.json,node_modules.tgz}
+ * - win: resources/runtime/...（同上；NSIS customInstall 安装期展开 tgz）
+ *
+ * 【禁止】在 pack 步骤解引用 symlink（follow:true）——dmg 会从 ~160MB 胀到 220MB+。
  */
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
@@ -37,9 +45,10 @@ exports.default = async function afterPack(context) {
   }
   // build-mac / build-win 已预裁剪；此处再跑一遍，避免直接调 pack:* 时漏剪。
   pruneRuntimeModules(srcModules);
-  console.log("→ materialize runtime node_modules（解开绝对 symlink）");
+  console.log("→ materialize runtime node_modules（解开绝对 symlink，保留相对链接）");
   materializeModules(srcModules, destModules);
-  console.log("→ pack runtime node_modules → node_modules.tgz（加速 NSIS/DMG）");
+  // 切勿在 packRuntimeModules 里开 follow——见 pack-runtime-modules.cjs 文件头
+  console.log("→ pack runtime node_modules → node_modules.tgz（单文件，加速 NSIS/DMG）");
   const { archiveBytes } = await packRuntimeModules(runtimeRoot, {
     tarRequireFrom: path.join(__dirname, "..", "build", "runtime"),
   });

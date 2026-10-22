@@ -10,7 +10,7 @@ import {
   WORK_DIR,
   ensureCwdLayout,
   formatCwdLayoutPrompt,
-} from "../src/session/cwd-layout.js";
+} from "../src/session/workspace/cwd-layout.js";
 
 it("creates ATTACHMENTS, WORK, and ARTIFACT under cwd", () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-cwd-layout-"));

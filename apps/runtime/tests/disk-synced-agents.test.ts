@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { listDiskSyncedAgents } from "../src/local/disk-synced-agents.js";
+import { listDiskSyncedAgents } from "../src/local/agents/disk-synced.js";
 
 const roots: string[] = [];
 

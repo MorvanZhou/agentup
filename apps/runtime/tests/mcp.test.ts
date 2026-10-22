@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { mergeVisitMcp, readProjectMcp, stampVisitUser } from "../src/session/mcp.js";
+import { mergeVisitMcp, readProjectMcp, stampVisitUser } from "../src/session/workspace/mcp.js";
 
 it("reports an unreadable project mcp file and refuses a blank user", () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mcp-"));

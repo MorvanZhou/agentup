@@ -33,7 +33,7 @@ import {
   setUserSkillEnabled,
   writeUserAgentsMd,
   writeUserMcpServers,
-} from "../user-resources.js";
+} from "../assistant/user-resources.js";
 
 export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
   const { config, chats } = deps;

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { ATTACHMENTS_DIR } from "../src/session/attachments.js";
+import { ATTACHMENTS_DIR } from "../src/session/workspace/attachments.js";
 import { startLocalServer } from "../src/local/server.js";
 
 it("serves personal-assistant history, context, attachments, and delegations", async () => {

@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 
 import { bearer, json, LocalError, readJson, text, type LocalAppDeps, type LocalAppEnv } from "../http.js";
 import { serializeState } from "../serialize.js";
-import { readState, StateError, writeUiState } from "../state.js";
+import { readState, StateError, writeUiState } from "../user/state.js";
 
 export function registerStateRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
   const { config } = deps;

@@ -12,7 +12,7 @@ import {
   updateProfile,
   verifyEmail,
 } from "../../control/client.js";
-import { MigrateUserError, migrateUserData } from "../migrate-user.js";
+import { MigrateUserError, migrateUserData } from "../user/migrate.js";
 import { bearer, json, LocalError, readJson, text, type LocalAppDeps, type LocalAppEnv } from "../http.js";
 import { session } from "../serialize.js";
 

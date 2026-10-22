@@ -7,7 +7,7 @@ import {
   normalizeAgentRole,
   withComposedSystemMd,
   AgentIdentityError,
-} from "../local/agent-identity.js";
+} from "../local/agents/identity.js";
 import { type UiLocale } from "../i18n/index.js";
 import { validateAgentPackage, type PackageIssue } from "./validate.js";
 

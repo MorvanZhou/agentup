@@ -12,8 +12,8 @@ import {
   maxCheckpointTurns,
   restoreAbandonedTurns,
   snapshotBeforeMutation,
-} from "../src/session/checkpoint.js";
-import { createCheckpointExtension } from "../src/session/checkpoint-ext.js";
+} from "../src/session/checkpoint/checkpoint.js";
+import { createCheckpointExtension } from "../src/session/checkpoint/extension.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 it("snapshots a file once per turn and restores the earliest abandoned turn", () => {

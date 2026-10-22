@@ -4,11 +4,11 @@ import path from "node:path";
 import { buildSessionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { DynamicToolUIPart, UIDataTypes, UIMessage, UIMessagePart, UITools } from "ai";
 
-import { ensurePersonalAssistant } from "../local/personal-assistant.js";
-import { clearCheckpoints } from "./checkpoint.js";
-import { DELEGATION_RESULT_CUSTOM_TYPE } from "./delegation/types.js";
-import { isModelServiceUnavailable, modelUnavailableNotice } from "./model-unavailable.js";
-import { stampNewSessionModel } from "./session-model.js";
+import { ensurePersonalAssistant } from "../../local/assistant/personal-assistant.js";
+import { clearCheckpoints } from "../checkpoint/checkpoint.js";
+import { DELEGATION_RESULT_CUSTOM_TYPE } from "../delegation/types.js";
+import { isModelServiceUnavailable, modelUnavailableNotice } from "../model/unavailable.js";
+import { stampNewSessionModel } from "../model/session-model.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE, parseSummaryEntryData } from "./summary.js";
 
 export const CONTEXT_RESET_TEXT = "已开始新对话，之后不再带入此前上下文";

@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { readHitlPending, writeHitlAskUsers } from "../hitl-pending.js";
-import { hasDanglingToolCall, repairOrphanAskUser } from "../hitl-repair.js";
+import type { HitlExtensionContext, HitlOrigin } from "../hitl/origin.js";
+import { readHitlPending, writeHitlAskUsers } from "../hitl/pending.js";
+import { hasDanglingToolCall, repairOrphanAskUser } from "../hitl/repair.js";
 
 export const ASK_USER_TOOL = "ask_user";
 
@@ -36,6 +37,10 @@ export type AskUserRequest = {
   agentId: string;
   toolCallId: string;
   questions: AskUserQuestion[];
+  /** visit=直聊；delegation=被委托子会话。缺省按 visit（旧盘孤儿）。 */
+  origin?: HitlOrigin;
+  taskId?: string;
+  parentAgentId?: string;
 };
 
 type AskUserResponse =
@@ -188,7 +193,9 @@ export function createAskUserExtension(
   broker: AskUserBroker,
   userId: string,
   agentId: string,
+  hitl: HitlExtensionContext = {},
 ): ExtensionFactory {
+  const origin: HitlOrigin = hitl.origin === "delegation" ? "delegation" : "visit";
   return (pi) => {
     pi.registerTool(
       defineTool<typeof AskUserParams, AskUserDetails>({
@@ -220,6 +227,9 @@ export function createAskUserExtension(
               agentId,
               toolCallId,
               questions: questions.items,
+              origin,
+              ...(hitl.taskId ? { taskId: hitl.taskId } : {}),
+              ...(hitl.parentAgentId ? { parentAgentId: hitl.parentAgentId } : {}),
             },
             signal,
           );

@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { Skill } from "@earendil-works/pi-coding-agent";
 
-import { expandSkillReferences } from "../src/session/expand-skills.js";
+import { expandSkillReferences } from "../src/session/skills/expand.js";
 
 const tempDirs: string[] = [];
 

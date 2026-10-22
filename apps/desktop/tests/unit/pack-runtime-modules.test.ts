@@ -1,8 +1,10 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -57,10 +59,11 @@ it("packs node_modules into a single tgz and drops the loose tree", async () => 
   expect(existsSync(join(root, "node_modules"))).toBe(false);
   expect(existsSync(archivePath)).toBe(true);
 
-  // follow:true → 归档内是实体文件而非 symlink
-  const list = spawnSync("tar", ["-tzf", archivePath], { encoding: "utf8" });
+  // 必须保留相对 symlink（follow:true 会让 dmg 从 ~160MB 胀到 220MB+）
+  const list = spawnSync("tar", ["-tvzf", archivePath], { encoding: "utf8" });
   expect(list.status).toBe(0);
-  expect(list.stdout).toContain("node_modules/pkg/index.js");
+  expect(list.stdout).toMatch(/node_modules\/pkg/);
+  expect(list.stdout).toMatch(/^l.*node_modules\/pkg/m);
 });
 
 it("ensureRuntimeModules expands tgz back next to package.json", async () => {
@@ -77,8 +80,11 @@ it("ensureRuntimeModules expands tgz back next to package.json", async () => {
     appVersion: "0.0.0-test",
   });
   expect(resolved).toBe(runtimeRoot);
-  expect(existsSync(join(runtimeRoot, "node_modules", "pkg", "index.js"))).toBe(true);
-  expect(readFileSync(join(runtimeRoot, "node_modules", "pkg", "index.js"), "utf8")).toContain("ok");
+  const pkgLink = join(runtimeRoot, "node_modules", "pkg");
+  expect(lstatSync(pkgLink).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(pkgLink)).toContain(".pnpm");
+  expect(existsSync(join(pkgLink, "index.js"))).toBe(true);
+  expect(readFileSync(join(pkgLink, "index.js"), "utf8")).toContain("ok");
   // 成功后尽量删掉归档
   expect(existsSync(join(runtimeRoot, ARCHIVE_NAME))).toBe(false);
 });

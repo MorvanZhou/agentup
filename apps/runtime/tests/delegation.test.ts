@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { ApprovalBroker, createApprovalExtension } from "../src/session/approval.js";
+import { ApprovalBroker, createApprovalExtension } from "../src/session/hitl/approval.js";
 import { DelegationService, DelegationStore } from "../src/session/delegation/index.js";
 import {
   CHECK_DELEGATION_TOOL,
@@ -13,8 +13,8 @@ import {
   createDelegateExtension,
 } from "../src/session/tools/index.js";
 import { buildSessionPlan } from "../src/session/plan.js";
-import { PERSONAL_ASSISTANT_ID } from "../src/local/personal-assistant.js";
-import { getDelegationAllow, setDelegationAllow } from "../src/local/state.js";
+import { PERSONAL_ASSISTANT_ID } from "../src/local/assistant/personal-assistant.js";
+import { getDelegationAllow, setDelegationAllow } from "../src/local/user/state.js";
 
 it("stores delegation tasks and lists unseen completed ones", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-store-"));

@@ -1,8 +1,33 @@
 /**
  * 把已 materialize 的 runtime/node_modules 打成单个 node_modules.tgz，再删掉松散树。
- * NSIS / DMG 只拷一个文件，避免逐文件解压上万小文件。
  *
- * follow:true 解开相对 symlink，保证 Windows 无 SeCreateSymbolicLink 时也能解压。
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 打包注意事项（改这里之前请先读完）
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 为何要打 tgz
+ * - Desktop 的 app.asar 默认已打包；慢的是 resources/runtime/node_modules 松散树。
+ * - runtime 用 ELECTRON_RUN_AS_NODE=1 跑，**不能**靠 asar / node_modules.asar
+ *   （该模式下 Electron 不提供 asar 虚拟 FS；依赖必须是真实路径）。
+ * - NSIS 对上万小文件逐条解压极慢；DMG/zip 拷贝上万小文件也慢。
+ * - 打成单文件 node_modules.tgz 后，安装器只处理 1 个文件；展开用系统 tar。
+ *
+ * 【禁止】tar.create({ follow: true }) / dereference / 全量解开 symlink
+ * - materialize 刻意保留「.pnpm 实体 + 顶层相对 symlink」，体积≈一份依赖。
+ * - follow:true 会把同一包拷多份：node_modules.tgz ~110MB（正常 ~45MB），
+ *   mac dmg 从 ~160MB 胀到 ~216MB+。已踩坑，勿再开。
+ * - 正确：默认不 follow，把相对 symlink 写进归档（体积≈松散 materialize 树）。
+ *
+ * 平台展开
+ * - Windows：installer.nsh 在 NSIS 安装期（提升权限）tar 展开，可建 symlink；
+ *   失败则 ensure-runtime-modules 首次启动兜底。
+ * - mac：无安装脚本，首次启动 ensure-runtime-modules 再展开；
+ *   拖到 /Applications 后通常可写；只读则回落 userData。
+ *
+ * 体积回归信号：若 dmg 突然多出几十 MB，先查本文件是否被改成 follow/dereference。
+ *
+ * 相关：materialize-modules.cjs / after-pack.cjs / ensure-runtime-modules.cjs /
+ *       installer.nsh / package.json → build.nsis
  */
 const { existsSync, rmSync, statSync } = require("node:fs");
 const path = require("node:path");
@@ -29,8 +54,7 @@ async function packRuntimeModules(runtimeRoot, options = {}) {
       gzip: true,
       file: archivePath,
       cwd: runtimeRoot,
-      // 解开 symlink，避免安装/解压时依赖 Windows 创建符号链接权限
-      follow: true,
+      // 切勿加 follow:true / dereference——会解引用相对 symlink，dmg 暴涨（见文件头注释）
       portable: true,
     },
     ["node_modules"],

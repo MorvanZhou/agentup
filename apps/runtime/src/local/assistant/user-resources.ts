@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import { openPromise as openZipPromise } from "yauzl";
 
-import { validateAgentPackage, type PackageIssue } from "../package/validate.js";
+import { validateAgentPackage, type PackageIssue } from "../../package/validate.js";
 import { ensurePersonalAssistant } from "./personal-assistant.js";
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

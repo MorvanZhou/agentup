@@ -11,7 +11,7 @@ import {
   removeStagedAttachment,
   sanitizeAttachmentFileName,
   stageAttachment,
-} from "../src/session/attachments.js";
+} from "../src/session/workspace/attachments.js";
 
 it("parses attachments from prompt body", () => {
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");

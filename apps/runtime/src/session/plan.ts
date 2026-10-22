@@ -34,6 +34,8 @@ export interface SessionProviderBinding {
   apiKey: string;
   baseUrl?: string;
   kind: ProviderTemplateKind;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export interface SessionPlan {
@@ -64,6 +66,8 @@ export function buildSessionPlan(visit: Visit, model: ModelConfig): SessionPlan 
       apiKey: model.apiKey,
       baseUrl: model.baseUrl,
       kind: model.kind,
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
     },
   };
 }

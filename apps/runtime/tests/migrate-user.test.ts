@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { migrateUserData } from "../src/local/migrate-user.js";
+import { migrateUserData } from "../src/local/user/migrate.js";
 import { startLocalServer } from "../src/local/server.js";
 
 it("renames guest user directory onto a new account id", () => {

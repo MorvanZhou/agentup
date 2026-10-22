@@ -7,17 +7,17 @@ import type { UIMessage } from "ai";
 
 import type { ModelConfig } from "../../config/load.js";
 import { HttpPackageSource } from "../../control/client.js";
-import { composeSystemPrompt } from "../../local/agent-identity.js";
-import { listDiskSyncedAgents } from "../../local/disk-synced-agents.js";
+import { composeSystemPrompt } from "../../local/agents/identity.js";
+import { listDiskSyncedAgents } from "../../local/agents/disk-synced.js";
 import {
   isLocalAgentId,
   listLocalAgents,
   localAgentVisit,
   type LocalAgentCard,
-} from "../../local/local-agent.js";
-import { ensurePersonalAssistant, PERSONAL_ASSISTANT_ID } from "../../local/personal-assistant.js";
+} from "../../local/agents/local-agent.js";
+import { ensurePersonalAssistant, PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
 import { Runtime, type Visit } from "../../package/sync.js";
-import type { ApprovalBroker } from "../approval.js";
+import type { ApprovalBroker } from "../hitl/approval.js";
 import type { AskUserBroker } from "../tools/ask-user.js";
 import { DelegationProgressHub, type DelegationStartedEvent } from "./progress.js";
 import { readDelegationHistory, runDelegatedPrompt } from "./run.js";
@@ -250,7 +250,12 @@ export class DelegationService {
         task.brief,
         this.options.approvals,
         this.options.askUser,
-        { taskId: task.id, signal, progress: this.progress },
+        {
+          taskId: task.id,
+          parentAgentId: task.fromAgentId,
+          signal,
+          progress: this.progress,
+        },
       );
       if (outcome.error && !outcome.text) {
         this.store.update(task.id, { status: "failed", error: outcome.error, resultSummary: "" });

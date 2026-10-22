@@ -4,7 +4,7 @@ import type { HttpBindings } from "@hono/node-server";
 
 import type { LocalConfig, ModelConfig } from "../config/load.js";
 import { localeFromRequest, type UiLocale } from "../i18n/index.js";
-import type { ApprovalBroker } from "../session/approval.js";
+import type { ApprovalBroker } from "../session/hitl/approval.js";
 import type { DelegationService } from "../session/delegation/index.js";
 import type { AskUserBroker } from "../session/tools/index.js";
 import type { VisitChats } from "../session/turn.js";

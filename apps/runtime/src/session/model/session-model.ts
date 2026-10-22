@@ -9,10 +9,10 @@ import {
   loadModelConfigFromRef,
   touchActiveModel,
   type ModelRef,
-} from "../config/provider.js";
-import type { ModelConfig } from "../config/load.js";
-import { ConfigError } from "../config/load.js";
-import type { Visit } from "../package/sync.js";
+} from "../../config/provider.js";
+import type { ModelConfig } from "../../config/load.js";
+import { ConfigError } from "../../config/load.js";
+import type { Visit } from "../../package/sync.js";
 
 /** 与 Pi jsonl 同目录的会话模型 sidecar：空会话也能落盘（custom entry 要等首条消息才 flush）。 */
 export function sessionModelSidecarPath(sessionFile: string): string {

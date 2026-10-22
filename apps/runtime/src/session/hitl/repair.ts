@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { buildSessionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { PERSONAL_ASSISTANT_ID, ensurePersonalAssistant } from "../local/personal-assistant.js";
+import { PERSONAL_ASSISTANT_ID, ensurePersonalAssistant } from "../../local/assistant/personal-assistant.js";
 import type { ApprovalRequest } from "./approval.js";
-import type { AskUserAnswer, AskUserRequest } from "./tools/ask-user.js";
+import type { AskUserAnswer, AskUserRequest } from "../tools/ask-user.js";
 
 /** 运行时重启后用户仍批准：工具未执行，提示模型按需重试（A：可闭合、不假执行）。 */
 export const ORPHAN_APPROVED_RESULT =

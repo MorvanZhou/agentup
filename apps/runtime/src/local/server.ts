@@ -4,7 +4,7 @@ import { createAdaptorServer } from "@hono/node-server";
 
 import { type LocalConfig, type ModelConfig } from "../config/load.js";
 import { loadModelConfig } from "../config/provider.js";
-import { ApprovalBroker } from "../session/approval.js";
+import { ApprovalBroker } from "../session/hitl/approval.js";
 import { DelegationService } from "../session/delegation/index.js";
 import { AskUserBroker } from "../session/tools/index.js";
 import { VisitChats, openPromptSession, type PromptSession } from "../session/turn.js";

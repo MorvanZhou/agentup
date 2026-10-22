@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 
 import { startLocalServer } from "../src/local/server.js";
-import { installUserSkillPackage, setUserSkillEnabled } from "../src/local/user-resources.js";
-import { listPackageSkills, listVisitSkills } from "../src/session/skills.js";
+import { installUserSkillPackage, setUserSkillEnabled } from "../src/local/assistant/user-resources.js";
+import { listPackageSkills, listVisitSkills } from "../src/session/skills/skills.js";
 
 const tempDirs: string[] = [];
 

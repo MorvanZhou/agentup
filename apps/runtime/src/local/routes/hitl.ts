@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 
-import { surfaceHitlAgentId } from "../../session/hitl-surface.js";
+import { surfaceHitlAgentId } from "../../session/hitl/surface.js";
 import { parseAskUserAnswer } from "../../session/tools/index.js";
 import { bearer, json, LocalError, readJson, type LocalAppDeps, type LocalAppEnv } from "../http.js";
 
@@ -15,23 +15,24 @@ export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
     approvals.restoreUser(userId);
     askUser.restoreUser(userId);
     const busyAgentIds = chats.busyAgentIds(userId);
-    const surfaceAgent = (originAgentId: string) =>
-      surfaceHitlAgentId(originAgentId, {
-        nestingParentId: delegation.findNestingParent(userId, originAgentId),
+    const surfaceAgent = (item: { agentId: string; origin?: "visit" | "delegation" }) =>
+      surfaceHitlAgentId(item.agentId, {
+        nestingParentId: delegation.findNestingParent(userId, item.agentId),
         busyAgentIds,
+        origin: item.origin,
       });
     return json(c, 200, {
       busy_agent_ids: busyAgentIds,
       approvals: approvals.listPending(userId).map((item) => ({
         id: item.id,
-        agent_id: surfaceAgent(item.agentId),
+        agent_id: surfaceAgent(item),
         tool_call_id: item.toolCallId,
         tool_name: item.toolName,
         args: item.args,
       })),
       ask_users: askUser.listPending(userId).map((item) => ({
         id: item.id,
-        agent_id: surfaceAgent(item.agentId),
+        agent_id: surfaceAgent(item),
         tool_call_id: item.toolCallId,
         questions: item.questions,
       })),

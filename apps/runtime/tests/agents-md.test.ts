@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { projectVisitAgentsMd } from "../src/session/agents-md.js";
+import { projectVisitAgentsMd } from "../src/session/workspace/agents-md.js";
 
 it("projects .pi/AGENTS.md into visit .runtime/AGENTS.md", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-agents-md-"));

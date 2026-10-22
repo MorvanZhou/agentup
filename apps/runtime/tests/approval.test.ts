@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { readState } from "../src/local/state.js";
-import { ApprovalBroker, createApprovalExtension } from "../src/session/approval.js";
+import { readState } from "../src/local/user/state.js";
+import { ApprovalBroker, createApprovalExtension } from "../src/session/hitl/approval.js";
 
 async function bindToolHandler(broker: ApprovalBroker, userId = "patient", agentId = "agent") {
   let handler: ((event: Record<string, unknown>, context: { signal?: AbortSignal }) => Promise<unknown>) | undefined;

@@ -20,7 +20,7 @@ import {
   userSkillsDir,
   writeUserAgentsMd,
   writeUserMcpServers,
-} from "../src/local/user-resources.js";
+} from "../src/local/assistant/user-resources.js";
 
 const skillMd = (name: string, description: string) => `---
 name: ${name}

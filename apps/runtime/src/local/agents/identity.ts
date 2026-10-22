@@ -1,4 +1,4 @@
-import { t, type UiLocale } from "../i18n/index.js";
+import { t, type UiLocale } from "../../i18n/index.js";
 
 /** 名片人物背景上限（字/字符）。 */
 export const BACKGROUND_MAX = 300;

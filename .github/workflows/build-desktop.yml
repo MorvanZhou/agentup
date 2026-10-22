@@ -104,7 +104,8 @@ jobs:
             exit 1
           fi
           echo "ok: archive entries=$count"
-          # 解压到临时目录，确认无外逃 symlink（follow 打包后通常已无 symlink）
+          # 解压后校验：相对 symlink 须仍在包内。
+          # 若打包误开 follow/dereference，dmg 会从 ~160MB 胀到 220MB+（见 pack-runtime-modules.cjs）。
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           tar -xzf "$archive" -C "$tmp"

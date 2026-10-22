@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { ApprovalRequest } from "./approval.js";
-import type { AskUserRequest } from "./tools/ask-user.js";
+import type { AskUserRequest } from "../tools/ask-user.js";
 
-/** 本机 HITL 快照：进程存活时写盘；重启后仅保留仍可闭合的孤儿请求（见 hitl-repair）。 */
+/** 本机 HITL 快照：进程存活时写盘；重启后仅保留仍可闭合的孤儿请求（见 hitl/repair）。 */
 export type StoredHitlPending = {
   approvals: ApprovalRequest[];
   askUsers: AskUserRequest[];
@@ -84,25 +84,47 @@ function validateHitlPending(value: unknown): StoredHitlPending {
 function isApprovalRequest(value: unknown): value is ApprovalRequest {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
-  return (
-    typeof item.id === "string" &&
-    typeof item.userId === "string" &&
-    typeof item.agentId === "string" &&
-    typeof item.toolCallId === "string" &&
-    typeof item.toolName === "string" &&
-    item.args !== null &&
-    typeof item.args === "object"
-  );
+  if (
+    typeof item.id !== "string" ||
+    typeof item.userId !== "string" ||
+    typeof item.agentId !== "string" ||
+    typeof item.toolCallId !== "string" ||
+    typeof item.toolName !== "string" ||
+    item.args === null ||
+    typeof item.args !== "object"
+  ) {
+    return false;
+  }
+  return isOptionalHitlRef(item);
 }
 
 function isAskUserRequest(value: unknown): value is AskUserRequest {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
-  return (
-    typeof item.id === "string" &&
-    typeof item.userId === "string" &&
-    typeof item.agentId === "string" &&
-    typeof item.toolCallId === "string" &&
-    Array.isArray(item.questions)
-  );
+  if (
+    typeof item.id !== "string" ||
+    typeof item.userId !== "string" ||
+    typeof item.agentId !== "string" ||
+    typeof item.toolCallId !== "string" ||
+    !Array.isArray(item.questions)
+  ) {
+    return false;
+  }
+  return isOptionalHitlRef(item);
+}
+
+/** origin / taskId / parentAgentId 均可缺省（旧盘）；有则须类型正确。 */
+function isOptionalHitlRef(item: Record<string, unknown>): boolean {
+  if (
+    item.origin !== undefined &&
+    item.origin !== "visit" &&
+    item.origin !== "delegation"
+  ) {
+    return false;
+  }
+  if (item.taskId !== undefined && typeof item.taskId !== "string") return false;
+  if (item.parentAgentId !== undefined && typeof item.parentAgentId !== "string") {
+    return false;
+  }
+  return true;
 }

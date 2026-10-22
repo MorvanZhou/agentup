@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { ensureCwdLayout } from "../session/cwd-layout.js";
+import { ensureCwdLayout } from "../session/workspace/cwd-layout.js";
 import { packageDigest, sameDigest, type PackageManifest } from "./digest.js";
 import { validateAgentPackage } from "./validate.js";
 

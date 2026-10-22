@@ -142,6 +142,7 @@ app.whenReady().then(async () => {
   const shellEnv = await resolveUserShellEnv({ logInfo, logError });
   Object.assign(process.env, mergeShellEnv(process.env, shellEnv));
 
+  // 打包态 runtime 依赖是 node_modules.tgz（见 pack-runtime-modules.cjs）；此处展开后再 spawn
   let packagedRuntimeRoot = null;
   if (app.isPackaged) {
     try {

@@ -1,5 +1,5 @@
-import { t } from "../i18n/index.js";
-import type { UiLocale } from "../i18n/locale.js";
+import { t } from "../../i18n/index.js";
+import type { UiLocale } from "../../i18n/locale.js";
 
 /** 是否像「模型服务连不上 / 不可用」，而非用户取消或普通业务错误。 */
 export function isModelServiceUnavailable(error: string): boolean {

@@ -12,8 +12,8 @@ import {
   listLocalAgents,
   localAgentVisit,
   writeLocalAgentCard,
-} from "../src/local/local-agent.js";
-import { installSkillPackageTo } from "../src/local/user-resources.js";
+} from "../src/local/agents/local-agent.js";
+import { installSkillPackageTo } from "../src/local/assistant/user-resources.js";
 import { loadAgentSource } from "../src/package/source.js";
 
 const roots: string[] = [];

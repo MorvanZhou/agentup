@@ -10,9 +10,10 @@ import {
   getDelegationAllow,
   setCommandAllow,
   setDelegationAllow,
-} from "../local/state.js";
-import { readHitlPending, writeHitlApprovals } from "./hitl-pending.js";
-import { hasDanglingToolCall, repairOrphanApproval } from "./hitl-repair.js";
+} from "../../local/user/state.js";
+import type { HitlExtensionContext, HitlOrigin } from "./origin.js";
+import { readHitlPending, writeHitlApprovals } from "./pending.js";
+import { hasDanglingToolCall, repairOrphanApproval } from "./repair.js";
 
 export type ApprovalScope = "once" | "session" | "agent";
 
@@ -23,6 +24,10 @@ export interface ApprovalRequest {
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
+  /** visit=直聊；delegation=被委托子会话。缺省按 visit（旧盘孤儿）。 */
+  origin?: HitlOrigin;
+  taskId?: string;
+  parentAgentId?: string;
 }
 
 export class ApprovalBroker {
@@ -233,6 +238,8 @@ export class ApprovalBroker {
 export type ApprovalExtensionOptions = {
   /** 委托审批时解析专家展示名（备注名 / 名片名），写入 args.agent_name。 */
   resolveDelegationLabel?: (toAgentId: string) => Promise<string | undefined>;
+  /** 直聊 / 委托子会话身份；缺省 visit。 */
+  hitl?: HitlExtensionContext;
 };
 
 export function createApprovalExtension(
@@ -241,6 +248,8 @@ export function createApprovalExtension(
   agentId: string,
   options: ApprovalExtensionOptions = {},
 ): ExtensionFactory {
+  const hitl = options.hitl ?? {};
+  const origin: HitlOrigin = hitl.origin === "delegation" ? "delegation" : "visit";
   return (pi) => {
     pi.on("tool_call", async (event: ToolCallEvent, context) => {
       if (!requiresApproval(event.toolName)) return undefined;
@@ -260,6 +269,9 @@ export function createApprovalExtension(
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         args,
+        origin,
+        ...(hitl.taskId ? { taskId: hitl.taskId } : {}),
+        ...(hitl.parentAgentId ? { parentAgentId: hitl.parentAgentId } : {}),
       }, context.signal);
       if (allowed === undefined) return undefined;
       return allowed ? undefined : { block: true, reason: "用户拒绝了这次工具调用" };

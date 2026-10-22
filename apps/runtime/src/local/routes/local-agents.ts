@@ -19,7 +19,7 @@ import {
   readLocalAgentCard,
   writeLocalAgentCard,
   type LocalAgentCard,
-} from "../local-agent.js";
+} from "../agents/local-agent.js";
 import {
   bearer,
   json,
@@ -34,7 +34,7 @@ import {
   type LocalAppDeps,
   type LocalAppEnv,
 } from "../http.js";
-import { clearAgentChatUi, forgetAgent } from "../state.js";
+import { clearAgentChatUi, forgetAgent } from "../user/state.js";
 
 function serializeLocalCard(card: LocalAgentCard) {
   return {

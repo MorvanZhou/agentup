@@ -6,10 +6,10 @@ import path from "node:path";
 
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
-import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/attachments.js";
-import { clearPersonalContext, clearPersonalHistory, readPersonalHistory } from "../../session/history.js";
-import { setVisitSessionModel } from "../../session/session-model.js";
-import { listVisitSkills } from "../../session/skills.js";
+import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
+import { clearPersonalContext, clearPersonalHistory, readPersonalHistory } from "../../session/history/history.js";
+import { setVisitSessionModel } from "../../session/model/session-model.js";
+import { listVisitSkills } from "../../session/skills/skills.js";
 import {
   bearer,
   json,
@@ -28,10 +28,10 @@ import {
   personalAssistantVisit,
   readPersonalAssistantProfile,
   writePersonalAssistantProfile,
-} from "../personal-assistant.js";
+} from "../assistant/personal-assistant.js";
 import { promptRewind, promptText, streamPrompt } from "../prompt.js";
 import { sessionModelBody } from "../serialize.js";
-import { clearAgentChatUi } from "../state.js";
+import { clearAgentChatUi } from "../user/state.js";
 import { personalWorkspaceCwd } from "../workspace.js";
 
 export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {

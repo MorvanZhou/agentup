@@ -2,7 +2,7 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import { expect, it } from "vitest";
 
-import { PiUIMessageProjector } from "../src/session/frames.js";
+import { PiUIMessageProjector } from "../src/session/history/frames.js";
 
 it("projects streaming text, reasoning, and tool calls as UIMessage chunks", () => {
   const projector = new PiUIMessageProjector();

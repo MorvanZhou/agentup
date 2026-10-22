@@ -11,6 +11,9 @@ export interface ModelConfig {
   baseUrl?: string;
   kind: ProviderTemplateKind;
   profileId?: string;
+  /** 来自本机 model-catalog 缓存（或内置表回落），供压缩阈值使用 */
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export interface RuntimeConfig {

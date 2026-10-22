@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Visit } from "../package/sync.js";
-import { listUserSkills } from "../local/user-resources.js";
+import type { Visit } from "../../package/sync.js";
+import { listUserSkills } from "../../local/assistant/user-resources.js";
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

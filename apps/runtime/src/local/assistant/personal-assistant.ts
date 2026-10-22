@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { t, type UiLocale } from "../i18n/index.js";
-import type { Visit } from "../package/sync.js";
-import { ensureCwdLayout } from "../session/cwd-layout.js";
+import { t, type UiLocale } from "../../i18n/index.js";
+import type { Visit } from "../../package/sync.js";
+import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
 import {
   AgentIdentityError,
   BACKGROUND_MAX,
@@ -11,7 +11,7 @@ import {
   normalizeAgentBackground,
   normalizeAgentName,
   normalizeAgentRole,
-} from "./agent-identity.js";
+} from "../agents/identity.js";
 
 export const PERSONAL_ASSISTANT_ID = "personal-assistant";
 

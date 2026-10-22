@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/cwd-layout.js";
-import { ensurePersonalAssistant } from "./personal-assistant.js";
+import { ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/workspace/cwd-layout.js";
+import { ensurePersonalAssistant } from "./assistant/personal-assistant.js";
 
 /** 文本预览与保存上限。超出只返回元数据。 */
 export const TEXT_PREVIEW_LIMIT = 512 * 1024;

@@ -5,7 +5,7 @@ import { ConfigError } from "../config/load.js";
 import { BackendClientError } from "../control/client.js";
 import { AgentSourceError } from "../package/source.js";
 import { NotRecruited, PackageMismatch } from "../package/sync.js";
-import { AttachmentError } from "../session/attachments.js";
+import { AttachmentError } from "../session/workspace/attachments.js";
 import { SessionRefused } from "../session/plan.js";
 import { ChatBusy } from "../session/turn.js";
 import {
@@ -15,10 +15,10 @@ import {
   type LocalAppDeps,
   type LocalAppEnv,
 } from "./http.js";
-import { LocalAgentError } from "./local-agent.js";
-import { PersonalAssistantError } from "./personal-assistant.js";
+import { LocalAgentError } from "./agents/local-agent.js";
+import { PersonalAssistantError } from "./assistant/personal-assistant.js";
 import { registerLocalRoutes } from "./routes/index.js";
-import { UserResourceError } from "./user-resources.js";
+import { UserResourceError } from "./assistant/user-resources.js";
 import { WorkspaceError } from "./workspace.js";
 
 export type { LocalAppDeps, LocalAppEnv } from "./http.js";

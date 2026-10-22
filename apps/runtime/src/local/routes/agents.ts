@@ -21,14 +21,14 @@ import { BackendClientError } from "../../control/client.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
-import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/attachments.js";
-import { clearContext, clearHistory, readHistory } from "../../session/history.js";
-import { setVisitSessionModel } from "../../session/session-model.js";
-import { listVisitSkills } from "../../session/skills.js";
-import { ensureCachedAvatar, readCachedAvatarDataUrl } from "../cached-avatar.js";
-import { listDiskSyncedAgents } from "../disk-synced-agents.js";
-import { isLocalAgentId, localAgentVisit } from "../local-agent.js";
-import { readLocalPackageVersions } from "../local-versions.js";
+import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
+import { clearContext, clearHistory, readHistory } from "../../session/history/history.js";
+import { setVisitSessionModel } from "../../session/model/session-model.js";
+import { listVisitSkills } from "../../session/skills/skills.js";
+import { ensureCachedAvatar, readCachedAvatarDataUrl } from "../agents/cached-avatar.js";
+import { listDiskSyncedAgents } from "../agents/disk-synced.js";
+import { isLocalAgentId, localAgentVisit } from "../agents/local-agent.js";
+import { readLocalPackageVersions } from "../agents/versions.js";
 import {
   bearer,
   json,
@@ -45,7 +45,7 @@ import {
 } from "../http.js";
 import { promptRewind, promptText, streamPrompt } from "../prompt.js";
 import { serializeAgentCard, sessionModelBody } from "../serialize.js";
-import { clearAgentChatUi, forgetAgent } from "../state.js";
+import { clearAgentChatUi, forgetAgent } from "../user/state.js";
 
 function visitKind(agentId: string): Visit["kind"] {
   return isLocalAgentId(agentId) ? "local" : "recruited";

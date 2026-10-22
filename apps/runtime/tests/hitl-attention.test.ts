@@ -9,10 +9,10 @@ import { expect, it } from "vitest";
 import { startLocalServer } from "../src/local/server.js";
 import type { LocalAppDeps, LocalAppEnv } from "../src/local/http.js";
 import { registerHitlRoutes } from "../src/local/routes/hitl.js";
-import { ApprovalBroker } from "../src/session/approval.js";
+import { ApprovalBroker } from "../src/session/hitl/approval.js";
 import { DelegationService } from "../src/session/delegation/index.js";
-import { healInterruptedSessionTools } from "../src/session/history.js";
-import { readHitlPending } from "../src/session/hitl-pending.js";
+import { healInterruptedSessionTools } from "../src/session/history/history.js";
+import { readHitlPending } from "../src/session/hitl/pending.js";
 import { AskUserBroker } from "../src/session/tools/ask-user.js";
 
 it("GET /attention returns empty snapshot for a user", async () => {
@@ -74,6 +74,9 @@ it("GET /attention surfaces nested child approval to busy parent", async () => {
     toolCallId: "call-nested",
     toolName: "bash",
     args: { command: "pwd" },
+    origin: "delegation",
+    parentAgentId: "personal-assistant",
+    taskId: "task-1",
   });
   const unmark = delegation.markNested("u1", "personal-assistant", "weather");
 
@@ -88,6 +91,61 @@ it("GET /attention surfaces nested child approval to busy parent", async () => {
     expect.objectContaining({
       agent_id: "personal-assistant",
       tool_call_id: "call-nested",
+    }),
+  ]);
+  unmark();
+});
+
+it("GET /attention keeps visit-origin child approval on child while nested", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-attention-visit-"));
+  const approvals = new ApprovalBroker(root);
+  const askUser = new AskUserBroker(root);
+  const delegation = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => ({
+      providerId: "ollama",
+      templateId: "ollama",
+      modelId: "m",
+      apiKey: "k",
+      baseUrl: "http://127.0.0.1:11434/v1",
+      kind: "ollama" as const,
+    }),
+    approvals,
+    askUser,
+  });
+  const deps = {
+    chats: {
+      busyAgentIds: (userId: string) => (userId === "u1" ? ["personal-assistant"] : []),
+    },
+    approvals,
+    askUser,
+    delegation,
+  } as unknown as LocalAppDeps;
+  const app = new Hono<LocalAppEnv>();
+  registerHitlRoutes(app, deps);
+
+  void approvals.request({
+    userId: "u1",
+    agentId: "weather",
+    toolCallId: "call-visit",
+    toolName: "bash",
+    args: { command: "pwd" },
+    origin: "visit",
+  });
+  const unmark = delegation.markNested("u1", "personal-assistant", "weather");
+
+  const res = await app.request("/attention?user_id=u1", {
+    headers: { authorization: "Bearer token" },
+  });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+    approvals: Array<{ agent_id: string; tool_call_id: string }>;
+  };
+  expect(body.approvals).toEqual([
+    expect.objectContaining({
+      agent_id: "weather",
+      tool_call_id: "call-visit",
     }),
   ]);
   unmark();

@@ -8,14 +8,14 @@ export {
   type RuntimeConfig,
 } from "./config/load.js";
 export { startLocalServer, type LocalServer } from "./local/server.js";
-export { readLocalPackageVersions } from "./local/local-versions.js";
+export { readLocalPackageVersions } from "./local/agents/versions.js";
 export {
   readState,
   writeState,
   writeUiState,
   type CommandAllowScope,
   type UserState,
-} from "./local/state.js";
+} from "./local/user/state.js";
 export {
   BackendClientError,
   HttpPackageSource,

@@ -1,8 +1,12 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-import { getProviderTemplate } from "../config/provider-templates.js";
-import { volcengineArkRegisterConfig } from "../config/providers/volcengine-ark.js";
-import type { SessionPlan } from "./plan.js";
+import {
+  DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_TOKENS,
+} from "../../config/model-catalog.js";
+import { getProviderTemplate } from "../../config/provider-templates.js";
+import { volcengineArkRegisterConfig } from "../../config/providers/volcengine-ark.js";
+import type { SessionPlan } from "../plan.js";
 
 type CredentialStore = NonNullable<Parameters<typeof ModelRuntime.create>[0]>["credentials"] & object;
 type Credential = Awaited<ReturnType<CredentialStore["read"]>>;
@@ -58,8 +62,8 @@ export async function openModelRuntime(plan: SessionPlan) {
           reasoning: false,
           input: ["text", "image"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128_000,
-          maxTokens: 16_384,
+          contextWindow: binding.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+          maxTokens: binding.maxTokens ?? DEFAULT_MAX_TOKENS,
           compat: {
             supportsDeveloperRole: false,
             supportsReasoningEffort: false,

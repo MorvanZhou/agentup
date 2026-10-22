@@ -1,7 +1,7 @@
 import type { UiLocale } from "../i18n/index.js";
 import { readProviderSettings } from "../config/provider.js";
-import { peekVisitModelRef } from "../session/session-model.js";
-import type { UserState } from "./state.js";
+import { peekVisitModelRef } from "../session/model/session-model.js";
+import type { UserState } from "./user/state.js";
 
 export function session(value: {
   userId: string;

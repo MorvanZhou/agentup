@@ -2,6 +2,9 @@
 # 构建未签名的 Windows x64 NSIS 安装包：sh sh/build-win.sh [--prod|--dev]
 # 默认 --prod（打进正式控制面 / 登录门面）；--dev 打进本机 URL
 # 须在 Windows 本机或 windows runner 上执行（不要交叉编译）
+#
+# runtime 依赖打包注意（勿把 node_modules 松散打进 NSIS / 勿 tar follow）：
+#   见 apps/desktop/electron/pack-runtime-modules.cjs 文件头「打包注意事项」
 set -eu
 cd "$(dirname "$0")/.."
 

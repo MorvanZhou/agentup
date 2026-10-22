@@ -13,20 +13,20 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import type { ModelConfig } from "../config/load.js";
-import { listEnabledUserSkillPaths } from "../local/user-resources.js";
+import { listEnabledUserSkillPaths } from "../local/assistant/user-resources.js";
 import type { Visit } from "../package/sync.js";
-import { ApprovalBroker, createApprovalExtension } from "./approval.js";
-import { createCheckpointExtension } from "./checkpoint-ext.js";
+import { ApprovalBroker, createApprovalExtension } from "./hitl/approval.js";
+import { createCheckpointExtension } from "./checkpoint/extension.js";
 import type { DelegationService } from "./delegation/index.js";
-import { healInterruptedSessionTools } from "./history.js";
-import { mergeVisitMcp, projectVisitMcp } from "./mcp.js";
-import { openModelRuntime } from "./model-runtime.js";
-import { formatCollaborationPrompt } from "./collaboration-prompt.js";
-import { ensureCwdLayout, formatCwdLayoutPrompt } from "./cwd-layout.js";
+import { healInterruptedSessionTools } from "./history/history.js";
+import { mergeVisitMcp, projectVisitMcp } from "./workspace/mcp.js";
+import { openModelRuntime } from "./model/runtime.js";
+import { formatCollaborationPrompt } from "./delegation/collaboration-prompt.js";
+import { ensureCwdLayout, formatCwdLayoutPrompt } from "./workspace/cwd-layout.js";
 import { buildSessionPlan } from "./plan.js";
-import { projectVisitAgentsMd } from "./agents-md.js";
-import { writeSessionModelRef } from "./session-model.js";
-import { createSummaryExtension } from "./summary.js";
+import { projectVisitAgentsMd } from "./workspace/agents-md.js";
+import { writeSessionModelRef } from "./model/session-model.js";
+import { createSummaryExtension } from "./history/summary.js";
 import {
   AskUserBroker,
   createAskUserExtension,
@@ -67,7 +67,7 @@ export async function openSession(
     ],
     extensionFactories: [
       createWebToolsExtension(),
-      createAskUserExtension(askUser, visit.userId, visit.agentId),
+      createAskUserExtension(askUser, visit.userId, visit.agentId, { origin: "visit" }),
       createTodoExtension(),
       createSummaryExtension(),
       createCheckpointExtension(visit.root),
@@ -76,6 +76,7 @@ export async function openSession(
         : []),
       ...(mcpEnabled ? [createMcpExtension({ loadConfig: () => mcpConfig })] : []),
       createApprovalExtension(approvals, visit.userId, visit.agentId, {
+        hitl: { origin: "visit" },
         resolveDelegationLabel: delegation
           ? async (toAgentId) => {
               const agents = await delegation.listRecruited(visit.userId);

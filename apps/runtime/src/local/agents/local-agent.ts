@@ -2,11 +2,11 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { t, type UiLocale } from "../i18n/index.js";
-import { packageDigest } from "../package/digest.js";
-import type { Visit } from "../package/sync.js";
-import { validateAgentPackage } from "../package/validate.js";
-import { ensureCwdLayout } from "../session/cwd-layout.js";
+import { t, type UiLocale } from "../../i18n/index.js";
+import { packageDigest } from "../../package/digest.js";
+import type { Visit } from "../../package/sync.js";
+import { validateAgentPackage } from "../../package/validate.js";
+import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
 import {
   AgentIdentityError,
   BACKGROUND_MAX,
@@ -14,8 +14,8 @@ import {
   normalizeAgentBackground,
   normalizeAgentName,
   normalizeAgentRole,
-} from "./agent-identity.js";
-import { installSkillPackageTo, UserResourceError } from "./user-resources.js";
+} from "./identity.js";
+import { installSkillPackageTo, UserResourceError } from "../assistant/user-resources.js";
 import { writeZipFromDirectory } from "./zip-dir.js";
 
 const MAX_AVATAR_BYTES = 1_000_000;

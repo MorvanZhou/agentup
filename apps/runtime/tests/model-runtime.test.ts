@@ -5,7 +5,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 
 import type { Visit } from "../src/package/sync.js";
-import { openModelRuntime } from "../src/session/model-runtime.js";
+import { openModelRuntime } from "../src/session/model/runtime.js";
 import { buildSessionPlan } from "../src/session/plan.js";
 
 it("resolves the local model API key without writing Pi auth files", async () => {

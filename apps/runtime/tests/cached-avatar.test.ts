@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { ensureCachedAvatar, readCachedAvatarDataUrl } from "../src/local/cached-avatar.js";
+import { ensureCachedAvatar, readCachedAvatarDataUrl } from "../src/local/agents/cached-avatar.js";
 
 const roots: string[] = [];
 

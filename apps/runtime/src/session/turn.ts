@@ -7,24 +7,25 @@ import { createUIMessageStream, type UIMessageChunk } from "ai";
 import type { ModelConfig } from "../config/load.js";
 import type { UiLocale } from "../i18n/locale.js";
 import type { Visit } from "../package/sync.js";
-import { ApprovalBroker } from "./approval.js";
+import { ApprovalBroker } from "./hitl/approval.js";
 import {
   materializePromptImages,
   type PromptAttachment,
-} from "./attachments.js";
+} from "./workspace/attachments.js";
 import {
   discoverRecruitedAgents,
   formatDiscoveredAgentsContext,
   RELEVANT_AGENTS_CUSTOM_TYPE,
   type DelegationService,
 } from "./delegation/index.js";
-import { expandSkillReferences } from "./expand-skills.js";
-import { PiUIMessageProjector } from "./frames.js";
+import { expandSkillReferences } from "./skills/expand.js";
+import { PiUIMessageProjector } from "./history/frames.js";
+import { isVisitOwnHitl, shouldBubbleNestedHitl } from "./hitl/origin.js";
 import {
   isModelServiceUnavailable,
   isUserCancelError,
   modelUnavailableNotice,
-} from "./model-unavailable.js";
+} from "./model/unavailable.js";
 import { openSession } from "./open.js";
 import { AskUserBroker } from "./tools/index.js";
 
@@ -209,14 +210,21 @@ export class VisitChats {
           }
           write(projector.project(event));
         });
+        const acceptsHitl = (request: {
+          userId: string;
+          agentId: string;
+          origin?: "visit" | "delegation";
+          parentAgentId?: string;
+        }): boolean => {
+          if (request.userId !== visit.userId) return false;
+          if (isVisitOwnHitl(request, visit.agentId)) return true;
+          if (!this.delegation) return false;
+          return shouldBubbleNestedHitl(request, visit, (userId, parent, child) =>
+            this.delegation!.isNestedUnder(userId, parent, child),
+          );
+        };
         const unsubscribeApproval = this.approvals?.subscribe((request) => {
-          if (request.userId !== visit.userId) return;
-          if (
-            request.agentId !== visit.agentId &&
-            !this.delegation?.isNestedUnder(visit.userId, visit.agentId, request.agentId)
-          ) {
-            return;
-          }
+          if (!acceptsHitl(request)) return;
           write(
             projector.approval({
               id: request.id,
@@ -227,13 +235,7 @@ export class VisitChats {
           );
         });
         const unsubscribeAskUser = this.askUser?.subscribe((request) => {
-          if (request.userId !== visit.userId) return;
-          if (
-            request.agentId !== visit.agentId &&
-            !this.delegation?.isNestedUnder(visit.userId, visit.agentId, request.agentId)
-          ) {
-            return;
-          }
+          if (!acceptsHitl(request)) return;
           write(
             projector.askUser({
               id: request.id,

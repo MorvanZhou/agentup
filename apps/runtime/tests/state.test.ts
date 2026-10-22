@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { readLocalPackageVersions } from "../src/local/local-versions.js";
+import { readLocalPackageVersions } from "../src/local/agents/versions.js";
 import { startLocalServer } from "../src/local/server.js";
 import {
   clearAgentChatUi,
@@ -12,7 +12,7 @@ import {
   readState,
   setCommandAllow,
   writeUiState,
-} from "../src/local/state.js";
+} from "../src/local/user/state.js";
 
 it("persists unread, previews, lastActiveAt and command allow under state.json", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-state-"));

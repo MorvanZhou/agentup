@@ -1,7 +1,23 @@
 /**
- * 打包后 resources/runtime 只带 node_modules.tgz；启动前解压成 node_modules。
- * - 优先解压到 runtime 目录（mac 拖到 /Applications 后通常可写；NSIS 安装期已解压则跳过）
- * - 若安装目录只读（如 Program Files 非提升），回落到 userData 镜像整棵 runtime
+ * 打包后 resources/runtime 只带 node_modules.tgz；启动前保证有可用的 node_modules。
+ *
+ * 展开策略
+ * - 已有 node_modules → 直接用（NSIS 安装期已展开，或上次启动已解压）。
+ * - 否则优先原地解压到 runtime 旁（mac 拖到 /Applications 后通常可写）。
+ * - 安装目录只读（如 Program Files 无写权限、只读 DMG）→ 回落
+ *   userData/runtime-modules/<version>/（拷贝 package.json+dist 后再解压）。
+ *
+ * 平台差异
+ * - Windows：installer.nsh 一般在安装时已展开；本逻辑是兜底。
+ * - mac：无安装脚本，**首次启动**会解压一次（约十几秒），之后跳过。
+ *
+ * 签名注意（以后若开启 mac 公证/签名）
+ * - 往 .app/Contents/Resources/ 写入或删除 tgz 会破坏代码签名。
+ * - 届时应改为 darwin 一律只解压到 userData，勿改 .app 内容。
+ * - 当前 identity:null 未签名，原地展开可接受。
+ *
+ * 归档内是相对 symlink（禁止 follow 打包，见 pack-runtime-modules.cjs）。
+ * 解压依赖系统 tar（mac: tar；win: tar.exe，Win10+ 自带）。
  */
 const { spawnSync } = require("node:child_process");
 const {

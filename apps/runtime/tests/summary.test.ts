@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import {
   parseSummaryEntryData,
   resolveSummaryFromBranch,
-} from "../src/session/summary.js";
+} from "../src/session/history/summary.js";
 
 it("resolveSummaryFromBranch picks last non-empty text after the latest user", () => {
   const branch = [

@@ -15,7 +15,7 @@ import {
   INTERRUPTED_TOOL_RESULT,
   projectHistory,
   readHistory,
-} from "../src/session/history.js";
+} from "../src/session/history/history.js";
 
 const assistantBase = {
   api: "openai-completions",
