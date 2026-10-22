@@ -32,11 +32,15 @@ jobs:
         include:
           - os: macos-14
             script: sh/build-mac.sh
-            artifact_path: dist/mac
+            # 只传安装包，不传 mac/ 未打包 .app（体积约等于再拷一份）
+            artifact_path: |
+              dist/mac/*.dmg
+              dist/mac/*.zip
             artifact_name: agentup-mac-arm64
           - os: windows-latest
             script: sh/build-win.sh
-            artifact_path: dist/win
+            # 只传 NSIS，不传 win-unpacked/
+            artifact_path: dist/win/*-setup.exe
             artifact_name: agentup-win-x64
 
     runs-on: ${{ matrix.os }}
@@ -71,6 +75,13 @@ jobs:
           fi
           sh "${{ matrix.script }}" "${env_flag}"
 
+      - name: Report package sizes
+        shell: bash
+        run: |
+          echo "→ 产物体积："
+          if [ -d dist/mac ]; then ls -lh dist/mac/*.{dmg,zip} 2>/dev/null || ls -lh dist/mac; fi
+          if [ -d dist/win ]; then ls -lh dist/win/*-setup.exe 2>/dev/null || ls -lh dist/win; fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -78,3 +89,4 @@ jobs:
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
