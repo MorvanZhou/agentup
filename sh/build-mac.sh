@@ -2,8 +2,8 @@
 # 构建未签名的 macOS arm64 应用（.app / .dmg / .zip）：sh sh/build-mac.sh [--prod|--dev]
 # 默认 --prod（打进正式控制面 / 登录门面）；--dev 打进本机 URL
 #
-# runtime 依赖打包注意（dmg ~160MB；若涨到 210MB+ 多半是 symlink 被解引用）：
-#   见 apps/desktop/electron/pack-runtime-modules.cjs 文件头「打包注意事项」
+# runtime 依赖打包注意（见 apps/desktop/electron/pack-runtime-modules.cjs）：
+#   mac 必须 follow=false（保相对 symlink）；若 dmg 涨到 210MB+ 多半误开了 follow
 #   首次启动会解压 node_modules.tgz；以后若签名/公证勿再改 .app 内文件
 set -eu
 cd "$(dirname "$0")/.."

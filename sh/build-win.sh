@@ -3,8 +3,9 @@
 # 默认 --prod（打进正式控制面 / 登录门面）；--dev 打进本机 URL
 # 须在 Windows 本机或 windows runner 上执行（不要交叉编译）
 #
-# runtime 依赖打包注意（勿把 node_modules 松散打进 NSIS / 勿 tar follow）：
-#   见 apps/desktop/electron/pack-runtime-modules.cjs 文件头「打包注意事项」
+# runtime 依赖打包注意（见 apps/desktop/electron/pack-runtime-modules.cjs）：
+#   win 必须 follow=true（否则 Windows tar 解压 symlink 会大面积失败）；
+#   勿把松散 node_modules 打进 NSIS（逐文件解压极慢）——只打 node_modules.tgz
 set -eu
 cd "$(dirname "$0")/.."
 

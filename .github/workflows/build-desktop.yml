@@ -104,11 +104,16 @@ jobs:
             exit 1
           fi
           echo "ok: archive entries=$count"
-          # 解压后校验：相对 symlink 须仍在包内。
-          # 若打包误开 follow/dereference，dmg 会从 ~160MB 胀到 220MB+（见 pack-runtime-modules.cjs）。
+          # 解压校验（见 pack-runtime-modules.cjs）：
+          # - mac：归档含相对 symlink，Unix tar 允许悬空链接后再落实体
+          # - win：归档须 follow=true（无 symlink）；否则 bsdtar 会 Cannot create symlink
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           tar -xzf "$archive" -C "$tmp"
+          if [ ! -d "$tmp/node_modules" ]; then
+            echo "解压后缺少 node_modules" >&2
+            exit 1
+          fi
           node -e '
             const { findEscapingSymlinks } = require("./apps/desktop/electron/materialize-modules.cjs");
             const root = process.argv[1];

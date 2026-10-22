@@ -16,7 +16,9 @@
  * - 届时应改为 darwin 一律只解压到 userData，勿改 .app 内容。
  * - 当前 identity:null 未签名，原地展开可接受。
  *
- * 归档内是相对 symlink（禁止 follow 打包，见 pack-runtime-modules.cjs）。
+ * 归档形态（见 pack-runtime-modules.cjs）
+ * - mac：相对 symlink；Unix tar 可先建悬空链接。
+ * - win：follow 后的实体树；Windows tar 不能在目标未存在时建 symlink。
  * 解压依赖系统 tar（mac: tar；win: tar.exe，Win10+ 自带）。
  */
 const { spawnSync } = require("node:child_process");

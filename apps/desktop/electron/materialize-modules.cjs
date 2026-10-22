@@ -4,13 +4,13 @@
  * - 禁止残留指向构建机绝对路径的 symlink（否则装到别的机器 runtime 会挂）
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * 体积红线（与 pack-runtime-modules.cjs 配套，勿单独改）
+ * 体积 / Windows 解压红线（与 pack-runtime-modules.cjs 配套）
  * ═══════════════════════════════════════════════════════════════════════════
- * - 【禁止】fs.cpSync({ dereference: true })、tar follow:true、或其它全量解引用：
- *   同一包会被拷多份，mac dmg 从 ~160MB 膨胀到 220MB+（已踩坑）。
- * - Node 对「目录 symlink」的 dereference 拷贝本身也不可靠。
- * - 正确姿态：实体只在 .pnpm；顶层包名是相对 symlink；打 tgz 时同样保留链接。
- * - 下游：after-pack → packRuntimeModules（单文件加速 NSIS/DMG）→ 安装/首次启动展开。
+ * - 本步骤产出「.pnpm 实体 + 相对 symlink」。勿在 materialize 里 dereference。
+ * - 打 tgz 时：mac follow=false（保 dmg ~160MB）；win follow=true（Windows tar
+ *   无法在目标尚未落地时建 symlink，否则 CI/安装大面积 Cannot create symlink）。
+ * - Node 对「目录 symlink」的 dereference 拷贝本身也不可靠，勿用 cpSync dereference。
+ * - 下游：after-pack → packRuntimeModules → NSIS/首次启动展开。
  */
 const {
   cpSync,

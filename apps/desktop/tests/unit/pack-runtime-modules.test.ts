@@ -19,8 +19,8 @@ const require = createRequire(import.meta.url);
 const { packRuntimeModules, ARCHIVE_NAME } = require("../../electron/pack-runtime-modules.cjs") as {
   packRuntimeModules: (
     root: string,
-    options?: { tarRequireFrom?: string },
-  ) => Promise<{ archivePath: string; archiveBytes: number }>;
+    options?: { tarRequireFrom?: string; follow?: boolean },
+  ) => Promise<{ archivePath: string; archiveBytes: number; follow: boolean }>;
   ARCHIVE_NAME: string;
 };
 const { ensureRuntimeModules } = require("../../electron/ensure-runtime-modules.cjs") as {
@@ -49,21 +49,35 @@ function seedModules(runtimeRoot: string) {
   writeFileSync(join(runtimeRoot, "dist", "local", "cli.js"), "console.log(1)");
 }
 
-it("packs node_modules into a single tgz and drops the loose tree", async () => {
+it("packs with relative symlinks by default (mac / follow=false)", async () => {
   root = mkdtempSync(join(tmpdir(), "agentup-pack-nm-"));
   seedModules(root);
 
-  const { archivePath, archiveBytes } = await packRuntimeModules(root);
+  const { archivePath, archiveBytes, follow } = await packRuntimeModules(root);
+  expect(follow).toBe(false);
   expect(archivePath).toBe(join(root, ARCHIVE_NAME));
   expect(archiveBytes).toBeGreaterThan(0);
   expect(existsSync(join(root, "node_modules"))).toBe(false);
   expect(existsSync(archivePath)).toBe(true);
 
-  // 必须保留相对 symlink（follow:true 会让 dmg 从 ~160MB 胀到 220MB+）
+  // mac 必须保留相对 symlink；误开 follow 会让 dmg 从 ~160MB 胀到 220MB+
   const list = spawnSync("tar", ["-tvzf", archivePath], { encoding: "utf8" });
   expect(list.status).toBe(0);
   expect(list.stdout).toMatch(/node_modules\/pkg/);
   expect(list.stdout).toMatch(/^l.*node_modules\/pkg/m);
+});
+
+it("packs with follow=true as real files (win)", async () => {
+  root = mkdtempSync(join(tmpdir(), "agentup-pack-nm-follow-"));
+  seedModules(root);
+
+  const { archivePath, follow } = await packRuntimeModules(root, { follow: true });
+  expect(follow).toBe(true);
+  const list = spawnSync("tar", ["-tvzf", archivePath], { encoding: "utf8" });
+  expect(list.status).toBe(0);
+  // 解引用后顶层 pkg 是目录/文件，不再是 symlink 行
+  expect(list.stdout).not.toMatch(/^l.*node_modules\/pkg$/m);
+  expect(list.stdout).toMatch(/node_modules\/pkg\/index\.js/);
 });
 
 it("ensureRuntimeModules expands tgz back next to package.json", async () => {

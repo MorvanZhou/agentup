@@ -12,19 +12,17 @@
  * - NSIS 对上万小文件逐条解压极慢；DMG/zip 拷贝上万小文件也慢。
  * - 打成单文件 node_modules.tgz 后，安装器只处理 1 个文件；展开用系统 tar。
  *
- * 【禁止】tar.create({ follow: true }) / dereference / 全量解开 symlink
- * - materialize 刻意保留「.pnpm 实体 + 顶层相对 symlink」，体积≈一份依赖。
- * - follow:true 会把同一包拷多份：node_modules.tgz ~110MB（正常 ~45MB），
- *   mac dmg 从 ~160MB 胀到 ~216MB+。已踩坑，勿再开。
- * - 正确：默认不 follow，把相对 symlink 写进归档（体积≈松散 materialize 树）。
+ * 平台与 follow（相对 symlink）
+ * - **mac（follow:false，默认）**：保留 .pnpm 相对 symlink，体积≈一份依赖；
+ *   dmg 约 ~160MB。切勿在 mac 上开 follow——会胀到 ~216MB+（已踩坑）。
+ * - **win（follow:true，必须）**：Windows bsdtar 创建 symlink 时要求目标已存在；
+ *   归档里「顶层链接」常先于「.pnpm 实体」出现 → `Cannot create symlink ...
+ *   No such file or directory`，安装/CI 解压会大面积失败。故 win 打包必须
+ *   解引用成实体文件。setup 会更大，但 NSIS 仍只解压 1 个 tgz（安装仍快）。
  *
- * 平台展开
- * - Windows：installer.nsh 在 NSIS 安装期（提升权限）tar 展开，可建 symlink；
- *   失败则 ensure-runtime-modules 首次启动兜底。
- * - mac：无安装脚本，首次启动 ensure-runtime-modules 再展开；
- *   拖到 /Applications 后通常可写；只读则回落 userData。
- *
- * 体积回归信号：若 dmg 突然多出几十 MB，先查本文件是否被改成 follow/dereference。
+ * 体积回归信号
+ * - mac dmg 突然多出几十 MB → 是否误对 darwin 开了 follow。
+ * - win CI/安装出现大量 Cannot create symlink → 是否误对 win32 关了 follow。
  *
  * 相关：materialize-modules.cjs / after-pack.cjs / ensure-runtime-modules.cjs /
  *       installer.nsh / package.json → build.nsis
@@ -36,8 +34,9 @@ const ARCHIVE_NAME = "node_modules.tgz";
 
 /**
  * @param {string} runtimeRoot 含 node_modules 的 runtime 目录
- * @param {{ tarRequireFrom?: string }} [options]
- * @returns {Promise<{ archivePath: string, archiveBytes: number }>}
+ * @param {{ tarRequireFrom?: string, follow?: boolean }} [options]
+ *        follow：win32 必须 true；darwin 必须 false（见文件头）
+ * @returns {Promise<{ archivePath: string, archiveBytes: number, follow: boolean }>}
  */
 async function packRuntimeModules(runtimeRoot, options = {}) {
   const modulesDir = path.join(runtimeRoot, "node_modules");
@@ -46,6 +45,7 @@ async function packRuntimeModules(runtimeRoot, options = {}) {
     throw new Error(`packRuntimeModules: 缺少 ${modulesDir}`);
   }
 
+  const follow = options.follow === true;
   const tar = loadTar(options.tarRequireFrom ?? runtimeRoot);
   if (existsSync(archivePath)) rmSync(archivePath, { force: true });
 
@@ -54,7 +54,8 @@ async function packRuntimeModules(runtimeRoot, options = {}) {
       gzip: true,
       file: archivePath,
       cwd: runtimeRoot,
-      // 切勿加 follow:true / dereference——会解引用相对 symlink，dmg 暴涨（见文件头注释）
+      // mac: false 保体积；win: true 才能被 bsdtar 解出（见文件头）
+      follow,
       portable: true,
     },
     ["node_modules"],
@@ -62,7 +63,7 @@ async function packRuntimeModules(runtimeRoot, options = {}) {
 
   rmSync(modulesDir, { recursive: true, force: true });
   const archiveBytes = statSync(archivePath).size;
-  return { archivePath, archiveBytes };
+  return { archivePath, archiveBytes, follow };
 }
 
 /**
@@ -87,13 +88,16 @@ module.exports = { packRuntimeModules, ARCHIVE_NAME, loadTar };
 
 if (require.main === module) {
   const root = process.argv[2];
+  const follow = process.argv.includes("--follow");
   if (!root) {
-    console.error("usage: node pack-runtime-modules.cjs <runtime_root>");
+    console.error("usage: node pack-runtime-modules.cjs <runtime_root> [--follow]");
     process.exit(2);
   }
-  packRuntimeModules(root)
-    .then(({ archivePath, archiveBytes }) => {
-      console.log(`packed ${archivePath} (${(archiveBytes / 1024 / 1024).toFixed(1)} MB)`);
+  packRuntimeModules(root, { follow })
+    .then(({ archivePath, archiveBytes, follow: usedFollow }) => {
+      console.log(
+        `packed ${archivePath} (${(archiveBytes / 1024 / 1024).toFixed(1)} MB, follow=${usedFollow})`,
+      );
     })
     .catch((error) => {
       console.error(error instanceof Error ? error.message : error);

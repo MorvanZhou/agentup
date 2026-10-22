@@ -21,7 +21,9 @@ const { pruneRuntimeModules } = require("./prune-runtime-modules.cjs");
  * - mac: <Product>.app/Contents/Resources/runtime/{dist,package.json,node_modules.tgz}
  * - win: resources/runtime/...（同上；NSIS customInstall 安装期展开 tgz）
  *
- * 【禁止】在 pack 步骤解引用 symlink（follow:true）——dmg 会从 ~160MB 胀到 220MB+。
+ * follow 按平台分叉（详见 pack-runtime-modules.cjs）
+ * - darwin：follow=false，保 dmg ~160MB
+ * - win32：follow=true，否则 Windows tar 解压 symlink 会大面积失败
  */
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
@@ -47,10 +49,15 @@ exports.default = async function afterPack(context) {
   pruneRuntimeModules(srcModules);
   console.log("→ materialize runtime node_modules（解开绝对 symlink，保留相对链接）");
   materializeModules(srcModules, destModules);
-  // 切勿在 packRuntimeModules 里开 follow——见 pack-runtime-modules.cjs 文件头
-  console.log("→ pack runtime node_modules → node_modules.tgz（单文件，加速 NSIS/DMG）");
+
+  // win 必须 follow；mac 禁止 follow——见 pack-runtime-modules.cjs 文件头
+  const follow = platform === "win32";
+  console.log(
+    `→ pack runtime node_modules → node_modules.tgz（follow=${follow}；加速 NSIS/DMG）`,
+  );
   const { archiveBytes } = await packRuntimeModules(runtimeRoot, {
     tarRequireFrom: path.join(__dirname, "..", "build", "runtime"),
+    follow,
   });
   console.log(`→ packed node_modules.tgz ${(archiveBytes / 1024 / 1024).toFixed(1)} MB`);
 };
