@@ -9,7 +9,7 @@ import {
   isPendingHitlPart,
   isProcessGroupDefaultOpen,
   processGroupTriggerLabel,
-} from "../../src/pages/conversation/model/assistant-process.js";
+} from "../../src/pages/conversation/model/message/assistant-process.js";
 
 it("splits contiguous non-text into groups between texts", () => {
   expect(

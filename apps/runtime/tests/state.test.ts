@@ -9,8 +9,10 @@ import { startLocalServer } from "../src/local/server.js";
 import {
   clearAgentChatUi,
   clearSessionCommandAllow,
+  clearSessionToolAllow,
   readState,
   setCommandAllow,
+  setToolAllow,
   writeUiState,
 } from "../src/local/user/state.js";
 
@@ -22,6 +24,8 @@ it("persists unread, previews, lastActiveAt and command allow under state.json",
     lastActiveAt: {},
     commandAllow: {},
     delegationAllow: {},
+    toolAllow: {},
+    pathMountAllow: {},
   });
   writeUiState(
     root,
@@ -37,6 +41,8 @@ it("persists unread, previews, lastActiveAt and command allow under state.json",
     lastActiveAt: { weather: 1_700_000_000_000 },
     commandAllow: { weather: "session" },
     delegationAllow: {},
+    toolAllow: {},
+    pathMountAllow: {},
   });
   expect(fs.statSync(path.join(root, "users", "patient-a", "state.json")).mode & 0o777).toBe(0o600);
 });
@@ -52,6 +58,8 @@ it("keeps previews when unread and command allow change", () => {
     lastActiveAt: { weather: 20 },
     commandAllow: { weather: "agent" },
     delegationAllow: {},
+    toolAllow: {},
+    pathMountAllow: {},
   });
 });
 
@@ -69,6 +77,8 @@ it("defaults missing previews and lastActiveAt in legacy state.json", () => {
     lastActiveAt: {},
     commandAllow: { weather: "session" },
     delegationAllow: {},
+    toolAllow: {},
+    pathMountAllow: {},
   });
 });
 
@@ -82,6 +92,8 @@ it("clears chat UI fields without dropping command allow", () => {
     lastActiveAt: {},
     commandAllow: { weather: "agent" },
     delegationAllow: {},
+    toolAllow: {},
+    pathMountAllow: {},
   });
 });
 
@@ -99,6 +111,26 @@ it("does not downgrade agent allow to session", () => {
   setCommandAllow(root, "patient-a", "weather", "agent");
   setCommandAllow(root, "patient-a", "weather", "session");
   expect(readState(root, "patient-a").commandAllow).toEqual({ weather: "agent" });
+});
+
+it("persists and clears session-scoped tool allow per agent tool", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-state-tool-"));
+  setToolAllow(root, "patient-a", "weather", "mcp__hospital__write", "session");
+  setToolAllow(root, "patient-a", "weather", "mcp__hospital__read", "agent");
+  expect(readState(root, "patient-a").toolAllow).toEqual({
+    weather: {
+      "mcp__hospital__write": "session",
+      "mcp__hospital__read": "agent",
+    },
+  });
+  clearSessionToolAllow(root, "patient-a", "weather");
+  expect(readState(root, "patient-a").toolAllow).toEqual({
+    weather: { "mcp__hospital__read": "agent" },
+  });
+  setToolAllow(root, "patient-a", "weather", "mcp__hospital__read", "session");
+  expect(readState(root, "patient-a").toolAllow).toEqual({
+    weather: { "mcp__hospital__read": "agent" },
+  });
 });
 
 it("reads local package versions from instance.json", () => {
@@ -156,6 +188,8 @@ it("exposes state through the loopback API", async () => {
       lastActiveAt: { weather: 42 },
       commandAllow: {},
       delegationAllow: {},
+      toolAllow: {},
+      pathMountAllow: {},
     });
 
     const missingPreviews = await fetch(`${local.url}/state`, {

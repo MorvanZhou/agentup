@@ -2,9 +2,9 @@ import { computed } from "vue";
 import { useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 
-import { formatElapsedMs } from "../../../../../model/elapsed";
-import { injectPendingAskUserToolCallId } from "../../../../../model/thread-ask-user";
-import { injectPendingApprovalToolCallId } from "../../../../../model/thread-approval";
+import { formatElapsedMs } from "../../../../../model/message/elapsed";
+import { injectPendingAskUserToolCallId } from "../../../../../model/thread/thread-ask-user";
+import { injectPendingApprovalToolCallId } from "../../../../../model/thread/thread-approval";
 import {
   formatToolResult,
   isInterruptedToolOutput,

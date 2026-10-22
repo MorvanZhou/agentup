@@ -4,7 +4,7 @@ import {
   isAwaitingNextStep,
   isPartProgressActive,
   type TurnProgressPart,
-} from "../../src/pages/conversation/model/turn-progress.js";
+} from "../../src/pages/conversation/model/message/turn-progress.js";
 
 it("treats empty parts while message running as awaiting next step", () => {
   expect(isAwaitingNextStep([], true)).toBe(true);

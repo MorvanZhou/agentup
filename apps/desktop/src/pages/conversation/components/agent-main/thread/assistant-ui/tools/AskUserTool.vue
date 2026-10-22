@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { MessageCircleQuestionIcon } from "@lucide/vue";
 
 import { t, tf } from "../../../../../../../shared/model/ui-locale";
-import { summarizeAskUserTool } from "../../../../../model/ask-user-summary";
+import { summarizeAskUserTool } from "../../../../../model/message/ask-user-summary";
 import ShimmerTitle from "../parts/ShimmerTitle.vue";
 import { useToolPart } from "./useToolPart";
 

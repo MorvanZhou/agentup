@@ -3,8 +3,8 @@ import { computed, type Ref } from "vue";
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import { showToast } from "../../../shared/model/toast";
-import { injectThreadAgentId } from "../model/thread-agent-id";
-import { injectThreadExtras } from "../model/thread-extras";
+import { injectThreadAgentId } from "../model/thread/thread-agent-id";
+import { injectThreadExtras } from "../model/thread/thread-extras";
 
 /** 将 cwd 相对路径用系统默认应用打开（Electron shell.openPath）。 */
 export function useOpenWorkspaceFile(options?: { api?: DesktopApi; agentId?: Ref<string> }) {

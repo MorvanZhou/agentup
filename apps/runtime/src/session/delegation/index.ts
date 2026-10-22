@@ -25,7 +25,11 @@ export {
 } from "./discover.js";
 export {
   DELEGATION_RESULT_CUSTOM_TYPE,
+  MAX_DELEGATION_CONCURRENT,
+  MAX_DELEGATION_FANOUT,
   RELEVANT_AGENTS_CUSTOM_TYPE,
+  type DelegateFanoutItem,
+  type DelegateFanoutResult,
   type DelegateRunResult,
   type DelegationStatus,
   type DelegationTask,

@@ -2,8 +2,8 @@ import { ref, watch, type Ref } from "vue";
 
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import { showToast } from "../../../shared/model/toast";
-import { insertAttachmentReference } from "../model/attachment-ref";
-import { stagedPathsToRemove } from "../model/composer-staged-files";
+import { insertAttachmentReference } from "../model/composer/attachment-ref";
+import { stagedPathsToRemove } from "../model/composer/composer-staged-files";
 
 const IMAGE_MIME = /^(image\/(png|jpeg|gif|webp))$/i;
 

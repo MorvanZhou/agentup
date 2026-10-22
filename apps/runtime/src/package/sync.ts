@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ensureCwdLayout } from "../session/workspace/cwd-layout.js";
+import { projectRootsFromPreviousInstance } from "../session/workspace/project-roots.js";
 import { packageDigest, sameDigest, type PackageManifest } from "./digest.js";
 import { validateAgentPackage } from "./validate.js";
 
@@ -174,6 +175,7 @@ function writeInstance(visitRoot: string, userId: string, release: PackageReleas
   ) {
     activeSessionId = current;
   }
+  const projectRoots = projectRootsFromPreviousInstance(previous);
   const payload = {
     user_id: userId,
     agent_id: release.agentId,
@@ -183,6 +185,7 @@ function writeInstance(visitRoot: string, userId: string, release: PackageReleas
     tools: release.manifest.tools,
     model_capabilities: release.manifest.modelCapabilities,
     project_trust: "granted",
+    ...(projectRoots ? { project_roots: projectRoots } : {}),
   };
   const temporary = path.join(visitRoot, `.instance-${randomUUID()}.json`);
   fs.writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);

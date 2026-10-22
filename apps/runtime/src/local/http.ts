@@ -4,10 +4,11 @@ import type { HttpBindings } from "@hono/node-server";
 
 import type { LocalConfig, ModelConfig } from "../config/load.js";
 import { localeFromRequest, type UiLocale } from "../i18n/index.js";
-import type { ApprovalBroker } from "../session/hitl/approval.js";
+import type { BackgroundJobs } from "../session/background/index.js";
+import type { ApprovalBroker } from "../session/hitl/approval/index.js";
 import type { DelegationService } from "../session/delegation/index.js";
 import type { AskUserBroker } from "../session/tools/index.js";
-import type { VisitChats } from "../session/turn.js";
+import type { VisitChats } from "../session/turn/index.js";
 
 export const AGENT_ID = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
 
@@ -19,6 +20,7 @@ export interface LocalAppDeps {
   approvals: ApprovalBroker;
   askUser: AskUserBroker;
   delegation: DelegationService;
+  backgroundJobs: BackgroundJobs;
   readModel: () => ModelConfig;
 }
 

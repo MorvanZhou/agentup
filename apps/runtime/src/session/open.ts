@@ -15,24 +15,35 @@ import {
 import type { ModelConfig } from "../config/load.js";
 import { listEnabledUserSkillPaths } from "../local/assistant/user-resources.js";
 import type { Visit } from "../package/sync.js";
-import { ApprovalBroker, createApprovalExtension } from "./hitl/approval.js";
+import { ApprovalBroker, createApprovalExtension } from "./hitl/approval/index.js";
 import { createCheckpointExtension } from "./checkpoint/extension.js";
+import type { BackgroundJobs } from "./background/index.js";
 import type { DelegationService } from "./delegation/index.js";
 import { healInterruptedSessionTools } from "./history/history.js";
 import { mergeVisitMcp, projectVisitMcp } from "./workspace/mcp.js";
 import { openModelRuntime } from "./model/runtime.js";
 import { formatCollaborationPrompt } from "./delegation/collaboration-prompt.js";
 import { ensureCwdLayout, formatCwdLayoutPrompt } from "./workspace/cwd-layout.js";
+import {
+  formatProjectRootsPrompt,
+  readProjectRoots,
+  resolveAllowedRoots,
+} from "./workspace/project-roots.js";
 import { buildSessionPlan } from "./plan.js";
 import { projectVisitAgentsMd } from "./workspace/agents-md.js";
 import { writeSessionModelRef } from "./model/session-model.js";
+import { createArtifactsExtension } from "./history/artifacts.js";
 import { createSummaryExtension } from "./history/summary.js";
+import { createOutputLengthExtension } from "./output-length.js";
 import {
   AskUserBroker,
   createAskUserExtension,
+  createBackgroundJobsExtension,
   createDelegateExtension,
+  createFsGuardExtension,
   createTodoExtension,
   createWebToolsExtension,
+  formatToolsUsagePrompt,
 } from "./tools/index.js";
 
 export async function openSession(
@@ -41,6 +52,7 @@ export async function openSession(
   approvals = new ApprovalBroker(),
   askUser = new AskUserBroker(),
   delegation?: DelegationService,
+  backgroundJobs?: BackgroundJobs,
 ): Promise<CreateAgentSessionResult> {
   const plan = buildSessionPlan(visit, model);
   fs.mkdirSync(plan.cwd, { recursive: true });
@@ -66,17 +78,32 @@ export async function openSession(
       ...(personalSkills && fs.existsSync(personalSkills) ? [personalSkills] : []),
     ],
     extensionFactories: [
+      createFsGuardExtension(plan.cwd, () => {
+        const kind = visit.kind === "personal" ? "personal" : "agent";
+        return resolveAllowedRoots(plan.cwd, readProjectRoots(visit.root, kind));
+      }),
       createWebToolsExtension(),
       createAskUserExtension(askUser, visit.userId, visit.agentId, { origin: "visit" }),
       createTodoExtension(),
       createSummaryExtension(),
+      createArtifactsExtension(),
+      createOutputLengthExtension(),
       createCheckpointExtension(visit.root),
       ...(delegation
         ? [createDelegateExtension(delegation, visit.userId, visit.agentId)]
         : []),
+      ...(backgroundJobs
+        ? [createBackgroundJobsExtension(backgroundJobs, visit.userId, visit.agentId, plan.cwd)]
+        : []),
       ...(mcpEnabled ? [createMcpExtension({ loadConfig: () => mcpConfig })] : []),
       createApprovalExtension(approvals, visit.userId, visit.agentId, {
         hitl: { origin: "visit" },
+        projectMount: {
+          cwd: plan.cwd,
+          visitRoot: visit.root,
+          kind: personal ? "personal" : "agent",
+          userDataRoot: userDataRootFromVisit(visit),
+        },
         resolveDelegationLabel: delegation
           ? async (toAgentId) => {
               const agents = await delegation.listRecruited(visit.userId);
@@ -101,9 +128,13 @@ export async function openSession(
         diagnostics: loaded.diagnostics,
       };
     },
-    // 平台 cwd 规范 +（有委托时）协作策略；工作规则由 agentDir AGENTS.md 加载。
+    // 平台 cwd 规范 + 挂载项目根 +（有委托时）协作策略；工作规则由 agentDir AGENTS.md 加载。
     appendSystemPromptOverride: (base) => {
-      const parts = [...base, formatCwdLayoutPrompt()];
+      const kind = visit.kind === "personal" ? "personal" : "agent";
+      const projectRoots = readProjectRoots(visit.root, kind);
+      const parts = [...base, formatCwdLayoutPrompt(), formatToolsUsagePrompt()];
+      const projectPrompt = formatProjectRootsPrompt(projectRoots);
+      if (projectPrompt) parts.push(projectPrompt);
       if (delegation) parts.push(formatCollaborationPrompt());
       return parts;
     },
@@ -142,4 +173,10 @@ function skillUnderRoot(skill: Skill, rootDir: string): boolean {
   const file = path.resolve(skill.filePath);
   const root = path.resolve(rootDir);
   return file === root || file.startsWith(`${root}${path.sep}`);
+}
+
+/** visit.root → `<user_data_root>`（agents 三级上、私人助理两级上）。 */
+function userDataRootFromVisit(visit: Visit): string {
+  if (visit.kind === "personal") return path.resolve(visit.root, "..", "..");
+  return path.resolve(visit.root, "..", "..", "..");
 }

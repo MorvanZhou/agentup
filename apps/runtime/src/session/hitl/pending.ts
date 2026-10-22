@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { ApprovalRequest } from "./approval.js";
+import type { ApprovalRequest } from "./approval/index.js";
 import type { AskUserRequest } from "../tools/ask-user.js";
 
 /** 本机 HITL 快照：进程存活时写盘；重启后仅保留仍可闭合的孤儿请求（见 hitl/repair）。 */

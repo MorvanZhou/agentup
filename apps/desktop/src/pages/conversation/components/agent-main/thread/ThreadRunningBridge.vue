@@ -3,7 +3,7 @@ import { useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 import { onUnmounted, ref, watch } from "vue";
 
-import { shouldDismissHitlOnStop, type ThreadStopStatus } from "../../../model/hitl-dismiss";
+import { shouldDismissHitlOnStop, type ThreadStopStatus } from "../../../model/thread/hitl-dismiss";
 
 /** 把 thread.isRunning 冒泡给会话页；停止时通知收起 HITL 浮层。 */
 const emit = defineEmits<{

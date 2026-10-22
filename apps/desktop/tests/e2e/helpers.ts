@@ -73,6 +73,7 @@ export async function mockAgentUp(
           skillPackage !== null
             ? async () => skillPackage
             : existing?.selectSkillPackage ?? (async () => null),
+        selectDirectory: async () => null,
         openVisitDirectory: async (path) => {
           if (record) window.openedVisit = path;
         },

@@ -8,10 +8,10 @@ import AgentSidebar from "./components/agent-sidebar/AgentSidebar.vue";
 import AgentThread from "./components/agent-main/AgentThread.vue";
 import { useAgentChat } from "./composables/useAgentChat";
 import { useSidebarPaneWidth } from "./composables/usePaneWidth";
-import { buildConversationRows, hasRecruitedMarketAgent } from "./model/conversation-row";
-import type { ThreadExtras } from "./model/thread-extras";
-import type { ThreadRoster } from "./model/thread-roster";
-import { mountedThreads, pruneVisited, rememberVisited } from "./model/visited-threads";
+import { buildConversationRows, hasRecruitedMarketAgent } from "./model/sidebar/conversation-row";
+import type { ThreadExtras } from "./model/thread/thread-extras";
+import type { ThreadRoster } from "./model/thread/thread-roster";
+import { mountedThreads, pruneVisited, rememberVisited } from "./model/thread/visited-threads";
 import { useProviderSettings } from "../settings/composables/useProviderSettings";
 
 defineOptions({ name: "ConversationPage" });
@@ -162,6 +162,10 @@ function extrasFor(agentId: string): ThreadExtras {
   const agent = conversations.value.find((item) => item.agentId === agentId);
   return {
     personal: agent?.kind === "personal",
+    kind:
+      agent?.kind === "personal" || agent?.kind === "local" || agent?.kind === "recruited"
+        ? agent.kind
+        : "",
     name: agent?.name ?? "",
     role: agent?.role ?? "",
     remark: agent?.remark ?? "",
@@ -177,6 +181,7 @@ function extrasFor(agentId: string): ThreadExtras {
 
 const emptyExtras = computed<ThreadExtras>(() => ({
   personal: false,
+  kind: "",
   name: "",
   role: "",
   remark: "",

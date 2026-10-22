@@ -6,7 +6,7 @@ import {
   messageCreatedAtMs,
   timeLabelsForVisibleIds,
   timeSeparatorLabel,
-} from "../../src/pages/conversation/model/message-time.js";
+} from "../../src/pages/conversation/model/message/message-time.js";
 
 /** 固定「现在」为本地 2026-10-12 15:30，避免依赖机器时区偏移写法。 */
 const nowDate = new Date(2026, 9, 12, 15, 30, 0, 0);

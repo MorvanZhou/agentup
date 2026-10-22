@@ -4,7 +4,7 @@ import {
   domToComposerText,
   sanitizeCopiedText,
   type ComposerDomNode,
-} from "../../src/pages/conversation/model/copy-text";
+} from "../../src/pages/conversation/model/composer/copy-text";
 
 describe("sanitizeCopiedText", () => {
   it("collapses blank lines and trims edges", () => {

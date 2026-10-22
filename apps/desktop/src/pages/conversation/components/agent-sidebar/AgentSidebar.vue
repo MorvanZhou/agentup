@@ -8,7 +8,7 @@ import { t } from "../../../../shared/model/ui-locale";
 import {
   filterConversationRows,
   type ConversationRow,
-} from "../../model/conversation-row";
+} from "../../model/sidebar/conversation-row";
 import AgentSidebarItem from "./AgentSidebarItem.vue";
 
 const props = defineProps<{

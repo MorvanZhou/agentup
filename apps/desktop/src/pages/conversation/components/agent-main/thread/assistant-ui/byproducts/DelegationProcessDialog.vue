@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 
+import { DesktopApi } from "../../../../../../../shared/api/runtime";
 import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
 import AppDialog from "../../../../../../../shared/components/AppDialog.vue";
+import { showToast } from "../../../../../../../shared/model/toast";
 import { t, tf } from "../../../../../../../shared/model/ui-locale";
 import { useDelegationProcess } from "../../../../../composables/useDelegationProcess";
-import type { DelegationProcessTarget } from "../../../../../model/thread-delegation";
+import type { DelegationProcessTarget } from "../../../../../model/thread/thread-delegation";
 import ReadonlyAssistantProcess from "./ReadonlyAssistantProcess.vue";
 
 const props = defineProps<{
@@ -16,7 +18,10 @@ const props = defineProps<{
   runtimeBaseUrl?: string;
 }>();
 
-const emit = defineEmits<{ "update:open": [value: boolean] }>();
+const emit = defineEmits<{
+  "update:open": [value: boolean];
+  cancelled: [taskId: string];
+}>();
 
 const {
   loading,
@@ -27,6 +32,9 @@ const {
   open: loadProcess,
   stop,
 } = useDelegationProcess();
+
+const api = new DesktopApi();
+const cancelling = ref(false);
 
 const agentName = computed(() => props.target?.toAgentName?.trim() || t("assistLabel"));
 
@@ -39,6 +47,11 @@ const description = computed(() => {
   const brief = props.target?.brief?.trim() ?? "";
   if (!brief) return undefined;
   return brief.length > 80 ? `${brief.slice(0, 79)}…` : brief;
+});
+
+const canCancel = computed(() => {
+  const status = task.value?.status;
+  return status === "running" || status === "pending_auth" || (!status && streaming.value);
 });
 
 watch(
@@ -62,10 +75,35 @@ function onOpen(value: boolean): void {
   emit("update:open", value);
   if (!value) stop();
 }
+
+async function cancelTask(): Promise<void> {
+  const taskId = props.target?.taskId;
+  if (!taskId || cancelling.value) return;
+  cancelling.value = true;
+  try {
+    await api.cancelDelegation(props.token, props.userId, taskId);
+    showToast(tf("fleetCancelled", { name: agentName.value }), "success");
+    emit("cancelled", taskId);
+    // 刷新弹窗终态
+    await loadProcess({
+      token: props.token,
+      userId: props.userId,
+      taskId,
+      baseUrl: props.runtimeBaseUrl,
+    });
+  } catch (err) {
+    showToast(
+      err instanceof Error && err.message ? err.message : t("fleetCancelFailed"),
+      "error",
+    );
+  } finally {
+    cancelling.value = false;
+  }
+}
 </script>
 
 <template>
-  <!-- 委托旁路过程：流式 / 历史只读时间线 -->
+  <!-- 委托旁路过程：流式 / 历史只读时间线；进行中可取消 -->
   <AppDialog
     :open="open"
     :title="title"
@@ -104,6 +142,29 @@ function onOpen(value: boolean): void {
       >
         {{ task.error }}
       </p>
+      <p
+        v-else-if="task?.status === 'cancelled'"
+        class="mb-0 text-xs text-muted-foreground"
+      >
+        {{ t("fleetCancelledStatus") }}
+      </p>
     </div>
+    <template v-if="canCancel" #footer>
+      <button
+        type="button"
+        class="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+        @click="onOpen(false)"
+      >
+        {{ t("fleetClose") }}
+      </button>
+      <button
+        type="button"
+        class="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-lg bg-destructive px-3 text-sm font-medium text-white transition duration-200 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
+        :disabled="cancelling"
+        @click="cancelTask"
+      >
+        {{ cancelling ? t("fleetCancelling") : t("fleetCancel") }}
+      </button>
+    </template>
   </AppDialog>
 </template>

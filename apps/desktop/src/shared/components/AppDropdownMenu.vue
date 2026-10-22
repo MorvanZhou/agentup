@@ -12,6 +12,8 @@ export type AppDropdownItem = {
   id: string;
   label: string;
   disabled?: boolean;
+  /** 禁用或补充说明（次行小字） */
+  hint?: string;
   /** 左侧图标（如 Lucide 组件） */
   icon?: Component;
   /** 危险操作（如解雇），用破坏性语义色 */
@@ -62,7 +64,13 @@ defineEmits<{ select: [id: string] }>();
             :class="item.danger ? '' : 'text-muted-foreground'"
             aria-hidden="true"
           />
-          <span class="min-w-0 flex-1">{{ item.label }}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate">{{ item.label }}</span>
+            <span
+              v-if="item.hint"
+              class="mt-0.5 block truncate text-xs text-muted-foreground"
+            >{{ item.hint }}</span>
+          </span>
           <span
             v-if="item.dot"
             class="size-1.5 shrink-0 rounded-full bg-destructive"

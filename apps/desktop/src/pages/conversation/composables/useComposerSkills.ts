@@ -6,7 +6,7 @@ import {
   filterSkillsByQuery,
   insertSkillReference,
   slashQueryAtCursor,
-} from "../model/skill-text";
+} from "../model/composer/skill-text";
 
 export function useComposerSkills(options: {
   agentId: Ref<string>;

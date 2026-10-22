@@ -18,15 +18,15 @@ import UserAvatar from "../../../../../../shared/components/UserAvatar.vue";
 import { sessionDisplayNickname } from "../../../../../../shared/model/session";
 import { isImageFile, useComposerFiles } from "../../../../composables/useComposerFiles";
 import { useComposerSkills } from "../../../../composables/useComposerSkills";
-import { sanitizeCopiedText, selectionToComposerText } from "../../../../model/copy-text";
+import { sanitizeCopiedText, selectionToComposerText } from "../../../../model/composer/copy-text";
 import {
   displayRollbackPath,
   filesAffectedByEditResend,
   wouldRollbackFilesOnEdit,
   type RollbackFileImpact,
-} from "../../../../model/edit-resend-confirm";
-import { insertEmojiAt } from "../../../../model/emoji-data";
-import { injectThreadAgentId } from "../../../../model/thread-agent-id";
+} from "../../../../model/message/edit-resend-confirm";
+import { insertEmojiAt } from "../../../../model/composer/emoji-data";
+import { injectThreadAgentId } from "../../../../model/thread/thread-agent-id";
 import ImageAttachmentPreview from "../composer/chips/ImageAttachmentPreview.vue";
 import SkillPicker from "../composer/chips/SkillPicker.vue";
 import ComposerSkillInput, {

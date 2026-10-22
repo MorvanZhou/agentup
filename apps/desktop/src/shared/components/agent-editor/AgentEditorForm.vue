@@ -113,7 +113,7 @@ function applyInitial(value: AgentEditorInitial | null | undefined): void {
   background.value = value.background;
   rules.value = value.rules ?? "";
   const servers = value.mcpServers ?? {};
-  mcpText.value = Object.keys(servers).length ? `${JSON.stringify(servers, null, 2)}\n` : "";
+  mcpText.value = formatMcpText(servers);
   installedSkills.value = [...(value.skills ?? [])];
   removeSkills.value = [];
   skillPaths.value = [];
@@ -241,10 +241,16 @@ function parseMcpServers(raw: string): Record<string, unknown> | undefined | nul
   return parsed as Record<string, unknown>;
 }
 
+function formatMcpText(servers: Record<string, unknown> | undefined): string {
+  if (!servers || !Object.keys(servers).length) return "";
+  return `${JSON.stringify(servers, null, 2)}\n`;
+}
+
 function submit(): void {
   if (!canSubmit.value) return;
   const mcpServers = parseMcpServers(mcpText.value);
   if (mcpServers === null) return;
+  mcpText.value = formatMcpText(mcpServers);
   const payload: AgentEditorInput = {
     name: name.value.trim(),
     role: role.value.trim(),

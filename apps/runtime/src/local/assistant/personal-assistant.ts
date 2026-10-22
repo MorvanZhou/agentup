@@ -4,6 +4,7 @@ import path from "node:path";
 import { t, type UiLocale } from "../../i18n/index.js";
 import type { Visit } from "../../package/sync.js";
 import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
+import { parseStoredProjectRoots } from "../../session/workspace/project-roots.js";
 import {
   AgentIdentityError,
   BACKGROUND_MAX,
@@ -30,6 +31,8 @@ interface StoredProfile {
   name: string;
   role: string;
   background: string;
+  /** 用户显式挂载的外部项目目录（realpath） */
+  project_roots?: string[];
   avatar_mime?: string;
   avatar_file?: string;
 }
@@ -118,10 +121,12 @@ export function writePersonalAssistantProfile(
     fs.writeFileSync(path.join(root, avatarFile), avatar.bytes, { mode: 0o600 });
     avatarMime = avatar.mime;
   }
+  const projectRoots = parseStoredProjectRoots(previous.project_roots);
   const stored: StoredProfile = {
     name,
     role,
     background,
+    ...(projectRoots.length > 0 ? { project_roots: projectRoots } : {}),
     ...(avatarMime && avatarFile ? { avatar_mime: avatarMime, avatar_file: avatarFile } : {}),
   };
   writeStoredProfile(root, stored);
@@ -159,10 +164,12 @@ function readStoredProfile(root: string): StoredProfile {
           ? legacyInstructions.slice(0, BACKGROUND_MAX)
           : undefined;
     if (background === undefined) throw new Error("shape");
+    const projectRoots = parseStoredProjectRoots(value.project_roots);
     const profile: StoredProfile = {
       name: value.name,
       role,
       background,
+      ...(projectRoots.length > 0 ? { project_roots: projectRoots } : {}),
       ...(typeof value.avatar_mime === "string" && typeof value.avatar_file === "string"
         ? { avatar_mime: value.avatar_mime, avatar_file: value.avatar_file }
         : {}),

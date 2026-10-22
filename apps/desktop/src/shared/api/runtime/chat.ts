@@ -254,15 +254,21 @@ export type DelegationTaskDto = {
   updatedAt: number;
 };
 
-/** 私人助理委托任务列表（可选仅未见）。 */
+/** 私人助理委托任务列表（可选仅未见 / 状态 / 委托方）。 */
 export async function listDelegations(
   http: RuntimeHttp,
   token: string,
   userId: string,
-  options: { unseenOnly?: boolean } = {},
+  options: {
+    unseenOnly?: boolean;
+    status?: DelegationTaskDto["status"];
+    fromAgentId?: string;
+  } = {},
 ): Promise<DelegationTaskDto[]> {
   const params = new URLSearchParams({ user_id: userId });
   if (options.unseenOnly) params.set("unseen", "1");
+  if (options.status) params.set("status", options.status);
+  if (options.fromAgentId) params.set("from_agent_id", options.fromAgentId);
   const payload = await http.request(
     `/personal-assistant/delegations?${params.toString()}`,
     token,
@@ -299,6 +305,107 @@ export async function acknowledgeDelegation(
     token,
     { user_id: userId },
   );
+}
+
+/** 取消进行中的委托任务。 */
+export async function cancelDelegation(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  taskId: string,
+): Promise<{ id: string; status: DelegationTaskDto["status"] }> {
+  const payload = await http.request(
+    `/personal-assistant/delegations/${encodeURIComponent(taskId)}/cancel`,
+    token,
+    { user_id: userId },
+  );
+  return {
+    id: String(payload.id ?? taskId),
+    status: (payload.status as DelegationTaskDto["status"]) ?? "cancelled",
+  };
+}
+
+export type BackgroundJobDto = {
+  id: string;
+  agentId: string;
+  name: string;
+  command: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  exitCode: number | null;
+  outputTail: string | null;
+  error: string | null;
+  seen: boolean;
+  notified: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export async function listBackgroundJobs(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  options: {
+    unseenOnly?: boolean;
+    status?: BackgroundJobDto["status"];
+    agentId?: string;
+  } = {},
+): Promise<BackgroundJobDto[]> {
+  const params = new URLSearchParams({ user_id: userId });
+  if (options.unseenOnly) params.set("unseen", "1");
+  if (options.status) params.set("status", options.status);
+  if (options.agentId) params.set("agent_id", options.agentId);
+  const payload = await http.request(
+    `/personal-assistant/background-jobs?${params.toString()}`,
+    token,
+  );
+  if (!Array.isArray(payload.jobs)) throw new DesktopApiError("后台任务列表无效");
+  return payload.jobs.map((raw) => {
+    const item = raw as Record<string, unknown>;
+    return {
+      id: String(item.id ?? ""),
+      agentId: String(item.agent_id ?? ""),
+      name: String(item.name ?? ""),
+      command: String(item.command ?? ""),
+      status: item.status as BackgroundJobDto["status"],
+      exitCode: typeof item.exit_code === "number" ? item.exit_code : null,
+      outputTail: typeof item.output_tail === "string" ? item.output_tail : null,
+      error: typeof item.error === "string" ? item.error : null,
+      seen: item.seen === true,
+      notified: item.notified === true,
+      createdAt: typeof item.created_at === "number" ? item.created_at : 0,
+      updatedAt: typeof item.updated_at === "number" ? item.updated_at : 0,
+    };
+  });
+}
+
+export async function acknowledgeBackgroundJob(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  jobId: string,
+): Promise<void> {
+  await http.request(
+    `/personal-assistant/background-jobs/${encodeURIComponent(jobId)}/ack`,
+    token,
+    { user_id: userId },
+  );
+}
+
+export async function cancelBackgroundJob(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  jobId: string,
+): Promise<{ id: string; status: BackgroundJobDto["status"] }> {
+  const payload = await http.request(
+    `/personal-assistant/background-jobs/${encodeURIComponent(jobId)}/cancel`,
+    token,
+    { user_id: userId },
+  );
+  return {
+    id: String(payload.id ?? jobId),
+    status: (payload.status as BackgroundJobDto["status"]) ?? "cancelled",
+  };
 }
 
 export type DelegationHistoryDto = {

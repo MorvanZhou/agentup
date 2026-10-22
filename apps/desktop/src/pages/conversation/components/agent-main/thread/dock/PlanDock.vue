@@ -13,7 +13,7 @@ import {
   planFromTodoParts,
   todoPlanKey,
   type TodoMessageRef,
-} from "../../../../model/todo-list";
+} from "../../../../model/message/todo-list";
 import ShimmerTitle from "../assistant-ui/parts/ShimmerTitle.vue";
 
 const props = defineProps<{

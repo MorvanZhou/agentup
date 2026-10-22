@@ -116,6 +116,10 @@ async function submit(): Promise<void> {
   if (!session.value || !canSubmit.value || saving.value) return;
   const mcpServers = parseMcpServers(mcpText.value);
   if (mcpServers === null) return;
+  mcpText.value =
+    mcpServers && Object.keys(mcpServers).length
+      ? `${JSON.stringify(mcpServers, null, 2)}\n`
+      : "";
   saving.value = true;
   try {
     await api.savePersonalAssistantProfile(

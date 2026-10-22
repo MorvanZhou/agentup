@@ -346,6 +346,35 @@ it("emits agentUpSummary from finish when no summary entry arrived", () => {
   ]);
 });
 
+it("emits agentUpArtifacts message-metadata from artifacts custom entry", () => {
+  const projector = new PiUIMessageProjector();
+  projector.project(event({ type: "message_start", message: { role: "assistant" } }));
+  const meta = projector.project(
+    event({
+      type: "entry_appended",
+      entry: {
+        type: "custom",
+        customType: "agentup-artifacts",
+        data: {
+          files: [{ path: "ARTIFACT/out.md", kind: "added", size: 3 }],
+        },
+      },
+    }),
+  );
+  expect(meta).toEqual([
+    {
+      type: "message-metadata",
+      messageMetadata: {
+        custom: {
+          agentUpArtifacts: {
+            files: [{ path: "ARTIFACT/out.md", kind: "added", size: 3 }],
+          },
+        },
+      },
+    },
+  ]);
+});
+
 it("emits agentUpSummary message-metadata from summary custom entry", () => {
   const projector = new PiUIMessageProjector();
   const streamed = [

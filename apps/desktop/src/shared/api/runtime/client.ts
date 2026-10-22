@@ -27,6 +27,7 @@ import * as chatApi from "./chat";
 import { RuntimeHttp } from "./http";
 import * as settingsApi from "./settings";
 import * as stateApi from "./state";
+import * as projectRootsApi from "./project-roots";
 import * as workspaceApi from "./workspace";
 import type { WorkspaceEntry, WorkspaceFile } from "./workspace";
 import type { StagedAttachment } from "./attachments";
@@ -438,13 +439,49 @@ export class DesktopApi {
   listDelegations(
     token: string,
     userId: string,
-    options: { unseenOnly?: boolean } = {},
+    options: {
+      unseenOnly?: boolean;
+      status?: chatApi.DelegationTaskDto["status"];
+      fromAgentId?: string;
+    } = {},
   ): Promise<chatApi.DelegationTaskDto[]> {
     return chatApi.listDelegations(this.http, token, userId, options);
   }
 
   acknowledgeDelegation(token: string, userId: string, taskId: string): Promise<void> {
     return chatApi.acknowledgeDelegation(this.http, token, userId, taskId);
+  }
+
+  cancelDelegation(
+    token: string,
+    userId: string,
+    taskId: string,
+  ): Promise<{ id: string; status: chatApi.DelegationTaskDto["status"] }> {
+    return chatApi.cancelDelegation(this.http, token, userId, taskId);
+  }
+
+  listBackgroundJobs(
+    token: string,
+    userId: string,
+    options: {
+      unseenOnly?: boolean;
+      status?: chatApi.BackgroundJobDto["status"];
+      agentId?: string;
+    } = {},
+  ): Promise<chatApi.BackgroundJobDto[]> {
+    return chatApi.listBackgroundJobs(this.http, token, userId, options);
+  }
+
+  acknowledgeBackgroundJob(token: string, userId: string, jobId: string): Promise<void> {
+    return chatApi.acknowledgeBackgroundJob(this.http, token, userId, jobId);
+  }
+
+  cancelBackgroundJob(
+    token: string,
+    userId: string,
+    jobId: string,
+  ): Promise<{ id: string; status: chatApi.BackgroundJobDto["status"] }> {
+    return chatApi.cancelBackgroundJob(this.http, token, userId, jobId);
   }
 
   delegationHistory(
@@ -459,14 +496,40 @@ export class DesktopApi {
     return agentsApi.sync(this.http, token, agentId, userId);
   }
 
+  agentApprovals(
+    token: string,
+    agentId: string,
+    userId: string,
+  ): Promise<agentsApi.AgentApprovals> {
+    return agentsApi.agentApprovals(this.http, token, agentId, userId);
+  }
+
+  saveAgentApprovals(
+    token: string,
+    agentId: string,
+    userId: string,
+    patch: agentsApi.AgentApprovalsPatch,
+  ): Promise<agentsApi.AgentApprovals> {
+    return agentsApi.saveAgentApprovals(this.http, token, agentId, userId, patch);
+  }
+
   listWorkspace(
     token: string,
     userId: string,
     agentId: string,
     personal: boolean,
     directory: string,
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<{ path: string; entries: WorkspaceEntry[] }> {
-    return workspaceApi.listWorkspace(this.http, token, userId, agentId, personal, directory);
+    return workspaceApi.listWorkspace(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      directory,
+      workspaceScope,
+    );
   }
 
   readWorkspaceFile(
@@ -475,8 +538,17 @@ export class DesktopApi {
     agentId: string,
     personal: boolean,
     filePath: string,
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<WorkspaceFile> {
-    return workspaceApi.readWorkspaceFile(this.http, token, userId, agentId, personal, filePath);
+    return workspaceApi.readWorkspaceFile(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      filePath,
+      workspaceScope,
+    );
   }
 
   writeWorkspaceText(
@@ -486,8 +558,18 @@ export class DesktopApi {
     personal: boolean,
     filePath: string,
     text: string,
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<void> {
-    return workspaceApi.writeWorkspaceText(this.http, token, userId, agentId, personal, filePath, text);
+    return workspaceApi.writeWorkspaceText(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      filePath,
+      text,
+      workspaceScope,
+    );
   }
 
   createWorkspaceEntry(
@@ -497,8 +579,18 @@ export class DesktopApi {
     personal: boolean,
     filePath: string,
     kind: "file" | "dir",
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<void> {
-    return workspaceApi.createWorkspaceEntry(this.http, token, userId, agentId, personal, filePath, kind);
+    return workspaceApi.createWorkspaceEntry(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      filePath,
+      kind,
+      workspaceScope,
+    );
   }
 
   renameWorkspaceEntry(
@@ -508,8 +600,18 @@ export class DesktopApi {
     personal: boolean,
     filePath: string,
     name: string,
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<string> {
-    return workspaceApi.renameWorkspaceEntry(this.http, token, userId, agentId, personal, filePath, name);
+    return workspaceApi.renameWorkspaceEntry(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      filePath,
+      name,
+      workspaceScope,
+    );
   }
 
   deleteWorkspaceEntry(
@@ -518,8 +620,17 @@ export class DesktopApi {
     agentId: string,
     personal: boolean,
     filePath: string,
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<void> {
-    return workspaceApi.deleteWorkspaceEntry(this.http, token, userId, agentId, personal, filePath);
+    return workspaceApi.deleteWorkspaceEntry(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      filePath,
+      workspaceScope,
+    );
   }
 
   resolveWorkspaceAbsolute(
@@ -528,7 +639,45 @@ export class DesktopApi {
     agentId: string,
     personal: boolean,
     filePath: string,
+    workspaceScope?: workspaceApi.WorkspaceScope,
   ): Promise<string> {
-    return workspaceApi.resolveWorkspaceAbsolute(this.http, token, userId, agentId, personal, filePath);
+    return workspaceApi.resolveWorkspaceAbsolute(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      filePath,
+      workspaceScope,
+    );
+  }
+
+  listProjectRoots(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+  ): Promise<string[]> {
+    return projectRootsApi.listProjectRoots(this.http, token, userId, agentId, personal);
+  }
+
+  addProjectRoot(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+    path: string,
+  ): Promise<string[]> {
+    return projectRootsApi.addProjectRoot(this.http, token, userId, agentId, personal, path);
+  }
+
+  removeProjectRoot(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+    path: string,
+  ): Promise<string[]> {
+    return projectRootsApi.removeProjectRoot(this.http, token, userId, agentId, personal, path);
   }
 }

@@ -224,6 +224,14 @@ app.whenReady().then(async () => {
           });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
+  ipcMain.handle("agentup:select-directory", async () => {
+    const window = BrowserWindow.getFocusedWindow();
+    const result = await dialog.showOpenDialog(window, {
+      title: "选择项目目录",
+      properties: ["openDirectory"],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
   ipcMain.handle("agentup:select-save-path", async (_event, defaultName) => {
     const window = BrowserWindow.getFocusedWindow();
     const suggested =
@@ -359,21 +367,81 @@ function dataRoot() {
   return path.join(os.homedir(), ".agentup");
 }
 
-/** 仅允许打开/显示 users 下各账号 cwd 内的本机工作文件。 */
+/**
+ * 允许打开/显示：
+ * - users 下各账号 cwd 内的工作文件
+ * - 任意 agent instance / personal profile 中已挂载的 project_roots
+ */
 async function resolveUserCwdPath(targetPath, deniedMessage) {
   if (typeof targetPath !== "string" || !targetPath.trim()) throw new Error("路径无效");
   const root = await fsp.realpath(dataRoot());
   const target = await fsp.realpath(targetPath);
   const relative = path.relative(root, target);
   const parts = relative.split(path.sep);
-  if (relative.startsWith("..") || path.isAbsolute(relative) || parts[0] !== "users") {
-    throw new Error(deniedMessage);
+  if (!relative.startsWith("..") && !path.isAbsolute(relative) && parts[0] === "users") {
+    const underAgent = parts[2] === "agents" && parts.length >= 5 && parts[4] === "cwd";
+    const underPersonal =
+      parts[2] === "personal-assistant" && parts.length >= 4 && parts[3] === "cwd";
+    if (underAgent || underPersonal) return target;
   }
-  const underAgent = parts[2] === "agents" && parts.length >= 5 && parts[4] === "cwd";
-  const underPersonal =
-    parts[2] === "personal-assistant" && parts.length >= 4 && parts[3] === "cwd";
-  if (!underAgent && !underPersonal) throw new Error(deniedMessage);
-  return target;
+  if (await isUnderMountedProjectRoot(root, target)) return target;
+  throw new Error(deniedMessage);
+}
+
+async function isUnderMountedProjectRoot(dataRootReal, targetReal) {
+  const usersDir = path.join(dataRootReal, "users");
+  let userNames;
+  try {
+    userNames = await fsp.readdir(usersDir);
+  } catch {
+    return false;
+  }
+  for (const userId of userNames) {
+    if (userId === "." || userId === "..") continue;
+    const personalProfile = path.join(usersDir, userId, "personal-assistant", "profile.json");
+    if (await pathInsideAnyProjectRoot(personalProfile, targetReal)) return true;
+    const agentsDir = path.join(usersDir, userId, "agents");
+    let agentIds;
+    try {
+      agentIds = await fsp.readdir(agentsDir);
+    } catch {
+      continue;
+    }
+    for (const agentId of agentIds) {
+      const instancePath = path.join(agentsDir, agentId, "instance.json");
+      if (await pathInsideAnyProjectRoot(instancePath, targetReal)) return true;
+    }
+  }
+  return false;
+}
+
+async function pathInsideAnyProjectRoot(jsonPath, targetReal) {
+  let raw;
+  try {
+    raw = await fsp.readFile(jsonPath, "utf8");
+  } catch {
+    return false;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!data || typeof data !== "object" || !Array.isArray(data.project_roots)) return false;
+  for (const item of data.project_roots) {
+    if (typeof item !== "string" || !item.trim()) continue;
+    let rootReal;
+    try {
+      rootReal = await fsp.realpath(item);
+    } catch {
+      continue;
+    }
+    if (targetReal === rootReal || targetReal.startsWith(rootReal.endsWith(path.sep) ? rootReal : `${rootReal}${path.sep}`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

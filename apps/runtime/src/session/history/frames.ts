@@ -4,6 +4,11 @@ import type { AgentSessionEvent, SessionEntry } from "@earendil-works/pi-coding-
 import type { UIMessageChunk } from "ai";
 
 import {
+  AGENTUP_ARTIFACTS_CUSTOM_TYPE,
+  parseArtifactsEntryData,
+  type AgentUpArtifactsData,
+} from "./artifacts.js";
+import {
   AGENTUP_SUMMARY_CUSTOM_TYPE,
   parseSummaryEntryData,
   type AgentUpSummaryRef,
@@ -53,7 +58,7 @@ export class PiUIMessageProjector {
 
   project(event: AgentSessionEvent): UIMessageChunk[] {
     if (event.type === "entry_appended") {
-      return this.summaryFromEntry(event.entry);
+      return [...this.summaryFromEntry(event.entry), ...this.artifactsFromEntry(event.entry)];
     }
     if (event.type === "message_start" && event.message.role === "assistant") {
       return this.ensureMessage();
@@ -211,6 +216,22 @@ export class PiUIMessageProjector {
       textPartIndex: parsed.textPartIndex,
       textPartId: this.resolvedTextPartIds()[parsed.textPartIndex],
     });
+  }
+
+  private artifactsFromEntry(entry: SessionEntry): UIMessageChunk[] {
+    if (entry.type !== "custom" || entry.customType !== AGENTUP_ARTIFACTS_CUSTOM_TYPE) return [];
+    const parsed = parseArtifactsEntryData(entry.data);
+    if (!parsed || !this.started) return [];
+    return this.emitArtifacts(parsed);
+  }
+
+  private emitArtifacts(artifacts: AgentUpArtifactsData): UIMessageChunk[] {
+    return [
+      {
+        type: "message-metadata",
+        messageMetadata: { custom: { agentUpArtifacts: artifacts } },
+      },
+    ];
   }
 
   private emitSummaryFromTextParts(): UIMessageChunk[] {

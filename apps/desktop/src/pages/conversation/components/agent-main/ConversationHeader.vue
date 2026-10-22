@@ -4,6 +4,7 @@ import {
   EllipsisVerticalIcon,
   FolderIcon,
   MessageSquarePlusIcon,
+  Settings2Icon,
   SettingsIcon,
   Trash2Icon,
   UserMinusIcon,
@@ -19,24 +20,28 @@ import { t } from "../../../../shared/model/ui-locale";
 import {
   rememberSkipClearContextConfirm,
   shouldSkipClearContextConfirm,
-} from "../../model/clear-context-confirm";
-import { injectThreadActions } from "../../model/thread-actions";
-import { injectThreadApproval } from "../../model/thread-approval";
-import { injectThreadAskUser } from "../../model/thread-ask-user";
-import { injectThreadExtras } from "../../model/thread-extras";
+} from "../../model/thread/clear-context-confirm";
+import { injectThreadActions } from "../../model/thread/thread-actions";
+import { injectThreadAgentId } from "../../model/thread/thread-agent-id";
+import { injectThreadApproval } from "../../model/thread/thread-approval";
+import { injectThreadAskUser } from "../../model/thread/thread-ask-user";
+import { injectThreadExtras } from "../../model/thread/thread-extras";
 
 defineProps<{
   workspaceOpen?: boolean;
+  chatSettingsOpen?: boolean;
 }>();
 
 const emit = defineEmits<{
   "toggle-workspace": [];
+  "open-chat-settings": [];
 }>();
 
 const router = useRouter();
 const { session } = useDesktop();
 const extras = injectThreadExtras();
 const actions = injectThreadActions();
+const agentId = injectThreadAgentId();
 const name = computed(() => extras.value.name);
 const remark = computed(() => extras.value.remark);
 const role = computed(() => extras.value.role);
@@ -51,11 +56,14 @@ const turnBusy = computed(
 );
 const confirmOpen = ref(false);
 const skipConfirm = ref(false);
-const remarkOpen = ref(false);
-const remarkDraft = ref("");
-const savingRemark = ref(false);
 const confirmDismiss = ref(false);
 const confirmClearHistory = ref(false);
+
+/** 仅私人助理 / 本机 Local 可进 Agent 配置；招募来的（含自有再招募）置灰。 */
+const agentSettingsLocked = computed(() => {
+  const kind = extras.value.kind;
+  return kind !== "personal" && kind !== "local";
+});
 
 const clearDisabled = computed(
   () =>
@@ -69,21 +77,19 @@ const clearDisabled = computed(
 );
 
 const menuItems = computed<AppDropdownItem[]>(() => [
-  ...(extras.value.personal
-    ? [
-        {
-          id: "assistant-settings",
-          label: t("threadAssistantSettings"),
-          icon: SettingsIcon,
-        } satisfies AppDropdownItem,
-      ]
-    : [
-        {
-          id: "edit-remark",
-          label: t("threadRemark"),
-          disabled: !name.value || extras.value.busy,
-        } satisfies AppDropdownItem,
-      ]),
+  {
+    id: "chat-settings",
+    label: t("threadChatSettings"),
+    icon: Settings2Icon,
+    disabled: !name.value,
+  },
+  {
+    id: "agent-settings",
+    label: t("threadAgentSettings"),
+    icon: SettingsIcon,
+    disabled: !name.value || agentSettingsLocked.value,
+    hint: agentSettingsLocked.value ? t("threadAgentSettingsLocked") : undefined,
+  },
   {
     id: "clear-history",
     label: actions?.value.clearingHistory ? t("threadClearing") : t("threadClear"),
@@ -105,22 +111,32 @@ const menuItems = computed<AppDropdownItem[]>(() => [
 ]);
 
 function onSelect(id: string): void {
-  if (id === "assistant-settings") {
-    void router.push({ name: "agents-assistant" });
+  if (id === "chat-settings") {
+    emit("open-chat-settings");
+    return;
+  }
+  if (id === "agent-settings") {
+    openAgentSettings();
     return;
   }
   if (!actions) return;
-  if (id === "edit-remark") {
-    remarkDraft.value = remark.value;
-    remarkOpen.value = true;
-    return;
-  }
   if (id === "clear-history") {
     if (clearDisabled.value) return;
     confirmClearHistory.value = true;
     return;
   }
   if (id === "dismiss") confirmDismiss.value = true;
+}
+
+function openAgentSettings(): void {
+  if (agentSettingsLocked.value) return;
+  if (extras.value.personal || extras.value.kind === "personal") {
+    void router.push({ name: "agents-assistant" });
+    return;
+  }
+  if (extras.value.kind === "local" && agentId) {
+    void router.push({ name: "agents-local-edit", params: { agentId } });
+  }
 }
 
 function openClearConfirm(): void {
@@ -158,19 +174,6 @@ async function confirmClearHistoryAction(): Promise<void> {
     await actions.value.clearHistory();
   } catch (error) {
     showToast(error instanceof Error && error.message ? error.message : t("threadClearFailed"), "error");
-  }
-}
-
-async function confirmRemark(): Promise<void> {
-  if (!actions || savingRemark.value) return;
-  savingRemark.value = true;
-  try {
-    await actions.value.setRemark(remarkDraft.value);
-    remarkOpen.value = false;
-  } catch (error) {
-    showToast(error instanceof Error && error.message ? error.message : t("threadRemarkFailed"), "error");
-  } finally {
-    savingRemark.value = false;
   }
 }
 
@@ -259,42 +262,6 @@ async function confirmDismissAction(): Promise<void> {
           @click="confirmClear"
         >
           {{ t("threadNew") }}
-        </button>
-      </template>
-    </AppDialog>
-    <AppDialog
-      :open="remarkOpen"
-      :title="t('threadRemarkTitle')"
-      :description="t('threadRemarkBody')"
-      @update:open="remarkOpen = $event"
-    >
-      <label class="grid gap-1.5 text-sm">
-        <span class="text-muted-foreground">{{ t("threadRemarkLabel") }}</span>
-        <input
-          v-model="remarkDraft"
-          type="text"
-          maxlength="40"
-          class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15"
-          :placeholder="t('threadRemarkPlaceholder')"
-          @keydown.enter.prevent="confirmRemark"
-        />
-      </label>
-      <template #footer>
-        <button
-          type="button"
-          class="min-h-8 rounded-lg border border-rule px-3 text-sm font-medium transition duration-200 hover:bg-paper-deep"
-          :disabled="savingRemark"
-          @click="remarkOpen = false"
-        >
-          {{ t("cancel") }}
-        </button>
-        <button
-          type="button"
-          class="min-h-8 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-          :disabled="savingRemark"
-          @click="confirmRemark"
-        >
-          {{ savingRemark ? t("saving") : t("save") }}
         </button>
       </template>
     </AppDialog>

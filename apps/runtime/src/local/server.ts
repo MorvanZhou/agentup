@@ -4,11 +4,18 @@ import { createAdaptorServer } from "@hono/node-server";
 
 import { type LocalConfig, type ModelConfig } from "../config/load.js";
 import { loadModelConfig } from "../config/provider.js";
-import { ApprovalBroker } from "../session/hitl/approval.js";
+import { Runtime, type Visit } from "../package/sync.js";
+import { BackgroundJobs } from "../session/background/index.js";
+import { ApprovalBroker } from "../session/hitl/approval/index.js";
 import { DelegationService } from "../session/delegation/index.js";
+import { resolveVisitModelConfig } from "../session/model/session-model.js";
 import { AskUserBroker } from "../session/tools/index.js";
-import { VisitChats, openPromptSession, type PromptSession } from "../session/turn.js";
-import type { Visit } from "../package/sync.js";
+import { VisitChats, openPromptSession, type PromptSession } from "../session/turn/index.js";
+import { isLocalAgentId, localAgentVisit } from "./agents/local-agent.js";
+import {
+  PERSONAL_ASSISTANT_ID,
+  personalAssistantVisit,
+} from "./assistant/personal-assistant.js";
 import { createLocalApp, LocalError } from "./app.js";
 
 export interface LocalServer {
@@ -19,6 +26,25 @@ export interface LocalServer {
 export interface LocalServerOptions {
   openPrompt?: (visit: Visit, model: ModelConfig) => Promise<PromptSession>;
   readModel?: () => ModelConfig;
+}
+
+function resolveWakeVisit(
+  userDataRoot: string,
+  userId: string,
+  agentId: string,
+  kind: Visit["kind"],
+): Visit | null {
+  if (kind === "personal" || agentId === PERSONAL_ASSISTANT_ID) {
+    return personalAssistantVisit(userDataRoot, userId);
+  }
+  if (kind === "local" || isLocalAgentId(agentId)) {
+    try {
+      return localAgentVisit(userDataRoot, userId, agentId);
+    } catch {
+      return null;
+    }
+  }
+  return Runtime.openDiskVisit(userDataRoot, userId, agentId);
 }
 
 /** 只监听本机，供桌面界面调用。业务仍由 runtime 访问 backend。 */
@@ -34,13 +60,30 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
     getModel: readModel,
     approvals,
     askUser,
-    invalidateVisit: (userId, agentId, kind) => chats.invalidate(userId, agentId, kind),
+    enqueueWake: (item) => chats.enqueueAsyncWake(item),
+  });
+  const backgroundJobs = new BackgroundJobs({
+    userDataRoot: config.userDataRoot,
+    enqueueWake: (item) => chats.enqueueAsyncWake(item),
   });
   const open =
     options.openPrompt ??
-    ((visit, model) => openPromptSession(visit, model, approvals, askUser, delegation));
-  chats = new VisitChats(open, approvals, askUser, delegation);
-  const app = createLocalApp({ config, chats, approvals, askUser, delegation, readModel });
+    ((visit, model) =>
+      openPromptSession(visit, model, approvals, askUser, delegation, backgroundJobs));
+  chats = new VisitChats(open, approvals, askUser, delegation, {
+    resolveVisit: (userId, agentId, kind) =>
+      resolveWakeVisit(config.userDataRoot, userId, agentId, kind),
+    resolveModel: (visit) => resolveVisitModelConfig(config.userDataRoot, visit),
+  });
+  const app = createLocalApp({
+    config,
+    chats,
+    approvals,
+    askUser,
+    delegation,
+    backgroundJobs,
+    readModel,
+  });
   const server = createAdaptorServer({ fetch: app.fetch }) as Server;
   return new Promise((resolve, reject) => {
     server.once("error", reject);

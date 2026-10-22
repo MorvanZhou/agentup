@@ -18,12 +18,12 @@ import {
   isProcessGroupDefaultOpen,
   processGroupTriggerLabel,
   type AssistantProcessPart,
-} from "../../../../../model/assistant-process";
+} from "../../../../../model/message/assistant-process";
 import {
   getProcessFoldOverride,
   setProcessFoldOverride,
-} from "../../../../../model/process-fold-state";
-import { injectThreadActive } from "../../../../../model/thread-active";
+} from "../../../../../model/message/process-fold-state";
+import { injectThreadActive } from "../../../../../model/thread/thread-active";
 import AssistantPart from "../parts/AssistantPart.vue";
 
 const props = defineProps<{

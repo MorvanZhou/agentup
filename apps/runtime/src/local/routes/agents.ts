@@ -30,6 +30,7 @@ import { listDiskSyncedAgents } from "../agents/disk-synced.js";
 import { isLocalAgentId, localAgentVisit } from "../agents/local-agent.js";
 import { readLocalPackageVersions } from "../agents/versions.js";
 import {
+  AGENT_ID,
   bearer,
   json,
   LocalError,
@@ -45,6 +46,13 @@ import {
 } from "../http.js";
 import { promptRewind, promptText, streamPrompt } from "../prompt.js";
 import { serializeAgentCard, sessionModelBody } from "../serialize.js";
+import {
+  readAgentApprovals,
+  writeAgentApprovals,
+  type AgentApprovals,
+  type AgentApprovalsPatch,
+  type ApprovalChoice,
+} from "../approvals/visit-approvals.js";
 import { clearAgentChatUi, forgetAgent } from "../user/state.js";
 
 function visitKind(agentId: string): Visit["kind"] {
@@ -282,6 +290,26 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     return json(c, 200, { skills: listVisitSkills(visit) });
   });
 
+  app.get("/agents/:agentId/approvals", (c) => {
+    bearer(c);
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const userId = requireUserId(c.req.query("user_id") ?? null);
+    return json(c, 200, serializeApprovals(readAgentApprovals(config.userDataRoot, userId, agentId)));
+  });
+
+  app.put("/agents/:agentId/approvals", async (c) => {
+    bearer(c);
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const body = await readJson(c);
+    const userId = requirePathUserId(text(body, "user_id"));
+    const patch = parseApprovalsPatch(body);
+    return json(
+      c,
+      200,
+      serializeApprovals(writeAgentApprovals(config.userDataRoot, userId, agentId, patch)),
+    );
+  });
+
   app.get("/agents/:agentId/history", async (c) => {
     bearer(c);
     const agentId = requireAgentId(c.req.param("agentId"));
@@ -494,4 +522,84 @@ function removeVisitRoot(userDataRoot: string, userId: string, agentId: string):
     throw new LocalError("请求无效", 400);
   }
   if (fs.existsSync(visitRoot)) fs.rmSync(visitRoot, { recursive: true, force: true });
+}
+
+function serializeApprovals(value: AgentApprovals) {
+  return {
+    command: value.command,
+    tools: value.tools.map((tool) => ({
+      tool_name: tool.toolName,
+      kind: tool.kind,
+      label: tool.label,
+      scope: tool.scope,
+    })),
+    delegation: {
+      anyone: value.delegation.anyone,
+      targets: value.delegation.targets.map((item) => ({
+        agent_id: item.agentId,
+        scope: item.scope,
+      })),
+    },
+  };
+}
+
+function parseApprovalsPatch(body: Record<string, unknown>): AgentApprovalsPatch {
+  const patch: AgentApprovalsPatch = {};
+  if (body.command !== undefined) {
+    patch.command = requireApprovalChoice(body.command, "command");
+  }
+  if (body.tools !== undefined) {
+    if (!Array.isArray(body.tools)) throw new LocalError("tools 无效", 400);
+    patch.tools = body.tools.map((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        throw new LocalError(`tools[${index}] 无效`, 400);
+      }
+      const row = item as Record<string, unknown>;
+      const toolName = row.tool_name;
+      if (typeof toolName !== "string" || !toolName.trim()) {
+        throw new LocalError(`tools[${index}].tool_name 无效`, 400);
+      }
+      return {
+        toolName: toolName.trim(),
+        scope: requireApprovalChoice(row.scope, `tools[${index}].scope`),
+      };
+    });
+  }
+  if (body.delegation !== undefined) {
+    if (!body.delegation || typeof body.delegation !== "object" || Array.isArray(body.delegation)) {
+      throw new LocalError("delegation 无效", 400);
+    }
+    const delegation = body.delegation as Record<string, unknown>;
+    patch.delegation = {};
+    if (delegation.anyone !== undefined) {
+      const anyone = requireApprovalChoice(delegation.anyone, "delegation.anyone");
+      if (anyone === "session") throw new LocalError("delegation.anyone 无效", 400);
+      patch.delegation.anyone = anyone;
+    }
+    if (delegation.targets !== undefined) {
+      if (!Array.isArray(delegation.targets)) throw new LocalError("delegation.targets 无效", 400);
+      patch.delegation.targets = delegation.targets.map((item, index) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          throw new LocalError(`delegation.targets[${index}] 无效`, 400);
+        }
+        const row = item as Record<string, unknown>;
+        const agentId = row.agent_id;
+        if (typeof agentId !== "string" || !AGENT_ID.test(agentId)) {
+          throw new LocalError(`delegation.targets[${index}].agent_id 无效`, 400);
+        }
+        return {
+          agentId,
+          scope: requireApprovalChoice(row.scope, `delegation.targets[${index}].scope`),
+        };
+      });
+    }
+  }
+  return patch;
+}
+
+function requireApprovalChoice(value: unknown, field: string): ApprovalChoice {
+  if (value !== "once" && value !== "session" && value !== "agent") {
+    throw new LocalError(`${field} 无效`, 400);
+  }
+  return value;
 }

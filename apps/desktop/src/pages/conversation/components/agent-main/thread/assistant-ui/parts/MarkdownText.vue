@@ -4,8 +4,8 @@ import { useAuiState } from "@assistant-ui/vue";
 
 import ImagePreview from "../../../../../../../shared/components/ImagePreview.vue";
 import { t } from "../../../../../../../shared/model/ui-locale";
-import { renderMarkdown } from "../../../../../model/markdown";
-import { renderMermaidIn } from "../../../../../model/mermaid";
+import { renderMarkdown } from "../../../../../model/render/markdown";
+import { renderMermaidIn } from "../../../../../model/render/mermaid";
 
 withDefaults(
   defineProps<{

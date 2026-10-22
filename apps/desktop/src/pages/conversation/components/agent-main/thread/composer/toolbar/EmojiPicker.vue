@@ -7,7 +7,7 @@ import {
   loadRecentEmojis,
   rememberRecentEmoji,
   type EmojiCategory,
-} from "../../../../../model/emoji-data";
+} from "../../../../../model/composer/emoji-data";
 
 export type EmojiPickerAnchor = {
   /** 锚点左边缘（视口） */

@@ -4,7 +4,7 @@ import {
   displayRollbackPath,
   filesAffectedByEditResend,
   wouldRollbackFilesOnEdit,
-} from "../../src/pages/conversation/model/edit-resend-confirm.js";
+} from "../../src/pages/conversation/model/message/edit-resend-confirm.js";
 
 it("detects write/edit tools after the edited user message", () => {
   const messages = [

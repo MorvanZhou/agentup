@@ -13,21 +13,31 @@ import {
 
 import type { ModelConfig } from "../../config/load.js";
 import type { Visit } from "../../package/sync.js";
-import { ApprovalBroker, createApprovalExtension } from "../hitl/approval.js";
+import { ApprovalBroker, createApprovalExtension } from "../hitl/approval/index.js";
 import { createCheckpointExtension } from "../checkpoint/extension.js";
 import { PiUIMessageProjector } from "../history/frames.js";
 import { projectHistoryFromManager } from "../history/history.js";
 import { projectVisitMcp } from "../workspace/mcp.js";
 import { openModelRuntime } from "../model/runtime.js";
 import { ensureCwdLayout, formatCwdLayoutPrompt } from "../workspace/cwd-layout.js";
+import {
+  readProjectRoots,
+  resolveAllowedRoots,
+} from "../workspace/project-roots.js";
 import { buildSessionPlan } from "../plan.js";
 import { projectVisitAgentsMd } from "../workspace/agents-md.js";
 import {
   AskUserBroker,
   createAskUserExtension,
+  createFsGuardExtension,
   createTodoExtension,
   createWebToolsExtension,
+  formatToolsUsagePrompt,
 } from "../tools/index.js";
+import {
+  createOutputLengthExtension,
+  resolveEmptyAssistantError,
+} from "../output-length.js";
 import type { DelegationProgressHub } from "./progress.js";
 
 export type DelegationRunOutcome = {
@@ -101,12 +111,28 @@ export async function runDelegatedPrompt(
     noSkills: true,
     additionalSkillPaths: fs.existsSync(packageSkills) ? [packageSkills] : [],
     extensionFactories: [
+      createFsGuardExtension(plan.cwd, () => {
+        const kind = visit.kind === "personal" ? "personal" : "agent";
+        return resolveAllowedRoots(plan.cwd, readProjectRoots(visit.root, kind));
+      }),
       createWebToolsExtension(),
       createAskUserExtension(askUser, visit.userId, visit.agentId, hitl),
       createTodoExtension(),
+      createOutputLengthExtension(),
       createCheckpointExtension(visit.root),
       ...(mcpEnabled ? [createMcpExtension({ loadConfig: () => mcpConfig })] : []),
-      createApprovalExtension(approvals, visit.userId, visit.agentId, { hitl }),
+      createApprovalExtension(approvals, visit.userId, visit.agentId, {
+        hitl,
+        projectMount: {
+          cwd: plan.cwd,
+          visitRoot: visit.root,
+          kind: visit.kind === "personal" ? "personal" : "agent",
+          userDataRoot:
+            visit.kind === "personal"
+              ? path.resolve(visit.root, "..", "..")
+              : path.resolve(visit.root, "..", "..", ".."),
+        },
+      }),
     ],
     disabledBuiltinExtensions: mcpEnabled ? [] : ["mcp"],
     skillsOverride: (loaded) => ({
@@ -117,7 +143,11 @@ export async function runDelegatedPrompt(
       }),
       diagnostics: loaded.diagnostics,
     }),
-    appendSystemPromptOverride: (base) => [...base, formatCwdLayoutPrompt()],
+    appendSystemPromptOverride: (base) => [
+      ...base,
+      formatCwdLayoutPrompt(),
+      formatToolsUsagePrompt(),
+    ],
   });
   await resourceLoader.reload();
   const { runtime, model: registered } = await openModelRuntime(plan);
@@ -163,20 +193,20 @@ export async function runDelegatedPrompt(
 
   try {
     const promptText = formatDelegationPrompt(brief);
+    // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
     await session.prompt(promptText);
     const text = texts.join("").trim() || collectBranchText(sessionManager);
-    // prompt 在 abort 后可能不抛错，只留下空/半截正文 —— 以父 signal 为准。
     if (signal?.aborted) {
       const message = "用户已取消";
       if (progress) progress.write(options.taskId, projector.finish(message));
       return { text, error: message };
     }
-    if (progress) {
-      progress.write(options.taskId, projector.finish());
-    }
     if (!text) {
-      return { text: "", error: "专家未返回可用结果" };
+      const message = resolveEmptyAssistantError(sessionManager);
+      if (progress) progress.write(options.taskId, projector.finish(message));
+      return { text: "", error: message };
     }
+    if (progress) progress.write(options.taskId, projector.finish());
     return { text };
   } catch (error) {
     const message = signal?.aborted
@@ -187,7 +217,7 @@ export async function runDelegatedPrompt(
     if (progress) {
       progress.write(options.taskId, projector.finish(message));
     }
-    const partial = texts.join("").trim();
+    const partial = texts.join("").trim() || collectBranchText(sessionManager);
     return { text: partial, error: message };
   } finally {
     signal?.removeEventListener("abort", onAbort);

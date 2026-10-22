@@ -6,6 +6,7 @@ import {
 } from "../../config/model-catalog.js";
 import { getProviderTemplate } from "../../config/provider-templates.js";
 import { volcengineArkRegisterConfig } from "../../config/providers/volcengine-ark.js";
+import { resolveReasoningProfile } from "../../config/reasoning-profile.js";
 import type { SessionPlan } from "../plan.js";
 
 type CredentialStore = NonNullable<Parameters<typeof ModelRuntime.create>[0]>["credentials"] & object;
@@ -50,6 +51,8 @@ export async function openModelRuntime(plan: SessionPlan) {
   } else {
     const baseUrl = binding.baseUrl || template.defaultBaseUrl;
     if (!baseUrl) throw new Error("缺少模型服务地址");
+    // 自定义 / TokenHub 等：按 modelId 解析推理 profile，使 thinkingLevel 能落到 reasoning_effort 等字段。
+    const reasoning = resolveReasoningProfile(binding.modelId, binding.templateId);
     runtime.registerProvider(binding.providerId, {
       name: template.label,
       baseUrl,
@@ -59,14 +62,16 @@ export async function openModelRuntime(plan: SessionPlan) {
         {
           id: binding.modelId,
           name: binding.modelId,
-          reasoning: false,
+          reasoning: reasoning.reasoning,
+          ...(reasoning.thinkingLevelMap ? { thinkingLevelMap: reasoning.thinkingLevelMap } : {}),
           input: ["text", "image"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: binding.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
           maxTokens: binding.maxTokens ?? DEFAULT_MAX_TOKENS,
           compat: {
             supportsDeveloperRole: false,
-            supportsReasoningEffort: false,
+            supportsReasoningEffort: reasoning.supportsReasoningEffort,
+            ...(reasoning.thinkingFormat ? { thinkingFormat: reasoning.thinkingFormat } : {}),
           },
         },
       ],

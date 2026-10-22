@@ -11,7 +11,7 @@ import { ConfigError } from "../src/config/load.js";
 import { startLocalServer } from "../src/local/server.js";
 import { packageDigest } from "../src/package/digest.js";
 import type { Visit } from "../src/package/sync.js";
-import { VisitChats, type PromptSession } from "../src/session/turn.js";
+import { VisitChats, type PromptSession } from "../src/session/turn/index.js";
 
 const manifest = { version: 1, tools: ["read"], modelCapabilities: ["tools"] };
 const files = { "SYSTEM.md": Buffer.from("你是呼吸科医生") };

@@ -3,7 +3,7 @@ import { beforeEach, expect, it } from "vitest";
 import {
   rememberSkipClearContextConfirm,
   shouldSkipClearContextConfirm,
-} from "../../src/pages/conversation/model/clear-context-confirm.js";
+} from "../../src/pages/conversation/model/thread/clear-context-confirm.js";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

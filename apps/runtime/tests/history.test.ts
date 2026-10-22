@@ -14,8 +14,10 @@ import {
   INTERRUPTED_ASK_USER_RESULT,
   INTERRUPTED_TOOL_RESULT,
   projectHistory,
+  projectHistoryFromManager,
   readHistory,
 } from "../src/session/history/history.js";
+import { ASYNC_WAKE_CUSTOM_TYPE } from "../src/session/wake/index.js";
 
 const assistantBase = {
   api: "openai-completions",
@@ -289,6 +291,40 @@ it("fills empty connection-error assistants with model-unavailable notice", () =
     },
   ]);
   expect(textOf(messages[1]!)).toContain("切换模型");
+});
+
+it("keeps idle async-wake reply as a separate assistant bubble", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-wake-hist-"));
+  const { cwd, sessions } = visitDirs(root, "user-wake");
+  const manager = SessionManager.continueRecent(cwd, sessions);
+  manager.appendMessage({ role: "user", content: "hi", timestamp: 1 } as never);
+  manager.appendMessage({
+    ...assistantBase,
+    timestamp: 2,
+    role: "assistant",
+    stopReason: "stop",
+    content: [{ type: "text", text: "Hi，我在。" }],
+  } as never);
+  manager.appendCustomMessageEntry(ASYNC_WAKE_CUSTOM_TYPE, "【异步结果通知】done", false, {
+    jobId: "j1",
+  });
+  manager.appendMessage({
+    ...assistantBase,
+    timestamp: 3,
+    role: "assistant",
+    stopReason: "stop",
+    content: [{ type: "text", text: "后台任务跑完了：done" }],
+  } as never);
+
+  const messages = projectHistoryFromManager(manager);
+  expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "assistant"]);
+  expect(textOf(messages[1]!)).toBe("Hi，我在。");
+  expect(textOf(messages[2]!)).toBe("后台任务跑完了：done");
+  expect(messages[1]!.id).not.toBe(messages[2]!.id);
+  expect(
+    (messages[2]!.metadata as { custom?: { agentUpProactiveSync?: boolean } } | undefined)?.custom
+      ?.agentUpProactiveSync,
+  ).toBe(true);
 });
 
 it("serves history per user from local files only", async () => {

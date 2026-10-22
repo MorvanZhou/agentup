@@ -29,13 +29,15 @@ import {
   readPersonalAssistantProfile,
   writePersonalAssistantProfile,
 } from "../assistant/personal-assistant.js";
+import { BackgroundJobError } from "../../session/background/service.js";
+import { DelegationError } from "../../session/delegation/service.js";
 import { promptRewind, promptText, streamPrompt } from "../prompt.js";
 import { sessionModelBody } from "../serialize.js";
 import { clearAgentChatUi } from "../user/state.js";
 import { personalWorkspaceCwd } from "../workspace.js";
 
 export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
-  const { config, chats, approvals, delegation, readModel } = deps;
+  const { config, chats, approvals, delegation, backgroundJobs, readModel } = deps;
 
   app.get("/personal-assistant/profile", (c) => {
     bearer(c);
@@ -229,9 +231,18 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
       statusParam === "cancelled"
         ? statusParam
         : undefined;
-    const tasks = delegation.listTasks(userId, { unseenOnly, status });
+    const fromAgentIdRaw = c.req.query("from_agent_id");
+    const fromAgentId =
+      typeof fromAgentIdRaw === "string" && fromAgentIdRaw.trim()
+        ? fromAgentIdRaw.trim()
+        : undefined;
+    const tasks = delegation.listTasks(userId, { unseenOnly, status, fromAgentId });
     for (const task of tasks) {
-      if (!task.wait && !task.notified && (task.status === "completed" || task.status === "failed")) {
+      if (
+        !task.wait &&
+        !task.notified &&
+        (task.status === "completed" || task.status === "failed" || task.status === "cancelled")
+      ) {
         delegation.notifyParent(task);
       }
     }
@@ -261,7 +272,10 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     const userId = requireUserId(text(body, "user_id"));
     const task = delegation.getTask(taskId);
     if (!task || task.userId !== userId) throw new LocalError("委托任务不存在", 404);
-    if (!task.notified && (task.status === "completed" || task.status === "failed")) {
+    if (
+      !task.notified &&
+      (task.status === "completed" || task.status === "failed" || task.status === "cancelled")
+    ) {
       delegation.notifyParent(task);
     }
     const updated = delegation.acknowledge(taskId);
@@ -270,6 +284,26 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
       seen: updated?.seen === true,
       notified: updated?.notified === true,
     });
+  });
+
+  app.post("/personal-assistant/delegations/:taskId/cancel", async (c) => {
+    bearer(c);
+    const taskId = c.req.param("taskId");
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    try {
+      const task = delegation.cancel(taskId, userId);
+      return json(c, 200, {
+        id: task.id,
+        status: task.status,
+        error: task.error ?? null,
+      });
+    } catch (error) {
+      if (error instanceof DelegationError) {
+        throw new LocalError(error.message || "委托任务不存在", 404);
+      }
+      throw error;
+    }
   });
 
   app.get("/personal-assistant/delegations/:taskId/history", async (c) => {
@@ -365,5 +399,89 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
       res.off("close", onClientGone);
     }
     return RESPONSE_ALREADY_SENT;
+  });
+
+  app.get("/personal-assistant/background-jobs", (c) => {
+    bearer(c);
+    const userId = requireUserId(c.req.query("user_id") ?? null);
+    const unseenOnly = c.req.query("unseen") === "1" || c.req.query("unseen") === "true";
+    const statusParam = c.req.query("status");
+    const status =
+      statusParam === "pending" ||
+      statusParam === "running" ||
+      statusParam === "completed" ||
+      statusParam === "failed" ||
+      statusParam === "cancelled"
+        ? statusParam
+        : undefined;
+    const agentIdRaw = c.req.query("agent_id");
+    const agentId =
+      typeof agentIdRaw === "string" && agentIdRaw.trim() ? agentIdRaw.trim() : undefined;
+    const jobs = backgroundJobs.list(userId, { unseenOnly, status, agentId });
+    for (const job of jobs) {
+      if (
+        !job.notified &&
+        (job.status === "completed" || job.status === "failed" || job.status === "cancelled")
+      ) {
+        backgroundJobs.notifyOwner(job);
+      }
+    }
+    return json(c, 200, {
+      jobs: jobs.map((job) => ({
+        id: job.id,
+        agent_id: job.agentId,
+        name: job.name,
+        command: job.command,
+        status: job.status,
+        exit_code: job.exitCode ?? null,
+        output_tail: job.outputTail ?? null,
+        error: job.error ?? null,
+        seen: job.seen,
+        notified: job.notified,
+        created_at: job.createdAt,
+        updated_at: job.updatedAt,
+      })),
+    });
+  });
+
+  app.post("/personal-assistant/background-jobs/:jobId/ack", async (c) => {
+    bearer(c);
+    const jobId = c.req.param("jobId");
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    const job = backgroundJobs.get(jobId);
+    if (!job || job.userId !== userId) throw new LocalError("后台任务不存在", 404);
+    if (
+      !job.notified &&
+      (job.status === "completed" || job.status === "failed" || job.status === "cancelled")
+    ) {
+      backgroundJobs.notifyOwner(job);
+    }
+    const updated = backgroundJobs.acknowledge(jobId);
+    return json(c, 200, {
+      id: updated?.id,
+      seen: updated?.seen === true,
+      notified: updated?.notified === true,
+    });
+  });
+
+  app.post("/personal-assistant/background-jobs/:jobId/cancel", async (c) => {
+    bearer(c);
+    const jobId = c.req.param("jobId");
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    try {
+      const job = backgroundJobs.cancel(jobId, userId);
+      return json(c, 200, {
+        id: job.id,
+        status: job.status,
+        error: job.error ?? null,
+      });
+    } catch (error) {
+      if (error instanceof BackgroundJobError) {
+        throw new LocalError(error.message || "后台任务不存在", 404);
+      }
+      throw error;
+    }
   });
 }

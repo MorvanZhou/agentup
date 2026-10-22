@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("agentUp", {
   encryptSecret: (plaintext) => ipcRenderer.invoke("agentup:secret-encrypt", plaintext),
   decryptSecret: (cipher) => ipcRenderer.invoke("agentup:secret-decrypt", cipher),
   selectSkillPackage: (kind) => ipcRenderer.invoke("agentup:select-skill-package", kind),
+  selectDirectory: () => ipcRenderer.invoke("agentup:select-directory"),
   selectSavePath: (defaultName) => ipcRenderer.invoke("agentup:select-save-path", defaultName),
   openVisitDirectory: (directory) => ipcRenderer.invoke("agentup:open-visit-directory", directory),
   revealInFolder: (target) => ipcRenderer.invoke("agentup:reveal-in-folder", target),

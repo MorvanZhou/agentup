@@ -651,6 +651,43 @@ export async function installRuntime(
       }
       return json(route, 200, { skills: [] });
     }
+    const agentApprovals = path.match(/^\/agents\/([^/]+)\/approvals$/);
+    if (agentApprovals && (request.method() === "GET" || request.method() === "PUT")) {
+      const empty = {
+        command: "once",
+        tools: [] as Array<{
+          tool_name: string;
+          kind: "mcp_server" | "mcp_tool";
+          label: string;
+          scope: string;
+        }>,
+        delegation: { anyone: "once", targets: [] as Array<{ agent_id: string; scope: string }> },
+      };
+      if (request.method() === "GET") return json(route, 200, empty);
+      const body = request.postDataJSON() as {
+        command?: string;
+        tools?: Array<{ tool_name: string; scope: string }>;
+        delegation?: { anyone?: string; targets?: Array<{ agent_id: string; scope: string }> };
+      };
+      return json(route, 200, {
+        command: body.command ?? empty.command,
+        tools: (body.tools ?? []).map((item) => ({
+          tool_name: item.tool_name,
+          kind:
+            item.tool_name.startsWith("mcp__") && !item.tool_name.slice(5).includes("__")
+              ? "mcp_server"
+              : "mcp_tool",
+          label: item.tool_name,
+          scope: item.scope,
+        })),
+        delegation: {
+          anyone: body.delegation?.anyone ?? "once",
+          targets: (body.delegation?.targets ?? [])
+            .filter((item) => item.scope !== "once")
+            .map((item) => ({ agent_id: item.agent_id, scope: item.scope })),
+        },
+      });
+    }
     if (request.method() === "GET" && path === "/personal-assistant/history") {
       return json(route, 200, { messages: histories["personal-assistant"] ?? [] });
     }

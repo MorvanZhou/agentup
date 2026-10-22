@@ -7,7 +7,7 @@ import {
   loadRecentEmojis,
   rememberRecentEmoji,
   splitEmojiText,
-} from "../../src/pages/conversation/model/emoji-data";
+} from "../../src/pages/conversation/model/composer/emoji-data";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

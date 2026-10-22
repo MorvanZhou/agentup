@@ -4,7 +4,7 @@ import {
   mountedThreads,
   pruneVisited,
   rememberVisited,
-} from "../../src/pages/conversation/model/visited-threads.js";
+} from "../../src/pages/conversation/model/thread/visited-threads.js";
 
 it("remembers each agent once when opened", () => {
   expect(rememberVisited([], "weather")).toEqual(["weather"]);

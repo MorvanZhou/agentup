@@ -67,13 +67,18 @@ export class DelegationStore {
 
   list(
     userId: string,
-    options: { unseenOnly?: boolean; status?: DelegationStatus } = {},
+    options: {
+      unseenOnly?: boolean;
+      status?: DelegationStatus;
+      fromAgentId?: string;
+    } = {},
   ): DelegationTask[] {
     this.loadUser(userId);
     const items = [...this.tasks.values()].filter((task) => {
       if (task.userId !== userId) return false;
       if (options.unseenOnly && task.seen) return false;
       if (options.status && task.status !== options.status) return false;
+      if (options.fromAgentId && task.fromAgentId !== options.fromAgentId) return false;
       return true;
     });
     items.sort((left, right) => right.updatedAt - left.updatedAt);

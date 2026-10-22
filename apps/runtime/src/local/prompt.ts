@@ -6,7 +6,7 @@ import type { ModelConfig } from "../config/load.js";
 import type { UiLocale } from "../i18n/locale.js";
 import { AttachmentError, type PromptAttachment } from "../session/workspace/attachments.js";
 import { resolveVisitModelConfig } from "../session/model/session-model.js";
-import { ChatBusy, VisitChats, type PromptRewind } from "../session/turn.js";
+import { ChatBusy, VisitChats, type PromptRewind } from "../session/turn/index.js";
 import type { Visit } from "../package/sync.js";
 import { LocalError, sendNodeJson } from "./http.js";
 

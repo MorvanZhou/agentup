@@ -51,3 +51,21 @@ export type DelegateRunResult = {
   /** 同步完成时的正文；异步启动时为空。 */
   text?: string;
 };
+
+/** 单次 fan-out 里的一项（agent_id + brief）。 */
+export type DelegateFanoutItem = {
+  toAgentId: string;
+  brief: string;
+};
+
+/** 批量扇出结果：多项任务；wait=true 时 texts 与 tasks 对齐。 */
+export type DelegateFanoutResult = {
+  tasks: DelegationTask[];
+  texts?: string[];
+};
+
+/** 同用户并发执行中的委托上限（扇出排队，不拒收）。 */
+export const MAX_DELEGATION_CONCURRENT = 4;
+
+/** 单次 delegate_to_agent 的 tasks[] 上限。 */
+export const MAX_DELEGATION_FANOUT = 8;

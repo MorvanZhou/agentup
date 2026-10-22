@@ -10,7 +10,7 @@ import {
   maxWorkspaceWidth,
   rememberSidebarWidth,
   rememberWorkspaceWidth,
-} from "../model/pane-width";
+} from "../model/layout/pane-width";
 
 type Edge = "from-left" | "from-right";
 

@@ -13,16 +13,17 @@ import {
   RefreshCwIcon,
 } from "@lucide/vue";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import AgentAvatar from "../../../../../../shared/components/AgentAvatar.vue";
 import { t } from "../../../../../../shared/model/ui-locale";
 import {
   buildAssistantByproducts,
   type ByproductTabId,
-} from "../../../../model/message-byproducts";
-import { injectPendingAskUserToolCallId } from "../../../../model/thread-ask-user";
-import { injectThreadExtras } from "../../../../model/thread-extras";
+} from "../../../../model/message/message-byproducts";
+import { injectPendingAskUserToolCallId } from "../../../../model/thread/thread-ask-user";
+import { injectThreadExtras } from "../../../../model/thread/thread-extras";
+import ArtifactsPanel from "./byproducts/ArtifactsPanel.vue";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
 import AssistantProcessTimeline from "./byproducts/AssistantProcessTimeline.vue";
 import TodoPanel from "./byproducts/TodoPanel.vue";
@@ -86,6 +87,80 @@ const byproducts = computed(() =>
 );
 
 const activeTab = ref<ByproductTabId>("process");
+/**
+ * 切 tab 时内容高度骤变：stick-to-bottom / scrollHeight 夹紧都会拽视口。
+ * 锚定气泡顶边，布局后再对齐；短窗口内按住，挡住后续 autoScroll。
+ */
+const tabsAnchor = ref<HTMLElement | null>(null);
+let releaseTabScrollPin: (() => void) | null = null;
+
+function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
+  let cur = el?.parentElement ?? null;
+  while (cur) {
+    const { overflowY } = getComputedStyle(cur);
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
+      return cur;
+    }
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+function pinScrollTop(scroller: HTMLElement, top: number, ms: number) {
+  releaseTabScrollPin?.();
+  const hold = () => {
+    scroller.scrollTop = top;
+  };
+  const release = () => {
+    window.clearTimeout(timer);
+    scroller.removeEventListener("scroll", hold);
+    if (releaseTabScrollPin === release) releaseTabScrollPin = null;
+  };
+  scroller.addEventListener("scroll", hold);
+  const timer = window.setTimeout(release, ms);
+  releaseTabScrollPin = release;
+}
+
+function restoreTabAnchor(
+  anchor: HTMLElement,
+  scroller: HTMLElement,
+  beforeTop: number,
+) {
+  const delta = anchor.getBoundingClientRect().top - beforeTop;
+  if (Math.abs(delta) < 0.5) return;
+  const prevBehavior = scroller.style.scrollBehavior;
+  scroller.style.scrollBehavior = "auto";
+  const targetTop = scroller.scrollTop + delta;
+  scroller.scrollTop = targetTop;
+  scroller.style.scrollBehavior = prevBehavior;
+  pinScrollTop(scroller, targetTop, 300);
+}
+
+function onActiveTabChange(id: string | number) {
+  const next = String(id) as ByproductTabId;
+  if (next === activeTab.value) return;
+
+  const anchor = tabsAnchor.value;
+  const scroller = scrollParentOf(anchor);
+  const beforeTop = anchor?.getBoundingClientRect().top ?? null;
+
+  activeTab.value = next;
+
+  void nextTick(() => {
+    // Presence 显隐后再对齐；双 rAF 等长→短时 scrollHeight 夹紧落地。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!anchor || !scroller || beforeTop === null) return;
+        restoreTabAnchor(anchor, scroller, beforeTop);
+      });
+    });
+  });
+}
+
+onBeforeUnmount(() => {
+  releaseTabScrollPin?.();
+});
+
 watch(
   () => byproducts.value.defaultTabId,
   (id) => {
@@ -108,6 +183,9 @@ const hasProcessTab = computed(() =>
 const hasSummaryTab = computed(() =>
   byproducts.value.tabs.some((tab) => tab.id === "summary"),
 );
+const hasArtifactsTab = computed(
+  () => (byproducts.value.artifacts?.files.length ?? 0) > 0,
+);
 </script>
 
 <template>
@@ -124,11 +202,13 @@ const hasSummaryTab = computed(() =>
     <div class="flex min-w-0 max-w-full flex-1 flex-col items-start gap-1">
       <!-- 助手气泡：主产物 + 副产物 tabs（顶栏近似浏览器标签） -->
       <div
+        ref="tabsAnchor"
         class="w-full max-w-full min-w-0 wrap-break-word overflow-x-hidden rounded-lg rounded-tl-sm bg-muted text-sm leading-relaxed text-foreground shadow-sm"
       >
         <TabsRoot
-          v-model="activeTab"
+          :model-value="activeTab"
           class="flex w-full min-w-0 flex-col"
+          @update:model-value="onActiveTabChange"
         >
           <!-- 顶栏：Chrome 式标签条 -->
           <TabsList
@@ -140,9 +220,15 @@ const hasSummaryTab = computed(() =>
               <TabsTrigger
                 v-if="tab.id !== 'subagents'"
                 :value="tab.id"
-                class="relative -mb-px inline-flex min-h-8 max-w-[8rem] items-center truncate rounded-t-lg border border-transparent px-3 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground data-[state=active]:border-rule/70 data-[state=active]:border-b-muted data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
+                class="relative -mb-px inline-flex min-h-8 max-w-[9rem] items-center gap-1 truncate rounded-t-lg border border-transparent px-3 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground data-[state=active]:border-rule/70 data-[state=active]:border-b-muted data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
               >
-                {{ tab.label }}
+                <span class="truncate">{{ tab.label }}</span>
+                <span
+                  v-if="tab.badge"
+                  class="inline-flex min-w-4 shrink-0 items-center justify-center rounded-md bg-accent/15 px-1 text-[10px] font-semibold tabular-nums leading-4 text-accent"
+                >
+                  {{ tab.badge }}
+                </span>
               </TabsTrigger>
               <TabsTrigger
                 v-else
@@ -168,6 +254,15 @@ const hasSummaryTab = computed(() =>
             <PartByIndexProvider :index="byproducts.summaryPartIndex">
               <MarkdownText />
             </PartByIndexProvider>
+          </TabsContent>
+
+          <!-- 本回合 ARTIFACT 差分 -->
+          <TabsContent
+            v-if="hasArtifactsTab && byproducts.artifacts"
+            value="artifacts"
+            class="min-w-0 outline-none"
+          >
+            <ArtifactsPanel :artifacts="byproducts.artifacts" />
           </TabsContent>
 
           <!-- 待办：完整 checklist（结束后） -->

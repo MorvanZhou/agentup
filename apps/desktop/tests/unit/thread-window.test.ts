@@ -5,7 +5,7 @@ import {
   expandWindowStart,
   initialWindowStart,
   visibleMessageIds,
-} from "../../src/pages/conversation/model/thread-window.js";
+} from "../../src/pages/conversation/model/thread/thread-window.js";
 
 it("opens on the newest page", () => {
   expect(initialWindowStart(0)).toBe(0);

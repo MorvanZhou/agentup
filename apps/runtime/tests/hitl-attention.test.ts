@@ -9,7 +9,7 @@ import { expect, it } from "vitest";
 import { startLocalServer } from "../src/local/server.js";
 import type { LocalAppDeps, LocalAppEnv } from "../src/local/http.js";
 import { registerHitlRoutes } from "../src/local/routes/hitl.js";
-import { ApprovalBroker } from "../src/session/hitl/approval.js";
+import { ApprovalBroker } from "../src/session/hitl/approval/index.js";
 import { DelegationService } from "../src/session/delegation/index.js";
 import { healInterruptedSessionTools } from "../src/session/history/history.js";
 import { readHitlPending } from "../src/session/hitl/pending.js";

@@ -1,6 +1,6 @@
 import { computed, onMounted, onScopeDispose, ref, watch } from "vue";
 
-import { totalBlocked } from "../pages/conversation/model/conversation-row";
+import { totalBlocked } from "../pages/conversation/model/sidebar/conversation-row";
 import { DesktopApi, DesktopApiError } from "../shared/api/runtime";
 import type { AttentionSnapshot } from "../shared/api/runtime/chat";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/personal-assistant-default";

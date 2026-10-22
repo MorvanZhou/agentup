@@ -7,5 +7,8 @@ it("describes collaboration bias and discovery tools", () => {
   expect(text).toContain("AgentUp Collaboration");
   expect(text).toContain("list_recruited_agents");
   expect(text).toContain("delegate_to_agent");
-  expect(text).toContain("Relevant recruited agents");
+  expect(text).toContain("wait=false");
+  expect(text).toContain("check_delegation");
+  expect(text).toContain("tasks=");
+  expect(text).toContain("bg_run");
 });

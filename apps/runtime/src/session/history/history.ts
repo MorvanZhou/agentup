@@ -9,6 +9,11 @@ import { clearCheckpoints } from "../checkpoint/checkpoint.js";
 import { DELEGATION_RESULT_CUSTOM_TYPE } from "../delegation/types.js";
 import { isModelServiceUnavailable, modelUnavailableNotice } from "../model/unavailable.js";
 import { stampNewSessionModel } from "../model/session-model.js";
+import { ASYNC_WAKE_CUSTOM_TYPE } from "../wake/index.js";
+import {
+  AGENTUP_ARTIFACTS_CUSTOM_TYPE,
+  parseArtifactsEntryData,
+} from "./artifacts.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE, parseSummaryEntryData } from "./summary.js";
 
 export const CONTEXT_RESET_TEXT = "已开始新对话，之后不再带入此前上下文";
@@ -115,9 +120,18 @@ export function projectHistoryFromManager(manager: SessionManager, idPrefix = "s
   const branch = manager.getBranch();
   const messages: unknown[] = [];
   const entryIds: Array<string | undefined> = [];
+  /** 下一条真实 assistant 标为主动同步（紧跟 async_wake）。 */
+  let markNextAssistantProactive = false;
   for (const entry of branch) {
     if (entry.type === "message") {
-      messages.push(entry.message);
+      const raw = entry.message as { role?: unknown };
+      if (raw?.role === "assistant" && markNextAssistantProactive) {
+        messages.push({ ...(entry.message as object), __agentUpProactive: true });
+        markNextAssistantProactive = false;
+      } else {
+        if (raw?.role === "user") markNextAssistantProactive = false;
+        messages.push(entry.message);
+      }
       entryIds.push(entry.id);
       continue;
     }
@@ -133,6 +147,29 @@ export function projectHistoryFromManager(manager: SessionManager, idPrefix = "s
         messages[index] = { ...message, __agentUpSummary: summary };
         break;
       }
+      continue;
+    }
+    if (entry.type === "custom" && entry.customType === AGENTUP_ARTIFACTS_CUSTOM_TYPE) {
+      const artifacts = parseArtifactsEntryData(entry.data);
+      if (!artifacts) continue;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const raw = messages[index];
+        if (!raw || typeof raw !== "object") continue;
+        const message = raw as { role?: unknown; __agentUpDelegation?: unknown };
+        if (message.role !== "assistant" || message.__agentUpDelegation === true) continue;
+        messages[index] = { ...message, __agentUpArtifacts: artifacts };
+        break;
+      }
+      continue;
+    }
+    if (
+      entry.type === "custom_message" &&
+      entry.customType === ASYNC_WAKE_CUSTOM_TYPE
+    ) {
+      // 空闲 wake：打断 assistant 合并，并标记随后一条为「主动同步」新气泡。
+      messages.push({ role: "assistant", content: [], __agentUpSegmentBreak: true });
+      entryIds.push(undefined);
+      markNextAssistantProactive = true;
       continue;
     }
     if (
@@ -183,6 +220,11 @@ export function projectHistory(
       return;
     }
     if (message.role === "assistant") {
+      if ((raw as { __agentUpSegmentBreak?: unknown }).__agentUpSegmentBreak === true) {
+        // 下一轮 assistant 必须新开气泡（空闲异步同步），不得并入上一句。
+        assistant = undefined;
+        return;
+      }
       const delegation = (raw as { __agentUpDelegation?: unknown }).__agentUpDelegation === true;
       if (delegation) {
         assistant = undefined;
@@ -201,12 +243,21 @@ export function projectHistory(
         });
         return;
       }
+      const proactive = (raw as { __agentUpProactive?: unknown }).__agentUpProactive === true;
       if (!assistant) {
+        const entryId = entryIds?.[index];
+        const id =
+          typeof entryId === "string" && entryId ? entryId : `${idPrefix}-assistant-${index}`;
+        const custom = {
+          ...(createdAt?.custom ?? {}),
+          ...(typeof entryId === "string" && entryId ? { agentUpEntryId: entryId } : {}),
+          ...(proactive ? { agentUpProactiveSync: true } : {}),
+        };
         assistant = {
-          id: `${idPrefix}-assistant-${index}`,
+          id,
           role: "assistant",
           parts: [],
-          ...(createdAt ? { metadata: createdAt } : {}),
+          ...(Object.keys(custom).length > 0 ? { metadata: { custom } } : {}),
         };
         result.push(assistant);
       }
@@ -247,7 +298,10 @@ export function projectHistory(
         }
       }
       const summary = parseSummaryEntryData((raw as { __agentUpSummary?: unknown }).__agentUpSummary);
-      if (summary) {
+      const artifacts = parseArtifactsEntryData(
+        (raw as { __agentUpArtifacts?: unknown }).__agentUpArtifacts,
+      );
+      if (summary || artifacts) {
         const prev =
           typeof assistant.metadata === "object" && assistant.metadata
             ? (assistant.metadata as Record<string, unknown>)
@@ -258,7 +312,11 @@ export function projectHistory(
             : {};
         assistant.metadata = {
           ...prev,
-          custom: { ...prevCustom, agentUpSummary: summary },
+          custom: {
+            ...prevCustom,
+            ...(summary ? { agentUpSummary: clampSummaryIndex(summary, message.content) } : {}),
+            ...(artifacts ? { agentUpArtifacts: artifacts } : {}),
+          },
         };
       }
       return;
@@ -378,6 +436,23 @@ export function contextResetMessage(id: string): UIMessage {
 }
 
 /** Pi 消息 timestamp（毫秒）→ UIMessage metadata，供桌面时间分隔使用。 */
+/** 摘要序数按「本条 assistant」计。跨过 async_wake 的旧序号会越界，收到本条最后一段。 */
+function clampSummaryIndex(
+  summary: { textPartIndex: number },
+  content: unknown,
+): { textPartIndex: number } {
+  let count = 0;
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const item = part as { type?: unknown; text?: unknown };
+      if (item.type === "text" && typeof item.text === "string" && item.text) count += 1;
+    }
+  }
+  if (count <= 0 || summary.textPartIndex < count) return summary;
+  return { textPartIndex: count - 1 };
+}
+
 function createdAtMetadata(timestamp: unknown): { custom: { agentUpCreatedAt: string } } | undefined {
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp) || timestamp <= 0) return undefined;
   return { custom: { agentUpCreatedAt: new Date(timestamp).toISOString() } };

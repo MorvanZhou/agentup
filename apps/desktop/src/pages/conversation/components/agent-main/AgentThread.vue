@@ -5,10 +5,11 @@ import { AuiConfig, AuiProvider } from "@assistant-ui/vue";
 import type { UIMessage } from "ai";
 import { computed, onBeforeUnmount, provide, ref, toRef, watch } from "vue";
 
+import ChatSettingsPanel from "./ChatSettingsPanel.vue";
 import WorkspacePanel from "./workspace/WorkspacePanel.vue";
 
 import { createAgentUpTransport } from "../../../../shared/api/agent-transport";
-import { runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../shared/api/runtime";
+import { DesktopApi, runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../shared/api/runtime";
 import {
   isAgentUpApproval,
   isAgentUpAskUser,
@@ -22,21 +23,23 @@ import {
 } from "../../../../shared/model/chat";
 import { showToast } from "../../../../shared/model/toast";
 import { t } from "../../../../shared/model/ui-locale";
+import { useDelegationFleet } from "../../composables/useDelegationFleet";
 import { useWorkspacePaneWidth } from "../../composables/usePaneWidth";
-import { clampWorkspaceWidth } from "../../model/pane-width";
-import { clearProcessFoldState } from "../../model/process-fold-state";
-import { threadActionsKey, type ThreadActions } from "../../model/thread-actions";
-import { threadActiveKey } from "../../model/thread-active";
-import { threadAgentIdKey } from "../../model/thread-agent-id";
-import { threadApprovalKey } from "../../model/thread-approval";
-import { threadAskUserKey } from "../../model/thread-ask-user";
+import { clampWorkspaceWidth } from "../../model/layout/pane-width";
+import { clearProcessFoldState } from "../../model/message/process-fold-state";
+import { threadActionsKey, type ThreadActions } from "../../model/thread/thread-actions";
+import { threadActiveKey } from "../../model/thread/thread-active";
+import { threadAgentIdKey } from "../../model/thread/thread-agent-id";
+import { threadApprovalKey } from "../../model/thread/thread-approval";
+import { threadAskUserKey } from "../../model/thread/thread-ask-user";
 import {
   threadDelegationKey,
   type DelegationProcessTarget,
   type ThreadDelegationApi,
-} from "../../model/thread-delegation";
-import { threadExtrasKey, type ThreadExtras } from "../../model/thread-extras";
-import { threadRosterKey, type ThreadRoster } from "../../model/thread-roster";
+} from "../../model/thread/thread-delegation";
+import { threadExtrasKey, type ThreadExtras } from "../../model/thread/thread-extras";
+import { threadRosterKey, type ThreadRoster } from "../../model/thread/thread-roster";
+import DelegationFleetBar from "./thread/assistant-ui/byproducts/DelegationFleetBar.vue";
 import DelegationProcessDialog from "./thread/assistant-ui/byproducts/DelegationProcessDialog.vue";
 import Thread from "./thread/Thread.vue";
 import ConversationHeader from "./ConversationHeader.vue";
@@ -116,6 +119,19 @@ const resolvedRuntimeBaseUrl = computed(
   () => props.runtimeBaseUrl ?? defaultRuntimeBaseUrl(),
 );
 
+const fleetApi = new DesktopApi();
+const {
+  items: fleetItems,
+  noteStarted: noteFleetStarted,
+  noteCancelled: noteFleetCancelled,
+} = useDelegationFleet({
+  api: fleetApi,
+  agentId: toRef(props, "agentId"),
+  token: toRef(props, "token"),
+  userId: toRef(props, "userId"),
+  active: toRef(props, "active"),
+});
+
 // 重新进入本对话：清空过程折叠缓存（组件常驻 v-show，不能靠卸载）
 watch(
   () => props.active,
@@ -174,15 +190,32 @@ const threadActions = computed<ThreadActions>(() => ({
 }));
 provide(threadActionsKey, threadActions);
 
-const workspaceOpen = ref(false);
+/** 右侧抽屉：工作空间 / 对话配置 互斥。 */
+type RightPane = "closed" | "workspace" | "chat-settings";
+const rightPane = ref<RightPane>("closed");
+const rightPaneOpen = computed(() => rightPane.value !== "closed");
+const workspaceOpen = computed(() => rightPane.value === "workspace");
+const chatSettingsOpen = computed(() => rightPane.value === "chat-settings");
 const workspaceGeneration = ref(0);
 const bodyEl = ref<HTMLElement | null>(null);
 const { width: rightPaneWidth, startResize: startRightPaneResize } = useWorkspacePaneWidth();
 let bodyResizeObserver: ResizeObserver | null = null;
 
 function fitWorkspaceToBody(): void {
-  if (!workspaceOpen.value || !bodyEl.value) return;
+  if (!rightPaneOpen.value || !bodyEl.value) return;
   rightPaneWidth.value = clampWorkspaceWidth(rightPaneWidth.value, bodyEl.value.clientWidth);
+}
+
+function toggleWorkspace(): void {
+  rightPane.value = rightPane.value === "workspace" ? "closed" : "workspace";
+}
+
+function openChatSettings(): void {
+  rightPane.value = "chat-settings";
+}
+
+function closeRightPane(): void {
+  rightPane.value = "closed";
 }
 
 function onThreadResize(event: PointerEvent): void {
@@ -192,7 +225,7 @@ function onThreadResize(event: PointerEvent): void {
 }
 
 watch(
-  [bodyEl, workspaceOpen],
+  [bodyEl, rightPaneOpen],
   ([el, open]) => {
     bodyResizeObserver?.disconnect();
     bodyResizeObserver = null;
@@ -216,6 +249,8 @@ const config = AuiConfig({
   threads: AISDKChat({
     id: props.agentId,
     messages: props.messages,
+    // 默认同轮多条 assistant 会并成一个气泡。空闲同步是下一条独立 assistant，不能并进去。
+    joinStrategy: "none",
     // 附件条只收图片；非图片在 Composer 插 @ATTACHMENTS 芯片并即时落盘。
     adapters: {
       attachments: new SimpleImageAttachmentAdapter(),
@@ -238,6 +273,7 @@ const config = AuiConfig({
         isAgentUpDelegationStarted(part.data)
       ) {
         delegationApi.value.registerStarted(part.data);
+        noteFleetStarted(part.data);
       }
       if (
         part.type === "data-agentup-model-unavailable" &&
@@ -264,19 +300,29 @@ const config = AuiConfig({
       :user-id="userId"
       :runtime-base-url="resolvedRuntimeBaseUrl"
       @update:open="processOpen = $event"
+      @cancelled="noteFleetCancelled"
     />
     <!-- 会话线程 -->
     <div class="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-paper text-foreground">
       <!-- 顶栏 -->
       <ConversationHeader
         :workspace-open="workspaceOpen"
-        @toggle-workspace="workspaceOpen = !workspaceOpen"
+        :chat-settings-open="chatSettingsOpen"
+        @toggle-workspace="toggleWorkspace"
+        @open-chat-settings="openChatSettings"
+      />
+      <!-- 异步委托进行中：顶栏下常驻 Fleet -->
+      <DelegationFleetBar
+        :items="fleetItems"
+        :token="token"
+        :user-id="userId"
+        @cancelled="noteFleetCancelled"
       />
       <div ref="bodyEl" class="relative flex min-h-0 min-w-0 flex-1">
         <!-- 对话区；右缘可拖，给右侧功能栏（工作空间等）让宽 -->
         <div
           class="relative min-h-0 min-w-80 flex-1"
-          :class="workspaceOpen ? 'z-30' : undefined"
+          :class="rightPaneOpen ? 'z-30' : undefined"
         >
           <Thread
             :approval="approval"
@@ -285,7 +331,7 @@ const config = AuiConfig({
             @answer="(answer) => emit('answer', answer)"
           />
           <button
-            v-if="workspaceOpen && agentId && token && userId"
+            v-if="rightPaneOpen && agentId && token && userId"
             type="button"
             class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-accent/30 focus-visible:bg-accent/40 min-[730px]:block"
             aria-label="调整对话区宽度"
@@ -293,25 +339,34 @@ const config = AuiConfig({
           />
         </div>
         <button
-          v-if="workspaceOpen"
+          v-if="rightPaneOpen"
           type="button"
           class="absolute inset-0 z-10 bg-black/40 min-[730px]:hidden"
-          aria-label="关闭工作空间"
-          @click="workspaceOpen = false"
+          :aria-label="chatSettingsOpen ? t('chatSettingsClose') : t('wsClose')"
+          @click="closeRightPane"
         />
         <div
-          v-if="workspaceOpen && agentId && token && userId"
+          v-if="rightPaneOpen && agentId && token && userId"
           class="absolute inset-y-0 right-0 z-20 flex h-full shrink-0 min-[730px]:static"
           :style="{ width: `${rightPaneWidth}px` }"
         >
           <WorkspacePanel
+            v-if="workspaceOpen"
             :token="token"
             :user-id="userId"
             :agent-id="agentId"
             :personal="extras.personal"
             :generation="workspaceGeneration"
             class="h-full w-full"
-            @close="workspaceOpen = false"
+            @close="closeRightPane"
+          />
+          <ChatSettingsPanel
+            v-else-if="chatSettingsOpen"
+            :token="token"
+            :user-id="userId"
+            :agent-id="agentId"
+            class="h-full w-full"
+            @close="closeRightPane"
           />
         </div>
       </div>

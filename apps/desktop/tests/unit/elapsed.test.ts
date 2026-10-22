@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { formatElapsedMs } from "../../src/pages/conversation/model/elapsed.js";
+import { formatElapsedMs } from "../../src/pages/conversation/model/message/elapsed.js";
 
 it("formats sub-second and second buckets", () => {
   expect(formatElapsedMs(0)).toBe("<1s");

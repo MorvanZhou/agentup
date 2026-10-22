@@ -16,7 +16,7 @@ import {
   conversationPreviewLabel,
   unreadLabel,
   type ConversationRow,
-} from "../../model/conversation-row";
+} from "../../model/sidebar/conversation-row";
 
 const props = defineProps<{
   row: ConversationRow;

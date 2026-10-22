@@ -1,5 +1,7 @@
 import type { ExtensionContext, ExtensionFactory, SessionEntry } from "@earendil-works/pi-coding-agent";
 
+import { ASYNC_WAKE_CUSTOM_TYPE } from "../wake/index.js";
+
 /** 会话 custom entry：turn 结束后标记主产物（最后一段非空 text）。 */
 export const AGENTUP_SUMMARY_CUSTOM_TYPE = "agentup-summary";
 
@@ -27,9 +29,19 @@ export function resolveSummaryFromBranch(
     }
   }
 
+  // 空闲 wake 没有新的 user。只统计 wake 之后的正文，避免序号指到上一句。
+  let start = lastUser + 1;
+  for (let index = branch.length - 1; index > lastUser; index -= 1) {
+    const entry = branch[index];
+    if (entry?.type === "custom_message" && entry.customType === ASYNC_WAKE_CUSTOM_TYPE) {
+      start = index + 1;
+      break;
+    }
+  }
+
   let textCount = 0;
   let lastIndex: number | undefined;
-  for (let index = lastUser + 1; index < branch.length; index += 1) {
+  for (let index = start; index < branch.length; index += 1) {
     const entry = branch[index];
     if (entry?.type !== "message" || entry.message.role !== "assistant") continue;
     const content = entry.message.content;

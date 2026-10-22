@@ -3,7 +3,7 @@ import { BotIcon, MessageSquareIcon, SettingsIcon, StoreIcon } from "@lucide/vue
 import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 
-import { unreadLabel } from "../pages/conversation/model/conversation-row";
+import { unreadLabel } from "../pages/conversation/model/sidebar/conversation-row";
 import { t } from "../shared/model/ui-locale";
 import { useDesktop } from "./desktop";
 

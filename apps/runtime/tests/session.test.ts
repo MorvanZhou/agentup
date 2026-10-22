@@ -103,9 +103,13 @@ it("points Pi at the visit directory and keeps the user agent directory out", ()
     "web_fetch",
     "ask_user",
     "todo",
+    "bg_run",
+    "bg_status",
+    "bg_kill",
     "list_recruited_agents",
     "delegate_to_agent",
     "check_delegation",
+    "cancel_delegation",
   ]);
   expect(plan.mcp).toBe(false);
   expect(plan.provider).toMatchObject({
@@ -131,9 +135,13 @@ it("makes builtin tools available for runtime approval", async () => {
     "web_fetch",
     "ask_user",
     "todo",
+    "bg_run",
+    "bg_status",
+    "bg_kill",
     "list_recruited_agents",
     "delegate_to_agent",
     "check_delegation",
+    "cancel_delegation",
   ]);
   expect(options.noTools).toBeUndefined();
 });
@@ -185,16 +193,20 @@ it("passes the explicit session plan to the Pi SDK", async () => {
     "web_fetch",
     "ask_user",
     "todo",
+    "bg_run",
+    "bg_status",
+    "bg_kill",
     "list_recruited_agents",
     "delegate_to_agent",
     "check_delegation",
+    "cancel_delegation",
   ]);
   expect(options.thinkingLevel).toBe("off");
   expect(options.model).toMatchObject({ api: "openai-completions", baseUrl: model.baseUrl, provider: "ollama" });
   expect(options.modelRuntime.getModel("ollama", "qwen")).toMatchObject({ id: "qwen", apiKey: "ollama" });
   expect(options.settingsManager.options.projectTrusted).toBe(true);
-  // web / ask_user / todo / summary / checkpoint / approval（无 MCP / 委托时）
-  expect(options.resourceLoader.options.extensionFactories).toHaveLength(6);
+  // web / ask_user / todo / summary / artifacts / output-length / checkpoint / approval（无 MCP / 委托 / 后台时）
+  expect(options.resourceLoader.options.extensionFactories).toHaveLength(8);
   expect(options.resourceLoader.options.disabledBuiltinExtensions).toEqual(["mcp"]);
   expect(options.resourceLoader.options.noSkills).toBe(true);
   expect(options.resourceLoader.options.additionalSkillPaths).toEqual([]);
@@ -220,12 +232,14 @@ it("passes the explicit session plan to the Pi SDK", async () => {
       };
     };
   };
-  // 第三方 visit 不拼私人助理规则；私人助理 AGENTS.md 由 agentDir 原生加载；无委托时只追加 cwd 规范。
+  // 第三方 visit 不拼私人助理规则；私人助理 AGENTS.md 由 agentDir 原生加载；无委托时追加 cwd + 工具选用。
   const appended = withAgents.resourceLoader.options.appendSystemPromptOverride?.(["base"]);
   expect(appended?.[0]).toBe("base");
   expect(appended?.[1]).toContain("ARTIFACT");
   expect(appended?.[1]).toContain("WORK");
-  expect(appended).toHaveLength(2);
+  expect(appended?.[2]).toContain("AgentUp Tool Usage");
+  expect(appended?.[2]).toContain("`grep`");
+  expect(appended).toHaveLength(3);
   expect(withAgents.resourceLoader.options.agentsFilesOverride).toBeUndefined();
 });
 
@@ -241,10 +255,11 @@ it("appends collaboration policy when delegation is wired", async () => {
     };
   };
   const appended = withDelegation.resourceLoader.options.appendSystemPromptOverride?.(["base"]);
-  expect(appended).toHaveLength(3);
+  expect(appended).toHaveLength(4);
   expect(appended?.[1]).toContain("ARTIFACT");
-  expect(appended?.[2]).toContain("AgentUp Collaboration");
-  expect(appended?.[2]).toContain("delegate_to_agent");
+  expect(appended?.[2]).toContain("AgentUp Tool Usage");
+  expect(appended?.[3]).toContain("AgentUp Collaboration");
+  expect(appended?.[3]).toContain("delegate_to_agent");
 });
 
 it("stamps the visit user onto hospital MCP and ignores the package header", async () => {

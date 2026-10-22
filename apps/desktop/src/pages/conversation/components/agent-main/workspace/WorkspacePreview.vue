@@ -4,8 +4,8 @@ import { computed, ref, watch } from "vue";
 import type { WorkspaceFile } from "../../../../../shared/api/runtime/workspace";
 import ImagePreview from "../../../../../shared/components/ImagePreview.vue";
 import { t } from "../../../../../shared/model/ui-locale";
-import { highlightCodeHtml, languageFromPath } from "../../../model/highlight-code";
-import { formatBytes } from "../../../model/workspace-path";
+import { highlightCodeHtml, languageFromPath } from "../../../model/render/highlight-code";
+import { formatBytes } from "../../../model/workspace/workspace-path";
 
 const props = defineProps<{
   file: WorkspaceFile | null;

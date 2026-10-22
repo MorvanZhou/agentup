@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   shortenDisplayTarget,
   summarizeApproval,
-} from "../../src/pages/conversation/model/approval-summary";
+} from "../../src/pages/conversation/model/message/approval-summary";
 
 describe("shortenDisplayTarget", () => {
   it("把命令里的绝对路径收成文件名，保留参数", () => {
@@ -70,6 +70,20 @@ describe("summarizeApproval", () => {
     });
     expect(summary.kind).toBe("tool");
     expect(summary.target).toBe("custom_tool");
+    expect(summary.scopes).toEqual([]);
+  });
+
+  it("MCP 工具提供三级允许范围", () => {
+    const summary = summarizeApproval({
+      id: "a3m",
+      toolCallId: "c3m",
+      toolName: "mcp__hospital__write",
+      args: { record: "x" },
+    });
+    expect(summary.kind).toBe("tool");
+    expect(summary.target).toBe("mcp__hospital__write");
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
+    expect(summary.description).toContain("记住");
   });
 
   it("把 web_fetch 审批整理成网络访问说明", () => {
@@ -128,5 +142,22 @@ describe("summarizeApproval", () => {
     expect(summary.title).toBe("想请其他 Agent 帮忙");
     expect(summary.target).toBe("查天气");
     expect(summary.title).not.toContain("weather");
+  });
+
+  it("项目挂载审批展示完整挂载路径与 once/session/agent", () => {
+    const summary = summarizeApproval({
+      id: "a8",
+      toolCallId: "c8",
+      toolName: "read",
+      args: {
+        path: "/Users/me/code/app/src/main.ts",
+        project_mount: true,
+        mount_path: "/Users/me/code/app",
+      },
+    });
+    expect(summary.kind).toBe("project");
+    expect(summary.title).toBe("要访问工作目录外的文件夹");
+    expect(summary.target).toBe("/Users/me/code/app");
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
 });

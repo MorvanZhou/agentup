@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { stagedPathsToRemove } from "../../src/pages/conversation/model/composer-staged-files";
+import { stagedPathsToRemove } from "../../src/pages/conversation/model/composer/composer-staged-files";
 
 it("does not remove staged files when composer is cleared (send)", () => {
   const path = "ATTACHMENTS/a1b2c3d4-note.txt";

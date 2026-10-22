@@ -13,6 +13,9 @@ export type WorkspaceFile =
   | { path: string; kind: "binary"; size: number }
   | { path: string; kind: "too-large"; size: number; media: "text" | "image" };
 
+/** scope=project 时须带已挂载的项目根绝对路径。 */
+export type WorkspaceScope = { scope?: "cwd"; root?: string } | { scope: "project"; root: string };
+
 export async function listWorkspace(
   http: RuntimeHttp,
   token: string,
@@ -20,8 +23,12 @@ export async function listWorkspace(
   agentId: string,
   personal: boolean,
   directory: string,
+  workspaceScope?: WorkspaceScope,
 ): Promise<{ path: string; entries: WorkspaceEntry[] }> {
-  const payload = await http.request(`${base(personal, agentId)}${query(userId, directory)}`, token);
+  const payload = await http.request(
+    `${base(personal, agentId)}${query(userId, directory, workspaceScope)}`,
+    token,
+  );
   if (typeof payload.path !== "string" || !Array.isArray(payload.entries)) {
     throw new DesktopApiError("目录无效");
   }
@@ -38,8 +45,12 @@ export async function readWorkspaceFile(
   agentId: string,
   personal: boolean,
   filePath: string,
+  workspaceScope?: WorkspaceScope,
 ): Promise<WorkspaceFile> {
-  const payload = await http.request(`${base(personal, agentId)}/file${query(userId, filePath)}`, token);
+  const payload = await http.request(
+    `${base(personal, agentId)}/file${query(userId, filePath, workspaceScope)}`,
+    token,
+  );
   return readFile(payload);
 }
 
@@ -51,11 +62,12 @@ export async function writeWorkspaceText(
   personal: boolean,
   filePath: string,
   text: string,
+  workspaceScope?: WorkspaceScope,
 ): Promise<void> {
   await http.request(
     `${base(personal, agentId)}/file`,
     token,
-    { user_id: userId, path: filePath, text },
+    { user_id: userId, path: filePath, text, ...scopeBody(workspaceScope) },
     "PUT",
   );
 }
@@ -68,11 +80,12 @@ export async function createWorkspaceEntry(
   personal: boolean,
   filePath: string,
   kind: "file" | "dir",
+  workspaceScope?: WorkspaceScope,
 ): Promise<void> {
   await http.request(
     base(personal, agentId),
     token,
-    { user_id: userId, path: filePath, kind },
+    { user_id: userId, path: filePath, kind, ...scopeBody(workspaceScope) },
     "POST",
   );
 }
@@ -85,11 +98,12 @@ export async function renameWorkspaceEntry(
   personal: boolean,
   filePath: string,
   name: string,
+  workspaceScope?: WorkspaceScope,
 ): Promise<string> {
   const payload = await http.request(
     `${base(personal, agentId)}/rename`,
     token,
-    { user_id: userId, path: filePath, name },
+    { user_id: userId, path: filePath, name, ...scopeBody(workspaceScope) },
     "POST",
   );
   if (typeof payload.path !== "string") throw new DesktopApiError("重命名结果无效");
@@ -103,8 +117,14 @@ export async function deleteWorkspaceEntry(
   agentId: string,
   personal: boolean,
   filePath: string,
+  workspaceScope?: WorkspaceScope,
 ): Promise<void> {
-  await http.request(`${base(personal, agentId)}${query(userId, filePath)}`, token, undefined, "DELETE");
+  await http.request(
+    `${base(personal, agentId)}${query(userId, filePath, workspaceScope)}`,
+    token,
+    undefined,
+    "DELETE",
+  );
 }
 
 export async function resolveWorkspaceAbsolute(
@@ -114,8 +134,12 @@ export async function resolveWorkspaceAbsolute(
   agentId: string,
   personal: boolean,
   filePath: string,
+  workspaceScope?: WorkspaceScope,
 ): Promise<string> {
-  const payload = await http.request(`${base(personal, agentId)}/absolute${query(userId, filePath)}`, token);
+  const payload = await http.request(
+    `${base(personal, agentId)}/absolute${query(userId, filePath, workspaceScope)}`,
+    token,
+  );
   if (typeof payload.path !== "string" || !payload.path) throw new DesktopApiError("本机路径无效");
   return payload.path;
 }
@@ -124,10 +148,21 @@ function base(personal: boolean, agentId: string): string {
   return personal ? "/personal-assistant/workspace" : `/agents/${encodeURIComponent(agentId)}/workspace`;
 }
 
-function query(userId: string, filePath: string): string {
+function query(userId: string, filePath: string, workspaceScope?: WorkspaceScope): string {
   const params = new URLSearchParams({ user_id: userId });
   if (filePath) params.set("path", filePath);
+  if (workspaceScope?.scope === "project" && workspaceScope.root) {
+    params.set("scope", "project");
+    params.set("root", workspaceScope.root);
+  }
   return `?${params.toString()}`;
+}
+
+function scopeBody(workspaceScope?: WorkspaceScope): Record<string, string> {
+  if (workspaceScope?.scope === "project" && workspaceScope.root) {
+    return { scope: "project", root: workspaceScope.root };
+  }
+  return {};
 }
 
 function readEntry(value: unknown): WorkspaceEntry {

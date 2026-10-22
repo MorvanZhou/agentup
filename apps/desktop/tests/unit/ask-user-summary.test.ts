@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { summarizeAskUserTool } from "../../src/pages/conversation/model/ask-user-summary.js";
+import { summarizeAskUserTool } from "../../src/pages/conversation/model/message/ask-user-summary.js";
 
 const args = {
   questions: [

@@ -2,7 +2,7 @@
 import { FileIcon, XIcon } from "@lucide/vue";
 import { computed } from "vue";
 
-import { middleEllipsisFileName } from "../../../../../model/attachment-ref";
+import { middleEllipsisFileName } from "../../../../../model/composer/attachment-ref";
 
 const props = withDefaults(
   defineProps<{

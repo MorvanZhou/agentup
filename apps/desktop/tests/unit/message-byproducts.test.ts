@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatArtifactCountBadge,
+} from "../../src/pages/conversation/model/message/message-artifacts";
+import {
   buildAssistantByproducts,
   readAgentUpSummary,
   resolveSummaryPartIndex,
-} from "../../src/pages/conversation/model/message-byproducts";
+} from "../../src/pages/conversation/model/message/message-byproducts";
 
 describe("message-byproducts", () => {
   it("reads agentUpSummary from metadata.custom", () => {
@@ -39,6 +42,33 @@ describe("message-byproducts", () => {
     expect(state.tabs.map((tab) => tab.id)).toEqual(["summary", "process"]);
     expect(state.showTabBar).toBe(true);
     expect(state.defaultTabId).toBe("summary");
+  });
+
+  it("shows artifacts tab with count badge after settle", () => {
+    const state = buildAssistantByproducts({
+      parts: [{ type: "text", text: "完成" }],
+      metadata: {
+        custom: {
+          agentUpSummary: { textPartIndex: 0 },
+          agentUpArtifacts: {
+            files: [
+              { path: "ARTIFACT/a.txt", kind: "added", size: 1 },
+              { path: "ARTIFACT/b.txt", kind: "modified", size: 2 },
+            ],
+          },
+        },
+      },
+      streaming: false,
+    });
+    expect(state.tabs.map((tab) => tab.id)).toEqual(["summary", "artifacts"]);
+    expect(state.tabs.find((tab) => tab.id === "artifacts")?.badge).toBe("2");
+    expect(state.artifacts?.files).toHaveLength(2);
+  });
+
+  it("formatArtifactCountBadge caps at 9+", () => {
+    expect(formatArtifactCountBadge(0)).toBe("");
+    expect(formatArtifactCountBadge(9)).toBe("9");
+    expect(formatArtifactCountBadge(10)).toBe("9+");
   });
 
   it("hides tab bar for summary-only replies", () => {

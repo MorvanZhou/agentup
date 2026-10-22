@@ -3,7 +3,7 @@ import {
   AuiConfig,
   AuiProvider,
   MessageByIdProvider,
-  useAui,
+  useAuiState,
 } from "@assistant-ui/vue";
 import {
   ExternalThread,
@@ -13,9 +13,9 @@ import type { UIMessage } from "ai";
 import { computed, defineComponent, h, provide, ref } from "vue";
 
 import { t } from "../../../../../../../shared/model/ui-locale";
-import { threadActiveKey } from "../../../../../model/thread-active";
-import { threadAgentIdKey } from "../../../../../model/thread-agent-id";
-import { AISDKMessageConverter } from "../../../../../model/ui-to-thread-messages";
+import { threadActiveKey } from "../../../../../model/thread/thread-active";
+import { threadAgentIdKey } from "../../../../../model/thread/thread-agent-id";
+import { AISDKMessageConverter } from "../../../../../model/thread/ui-to-thread-messages";
 import AssistantProcessTimeline from "./AssistantProcessTimeline.vue";
 
 const props = withDefaults(
@@ -42,12 +42,13 @@ const threadMessages = computed(
     ) as ExternalThreadMessage[],
 );
 
-const lastAssistantId = computed(() => {
+/** 仅在 assistant 身份变化时重建 provider；正文增量靠 ExternalThread live config。 */
+const providerKey = computed(() => {
   for (let i = threadMessages.value.length - 1; i >= 0; i -= 1) {
     const message = threadMessages.value[i];
     if (message?.role === "assistant") return message.id;
   }
-  return undefined;
+  return props.streaming ? "streaming" : "idle";
 });
 
 /**
@@ -66,21 +67,20 @@ const config = computed(() =>
   }),
 );
 
-/** 在隔离 Aui 作用域内挂到最后一条 assistant，再复用过程时间线。 */
+/**
+ * 在隔离 Aui 作用域内挂到最后一条 assistant，再复用过程时间线。
+ * 必须用 useAuiState 订阅 thread：getState() 非响应式，stream 推入后
+ * 若仍回落到 props 侧 id，会过早挂上 MessageByIdProvider 且不再重挂。
+ */
 const AssistantScope = defineComponent({
   name: "DelegationAssistantScope",
   setup() {
-    const aui = useAui();
-    const id = computed(() => {
-      try {
-        const list = aui.thread.getState().messages;
-        for (let i = list.length - 1; i >= 0; i -= 1) {
-          if (list[i]?.role === "assistant") return list[i]!.id;
-        }
-      } catch {
-        // thread 尚未就绪
+    const id = useAuiState((s) => {
+      const list = s.thread.messages;
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        if (list[i]?.role === "assistant") return list[i]!.id;
       }
-      return lastAssistantId.value;
+      return undefined as string | undefined;
     });
     return () => {
       if (!id.value) {
@@ -100,7 +100,7 @@ const AssistantScope = defineComponent({
 
 <template>
   <!-- 旁路只读：隔离 AuiProvider + 主 Agent 同一套过程 parts UI -->
-  <AuiProvider :config="config" :extends="null">
+  <AuiProvider :key="providerKey" :config="config" :extends="null">
     <div
       class="min-w-0 rounded-lg bg-muted px-3 py-3 text-sm leading-relaxed text-foreground"
       data-testid="delegation-process-body"

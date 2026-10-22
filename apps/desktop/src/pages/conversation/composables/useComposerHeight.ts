@@ -6,7 +6,7 @@ import {
   loadComposerInputHeight,
   maxComposerInputHeight,
   rememberComposerInputHeight,
-} from "../model/composer-height";
+} from "../model/composer/composer-height";
 
 const inputHeight = ref(loadComposerInputHeight());
 

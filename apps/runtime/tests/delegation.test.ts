@@ -4,9 +4,10 @@ import path from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { ApprovalBroker, createApprovalExtension } from "../src/session/hitl/approval.js";
+import { ApprovalBroker, createApprovalExtension } from "../src/session/hitl/approval/index.js";
 import { DelegationService, DelegationStore } from "../src/session/delegation/index.js";
 import {
+  CANCEL_DELEGATION_TOOL,
   CHECK_DELEGATION_TOOL,
   DELEGATE_TO_AGENT_TOOL,
   LIST_RECRUITED_AGENTS_TOOL,
@@ -53,6 +54,7 @@ it("adds delegation tools for personal and recruited visits", () => {
   expect(personal.tools).toContain(LIST_RECRUITED_AGENTS_TOOL);
   expect(personal.tools).toContain(DELEGATE_TO_AGENT_TOOL);
   expect(personal.tools).toContain(CHECK_DELEGATION_TOOL);
+  expect(personal.tools).toContain(CANCEL_DELEGATION_TOOL);
 
   const recruited = buildSessionPlan(
     {
@@ -218,6 +220,53 @@ it("enriches delegate approval args with agent_name for the UI", async () => {
   });
 });
 
+it("enriches fan-out approval args and grants session for each target", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-fan-"));
+  const broker = new ApprovalBroker(root);
+  let handler:
+    | ((event: Record<string, unknown>, context: { signal?: AbortSignal }) => Promise<unknown>)
+    | undefined;
+  const extension = createApprovalExtension(broker, "patient", PERSONAL_ASSISTANT_ID, {
+    resolveDelegationLabel: async (toAgentId) =>
+      toAgentId === "weather" ? "天气" : toAgentId === "coder" ? "码农" : toAgentId,
+  });
+  await extension({
+    on(event: string, value: typeof handler) {
+      if (event === "tool_call") handler = value;
+      return vi.fn();
+    },
+  } as never);
+
+  const seen = vi.fn();
+  broker.subscribe((request) => {
+    seen(request.args);
+    broker.decide(request.id, true, "session");
+  });
+  await handler!(
+    {
+      type: "tool_call",
+      toolCallId: "d-fan",
+      toolName: DELEGATE_TO_AGENT_TOOL,
+      input: {
+        tasks: [
+          { agent_id: "weather", brief: "查天气" },
+          { agent_id: "coder", brief: "写脚本" },
+        ],
+      },
+    },
+    { signal: undefined },
+  );
+  expect(seen).toHaveBeenCalledWith(
+    expect.objectContaining({
+      agent_name: "天气、码农",
+      agent_names: ["天气", "码农"],
+      fanout_count: 2,
+    }),
+  );
+  expect(getDelegationAllow(root, "patient", "weather")).toBe("session");
+  expect(getDelegationAllow(root, "patient", "coder")).toBe("session");
+});
+
 it("lists disk-synced market agents when offline", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-list-"));
   const agentRoot = path.join(root, "users", "patient", "agents", "weather");
@@ -332,6 +381,8 @@ it("registers delegate tools for any visit agent", async () => {
     {
       listRecruited: vi.fn(),
       delegate: vi.fn(),
+      delegateFanout: vi.fn(),
+      cancel: vi.fn(),
       getTask: vi.fn(),
       listTasks: vi.fn(),
       acknowledge: vi.fn(),
@@ -346,8 +397,58 @@ it("registers delegate tools for any visit agent", async () => {
   expect(names).toEqual([
     LIST_RECRUITED_AGENTS_TOOL,
     DELEGATE_TO_AGENT_TOOL,
+    CANCEL_DELEGATION_TOOL,
     CHECK_DELEGATION_TOOL,
   ]);
+});
+
+it("cancels a running task via AbortController", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-cancel-"));
+  const store = new DelegationStore(root);
+  const task = store.create({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "weather",
+    toAgentName: "天气",
+    brief: "查天气",
+    wait: false,
+  });
+  store.update(task.id, { status: "running" });
+  const service = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => testModel(),
+    approvals: new ApprovalBroker(),
+    askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
+  });
+  // 无 controller 时仍可标记 cancelled（排队/落盘恢复场景）
+  const cancelled = service.cancel(task.id, "patient");
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.error).toBe("用户已取消");
+});
+
+it("lists tasks filtered by fromAgentId", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-from-"));
+  const store = new DelegationStore(root);
+  store.create({
+    userId: "patient",
+    fromAgentId: "personal-assistant",
+    toAgentId: "weather",
+    toAgentName: "天气",
+    brief: "a",
+    wait: false,
+  });
+  store.create({
+    userId: "patient",
+    fromAgentId: "other",
+    toAgentId: "weather",
+    toAgentName: "天气",
+    brief: "b",
+    wait: false,
+  });
+  const fromPa = store.list("patient", { fromAgentId: "personal-assistant" });
+  expect(fromPa).toHaveLength(1);
+  expect(fromPa[0]?.brief).toBe("a");
 });
 
 it("persists delegation allow in state.json", () => {

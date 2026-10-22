@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractAssistAgents } from "../../src/pages/conversation/model/message-assistants";
+import { extractAssistAgents } from "../../src/pages/conversation/model/message/message-assistants";
 
 describe("extractAssistAgents", () => {
   it("收录成功、进行中与失败的 delegate_to_agent，并按首次出现去重", () => {
@@ -79,5 +79,38 @@ describe("extractAssistAgents", () => {
     ]);
     expect(failed).toHaveLength(1);
     expect(failed[0]?.status).toBe("failed");
+  });
+
+  it("透传工具 part 的墙钟 timing，升级状态时保留 startedAt", () => {
+    const running = extractAssistAgents([
+      {
+        type: "tool-call",
+        toolName: "delegate_to_agent",
+        toolCallId: "d1",
+        args: { agent_id: "weather", brief: "查" },
+        timing: { startedAt: 1_000 },
+      },
+    ]);
+    expect(running[0]).toMatchObject({
+      status: "running",
+      startedAt: 1_000,
+    });
+
+    const done = extractAssistAgents([
+      {
+        type: "tool-call",
+        toolName: "delegate_to_agent",
+        toolCallId: "d1",
+        args: { agent_id: "weather", brief: "查" },
+        timing: { startedAt: 1_000, completedAt: 4_500 },
+        result:
+          "Delegation completed.\ntask_id: task-1\nagent: 天气助手 (weather)\nresult:\nok",
+      },
+    ]);
+    expect(done[0]).toMatchObject({
+      status: "completed",
+      startedAt: 1_000,
+      completedAt: 4_500,
+    });
   });
 });

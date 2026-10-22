@@ -90,10 +90,12 @@ describe("runtime sync", () => {
     fs.mkdirSync(path.dirname(report));
     fs.writeFileSync(report, "检查记录");
     const instancePath = path.join(visit.root, "instance.json");
-    fs.writeFileSync(
-      instancePath,
-      fs.readFileSync(instancePath, "utf8").replace('"active_session_id": "main"', '"active_session_id": "branch-1"'),
-    );
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-sync-proj-"));
+    const projectReal = fs.realpathSync(project);
+    const instance = JSON.parse(fs.readFileSync(instancePath, "utf8")) as Record<string, unknown>;
+    instance.active_session_id = "branch-1";
+    instance.project_roots = [projectReal];
+    fs.writeFileSync(instancePath, `${JSON.stringify(instance, null, 2)}\n`);
 
     current = release(2, "第二版");
     const upgraded = await runtime.sync("patient", "tax-advisor");
@@ -103,6 +105,7 @@ describe("runtime sync", () => {
     expect(fs.readFileSync(session, "utf8")).toBe('{"role":"user","text":"你好"}\n');
     expect(fs.readFileSync(report, "utf8")).toBe("检查记录");
     expect(fs.readFileSync(instancePath, "utf8")).toContain('"active_session_id": "branch-1"');
+    expect(JSON.parse(fs.readFileSync(instancePath, "utf8")).project_roots).toEqual([projectReal]);
     expect(fs.readdirSync(path.join(upgraded.root, "cwd")).some((name) => name.startsWith(".pi.staging-"))).toBe(false);
     expect(fs.readdirSync(path.join(upgraded.root, "cwd")).some((name) => name.startsWith(".pi.backup-"))).toBe(false);
   });

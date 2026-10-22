@@ -1,7 +1,7 @@
 {
   "name": "@agentup/desktop",
   "productName": "AgentUp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AgentUp desktop — 本机 AI Agent 工作台",
   "author": "AgentUp",
   "private": true,
@@ -17,9 +17,9 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@assistant-ui/ai-sdk": "^0.0.12",
-    "@assistant-ui/core": "^0.3.25",
-    "@assistant-ui/vue": "^0.0.2",
+    "@assistant-ui/ai-sdk": "^0.0.14",
+    "@assistant-ui/core": "^0.3.30",
+    "@assistant-ui/vue": "^0.0.5",
     "@lucide/vue": "^1.54.0",
     "@playwright/test": "^1.64.0",
     "@tailwindcss/vite": "^4.3.3",
@@ -68,7 +68,9 @@
     "protocols": [
       {
         "name": "AgentUp",
-        "schemes": ["agentup"]
+        "schemes": [
+          "agentup"
+        ]
       }
     ],
     "mac": {

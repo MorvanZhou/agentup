@@ -4,7 +4,7 @@ import {
   forgetComposerDraft,
   rememberComposerDraft,
   takeComposerDraft,
-} from "../../src/pages/conversation/model/composer-draft.js";
+} from "../../src/pages/conversation/model/composer/composer-draft.js";
 
 it("remembers and takes composer draft per agent", () => {
   rememberComposerDraft("weather", "上海天气");

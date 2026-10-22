@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { revealInFolderLabel } from "../../src/pages/conversation/model/reveal-label.js";
+import { revealInFolderLabel } from "../../src/pages/conversation/model/workspace/reveal-label.js";
 
 it("labels reveal action by platform", () => {
   expect(revealInFolderLabel("darwin")).toBe("在 Finder 中显示");

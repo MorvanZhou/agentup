@@ -7,6 +7,7 @@ import { packageDigest } from "../../package/digest.js";
 import type { Visit } from "../../package/sync.js";
 import { validateAgentPackage } from "../../package/validate.js";
 import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
+import { parseStoredProjectRoots } from "../../session/workspace/project-roots.js";
 import {
   AgentIdentityError,
   BACKGROUND_MAX,
@@ -57,6 +58,8 @@ interface StoredInstance {
   tools: string[];
   model_capabilities: string[];
   project_trust: "granted";
+  /** 用户显式挂载的外部项目目录（realpath） */
+  project_roots?: string[];
   created_at: string;
   updated_at: string;
   /** 市场侧 agent_id；与本机 loc-* 一对一绑定 */
@@ -695,6 +698,7 @@ function readStoredInstance(root: string): StoredInstance {
       : ["tools"];
   const active =
     typeof value.active_session_id === "string" && value.active_session_id ? value.active_session_id : "main";
+  const projectRoots = parseStoredProjectRoots(value.project_roots);
   const stored: StoredInstance = {
     kind: "local",
     user_id: value.user_id,
@@ -708,6 +712,7 @@ function readStoredInstance(root: string): StoredInstance {
     tools,
     model_capabilities: caps,
     project_trust: "granted",
+    ...(projectRoots.length > 0 ? { project_roots: projectRoots } : {}),
     created_at: value.created_at,
     updated_at: value.updated_at,
     ...(typeof value.published_agent_id === "string" && value.published_agent_id.trim()

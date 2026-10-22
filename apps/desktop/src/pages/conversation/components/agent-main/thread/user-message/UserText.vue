@@ -4,11 +4,11 @@ import type {} from "@assistant-ui/core/store";
 import { computed } from "vue";
 
 import { useOpenWorkspaceFile } from "../../../../composables/useOpenWorkspaceFile";
-import { splitEmojiText } from "../../../../model/emoji-data";
+import { splitEmojiText } from "../../../../model/composer/emoji-data";
 import {
   partitionDisplayAttachments,
   segmentDisplayMessage,
-} from "../../../../model/skill-text";
+} from "../../../../model/composer/skill-text";
 import FileChip from "../composer/chips/FileChip.vue";
 import SkillChip from "../composer/chips/SkillChip.vue";
 

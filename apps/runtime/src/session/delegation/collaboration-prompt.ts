@@ -6,15 +6,12 @@ export function formatCollaborationPrompt(): string {
   return [
     "# AgentUp Collaboration",
     "",
-    "You can collaborate with specialists from the user's contact list: local private agents and market agents they recruited.",
-    "Each specialist has a distinct name, role, and background — use them for more accurate results when the task fits their expertise.",
+    "Collaborate with specialists from the user's contact list (local + recruited) when their role/background fits.",
+    "Relevant candidates may appear each turn; use list_recruited_agents to search or list more.",
+    "Delegate with delegate_to_agent (user must approve). You own the user-facing reply — synthesize, don't dump or hand off.",
     "",
-    "How to collaborate:",
-    "- Relevant candidates may appear each turn as a \"Relevant recruited agents\" context block.",
-    "- To search or list more, call list_recruited_agents (optional query over name / role / background). The list includes local agents.",
-    "- Delegate a bounded subtask with delegate_to_agent; the user must approve the consultation.",
-    "- You keep ownership of the user-facing reply: synthesize the specialist's result; do not dump it raw or hand off the conversation.",
-    "",
-    "Do not delegate trivial work that is clearly within your own role. Keep briefs minimal — only what the specialist needs.",
+    "wait=true (default for one short task): need the answer this turn. wait=false: long/parallel work; return task_id, then check_delegation or wait for a session notice — never invent results. cancel_delegation(task_id) stops a running async task.",
+    "Fan-out: prefer one call with tasks=[{agent_id, brief}, ...] (≤8, default async); or multiple wait=false calls. Briefs minimal and non-overlapping; skip trivial work you can do yourself.",
+    "Non-specialist long shell work: bg_run(command) (async, needs approval like bash); bg_status / bg_kill. Prefer delegate_to_agent when expertise matters.",
   ].join("\n");
 }

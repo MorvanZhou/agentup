@@ -11,7 +11,7 @@ import {
   totalBlocked,
   totalUnread,
   unreadLabel,
-} from "../../src/pages/conversation/model/conversation-row.js";
+} from "../../src/pages/conversation/model/sidebar/conversation-row.js";
 import type { AgentCard } from "../../src/shared/model/runtime.js";
 
 function card(partial: Partial<AgentCard> & Pick<AgentCard, "agentId" | "name">): AgentCard {

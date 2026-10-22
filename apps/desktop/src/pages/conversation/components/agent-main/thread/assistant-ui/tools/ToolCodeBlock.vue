@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { highlightCodeHtml, languageFromPath } from "../../../../../model/highlight-code";
+import { highlightCodeHtml, languageFromPath } from "../../../../../model/render/highlight-code";
 import { splitContentLines } from "./tool-file-view";
 
 const props = withDefaults(

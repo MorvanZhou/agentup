@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { shouldDismissHitlOnStop } from "../../src/pages/conversation/model/hitl-dismiss.js";
+import { shouldDismissHitlOnStop } from "../../src/pages/conversation/model/thread/hitl-dismiss.js";
 
 it("dismisses HITL only when a running turn stops as incomplete/cancelled", () => {
   expect(shouldDismissHitlOnStop(false, false, { type: "incomplete", reason: "cancelled" })).toBe(

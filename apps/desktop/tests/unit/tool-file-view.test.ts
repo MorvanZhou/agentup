@@ -14,7 +14,7 @@ import {
   escapeHtml,
   highlightCodeHtml,
   languageFromPath,
-} from "../../src/pages/conversation/model/highlight-code.js";
+} from "../../src/pages/conversation/model/render/highlight-code.js";
 
 it("reads path and read ranges from args", () => {
   expect(filePathFromArgs({ path: "a/b.ts" })).toBe("a/b.ts");

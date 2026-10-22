@@ -9,7 +9,7 @@ import {
   planFromTodoParts,
   todoPlacement,
   todoPlanKey,
-} from "../../src/pages/conversation/model/todo-list.js";
+} from "../../src/pages/conversation/model/message/todo-list.js";
 
 it("reads checklist lines and an error lead from a todo result", () => {
   expect(

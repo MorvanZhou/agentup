@@ -8,12 +8,12 @@ import { t, tf } from "../../../../../../../shared/model/ui-locale";
 import {
   parseDelegationResultText,
   parseDelegationTaskId,
-} from "../../../../../model/message-assistants";
-import { injectThreadDelegation } from "../../../../../model/thread-delegation";
+} from "../../../../../model/message/message-assistants";
+import { injectThreadDelegation } from "../../../../../model/thread/thread-delegation";
 import {
   injectThreadRoster,
   resolveRosterAgent,
-} from "../../../../../model/thread-roster";
+} from "../../../../../model/thread/thread-roster";
 import ToolCard from "./ToolCard.vue";
 import { useToolPart } from "./useToolPart";
 
@@ -57,7 +57,14 @@ const icon = computed(() => {
   }
 });
 
+const fanoutCount = computed(() =>
+  Array.isArray(args.value.tasks) ? args.value.tasks.length : 0,
+);
+
 const brief = computed(() => {
+  if (fanoutCount.value > 1) {
+    return tf("delegateFanoutBrief", { count: fanoutCount.value });
+  }
   const raw = typeof args.value.brief === "string" ? args.value.brief.trim() : "";
   return raw;
 });
@@ -72,6 +79,9 @@ const parsedResult = computed(() => parseDelegationResultText(resultText.value))
 
 /** 展示名：侧栏备注/名片名 → 结果里的名字；绝不回退成 agent_id。 */
 const agentLabel = computed(() => {
+  if (fanoutCount.value > 1) {
+    return tf("delegateFanoutLabel", { count: fanoutCount.value });
+  }
   if (!agentId.value) return parsedResult.value.agentName || "";
   const card = resolveRosterAgent(roster.value, agentId.value, parsedResult.value.agentName);
   const label = (card.remark || card.name || parsedResult.value.agentName).trim();
@@ -87,12 +97,18 @@ const detail = computed(() => {
   }
   if (toolName.value === "check_delegation") {
     const taskId = typeof args.value.task_id === "string" ? args.value.task_id.trim() : "";
+    const taskIds = Array.isArray(args.value.task_ids) ? args.value.task_ids.length : 0;
     if (isRunning.value) {
+      if (taskIds > 1) return tf("delegateQueryFanout", { count: taskIds });
       return taskId ? tf("delegateQueryId", { id: taskId.slice(0, 8) }) : t("delegateQueryRecent");
     }
+    if (taskIds > 1) return tf("delegateFanoutLabel", { count: taskIds });
     return taskId || t("delegateRecent");
   }
   if (isRunning.value) {
+    if (fanoutCount.value > 1) {
+      return tf("delegateAskingFanout", { count: fanoutCount.value });
+    }
     return agentLabel.value
       ? tf("delegateAsking", { name: agentLabel.value })
       : t("delegateAskingGeneric");

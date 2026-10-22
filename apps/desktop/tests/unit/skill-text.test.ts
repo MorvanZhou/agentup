@@ -11,7 +11,7 @@ import {
   skillCommandText,
   slashQueryAtCursor,
   slashSkillQuery,
-} from "../../src/pages/conversation/model/skill-text";
+} from "../../src/pages/conversation/model/composer/skill-text";
 
 describe("slashQueryAtCursor", () => {
   it("detects slash queries at arbitrary cursor positions", () => {

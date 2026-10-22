@@ -6,8 +6,8 @@ import {
   findAttachmentRefs,
   insertAttachmentReference,
   middleEllipsisFileName,
-} from "../../src/pages/conversation/model/attachment-ref";
-import { segmentComposerText, serializeComposerSegments } from "../../src/pages/conversation/model/skill-text";
+} from "../../src/pages/conversation/model/composer/attachment-ref";
+import { segmentComposerText, serializeComposerSegments } from "../../src/pages/conversation/model/composer/skill-text";
 
 it("inserts @ATTACHMENTS ref at cursor with spacing", () => {
   const next = insertAttachmentReference("看 ", 2, 2, "ATTACHMENTS/a1b2c3d4-note.txt");

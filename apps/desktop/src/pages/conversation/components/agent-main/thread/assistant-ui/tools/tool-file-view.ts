@@ -1,4 +1,4 @@
-import { languageFromPath } from "../../../../../model/highlight-code";
+import { languageFromPath } from "../../../../../model/render/highlight-code";
 import { argString } from "./tool-args";
 
 export { languageFromPath };

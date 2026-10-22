@@ -13,7 +13,7 @@ vi.mock("../src/control/client.js", async (importOriginal) => {
 });
 
 import { listAgents } from "../src/control/client.js";
-import { ApprovalBroker } from "../src/session/hitl/approval.js";
+import { ApprovalBroker } from "../src/session/hitl/approval/index.js";
 import { DelegationService } from "../src/session/delegation/index.js";
 import {
   discoverRecruitedAgents,

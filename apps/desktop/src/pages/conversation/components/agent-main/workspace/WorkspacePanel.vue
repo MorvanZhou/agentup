@@ -3,6 +3,7 @@ import {
   ChevronLeftIcon,
   FilePlusIcon,
   FolderPlusIcon,
+  FolderInputIcon,
   RefreshCwIcon,
   Trash2Icon,
   XIcon,
@@ -13,8 +14,8 @@ import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import type { WorkspaceEntry } from "../../../../../shared/api/runtime/workspace";
 import { t, tf } from "../../../../../shared/model/ui-locale";
 import { useWorkspace } from "../../../composables/useWorkspace";
-import { joinWorkspacePath } from "../../../model/workspace-path";
-import { WORKSPACE_TABS, workspaceTabLabel } from "../../../model/workspace-roots";
+import { joinWorkspacePath } from "../../../model/workspace/workspace-path";
+import { WORKSPACE_TABS, workspaceTabLabel } from "../../../model/workspace/workspace-roots";
 import WorkspaceBrowser from "./WorkspaceBrowser.vue";
 import WorkspacePreview from "./WorkspacePreview.vue";
 
@@ -47,6 +48,8 @@ const {
   title,
   canGoUp,
   canCreate,
+  canAddProject,
+  atProjectList,
   openEntry,
   back,
   refresh,
@@ -55,6 +58,7 @@ const {
   rename,
   removeMany,
   reveal,
+  addProject,
 } = useWorkspace({
   token: toRef(props, "token"),
   userId: toRef(props, "userId"),
@@ -77,6 +81,10 @@ const showCreateTools = computed(() => showTreeTools.value && canCreate.value);
 const deleteDescription = computed(() => {
   const targets = deleteTargets.value;
   if (targets.length === 0) return "";
+  if (atProjectList.value) {
+    if (targets.length === 1) return tf("wsUnmountOne", { name: targets[0] ?? "" });
+    return tf("wsUnmountMany", { n: targets.length });
+  }
   if (targets.length === 1) {
     const name = targets[0]?.includes("/")
       ? targets[0].slice(targets[0].lastIndexOf("/") + 1)
@@ -109,6 +117,7 @@ async function confirmCreate(): Promise<void> {
 }
 
 function openRename(entry: WorkspaceEntry): void {
+  if (atProjectList.value) return;
   renameEntry.value = entry;
   renameDraft.value = entry.name;
 }
@@ -219,6 +228,16 @@ async function confirmRemove(): Promise<void> {
         @click="openCreate('dir')"
       >
         <FolderPlusIcon class="size-3.5" />
+      </button>
+      <button
+        v-if="canAddProject"
+        type="button"
+        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground disabled:opacity-50"
+        :aria-label="t('wsAddProject')"
+        :disabled="busy"
+        @click="addProject"
+      >
+        <FolderInputIcon class="size-3.5" />
       </button>
       <button
         v-if="dirty"

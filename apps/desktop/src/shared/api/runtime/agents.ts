@@ -366,3 +366,141 @@ export async function sync(
     packageDigest: payload.package_digest,
   };
 }
+
+export type ApprovalChoice = "once" | "session" | "agent";
+
+export type AgentApprovals = {
+  command: ApprovalChoice;
+  tools: Array<{
+    toolName: string;
+    kind: "mcp_server" | "mcp_tool";
+    label: string;
+    scope: ApprovalChoice;
+  }>;
+  delegation: {
+    anyone: "once" | "agent";
+    targets: Array<{ agentId: string; scope: "session" | "agent" }>;
+  };
+};
+
+export type AgentApprovalsPatch = {
+  command?: ApprovalChoice;
+  tools?: Array<{ toolName: string; scope: ApprovalChoice }>;
+  delegation?: {
+    anyone?: "once" | "agent";
+    targets?: Array<{ agentId: string; scope: ApprovalChoice }>;
+  };
+};
+
+export async function agentApprovals(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  userId: string,
+): Promise<AgentApprovals> {
+  const payload = await http.request(
+    `/agents/${encodeURIComponent(agentId)}/approvals?user_id=${encodeURIComponent(userId)}`,
+    token,
+  );
+  return readAgentApprovals(payload);
+}
+
+export async function saveAgentApprovals(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  userId: string,
+  patch: AgentApprovalsPatch,
+): Promise<AgentApprovals> {
+  const payload = await http.request(
+    `/agents/${encodeURIComponent(agentId)}/approvals`,
+    token,
+    {
+      user_id: userId,
+      ...(patch.command !== undefined ? { command: patch.command } : {}),
+      ...(patch.tools
+        ? {
+            tools: patch.tools.map((item) => ({
+              tool_name: item.toolName,
+              scope: item.scope,
+            })),
+          }
+        : {}),
+      ...(patch.delegation
+        ? {
+            delegation: {
+              ...(patch.delegation.anyone !== undefined
+                ? { anyone: patch.delegation.anyone }
+                : {}),
+              ...(patch.delegation.targets
+                ? {
+                    targets: patch.delegation.targets.map((item) => ({
+                      agent_id: item.agentId,
+                      scope: item.scope,
+                    })),
+                  }
+                : {}),
+            },
+          }
+        : {}),
+    },
+    "PUT",
+  );
+  return readAgentApprovals(payload);
+}
+
+function readAgentApprovals(payload: Record<string, unknown>): AgentApprovals {
+  if (payload.command !== "once" && payload.command !== "session" && payload.command !== "agent") {
+    throw new DesktopApiError("审批配置无效");
+  }
+  if (!Array.isArray(payload.tools)) throw new DesktopApiError("审批配置无效");
+  const tools: AgentApprovals["tools"] = [];
+  for (const [index, item] of payload.tools.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new DesktopApiError(`审批工具[${index}]无效`);
+    }
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.tool_name !== "string" ||
+      (row.kind !== "mcp_server" && row.kind !== "mcp_tool") ||
+      typeof row.label !== "string" ||
+      (row.scope !== "once" && row.scope !== "session" && row.scope !== "agent")
+    ) {
+      throw new DesktopApiError(`审批工具[${index}]无效`);
+    }
+    tools.push({
+      toolName: row.tool_name,
+      kind: row.kind,
+      label: row.label,
+      scope: row.scope,
+    });
+  }
+  const delegationRaw = payload.delegation;
+  if (!delegationRaw || typeof delegationRaw !== "object" || Array.isArray(delegationRaw)) {
+    throw new DesktopApiError("审批配置无效");
+  }
+  const delegation = delegationRaw as Record<string, unknown>;
+  if (delegation.anyone !== "once" && delegation.anyone !== "agent") {
+    throw new DesktopApiError("审批配置无效");
+  }
+  if (!Array.isArray(delegation.targets)) throw new DesktopApiError("审批配置无效");
+  const targets: AgentApprovals["delegation"]["targets"] = [];
+  for (const [index, item] of delegation.targets.entries()) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new DesktopApiError(`会诊目标[${index}]无效`);
+    }
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.agent_id !== "string" ||
+      (row.scope !== "session" && row.scope !== "agent")
+    ) {
+      throw new DesktopApiError(`会诊目标[${index}]无效`);
+    }
+    targets.push({ agentId: row.agent_id, scope: row.scope });
+  }
+  return {
+    command: payload.command,
+    tools,
+    delegation: { anyone: delegation.anyone, targets },
+  };
+}

@@ -63,4 +63,7 @@ export const zh: Record<string, string> = {
   "la.err.skillExportFailed": "导出 Skill 失败",
 
   "chat.modelUnavailable": "当前模型服务不可用，请尝试切换模型。",
+  "chat.outputLengthExceeded":
+    "输出达到模型上限（自动续写后仍无可用正文，可能被推理占满）。可拆小任务或换更大输出上限的模型。",
+  "chat.emptyAssistantResult": "未返回可用结果",
 };

@@ -4,7 +4,7 @@ import {
   COMPOSER_INPUT_MIN_HEIGHT,
   clampComposerInputHeight,
   maxComposerInputHeight,
-} from "../../src/pages/conversation/model/composer-height.js";
+} from "../../src/pages/conversation/model/composer/composer-height.js";
 
 it("clamps composer input height to min and max", () => {
   expect(clampComposerInputHeight(40, 64, 200)).toBe(64);

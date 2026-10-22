@@ -26,6 +26,8 @@ interface Window {
     encryptSecret?(plaintext: string): Promise<string>;
     decryptSecret?(cipher: string): Promise<string>;
     selectSkillPackage(kind: "directory" | "zip"): Promise<string | null>;
+    /** 选择本机目录；返回绝对路径，取消为 null。 */
+    selectDirectory?(): Promise<string | null>;
     /** 另存为对话框；返回绝对路径，取消为 null。 */
     selectSavePath?(defaultName?: string): Promise<string | null>;
     openVisitDirectory(directory: string): Promise<void>;

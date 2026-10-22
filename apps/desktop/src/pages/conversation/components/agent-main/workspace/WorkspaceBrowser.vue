@@ -12,7 +12,7 @@ import {
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
 import type { WorkspaceEntry } from "../../../../../shared/api/runtime/workspace";
 import { t, tf } from "../../../../../shared/model/ui-locale";
-import { detectDesktopPlatform, revealInFolderLabel } from "../../../model/reveal-label";
+import { detectDesktopPlatform, revealInFolderLabel } from "../../../model/workspace/reveal-label";
 
 const props = defineProps<{
   entries: WorkspaceEntry[];
@@ -124,7 +124,7 @@ function onItemMenu(entry: WorkspaceEntry, id: string): void {
           >
             <FolderIcon
               v-if="entry.kind === 'dir'"
-              class="size-3.5 shrink-0 text-muted-foreground"
+              class="size-3.5 shrink-0 text-accent"
               aria-hidden="true"
             />
             <FileIcon v-else class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />

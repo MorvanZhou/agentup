@@ -7,7 +7,7 @@ import { AgentSourceError } from "../package/source.js";
 import { NotRecruited, PackageMismatch } from "../package/sync.js";
 import { AttachmentError } from "../session/workspace/attachments.js";
 import { SessionRefused } from "../session/plan.js";
-import { ChatBusy } from "../session/turn.js";
+import { ChatBusy } from "../session/turn/index.js";
 import {
   json,
   LocalError,
@@ -19,6 +19,7 @@ import { LocalAgentError } from "./agents/local-agent.js";
 import { PersonalAssistantError } from "./assistant/personal-assistant.js";
 import { registerLocalRoutes } from "./routes/index.js";
 import { UserResourceError } from "./assistant/user-resources.js";
+import { ProjectRootsError } from "../session/workspace/project-roots.js";
 import { WorkspaceError } from "./workspace.js";
 
 export type { LocalAppDeps, LocalAppEnv } from "./http.js";
@@ -86,7 +87,7 @@ export function createLocalApp(deps: LocalAppDeps): Hono<LocalAppEnv> {
     if (error instanceof PersonalAssistantError || error instanceof LocalAgentError) {
       return json(c, 400, { error: error.message });
     }
-    if (error instanceof WorkspaceError) {
+    if (error instanceof WorkspaceError || error instanceof ProjectRootsError) {
       return json(c, httpStatus(error.status, 400), { error: error.message });
     }
     if (error instanceof AttachmentError) {

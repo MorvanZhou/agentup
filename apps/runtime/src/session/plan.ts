@@ -18,6 +18,9 @@ const BUILTIN_TOOLS = [
   "web_fetch",
   "ask_user",
   "todo",
+  "bg_run",
+  "bg_status",
+  "bg_kill",
 ];
 
 /** 列出已招募专家并委托子任务（私人助理与第三方 Agent 共用）。 */
@@ -25,6 +28,7 @@ const DELEGATION_TOOLS = [
   "list_recruited_agents",
   "delegate_to_agent",
   "check_delegation",
+  "cancel_delegation",
 ];
 
 export interface SessionProviderBinding {

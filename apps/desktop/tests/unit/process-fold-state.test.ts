@@ -4,7 +4,7 @@ import {
   clearProcessFoldState,
   getProcessFoldOverride,
   setProcessFoldOverride,
-} from "../../src/pages/conversation/model/process-fold-state.js";
+} from "../../src/pages/conversation/model/message/process-fold-state.js";
 
 it("stores fold overrides per agent/message/group and clears on re-enter", () => {
   clearProcessFoldState("");

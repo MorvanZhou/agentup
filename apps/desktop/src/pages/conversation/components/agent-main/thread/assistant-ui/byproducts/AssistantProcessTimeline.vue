@@ -4,11 +4,11 @@ import type {} from "@assistant-ui/core/store";
 import { computed } from "vue";
 
 import { t } from "../../../../../../../shared/model/ui-locale";
-import { buildAssistantTimeline } from "../../../../../model/assistant-process";
-import { injectPendingAskUserToolCallId } from "../../../../../model/thread-ask-user";
-import { injectPendingApprovalToolCallId } from "../../../../../model/thread-approval";
-import { injectThreadAgentId } from "../../../../../model/thread-agent-id";
-import { isAwaitingNextStep } from "../../../../../model/turn-progress";
+import { buildAssistantTimeline } from "../../../../../model/message/assistant-process";
+import { injectPendingAskUserToolCallId } from "../../../../../model/thread/thread-ask-user";
+import { injectPendingApprovalToolCallId } from "../../../../../model/thread/thread-approval";
+import { injectThreadAgentId } from "../../../../../model/thread/thread-agent-id";
+import { isAwaitingNextStep } from "../../../../../model/message/turn-progress";
 import AssistantPart from "../parts/AssistantPart.vue";
 import MarkdownText from "../parts/MarkdownText.vue";
 import ShimmerTitle from "../parts/ShimmerTitle.vue";

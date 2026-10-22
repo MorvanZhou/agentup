@@ -6,7 +6,15 @@ import { argString, shortPath } from "./tool-args";
 import { useToolPart } from "./useToolPart";
 import ToolCard from "./ToolCard.vue";
 
-const { args } = useToolPart();
+const {
+  args,
+  isError,
+  isInterrupted,
+  resultText,
+  hasResult,
+  isActive,
+} = useToolPart();
+
 const detail = computed(() => {
   const pattern =
     argString(args.value, "pattern") ||
@@ -16,8 +24,29 @@ const detail = computed(() => {
   if (pattern && path) return `${pattern} · ${shortPath(path)}`;
   return pattern || (path ? shortPath(path) : "");
 });
+const showOutput = computed(() => hasResult.value && Boolean(resultText.value));
 </script>
 
 <template>
-  <ToolCard title="Find" :detail="detail" :icon="ScanSearchIcon" />
+  <ToolCard
+    title="Find"
+    :detail="detail"
+    :icon="ScanSearchIcon"
+    :expandable="hasResult"
+    :prefer-open="showOutput && isActive"
+  >
+    <!-- 匹配路径列表 -->
+    <div v-if="hasResult" class="min-w-0 px-2.5 py-2">
+      <pre
+        class="bg-paper max-h-56 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-all"
+        :class="
+          isError
+            ? 'text-destructive'
+            : isInterrupted
+              ? 'text-muted-foreground'
+              : 'text-foreground'
+        "
+      >{{ resultText }}</pre>
+    </div>
+  </ToolCard>
 </template>

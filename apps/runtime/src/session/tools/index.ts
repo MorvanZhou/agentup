@@ -1,5 +1,7 @@
 /** Extension `registerTool` 工具：新增能力时在本目录加文件，并在此再导出。 */
 
+export { formatToolsUsagePrompt } from "./usage-prompt.js";
+
 export {
   ASK_USER_TOOL,
   AskUserBroker,
@@ -36,8 +38,18 @@ export {
 } from "./web.js";
 
 export {
+  CANCEL_DELEGATION_TOOL,
   CHECK_DELEGATION_TOOL,
   DELEGATE_TO_AGENT_TOOL,
   LIST_RECRUITED_AGENTS_TOOL,
   createDelegateExtension,
 } from "./delegate.js";
+
+export {
+  BG_KILL_TOOL,
+  BG_RUN_TOOL,
+  BG_STATUS_TOOL,
+  createBackgroundJobsExtension,
+} from "./background.js";
+
+export { createFsGuardExtension } from "./fs-guard.js";

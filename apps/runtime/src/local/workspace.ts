@@ -2,7 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/workspace/cwd-layout.js";
+import { isInside as isPathInside, readProjectRoots } from "../session/workspace/project-roots.js";
 import { ensurePersonalAssistant } from "./assistant/personal-assistant.js";
+import { isLocalAgentId, localAgentRoot } from "./agents/local-agent.js";
 
 /** 文本预览与保存上限。超出只返回元数据。 */
 export const TEXT_PREVIEW_LIMIT = 512 * 1024;
@@ -93,11 +95,17 @@ export function personalWorkspaceCwd(userDataRoot: string, userId: string): stri
   return cwd;
 }
 
-export function listWorkspace(cwd: string, relative: string): { path: string; entries: WorkspaceEntry[] } {
-  const located = locate(cwd, relative);
+type WorkspaceRootOptions = { ensureLayout?: boolean };
+
+export function listWorkspace(
+  cwd: string,
+  relative: string,
+  options?: WorkspaceRootOptions,
+): { path: string; entries: WorkspaceEntry[] } {
+  const located = locate(cwd, relative, options);
   if (!located.exists) throw new WorkspaceError("找不到文件", 404);
   if (!fs.statSync(located.real).isDirectory()) throw new WorkspaceError("不是目录", 400);
-  const root = cwdReal(cwd);
+  const root = cwdReal(cwd, options);
   const names = fs.readdirSync(located.real);
   const entries: WorkspaceEntry[] = [];
   for (const name of names) {
@@ -123,8 +131,12 @@ export function listWorkspace(cwd: string, relative: string): { path: string; en
   return { path: located.relative, entries };
 }
 
-export function readWorkspaceFile(cwd: string, relative: string): WorkspaceFile {
-  const located = locate(cwd, relative);
+export function readWorkspaceFile(
+  cwd: string,
+  relative: string,
+  options?: WorkspaceRootOptions,
+): WorkspaceFile {
+  const located = locate(cwd, relative, options);
   if (!located.relative) throw new WorkspaceError("不是文件", 400);
   if (!located.exists) throw new WorkspaceError("找不到文件", 404);
   if (!fs.statSync(located.real).isFile()) throw new WorkspaceError("不是文件", 400);
@@ -148,9 +160,14 @@ export function readWorkspaceFile(cwd: string, relative: string): WorkspaceFile 
   return { path: located.relative, kind: "text", size, text: fs.readFileSync(located.real, "utf8") };
 }
 
-export function writeWorkspaceText(cwd: string, relative: string, text: string): { path: string; size: number } {
+export function writeWorkspaceText(
+  cwd: string,
+  relative: string,
+  text: string,
+  options?: WorkspaceRootOptions,
+): { path: string; size: number } {
   if (Buffer.byteLength(text, "utf8") > TEXT_PREVIEW_LIMIT) throw new WorkspaceError("文件过大，无法保存", 413);
-  const located = locate(cwd, relative);
+  const located = locate(cwd, relative, options);
   if (!located.relative || !located.exists) throw new WorkspaceError("找不到文件", 404);
   if (!fs.statSync(located.real).isFile()) throw new WorkspaceError("不是文件", 400);
   fs.writeFileSync(located.real, text, "utf8");
@@ -161,33 +178,43 @@ export function createWorkspaceEntry(
   cwd: string,
   relative: string,
   kind: "file" | "dir",
+  options?: WorkspaceRootOptions,
 ): { path: string } {
   const rel = normalizeRelative(relative);
   if (!rel) throw new WorkspaceError("名称无效", 400);
   const parent = parentRelative(rel);
   assertEntryName(path.basename(rel), parent);
-  const located = locate(cwd, rel, { allowMissing: true });
+  const located = locate(cwd, rel, { allowMissing: true, ...options });
   if (located.exists) throw new WorkspaceError("已经存在", 409);
   if (kind === "dir") fs.mkdirSync(located.lexical);
   else fs.writeFileSync(located.lexical, "");
   return { path: rel };
 }
 
-export function renameWorkspaceEntry(cwd: string, relative: string, name: string): { path: string } {
-  const located = locate(cwd, relative);
+export function renameWorkspaceEntry(
+  cwd: string,
+  relative: string,
+  name: string,
+  options?: WorkspaceRootOptions,
+): { path: string } {
+  const located = locate(cwd, relative, options);
   if (!located.relative || !located.exists) throw new WorkspaceError("找不到文件", 404);
   const parent = parentRelative(located.relative);
   const nextName = assertEntryName(name, parent);
   const nextRelative = parent ? `${parent}/${nextName}` : nextName;
   if (nextRelative === located.relative) return { path: located.relative };
-  const destination = locate(cwd, nextRelative, { allowMissing: true });
+  const destination = locate(cwd, nextRelative, { allowMissing: true, ...options });
   if (destination.exists) throw new WorkspaceError("已经存在", 409);
   fs.renameSync(located.lexical, destination.lexical);
   return { path: nextRelative };
 }
 
-export function deleteWorkspaceEntry(cwd: string, relative: string): void {
-  const located = locate(cwd, relative);
+export function deleteWorkspaceEntry(
+  cwd: string,
+  relative: string,
+  options?: WorkspaceRootOptions,
+): void {
+  const located = locate(cwd, relative, options);
   if (!located.relative) throw new WorkspaceError("不能删除工作目录", 400);
   if (!located.exists) throw new WorkspaceError("找不到文件", 404);
   const stat = lstat(located.lexical);
@@ -199,8 +226,12 @@ export function deleteWorkspaceEntry(cwd: string, relative: string): void {
 }
 
 /** 返回 cwd 内已存在条目的本机绝对路径，供桌面在 Finder 中显示。 */
-export function resolveWorkspaceAbsolute(cwd: string, relative: string): { path: string } {
-  const located = locate(cwd, relative);
+export function resolveWorkspaceAbsolute(
+  cwd: string,
+  relative: string,
+  options?: WorkspaceRootOptions,
+): { path: string } {
+  const located = locate(cwd, relative, options);
   if (!located.exists) throw new WorkspaceError("找不到文件", 404);
   return { path: located.real };
 }
@@ -212,9 +243,13 @@ interface Located {
   exists: boolean;
 }
 
-function locate(cwd: string, relative: string, options?: { allowMissing?: boolean }): Located {
+function locate(
+  cwd: string,
+  relative: string,
+  options?: { allowMissing?: boolean; ensureLayout?: boolean },
+): Located {
   const rel = normalizeRelative(relative);
-  const root = cwdReal(cwd);
+  const root = cwdReal(cwd, { ensureLayout: options?.ensureLayout });
   const lexical = rel ? path.resolve(root, rel) : root;
   if (!isInside(root, lexical)) throw new WorkspaceError("路径无效", 400);
   const stat = lstat(lexical);
@@ -256,19 +291,18 @@ function assertUserId(userId: string): void {
   }
 }
 
-function assertCwd(cwd: string): void {
+function assertCwd(cwd: string, options?: { ensureLayout?: boolean }): void {
   if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new WorkspaceError("工作目录不存在", 404);
-  ensureCwdLayout(cwd);
+  if (options?.ensureLayout !== false) ensureCwdLayout(cwd);
 }
 
-function cwdReal(cwd: string): string {
-  assertCwd(cwd);
+function cwdReal(cwd: string, options?: { ensureLayout?: boolean }): string {
+  assertCwd(cwd, options);
   return fs.realpathSync(cwd);
 }
 
 function isInside(root: string, target: string): boolean {
-  const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-  return target === root || target.startsWith(prefix);
+  return isPathInside(root, target);
 }
 
 function lstat(target: string): fs.Stats | undefined {
@@ -301,7 +335,7 @@ export function isWorkspacePath(pathname: string): boolean {
   return PERSONAL_WORKSPACE.test(pathname) || AGENT_WORKSPACE.test(pathname);
 }
 
-/** 读写某次出诊的 cwd。调用方须已完成登录校验。 */
+/** 读写某次出诊的 cwd（或已挂载的项目根）。调用方须已完成登录校验。 */
 export function serveWorkspace(
   userDataRoot: string,
   method: string,
@@ -314,37 +348,96 @@ export function serveWorkspace(
   const action = personal ? personal[1] : agent ? agent[2] : undefined;
   if (!personal && !agent) throw new WorkspaceError("没有这个接口", 404);
   const userId = method === "GET" || method === "DELETE" ? searchParams.get("user_id") ?? "" : stringField(body, "user_id");
-  const cwd = personal
+  const agentId = personal ? undefined : decodeURIComponent(agent?.[1] ?? "");
+  const visitCwd = personal
     ? personalWorkspaceCwd(userDataRoot, userId)
-    : agentWorkspaceCwd(userDataRoot, userId, decodeURIComponent(agent?.[1] ?? ""));
+    : agentWorkspaceCwd(userDataRoot, userId, agentId ?? "");
+  const scope =
+    method === "GET" || method === "DELETE"
+      ? (searchParams.get("scope") ?? "cwd")
+      : typeof body.scope === "string"
+        ? body.scope
+        : "cwd";
+  const rootParam =
+    method === "GET" || method === "DELETE"
+      ? (searchParams.get("root") ?? "")
+      : typeof body.root === "string"
+        ? body.root
+        : "";
+  const { cwd, options } = resolveWorkspaceRoot(
+    userDataRoot,
+    userId,
+    personal ? "personal" : "agent",
+    personal ? undefined : agentId,
+    visitCwd,
+    scope,
+    rootParam,
+  );
   const relative = method === "GET" || method === "DELETE" ? (searchParams.get("path") ?? "") : stringField(body, "path", true);
   if (!action && method === "GET") {
-    const listed = listWorkspace(cwd, relative);
+    const listed = listWorkspace(cwd, relative, options);
     return { status: 200, payload: listed };
   }
   if (!action && method === "POST") {
     const kind = body.kind;
     if (kind !== "file" && kind !== "dir") throw new WorkspaceError("请求无效", 400);
-    return { status: 200, payload: createWorkspaceEntry(cwd, relative, kind) };
+    return { status: 200, payload: createWorkspaceEntry(cwd, relative, kind, options) };
   }
   if (!action && method === "DELETE") {
-    deleteWorkspaceEntry(cwd, relative);
+    deleteWorkspaceEntry(cwd, relative, options);
     return { status: 200, payload: { deleted: true } };
   }
   if (action === "file" && method === "GET") {
-    return { status: 200, payload: readWorkspaceFile(cwd, relative) };
+    return { status: 200, payload: readWorkspaceFile(cwd, relative, options) };
   }
   if (action === "file" && method === "PUT") {
     if (typeof body.text !== "string") throw new WorkspaceError("请求无效", 400);
-    return { status: 200, payload: writeWorkspaceText(cwd, relative, body.text) };
+    return { status: 200, payload: writeWorkspaceText(cwd, relative, body.text, options) };
   }
   if (action === "rename" && method === "POST") {
-    return { status: 200, payload: renameWorkspaceEntry(cwd, relative, stringField(body, "name")) };
+    return {
+      status: 200,
+      payload: renameWorkspaceEntry(cwd, relative, stringField(body, "name"), options),
+    };
   }
   if (action === "absolute" && method === "GET") {
-    return { status: 200, payload: resolveWorkspaceAbsolute(cwd, relative) };
+    return { status: 200, payload: resolveWorkspaceAbsolute(cwd, relative, options) };
   }
   throw new WorkspaceError("没有这个接口", 404);
+}
+
+function resolveWorkspaceRoot(
+  userDataRoot: string,
+  userId: string,
+  kind: "personal" | "agent",
+  agentId: string | undefined,
+  visitCwd: string,
+  scope: string,
+  rootParam: string,
+): { cwd: string; options?: WorkspaceRootOptions } {
+  if (scope !== "project") {
+    return { cwd: visitCwd };
+  }
+  if (!rootParam.trim()) throw new WorkspaceError("缺少项目根路径", 400);
+  const visitRoot = kind === "personal"
+    ? ensurePersonalAssistant(userDataRoot, userId)
+    : resolveAgentVisitRoot(userDataRoot, userId, agentId ?? "");
+  const granted = readProjectRoots(visitRoot, kind);
+  let requested: string;
+  try {
+    requested = fs.realpathSync(path.resolve(rootParam.trim()));
+  } catch {
+    throw new WorkspaceError("项目根无效", 400);
+  }
+  if (!granted.includes(requested)) {
+    throw new WorkspaceError("未挂载该项目目录", 403);
+  }
+  return { cwd: requested, options: { ensureLayout: false } };
+}
+
+function resolveAgentVisitRoot(userDataRoot: string, userId: string, agentId: string): string {
+  if (isLocalAgentId(agentId)) return localAgentRoot(userDataRoot, userId, agentId);
+  return path.resolve(userDataRoot, "users", userId, "agents", agentId);
 }
 
 function stringField(body: Record<string, unknown>, key: string, allowEmpty = false): string {

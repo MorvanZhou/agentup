@@ -31,16 +31,16 @@ import {
   type AskUserAnswer,
 } from "../../../../../shared/model/chat";
 import { t, tf } from "../../../../../shared/model/ui-locale";
-import { threadAskUserKey } from "../../../model/thread-ask-user";
-import { threadApprovalKey } from "../../../model/thread-approval";
-import { injectThreadExtras } from "../../../model/thread-extras";
-import { timeLabelsForVisibleIds } from "../../../model/message-time";
+import { threadAskUserKey } from "../../../model/thread/thread-ask-user";
+import { threadApprovalKey } from "../../../model/thread/thread-approval";
+import { injectThreadExtras } from "../../../model/thread/thread-extras";
+import { timeLabelsForVisibleIds } from "../../../model/message/message-time";
 import {
   THREAD_WINDOW_PAGE,
   expandWindowStart,
   initialWindowStart,
   visibleMessageIds,
-} from "../../../model/thread-window";
+} from "../../../model/thread/thread-window";
 import ApprovalDock from "./dock/ApprovalDock.vue";
 import AskUserDock from "./dock/AskUserDock.vue";
 import PlanDock from "./dock/PlanDock.vue";

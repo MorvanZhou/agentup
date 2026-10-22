@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { ChevronDownIcon, FilePenLineIcon, PuzzleIcon, TerminalIcon } from "@lucide/vue";
+import {
+  ChevronDownIcon,
+  FilePenLineIcon,
+  FolderInputIcon,
+  PuzzleIcon,
+  TerminalIcon,
+} from "@lucide/vue";
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -11,7 +17,7 @@ import { computed, ref, watch } from "vue";
 
 import type { AgentUpApprovalData, ApprovalScope } from "../../../../../../shared/model/chat";
 import { t } from "../../../../../../shared/model/ui-locale";
-import { summarizeApproval, type ApprovalKind } from "../../../../model/approval-summary";
+import { summarizeApproval, type ApprovalKind } from "../../../../model/message/approval-summary";
 
 const props = defineProps<{
   approval?: AgentUpApprovalData;
@@ -37,6 +43,7 @@ const kindIcon = computed(() => {
   const kind: ApprovalKind | undefined = summary.value?.kind;
   if (kind === "command") return TerminalIcon;
   if (kind === "write") return FilePenLineIcon;
+  if (kind === "project") return FolderInputIcon;
   return PuzzleIcon;
 });
 
@@ -44,6 +51,7 @@ const kindLabel = computed(() => {
   const kind: ApprovalKind | undefined = summary.value?.kind;
   if (kind === "command") return t("approvalCommand");
   if (kind === "write") return t("approvalWrite");
+  if (kind === "project") return t("approvalProject");
   return t("approvalTool");
 });
 

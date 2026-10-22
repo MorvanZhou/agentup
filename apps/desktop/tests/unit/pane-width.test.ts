@@ -7,7 +7,7 @@ import {
   clampWorkspaceWidth,
   maxSidebarWidth,
   maxWorkspaceWidth,
-} from "../../src/pages/conversation/model/pane-width.js";
+} from "../../src/pages/conversation/model/layout/pane-width.js";
 
 it("clamps pane widths to min and max", () => {
   expect(clampPaneWidth(100, 192, 400)).toBe(192);

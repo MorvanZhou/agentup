@@ -9,9 +9,25 @@ import type {
   AskUserAnswer,
 } from "../../../shared/model/chat";
 import { showToast } from "../../../shared/model/toast";
-import { forgetComposerDraft } from "../model/composer-draft";
+import { tf } from "../../../shared/model/ui-locale";
+import { forgetComposerDraft } from "../model/composer/composer-draft";
 
-const DELEGATION_POLL_MS = 5_000;
+/** 异步完成后要较快拉到 idle wake 的助手回复。 */
+const DELEGATION_POLL_MS = 2_000;
+
+function lastAssistantPreview(messages: readonly UIMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.role !== "assistant") continue;
+    const text = (message.parts ?? [])
+      .map((part) => (part.type === "text" && part.text ? part.text : ""))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) return text.length > 120 ? `${text.slice(0, 119)}…` : text;
+  }
+  return "";
+}
 
 export function useAgentChat(
   api = new DesktopApi(),
@@ -24,6 +40,8 @@ export function useAgentChat(
   const loadEpoch = ref<Record<string, number>>({});
   let delegationPoll: ReturnType<typeof setInterval> | undefined;
   let delegationPollKey = "";
+  /** 已 toast 过的终态任务，避免未 notified 前重复打扰。 */
+  const toastedAsyncIds = new Set<string>();
 
   async function load(agentId: string, token: string, userId: string, force = false): Promise<void> {
     const key = `${userId}/${agentId}`;
@@ -187,25 +205,84 @@ export function useAgentChat(
     delegationPollKey = key;
     const tick = async () => {
       try {
-        const tasks = await api.listDelegations(token, userId, { unseenOnly: true });
+        const [tasks, jobs] = await Promise.all([
+          api.listDelegations(token, userId, { unseenOnly: true }),
+          api.listBackgroundJobs(token, userId, { unseenOnly: true }),
+        ]);
+        // 终态未 notified：只 toast（runtime 仍在空闲 wake）。
+        // notified：ack + 重载历史，把主动同步的助手回复拉进对话。
         const finished = tasks.filter(
-          (task) => task.status === "completed" || task.status === "failed",
+          (task) =>
+            task.status === "completed" ||
+            task.status === "failed" ||
+            task.status === "cancelled",
         );
-        if (finished.length === 0) return;
+        const finishedJobs = jobs.filter(
+          (job) =>
+            job.status === "completed" ||
+            job.status === "failed" ||
+            job.status === "cancelled",
+        );
+        if (finished.length === 0 && finishedJobs.length === 0) return;
+        /** agentId → 用于侧栏预览的摘要（优先任务结果）。 */
+        const previewByAgent = new Map<string, string>();
         const reloadIds = new Set<string>();
         for (const task of finished) {
-          await api.acknowledgeDelegation(token, userId, task.id);
-          const label = task.toAgentName || task.toAgentId;
-          showToast(
-            task.status === "completed"
-              ? `「${label}」已完成委托任务`
-              : `「${label}」委托失败`,
-            task.status === "completed" ? "success" : "error",
-          );
-          if (task.fromAgentId) reloadIds.add(task.fromAgentId);
+          const toastKey = `d:${task.id}`;
+          if (!toastedAsyncIds.has(toastKey)) {
+            toastedAsyncIds.add(toastKey);
+            const label = task.toAgentName || task.toAgentId;
+            showToast(
+              task.status === "completed"
+                ? tf("asyncDelegationDone", { name: label })
+                : task.status === "cancelled"
+                  ? tf("asyncDelegationCancelled", { name: label })
+                  : tf("asyncDelegationFailed", { name: label }),
+              task.status === "failed" ? "error" : "success",
+            );
+          }
+          if (task.notified) {
+            await api.acknowledgeDelegation(token, userId, task.id);
+            if (task.fromAgentId) {
+              reloadIds.add(task.fromAgentId);
+              const hint = (task.resultSummary || task.brief || "").trim();
+              if (hint && !previewByAgent.has(task.fromAgentId)) {
+                previewByAgent.set(task.fromAgentId, hint);
+              }
+            }
+          }
+        }
+        for (const job of finishedJobs) {
+          const toastKey = `b:${job.id}`;
+          if (!toastedAsyncIds.has(toastKey)) {
+            toastedAsyncIds.add(toastKey);
+            const label = job.name || job.id.slice(0, 8);
+            showToast(
+              job.status === "completed"
+                ? tf("asyncBgDone", { name: label })
+                : job.status === "cancelled"
+                  ? tf("asyncBgCancelled", { name: label })
+                  : tf("asyncBgFailed", { name: label }),
+              job.status === "failed" ? "error" : "success",
+            );
+          }
+          if (job.notified) {
+            await api.acknowledgeBackgroundJob(token, userId, job.id);
+            if (job.agentId) {
+              reloadIds.add(job.agentId);
+              const hint = (job.outputTail || job.name || job.command || "").trim();
+              if (hint && !previewByAgent.has(job.agentId)) {
+                previewByAgent.set(job.agentId, hint);
+              }
+            }
+          }
         }
         for (const id of reloadIds) {
           await load(id, token, userId, true);
+          const fromHistory = lastAssistantPreview(histories.value[id] ?? []);
+          const preview = fromHistory || previewByAgent.get(id) || "";
+          // 与普通回合结束相同：更新侧栏预览；非当前会话则累加未读。
+          if (preview) turnEnded(id, preview);
         }
       } catch {
         // 轮询失败静默；下一轮再试
@@ -221,6 +298,7 @@ export function useAgentChat(
     if (delegationPoll) clearInterval(delegationPoll);
     delegationPoll = undefined;
     delegationPollKey = "";
+    toastedAsyncIds.clear();
   }
 
   if (getCurrentScope()) {

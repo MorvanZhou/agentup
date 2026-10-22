@@ -4,17 +4,18 @@ import {
   ChevronDownIcon,
   ListTreeIcon,
 } from "@lucide/vue";
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 
 import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
 import { showToast } from "../../../../../../../shared/model/toast";
 import { t, tf } from "../../../../../../../shared/model/ui-locale";
-import type { AssistAgentRef } from "../../../../../model/message-assistants";
-import { injectThreadDelegation } from "../../../../../model/thread-delegation";
+import { formatElapsedMs } from "../../../../../model/message/elapsed";
+import type { AssistAgentRef } from "../../../../../model/message/message-assistants";
+import { injectThreadDelegation } from "../../../../../model/thread/thread-delegation";
 import {
   injectThreadRoster,
   resolveRosterAgent,
-} from "../../../../../model/thread-roster";
+} from "../../../../../model/thread/thread-roster";
 
 const props = withDefaults(
   defineProps<{
@@ -34,6 +35,11 @@ const roster = injectThreadRoster();
 const delegation = injectThreadDelegation();
 /** 默认展开首个，降低「点开才能懂归属」的成本。 */
 const expandedId = ref<string | null>(props.assists[0]?.agentId ?? null);
+/** 驱动进行中耗时刷新；无 running 时不跑定时器。 */
+const nowMs = ref(Date.now());
+/** part.timing 缺失时，按 toolCallId 本地兜底起点。 */
+const localStartedAt = new Map<string, number>();
+let elapsedTimer: ReturnType<typeof setInterval> | undefined;
 
 watch(
   () => props.assists.map((item) => item.agentId).join("\0"),
@@ -43,6 +49,30 @@ watch(
     expandedId.value = props.assists[0]?.agentId ?? null;
   },
 );
+
+const hasRunning = computed(() =>
+  props.assists.some((item) => item.status === "running"),
+);
+
+watch(
+  hasRunning,
+  (running) => {
+    if (elapsedTimer !== undefined) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = undefined;
+    }
+    if (!running) return;
+    nowMs.value = Date.now();
+    elapsedTimer = setInterval(() => {
+      nowMs.value = Date.now();
+    }, 1000);
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  if (elapsedTimer !== undefined) clearInterval(elapsedTimer);
+});
 
 const stacked = computed(() => props.assists.slice(0, props.maxStack));
 const overflow = computed(() => Math.max(0, props.assists.length - props.maxStack));
@@ -71,6 +101,38 @@ function statusTone(assist: AssistAgentRef): string {
   }
   return "bg-paper-deep text-muted-foreground";
 }
+
+function assistStartMs(assist: AssistAgentRef): number | undefined {
+  if (typeof assist.startedAt === "number") return assist.startedAt;
+  if (assist.status !== "running") return undefined;
+  const key = assist.toolCallId || assist.agentId;
+  if (!key) return undefined;
+  const cached = localStartedAt.get(key);
+  if (cached !== undefined) return cached;
+  const start = Date.now();
+  localStartedAt.set(key, start);
+  return start;
+}
+
+/** 身份层耗时：进行中实时刷新；结束态仅在有墙钟 timing 时展示。 */
+function elapsedLabel(assist: AssistAgentRef): string | undefined {
+  const start = assistStartMs(assist);
+  if (start === undefined) return undefined;
+  if (assist.status === "running") {
+    return formatElapsedMs(nowMs.value - start);
+  }
+  if (typeof assist.completedAt !== "number") return undefined;
+  return formatElapsedMs(assist.completedAt - start);
+}
+
+const elapsedByAgentId = computed(() => {
+  const out: Record<string, string> = {};
+  for (const assist of props.assists) {
+    const label = elapsedLabel(assist);
+    if (label) out[assist.agentId] = label;
+  }
+  return out;
+});
 
 function toggle(assist: AssistAgentRef): void {
   expandedId.value = expandedId.value === assist.agentId ? null : assist.agentId;
@@ -162,7 +224,7 @@ function openProcess(assist: AssistAgentRef): void {
       class="overflow-hidden rounded-xl border border-rule bg-background shadow-sm"
       role="listitem"
     >
-      <!-- 身份层：协助方是谁 -->
+      <!-- 身份层：协助方是谁 + 已执行多久 -->
       <header class="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
         <AgentAvatar
           :name="displayName(assist)"
@@ -180,6 +242,21 @@ function openProcess(assist: AssistAgentRef): void {
               :class="statusTone(assist)"
             >
               {{ statusLabel(assist) }}
+            </span>
+            <span
+              v-if="elapsedByAgentId[assist.agentId]"
+              class="shrink-0 text-xs tabular-nums text-muted-foreground"
+              :aria-label="
+                assist.status === 'running'
+                  ? tf('assistElapsedRunningAria', {
+                      duration: elapsedByAgentId[assist.agentId]!,
+                    })
+                  : tf('assistElapsedDoneAria', {
+                      duration: elapsedByAgentId[assist.agentId]!,
+                    })
+              "
+            >
+              {{ elapsedByAgentId[assist.agentId] }}
             </span>
           </div>
           <p class="mb-0 text-xs text-muted-foreground">{{ t("assistLabel") }}</p>

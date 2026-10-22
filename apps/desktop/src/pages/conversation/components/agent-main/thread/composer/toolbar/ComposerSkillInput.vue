@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import { middleEllipsisFileName } from "../../../../../model/attachment-ref";
+import { middleEllipsisFileName } from "../../../../../model/composer/attachment-ref";
 import {
   segmentComposerText,
   serializeComposerSegments,
   type ComposerSegment,
-} from "../../../../../model/skill-text";
+} from "../../../../../model/composer/skill-text";
 
 const props = defineProps<{
   modelValue: string;

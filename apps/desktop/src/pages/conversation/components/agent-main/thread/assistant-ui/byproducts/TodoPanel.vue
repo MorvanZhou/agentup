@@ -7,7 +7,7 @@ import { t } from "../../../../../../../shared/model/ui-locale";
 import {
   completedTodoTitle,
   type TodoListItem,
-} from "../../../../../model/todo-list";
+} from "../../../../../model/message/todo-list";
 
 const props = withDefaults(
   defineProps<{
