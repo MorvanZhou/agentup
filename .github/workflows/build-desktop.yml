@@ -44,15 +44,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 12.4.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -136,7 +136,7 @@ jobs:
       # mac：dmg / zip 分两个 artifact，便于分别下载
       - name: Upload mac dmg
         if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentup-mac-arm64-dmg
           path: dist/mac/*.dmg
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload mac zip
         if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentup-mac-arm64-zip
           path: dist/mac/*.zip
@@ -157,7 +157,7 @@ jobs:
       # win：只传 NSIS，不传 win-unpacked/
       - name: Upload win setup
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentup-win-x64-setup
           path: dist/win/*-setup.exe
@@ -174,7 +174,7 @@ jobs:
       contents: write
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: agentup-*
           path: release-assets
@@ -184,7 +184,7 @@ jobs:
         run: ls -lh release-assets
 
       - name: Attach to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-assets/*
           fail_on_unmatched_files: true
