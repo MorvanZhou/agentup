@@ -19,6 +19,7 @@ import { PiUIMessageProjector } from "../history/frames.js";
 import { projectHistoryFromManager } from "../history/history.js";
 import { projectVisitMcp } from "../workspace/mcp.js";
 import { openModelRuntime } from "../model/runtime.js";
+import { formatEnvironmentPrompt } from "../environment.js";
 import { ensureCwdLayout, formatCwdLayoutPrompt } from "../workspace/cwd-layout.js";
 import {
   readProjectRoots,
@@ -145,8 +146,9 @@ export async function runDelegatedPrompt(
     }),
     appendSystemPromptOverride: (base) => [
       ...base,
+      formatEnvironmentPrompt(plan.environment, plan.cwd),
       formatCwdLayoutPrompt(),
-      formatToolsUsagePrompt(),
+      formatToolsUsagePrompt(plan.environment.commandTool),
     ],
   });
   await resourceLoader.reload();

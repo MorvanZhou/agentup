@@ -60,6 +60,12 @@ export {
   type SessionProviderBinding,
 } from "./session/plan.js";
 export {
+  detectHostEnvironment,
+  formatEnvironmentPrompt,
+  type CommandToolName,
+  type HostEnvironment,
+} from "./session/environment.js";
+export {
   DelegationService,
   type DelegationTask,
   type RecruitedAgentInfo,

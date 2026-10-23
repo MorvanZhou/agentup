@@ -1,10 +1,10 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import type { Readable } from "node:stream";
 
 import { isLocalAgentId } from "../../local/agents/local-agent.js";
 import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
+import { spawnArgsForCommand } from "../environment.js";
 import type { AsyncWakeItem } from "../wake/index.js";
 import { BackgroundJobStore } from "./store.js";
 import {
@@ -24,7 +24,7 @@ export type BackgroundJobsOptions = {
 };
 
 type RunningSlot = {
-  child: ChildProcessByStdio<null, Readable, Readable>;
+  child: ChildProcess;
   logFd?: number;
 };
 
@@ -62,7 +62,8 @@ export class BackgroundJobs {
   }
 
   /**
-   * 启动后台命令。审批在 tool_call 钩子（bg_run 视同 bash）。
+   * 启动后台命令。审批在 tool_call 钩子（bg_run 视同主 shell 工具）。
+   * 经 detectHostEnvironment 的 command tool spawn（Windows 不用 cmd）。
    * cwd 必须已由调用方解析为 visit 的 cwd。
    */
   async start(input: {
@@ -163,12 +164,17 @@ export class BackgroundJobs {
         logFd = fs.openSync(logPath, "w", 0o600);
       }
 
-      const child = spawn(latest.command, {
+      const spawnSpec = spawnArgsForCommand(latest.command);
+      const child = spawn(spawnSpec.file, spawnSpec.args, {
         cwd: latest.cwd,
-        shell: true,
         env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [spawnSpec.stdinCommand != null ? "pipe" : "ignore", "pipe", "pipe"],
+        windowsHide: true,
       });
+      if (spawnSpec.stdinCommand != null) {
+        child.stdin?.on("error", () => {});
+        child.stdin?.end(spawnSpec.stdinCommand);
+      }
       this.running.set(jobId, { child, logFd });
 
       const chunks: Buffer[] = [];
@@ -189,8 +195,8 @@ export class BackgroundJobs {
           chunks.push(joined.subarray(-MAX_BACKGROUND_OUTPUT_TAIL));
         }
       };
-      child.stdout.on("data", onData);
-      child.stderr.on("data", onData);
+      child.stdout?.on("data", onData);
+      child.stderr?.on("data", onData);
 
       const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
         (resolve) => {

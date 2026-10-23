@@ -1,8 +1,10 @@
 # 独立桌面安装包构建（mac arm64 + Windows x64 NSIS）。
-# 不上传 R2；正式 downloads.agentup.me 仍走本机 sh/build-mac.sh + sh/upload-mac.sh。
 #
 # - workflow_dispatch / tag：产物进 Actions Artifacts
-# - 仅 push tag（v*）：额外挂到对应 GitHub Release Assets
+# - 仅 push tag（v*）：挂到 GitHub Release Assets，再同步 Cloudflare R2
+#   （键位与 sh/upload-from-github.sh 一致：versioned + latest），并 purge 边缘缓存
+# - Secrets：CLOUDFLARE_API_TOKEN（R2 写 + Zone Cache Purge）、CLOUDFLARE_ACCOUNT_ID、
+#   CLOUDFLARE_ZONE_ID（downloads.agentup.me 所在 Zone）
 name: Build Desktop
 
 on:
@@ -190,3 +192,49 @@ jobs:
           fail_on_unmatched_files: true
           # 若 Release 已存在（先建了 tag/Release），则只补传 Assets；否则自动创建
           generate_release_notes: true
+
+  # Release Assets 就绪后 → R2（desktop/mac|win/{version,latest}/…）
+  upload-r2:
+    needs: release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Upload Release assets to R2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: sh sh/upload-from-github.sh --tag "${{ github.ref_name }}"
+
+      # latest 同路径覆盖；刷边缘缓存，避免 downloads.agentup.me 仍吐旧包
+      - name: Purge downloads CDN cache
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          DOWNLOADS_BASE_URL: https://downloads.agentup.me
+        run: |
+          set -euo pipefail
+          files="$(jq -nc \
+            --arg base "$DOWNLOADS_BASE_URL" \
+            '{files:[
+              ($base + "/desktop/mac/latest/AgentUp-arm64.dmg"),
+              ($base + "/desktop/mac/latest/AgentUp-arm64-mac.zip"),
+              ($base + "/desktop/win/latest/AgentUp-x64-setup.exe")
+            ]}')"
+          echo "→ purge: $files"
+          resp="$(curl -sS -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$files")"
+          echo "$resp" | jq .
+          echo "$resp" | jq -e '.success == true' >/dev/null

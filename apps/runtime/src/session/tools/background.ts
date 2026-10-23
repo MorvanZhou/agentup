@@ -6,6 +6,7 @@ import {
   type BackgroundJobs,
 } from "../background/service.js";
 import type { BackgroundJob } from "../background/types.js";
+import { detectHostEnvironment } from "../environment.js";
 
 export const BG_RUN_TOOL = "bg_run";
 export const BG_STATUS_TOOL = "bg_status";
@@ -44,6 +45,7 @@ export function createBackgroundJobsExtension(
   agentId: string,
   cwd: string,
 ): ExtensionFactory {
+  const commandTool = detectHostEnvironment().commandTool;
   return (pi) => {
     pi.registerTool(
       defineTool<typeof RunParams, RunDetails>({
@@ -53,7 +55,8 @@ export function createBackgroundJobsExtension(
           "Start a long-running shell command in the background without blocking the chat. " +
           "Use for builds, watches, migrations, or other non-specialist work. " +
           "Returns job_id immediately; use bg_status later or wait for a session notification. " +
-          "Requires user approval (same as bash). Prefer delegate_to_agent for specialist expertise.",
+          `Requires user approval (same as ${commandTool}); command syntax must match ${commandTool}. ` +
+          "Prefer delegate_to_agent for specialist expertise.",
         parameters: RunParams,
         annotations: {
           readOnlyHint: false,

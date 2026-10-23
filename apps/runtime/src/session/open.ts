@@ -23,6 +23,7 @@ import { healInterruptedSessionTools } from "./history/history.js";
 import { mergeVisitMcp, projectVisitMcp } from "./workspace/mcp.js";
 import { openModelRuntime } from "./model/runtime.js";
 import { formatCollaborationPrompt } from "./delegation/collaboration-prompt.js";
+import { formatEnvironmentPrompt } from "./environment.js";
 import { ensureCwdLayout, formatCwdLayoutPrompt } from "./workspace/cwd-layout.js";
 import {
   formatProjectRootsPrompt,
@@ -128,14 +129,20 @@ export async function openSession(
         diagnostics: loaded.diagnostics,
       };
     },
-    // 平台 cwd 规范 + 挂载项目根 +（有委托时）协作策略；工作规则由 agentDir AGENTS.md 加载。
+    // 平台环境 + cwd 规范 + 挂载项目根 +（有委托时）协作策略；工作规则由 agentDir AGENTS.md 加载。
     appendSystemPromptOverride: (base) => {
       const kind = visit.kind === "personal" ? "personal" : "agent";
       const projectRoots = readProjectRoots(visit.root, kind);
-      const parts = [...base, formatCwdLayoutPrompt(), formatToolsUsagePrompt()];
+      const commandTool = plan.environment.commandTool;
+      const parts = [
+        ...base,
+        formatEnvironmentPrompt(plan.environment, plan.cwd),
+        formatCwdLayoutPrompt(),
+        formatToolsUsagePrompt(commandTool),
+      ];
       const projectPrompt = formatProjectRootsPrompt(projectRoots);
       if (projectPrompt) parts.push(projectPrompt);
-      if (delegation) parts.push(formatCollaborationPrompt());
+      if (delegation) parts.push(formatCollaborationPrompt(commandTool));
       return parts;
     },
   });
