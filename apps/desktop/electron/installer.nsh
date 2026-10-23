@@ -10,6 +10,10 @@
 ;
 ; 卸载：默认保留数据。用户选 Yes 时删除真实业务根（优先读 userData\data-root.path）
 ; 与 Electron userData（含登录态、日志）。
+;
+; 勿在本文件顶层定义 Function un.*：打包 installer 时会触发 warning 6020
+; （Uninstaller script code found but WriteUninstaller never used），且 electron-builder
+; 将 warning 当错误。去换行逻辑内联在 customUnInstall 内。
 
 !macro customInstall
   DetailPrint "Expanding runtime node_modules..."
@@ -35,10 +39,16 @@
     IfErrors agentup_wipe_default_root
       FileRead $R0 $R1
       FileClose $R0
-      ; 去掉 FileRead 可能带上的换行
-      Push $R1
-      Call un.AgentUpTrimNewlines
-      Pop $R1
+      ; FileRead 可能带尾部 CR/LF；内联去掉（勿用顶层 un.Function）
+      agentup_trim_loop:
+        StrCpy $R2 $R1 1 -1
+        StrCmp $R2 "$\r" agentup_trim_cut
+        StrCmp $R2 "$\n" agentup_trim_cut
+        Goto agentup_trim_done
+        agentup_trim_cut:
+          StrCpy $R1 $R1 -1
+          Goto agentup_trim_loop
+      agentup_trim_done:
       StrCmp $R1 "" agentup_wipe_default_root 0
       DetailPrint "Removing agent data root $R1"
       RMDir /r "$R1"
@@ -51,19 +61,3 @@
       RMDir /r "$APPDATA\AgentUp"
   agentup_keep_data:
 !macroend
-
-Function un.AgentUpTrimNewlines
-  Exch $R9
-  Push $R8
-  agentup_trim_loop:
-    StrCpy $R8 $R9 1 -1
-    StrCmp $R8 "$\r" agentup_trim_cut
-    StrCmp $R8 "$\n" agentup_trim_cut
-    Goto agentup_trim_done
-    agentup_trim_cut:
-      StrCpy $R9 $R9 -1
-      Goto agentup_trim_loop
-  agentup_trim_done:
-  Pop $R8
-  Exch $R9
-FunctionEnd
