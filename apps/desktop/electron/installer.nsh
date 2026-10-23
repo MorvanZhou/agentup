@@ -1,4 +1,4 @@
-; Windows NSIS：安装期展开 runtime/node_modules.tgz
+; Windows NSIS：安装期展开 runtime/node_modules.tgz；卸载可选全清本机数据
 ;
 ; 背景（详见 electron/pack-runtime-modules.cjs 文件头）
 ; - 松散 node_modules 上万小文件会让 NSIS 逐文件解压极慢 → 安装包内只放一个 .tgz
@@ -7,6 +7,9 @@
 ; - .tgz 已是 gzip，须在 package.json build.nsis.preCompressedFileExtensions 中列入
 ;   ".tgz"，避免 NSIS 再压一遍（白费 CPU，安装也不更快）
 ; - 若 tar 仍失败，Desktop 首次启动 ensure-runtime-modules 会再试一次
+;
+; 卸载：默认保留数据。用户选 Yes 时删除真实业务根（优先读 userData\data-root.path）
+; 与 Electron userData（含登录态、日志）。
 
 !macro customInstall
   DetailPrint "Expanding runtime node_modules..."
@@ -21,3 +24,46 @@
       DetailPrint "tar expand failed; app will expand on first launch"
   agentup_skip_runtime_tgz:
 !macroend
+
+!macro customUnInstall
+  ; 默认 No：保留本机数据，便于重装恢复
+  MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 \
+    "Also delete all AgentUp local data?$\r$\n$\r$\nThis permanently removes chat history, local agents, every agent's work files and outputs, saved API keys, sign-in state, and logs. This cannot be undone." \
+    IDNO agentup_keep_data
+    ClearErrors
+    FileOpen $R0 "$APPDATA\AgentUp\data-root.path" r
+    IfErrors agentup_wipe_default_root
+      FileRead $R0 $R1
+      FileClose $R0
+      ; 去掉 FileRead 可能带上的换行
+      Push $R1
+      Call un.AgentUpTrimNewlines
+      Pop $R1
+      StrCmp $R1 "" agentup_wipe_default_root 0
+      DetailPrint "Removing agent data root $R1"
+      RMDir /r "$R1"
+      Goto agentup_wipe_userdata
+    agentup_wipe_default_root:
+      DetailPrint "Removing $PROFILE\.agentup"
+      RMDir /r "$PROFILE\.agentup"
+    agentup_wipe_userdata:
+      DetailPrint "Removing $APPDATA\AgentUp"
+      RMDir /r "$APPDATA\AgentUp"
+  agentup_keep_data:
+!macroend
+
+Function un.AgentUpTrimNewlines
+  Exch $R9
+  Push $R8
+  agentup_trim_loop:
+    StrCpy $R8 $R9 1 -1
+    StrCmp $R8 "$\r" agentup_trim_cut
+    StrCmp $R8 "$\n" agentup_trim_cut
+    Goto agentup_trim_done
+    agentup_trim_cut:
+      StrCpy $R9 $R9 -1
+      Goto agentup_trim_loop
+  agentup_trim_done:
+  Pop $R8
+  Exch $R9
+FunctionEnd

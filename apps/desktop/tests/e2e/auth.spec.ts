@@ -20,12 +20,21 @@ test("尚无第三方招募时侧栏引导去市场，点击进入 Agent 市场"
   await expect(page.getByRole("heading", { name: "Agent 市场" })).toBeVisible();
 });
 
+test("尚无第三方招募时侧栏可引导添加本地 Agent", async ({ page }) => {
+  await installRuntime(page);
+  await page.goto("/");
+  await expect(page.getByText("还没有招募其他 Agent 助手")).toBeVisible();
+  await page.getByRole("button", { name: "添加本地 Agent" }).click();
+  await expect(page).toHaveURL(/\/agents\/local\/new/);
+});
+
 test("已有第三方招募时侧栏不展示市场引导", async ({ page }) => {
   await installRuntime(page, { recruited: ["weather"] });
   await signIn(page);
   await expect(page.getByRole("button", { name: /^Weaty/ })).toBeVisible();
   await expect(page.getByText("还没有招募其他 Agent 助手")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "去 Agent 市场" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "添加本地 Agent" })).toHaveCount(0);
 });
 
 test("游客配置模型后可直接发送，不进入登录页", async ({ page }) => {

@@ -9,6 +9,12 @@ const path = require("node:path");
 
 const { applyAppBadge } = require("./app-badge.cjs");
 const { ensureRuntimeModules } = require("./ensure-runtime-modules.cjs");
+const {
+  collectErasePaths,
+  eraseLocalDataPaths,
+  resolveAgentDataRoot,
+  writeDataRootMarker,
+} = require("./erase-local-data.cjs");
 const { applicationMenuTemplate } = require("./menu.cjs");
 const { initLogger, logError, logInfo, logPath } = require("./logger.cjs");
 const {
@@ -31,11 +37,21 @@ const appIconPath = path.join(
   process.platform === "darwin" ? "icon.icns" : process.platform === "win32" ? "icon.ico" : "icon.png",
 );
 
+/** 开发态 `electron .` 时 app.getName/getVersion 仍是 Electron 自身，About 需显式覆盖。 */
+const desktopPkg = require("../package.json");
+const appProductName =
+  typeof desktopPkg.productName === "string" && desktopPkg.productName.trim()
+    ? desktopPkg.productName.trim()
+    : "AgentUp";
+const appProductVersion =
+  typeof desktopPkg.version === "string" && desktopPkg.version.trim() ? desktopPkg.version.trim() : "0.0.0";
+app.setName(appProductName);
+
 /* nativeTheme 跟随应用主题（system/light/dark），DevTools / 菜单与内容一致。 */
 
 initLogger();
 logInfo(
-  `start packaged=${app.isPackaged} env=${releaseEnv} backend=${releaseBackendUrl} web=${releaseWebUrl} platform=${process.platform} version=${app.getVersion()}`,
+  `start packaged=${app.isPackaged} env=${releaseEnv} backend=${releaseBackendUrl} web=${releaseWebUrl} platform=${process.platform} version=${appProductVersion} electron=${app.getVersion()}`,
 );
 
 /** 登录回调页「打开 AgentUp」按钮：agentup://open */
@@ -289,7 +305,29 @@ app.whenReady().then(async () => {
       }
     });
   }
-  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()));
+  // macOS「关于 AgentUp」：显式写入产品名与 package.json 版本（避免开发态显示 Electron）
+  app.setAboutPanelOptions({
+    applicationName: appProductName,
+    applicationVersion: appProductVersion,
+    version: appProductVersion,
+  });
+  try {
+    await writeDataRootMarker({
+      userDataPath: app.getPath("userData"),
+      agentDataRoot: dataRoot(),
+    });
+  } catch (error) {
+    logError(`写入 data-root 标记失败：${error instanceof Error ? error.message : String(error)}`);
+  }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      applicationMenuTemplate({
+        onEraseLocalData: () => {
+          void confirmAndEraseLocalData();
+        },
+      }),
+    ),
+  );
   const healthy = await waitForOwnRuntime();
   if (!healthy) {
     logError(
@@ -303,6 +341,8 @@ app.whenReady().then(async () => {
 
 /** 退出时先 SIGTERM，超时再 SIGKILL，避免关窗/Cmd+Q 后 runtime 孤儿占端口。 */
 let stoppingRuntime = false;
+/** 全清数据后直接 exit，避免 before-quit 再写已删目录。 */
+let erasingLocalData = false;
 
 async function stopRuntime() {
   const child = runtime;
@@ -310,7 +350,50 @@ async function stopRuntime() {
   await stopChildProcess(child, { logInfo, logError });
 }
 
+async function confirmAndEraseLocalData() {
+  if (erasingLocalData) return;
+  const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
+  const result = await dialog.showMessageBox(parent, {
+    type: "warning",
+    buttons: ["Cancel", "Erase Everything"],
+    defaultId: 0,
+    cancelId: 0,
+    title: "Erase All Local Data?",
+    message: "Erase all AgentUp data on this computer?",
+    detail:
+      "This permanently deletes chat history, local agents, every agent's work files and outputs, saved API keys, sign-in state, and logs. This cannot be undone.",
+  });
+  if (result.response !== 1) return;
+
+  erasingLocalData = true;
+  stoppingRuntime = true;
+  try {
+    await stopRuntime();
+    const paths = collectErasePaths({
+      agentDataRoot: dataRoot(),
+      userDataPath: app.getPath("userData"),
+      logsPath: path.dirname(logPath()),
+    });
+    await eraseLocalDataPaths({ paths, logInfo, logError });
+  } catch (error) {
+    erasingLocalData = false;
+    stoppingRuntime = false;
+    logError(`全清本机数据失败：${error instanceof Error ? error.message : String(error)}`);
+    await dialog.showMessageBox(parent, {
+      type: "error",
+      buttons: ["OK"],
+      defaultId: 0,
+      title: "Erase Failed",
+      message: "Could not erase all local data.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  app.exit(0);
+}
+
 app.on("before-quit", (event) => {
+  if (erasingLocalData) return;
   if (!runtime || !childAlive(runtime) || stoppingRuntime) return;
   event.preventDefault();
   stoppingRuntime = true;
@@ -362,9 +445,7 @@ function runtimeCliPath(packagedRuntimeRoot) {
 }
 
 function dataRoot() {
-  const configured = process.env.AGENTUP_USER_DATA_ROOT;
-  if (configured?.trim()) return path.resolve(configured.trim());
-  return path.join(os.homedir(), ".agentup");
+  return resolveAgentDataRoot({ env: process.env, homedir: os.homedir() });
 }
 
 /**

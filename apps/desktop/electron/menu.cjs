@@ -1,4 +1,11 @@
-function applicationMenuTemplate(platform = process.platform) {
+/**
+ * @param {{
+ *   platform?: string,
+ *   onEraseLocalData?: () => void | Promise<void>,
+ * }} [options]
+ */
+function applicationMenuTemplate(options = {}) {
+  const platform = options.platform ?? process.platform;
   const viewMenu = {
     label: "Developer",
     submenu: [
@@ -6,6 +13,15 @@ function applicationMenuTemplate(platform = process.platform) {
       { label: "Force Reload", role: "forceReload" },
       { type: "separator" },
       { label: "Developer Tools", role: "toggleDevTools" },
+      { type: "separator" },
+      {
+        label: "Erase All Local Data…",
+        click: () => {
+          if (typeof options.onEraseLocalData === "function") {
+            void options.onEraseLocalData();
+          }
+        },
+      },
     ],
   };
   if (platform === "darwin") {

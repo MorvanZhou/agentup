@@ -32,6 +32,10 @@ const recruitNudgeVisible = computed(
 function goMarket(): void {
   void router.push({ name: "market" });
 }
+
+function goLocalCreate(): void {
+  void router.push({ name: "agents-local-new" });
+}
 </script>
 
 <template>
@@ -71,13 +75,22 @@ function goMarket(): void {
         <p class="mt-1.5 m-0 max-w-44 text-sm leading-snug text-muted-foreground">
           {{ t("sideRecruitNudgeBody") }}
         </p>
-        <button
-          type="button"
-          class="mt-4 inline-flex min-h-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-          @click="goMarket"
-        >
-          {{ t("sideRecruitNudgeCta") }}
-        </button>
+        <div class="mt-4 flex w-full max-w-44 flex-col items-stretch gap-2">
+          <button
+            type="button"
+            class="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            @click="goMarket"
+          >
+            {{ t("sideRecruitNudgeCta") }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex min-h-8 cursor-pointer items-center justify-center rounded-lg border border-rule bg-paper px-3 text-sm font-semibold text-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15"
+            @click="goLocalCreate"
+          >
+            {{ t("sideRecruitNudgeLocalCta") }}
+          </button>
+        </div>
       </div>
     </nav>
   </div>
