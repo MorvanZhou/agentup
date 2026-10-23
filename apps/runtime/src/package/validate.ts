@@ -119,12 +119,8 @@ function validateSkills(files: Record<string, Uint8Array>, issues: PackageIssue[
     if (typeof description !== "string" || !description.trim() || description.length > 1024) {
       issues.push(issue(filePath, "description 必须是 1–1024 字符的非空文本"));
     }
-    optionalString(frontmatter, "license", filePath, issues);
-    optionalString(frontmatter, "allowed-tools", filePath, issues);
-    optionalBoundedString(frontmatter, "compatibility", 500, filePath, issues);
-    if (frontmatter.metadata !== undefined && !stringRecord(frontmatter.metadata)) {
-      issues.push(issue(filePath, "metadata 必须是字符串到字符串的映射"));
-    }
+    // license / allowed-tools / compatibility / metadata 及未知键：生态写法多样（空值、
+    // 列表、嵌套对象等），AgentUp 安装不依赖其形状，保留即可、不做类型卡死。
   }
 }
 
@@ -314,21 +310,6 @@ function optionalString(
 ): void {
   if (value[field] !== undefined && typeof value[field] !== "string") {
     issues.push(issue(filePath, `${prefix ? `${prefix}.` : ""}${field} 必须是字符串`));
-  }
-}
-
-function optionalBoundedString(
-  value: Record<string, unknown>,
-  field: string,
-  max: number,
-  filePath: string,
-  issues: PackageIssue[],
-): void {
-  if (
-    value[field] !== undefined &&
-    (typeof value[field] !== "string" || !value[field].trim() || value[field].length > max)
-  ) {
-    issues.push(issue(filePath, `${field} 必须是 1–${max} 字符的字符串`));
   }
 }
 

@@ -5,12 +5,28 @@ import { validateAgentPackage } from "../src/package/validate.js";
 const bytes = (value: string) => Buffer.from(value);
 
 describe("agent package validation", () => {
+  it("accepts ecosystem skill frontmatter variants", () => {
+    const issues = validateAgentPackage({
+      "SYSTEM.md": bytes("You are a test agent."),
+      "skills/humanizer-zh/SKILL.md": bytes(
+        "---\nname: humanizer-zh\ndescription: Soften AI writing traces.\nallowed-tools:\n  - Read\n  - Write\nmetadata:\n  trigger: edit copy\n---\n\nRewrite the text.\n",
+      ),
+      "skills/find-skills/SKILL.md": bytes(
+        "---\nname: find-skills\ndescription: Discover installable skills.\nallowed-tools:\ndisable: true\n---\n\nSearch the registry.\n",
+      ),
+      "skills/canvas/SKILL.md": bytes(
+        "---\nname: canvas\ndescription: Open a live canvas beside chat.\nmetadata:\n  surfaces:\n    - ide\n    - cloud\nenvironments:\n  - local\n---\n\nUse a canvas for artifacts.\n",
+      ),
+    });
+    expect(issues).toEqual([]);
+  });
+
   it("accepts SYSTEM, AGENTS, Agent Skills, MCP and settings hooks", () => {
     const issues = validateAgentPackage({
       "SYSTEM.md": bytes("You are a test agent."),
       "AGENTS.md": bytes("Verify facts before answering."),
       "skills/check-weather/SKILL.md": bytes(
-        "---\nname: check-weather\ndescription: Check weather when a user asks about a city.\nmetadata:\n  owner: agentup\n---\n\nRun the weather script.\n",
+        "---\nname: check-weather\ndescription: Check weather when a user asks about a city.\nallowed-tools: Read Write\nmetadata:\n  owner: agentup\n---\n\nRun the weather script.\n",
       ),
       "skills/check-weather/scripts/weather.mjs": bytes("console.log('sunny')"),
       "mcp.json": bytes(JSON.stringify({
