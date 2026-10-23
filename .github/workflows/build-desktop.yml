@@ -1,8 +1,8 @@
 # 独立桌面安装包构建（mac arm64 + Windows x64 NSIS）。
 #
 # - workflow_dispatch / tag：产物进 Actions Artifacts
-# - 仅 push tag（v*）：挂到 GitHub Release Assets，再同步 Cloudflare R2
-#   （键位与 sh/upload-from-github.sh 一致：versioned + latest），并 purge 边缘缓存
+# - 仅 push tag（v*）：挂到 GitHub Release Assets，再把 Artifact 同步到 Cloudflare R2
+#   （desktop/mac|win/{version,latest}/…），并 purge downloads.agentup.me 边缘缓存
 # - Secrets：CLOUDFLARE_API_TOKEN（R2 写 + Zone Cache Purge）、CLOUDFLARE_ACCOUNT_ID、
 #   CLOUDFLARE_ZONE_ID（downloads.agentup.me 所在 Zone）
 name: Build Desktop
@@ -193,27 +193,96 @@ jobs:
           # 若 Release 已存在（先建了 tag/Release），则只补传 Assets；否则自动创建
           generate_release_notes: true
 
-  # Release Assets 就绪后 → R2（desktop/mac|win/{version,latest}/…）
+  # Artifact → R2（键位对齐本机上传：versioned + latest），再 purge CDN
   upload-r2:
     needs: release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: agentup-*
+          path: release-assets
+          merge-multiple: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 22
 
-      - name: Upload Release assets to R2
+      - name: Upload installers to R2
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GITHUB_REPO: ${{ github.repository }}
-        run: sh sh/upload-from-github.sh --tag "${{ github.ref_name }}"
+          CF_R2_BUCKET: agentup-downloads
+          TAG: ${{ github.ref_name }}
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          case "$VERSION" in
+            ""|*[!0-9A-Za-z._-]*)
+              echo "非法版本号: ${VERSION}（来自 ${TAG}）" >&2
+              exit 1
+              ;;
+          esac
+
+          PRODUCT_NAME=AgentUp
+          MAC_ARCH=arm64
+          DMG_NAME="${PRODUCT_NAME}-${VERSION}-${MAC_ARCH}.dmg"
+          ZIP_NAME="${PRODUCT_NAME}-${VERSION}-${MAC_ARCH}-mac.zip"
+          EXE_NAME="${PRODUCT_NAME}-${VERSION}-setup.exe"
+          MAX_BYTES=$((300 * 1024 * 1024))
+
+          ls -lh .
+          for f in "$DMG_NAME" "$EXE_NAME"; do
+            if [ ! -f "$f" ]; then
+              echo "缺少产物: $f" >&2
+              exit 1
+            fi
+            bytes=$(wc -c <"$f" | tr -d ' ')
+            if [ "$bytes" -gt "$MAX_BYTES" ]; then
+              echo "$f 为 $((bytes / 1024 / 1024)) MiB，超过 wrangler ~300 MiB 上限" >&2
+              exit 1
+            fi
+            echo "ok: $f ($((bytes / 1024 / 1024)) MiB)"
+          done
+
+          WRANGLER_TMP="$(mktemp -d)"
+          trap 'rm -rf "$WRANGLER_TMP"' EXIT
+          ASSETS_ABS="$(pwd)"
+
+          put() {
+            key="$1"
+            file="$2"
+            echo "→ put ${CF_R2_BUCKET}/${key}"
+            (
+              cd "$WRANGLER_TMP"
+              npx --yes wrangler@4 r2 object put "${CF_R2_BUCKET}/${key}" \
+                --file="${ASSETS_ABS}/${file}" \
+                --remote
+            )
+          }
+
+          put "desktop/mac/${VERSION}/${DMG_NAME}" "$DMG_NAME"
+          put "desktop/mac/latest/${PRODUCT_NAME}-${MAC_ARCH}.dmg" "$DMG_NAME"
+          put "desktop/win/${VERSION}/${EXE_NAME}" "$EXE_NAME"
+          put "desktop/win/latest/${PRODUCT_NAME}-x64-setup.exe" "$EXE_NAME"
+
+          if [ -f "$ZIP_NAME" ]; then
+            zip_bytes=$(wc -c <"$ZIP_NAME" | tr -d ' ')
+            if [ "$zip_bytes" -gt "$MAX_BYTES" ]; then
+              echo "⚠ 跳过 zip（${zip_bytes} bytes > 300 MiB）" >&2
+            else
+              put "desktop/mac/${VERSION}/${ZIP_NAME}" "$ZIP_NAME"
+              put "desktop/mac/latest/${PRODUCT_NAME}-${MAC_ARCH}-mac.zip" "$ZIP_NAME"
+            fi
+          else
+            echo "⚠ 跳过 zip（无 ${ZIP_NAME}）"
+          fi
+
+          echo "✅ R2 ${VERSION} 已上传"
 
       # latest 同路径覆盖；刷边缘缓存，避免 downloads.agentup.me 仍吐旧包
       - name: Purge downloads CDN cache
