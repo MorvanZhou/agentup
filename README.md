@@ -6,7 +6,7 @@
 
 [中文](README_CN.md)
 
-**Your AI companions — use AI the way you use WhatsApp.**
+**Your AI Assistants — use AI the way you use WhatsApp.**
 
 Study, write, look things up, plan a trip. Each assistant handles one kind of job. When the ask spans topics, it brings in another helper.
 
