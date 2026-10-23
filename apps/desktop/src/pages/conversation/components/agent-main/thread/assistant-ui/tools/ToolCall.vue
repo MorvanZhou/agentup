@@ -11,6 +11,7 @@ import EditTool from "./EditTool.vue";
 import FindTool from "./FindTool.vue";
 import GenericTool from "./GenericTool.vue";
 import GrepTool from "./GrepTool.vue";
+import LocalTimeTool from "./LocalTimeTool.vue";
 import LsTool from "./LsTool.vue";
 import McpResourceTool from "./McpResourceTool.vue";
 import McpTool from "./McpTool.vue";
@@ -47,13 +48,17 @@ const component = computed(() => {
       return FindTool;
     case "ls":
       return LsTool;
+    case "get_local_time":
+      return LocalTimeTool;
     case "web_search":
       return WebSearchTool;
     case "web_fetch":
       return WebFetchTool;
     case "ask_user":
       return AskUserTool;
-    case "list_recruited_agents":
+    case "tool_search":
+      return GenericTool;
+    case "agent_search":
     case "delegate_to_agent":
     case "check_delegation":
       return DelegateTool;

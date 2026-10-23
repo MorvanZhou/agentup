@@ -5,6 +5,8 @@ import { isLocalAgentId } from "./local-agent.js";
 
 const MAX_BYTES = 1_048_576;
 const SEGMENT = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+/** 记录缓存对应的远程 URL（含 ?v=）；版本变了则重拉。 */
+const SOURCE_FILE = "source.url";
 
 /** 市场 Agent 头像本机缓存：`users/<uid>/agents/<id>/assets/avatar.(webp|png|jpg)` */
 export function cachedAvatarDir(userDataRoot: string, userId: string, agentId: string): string | null {
@@ -32,7 +34,35 @@ export function readCachedAvatarDataUrl(
   return undefined;
 }
 
-/** 从远程 URL 拉一头像落到本机；已有缓存则跳过。失败返回已有或 undefined。 */
+/**
+ * 把 data URL 头像写入本机缓存（覆盖旧文件）。
+ * `sourceUrl` 有值时一并记下，供 ensureCachedAvatar 判断是否还需重拉。
+ */
+export function writeCachedAvatarDataUrl(
+  userDataRoot: string,
+  userId: string,
+  agentId: string,
+  dataUrl: string,
+  sourceUrl?: string,
+): string | undefined {
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl.trim());
+  if (!match) return undefined;
+  const mime = match[1]!;
+  const bytes = Buffer.from(match[2]!.replace(/\s/g, ""), "base64");
+  if (!bytes.length || bytes.length > MAX_BYTES) return undefined;
+  const extension = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+  const dir = cachedAvatarDir(userDataRoot, userId, agentId);
+  if (!dir) return undefined;
+  writeAvatarFiles(dir, bytes, extension, sourceUrl);
+  return `data:${mime};base64,${bytes.toString("base64")}`;
+}
+
+/**
+ * 从远程 URL 拉一头像落到本机。
+ * 带 `?v=`（或 `&v=`）且 `source.url` 未变则跳过；无版本号时每次尝试重拉
+ * （兼容尚未部署 mtime cache-bust 的控制面，避免永久卡在旧图）。
+ * 失败时尽量回落已有缓存。
+ */
 export async function ensureCachedAvatar(
   userDataRoot: string,
   userId: string,
@@ -41,37 +71,81 @@ export async function ensureCachedAvatar(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string | undefined> {
   const existing = readCachedAvatarDataUrl(userDataRoot, userId, agentId);
-  if (existing) return existing;
-  if (!remoteUrl?.trim()) return undefined;
+  const normalizedRemote = remoteUrl?.trim() ?? "";
+  const versioned = /[?&]v=/.test(normalizedRemote);
+  if (
+    existing &&
+    normalizedRemote &&
+    versioned &&
+    readCachedSourceUrl(userDataRoot, userId, agentId) === normalizedRemote
+  ) {
+    return existing;
+  }
+  // 无 remote：保留现有，避免离线被清空
+  if (!normalizedRemote) return existing;
   const dir = cachedAvatarDir(userDataRoot, userId, agentId);
-  if (!dir) return undefined;
+  if (!dir) return existing;
   try {
-    const response = await fetchImpl(remoteUrl);
-    if (!response.ok) return undefined;
+    const response = await fetchImpl(normalizedRemote);
+    if (!response.ok) return existing;
     const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > MAX_BYTES) return undefined;
+    if (!bytes.length || bytes.length > MAX_BYTES) return existing;
     const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
     const { mime, extension } = resolveMime(contentType, bytes);
-    if (!mime) return undefined;
-    fs.mkdirSync(dir, { recursive: true });
-    const target = path.join(dir, `avatar.${extension}`);
-    const temporary = `${target}.tmp`;
-    fs.writeFileSync(temporary, bytes, { mode: 0o600 });
-    fs.renameSync(temporary, target);
-    // 清掉其它扩展，避免多文件
-    for (const name of fs.readdirSync(dir)) {
-      if (name.startsWith("avatar.") && name !== `avatar.${extension}` && !name.endsWith(".tmp")) {
-        try {
-          fs.rmSync(path.join(dir, name), { force: true });
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    if (!mime) return existing;
+    writeAvatarFiles(dir, bytes, extension, normalizedRemote);
     return `data:${mime};base64,${bytes.toString("base64")}`;
   } catch {
-    return undefined;
+    return existing;
   }
+}
+
+function writeAvatarFiles(
+  dir: string,
+  bytes: Buffer,
+  extension: string,
+  sourceUrl: string | undefined,
+): void {
+  fs.mkdirSync(dir, { recursive: true });
+  const target = path.join(dir, `avatar.${extension}`);
+  const temporary = `${target}.tmp`;
+  fs.writeFileSync(temporary, bytes, { mode: 0o600 });
+  fs.renameSync(temporary, target);
+  for (const name of fs.readdirSync(dir)) {
+    if (name === SOURCE_FILE) continue;
+    if (name.startsWith("avatar.") && name !== `avatar.${extension}` && !name.endsWith(".tmp")) {
+      try {
+        fs.rmSync(path.join(dir, name), { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  if (sourceUrl?.trim()) {
+    const sourceTmp = path.join(dir, `${SOURCE_FILE}.tmp`);
+    fs.writeFileSync(sourceTmp, sourceUrl.trim(), { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(sourceTmp, path.join(dir, SOURCE_FILE));
+  } else {
+    try {
+      fs.rmSync(path.join(dir, SOURCE_FILE), { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function readCachedSourceUrl(
+  userDataRoot: string,
+  userId: string,
+  agentId: string,
+): string | undefined {
+  const dir = cachedAvatarDir(userDataRoot, userId, agentId);
+  if (!dir) return undefined;
+  const file = path.join(dir, SOURCE_FILE);
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return undefined;
+  if (fs.lstatSync(file).isSymbolicLink()) return undefined;
+  const text = fs.readFileSync(file, "utf8").trim();
+  return text || undefined;
 }
 
 function resolveMime(

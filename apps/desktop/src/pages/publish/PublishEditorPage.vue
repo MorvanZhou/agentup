@@ -6,6 +6,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDesktop } from "../../app/desktop";
 import AgentEditorForm from "../../shared/components/agent-editor/AgentEditorForm.vue";
 import AppDialog from "../../shared/components/AppDialog.vue";
+import UiFormSkeleton from "../../shared/components/UiFormSkeleton.vue";
 import type { AgentEditorInput } from "../../shared/model/agent-editor";
 import { t, tf } from "../../shared/model/ui-locale";
 import { useAgentPublish } from "./composables/useAgentPublish";
@@ -68,9 +69,7 @@ function onCancel(): void {
         </p>
       </header>
 
-      <p v-if="publisher.loading.value" class="m-0 text-sm text-muted-foreground">
-        {{ t("agentsLocalLoading") }}
-      </p>
+      <UiFormSkeleton v-if="publisher.loading.value" />
 
       <template v-else-if="publisher.initial.value">
         <button
@@ -89,7 +88,6 @@ function onCancel(): void {
           :busy="publisher.publishing.value"
           :variant="isUpdate ? 'publish-edit' : 'publish-create'"
           :initial="publisher.initial.value"
-          :local-agent-id="publisher.localDraftId.value"
           :published-agent-id="agentId"
           @submit="onSubmit"
           @cancel="onCancel"

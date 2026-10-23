@@ -7,16 +7,14 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
   await page.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("link", { name: "我的助理", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
   await expect(page.getByText("不会带给从市场招募的 Agent")).toBeVisible();
   const saved = page.waitForRequest((request) => {
-    if (
-      request.method() !== "PUT" ||
-      !request.url().endsWith("/runtime/personal-assistant/profile")
-    ) {
-      return false;
-    }
+    if (request.method() !== "PUT") return false;
+    const url = new URL(request.url());
+    if (!url.pathname.endsWith("/personal-assistant/profile")) return false;
     const body = request.postDataJSON() as { name?: string; role?: string; background?: string };
     return body.name === "小舟" && body.background === "擅长研究整理与资料分析。";
   });
@@ -35,11 +33,11 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
   await expect(page.getByText("小舟", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "会话菜单" }).click();
-  await page.getByRole("menuitem", { name: "助理设置" }).click();
+  await page.getByRole("menuitem", { name: "Agent 配置" }).click();
   await expect(page).toHaveURL(/\/agents\/assistant/);
   await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "消息" }).click();
+  await page.getByRole("link", { name: "消息", exact: true }).click();
   await page.getByRole("button", { name: /^更多操作：小舟/ }).click();
   await page.getByRole("menuitem", { name: "助理设置" }).click();
   await expect(page).toHaveURL(/\/agents\/assistant/);
@@ -94,11 +92,12 @@ test("切换账号外观偏好并应用到 document", async ({ page }) => {
 test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
   await installRuntime(page, { modelConfigured: false });
   await signIn(page);
-  const loaded = page.waitForResponse(
-    (response) => response.request().method() === "GET" && response.url().endsWith("/runtime/settings/provider"),
-  );
   await openUserMenu(page);
   await page.getByRole("menuitem", { name: "设置" }).click();
+  const loaded = page.waitForResponse((response) => {
+    if (response.request().method() !== "GET") return false;
+    return new URL(response.url()).pathname.endsWith("/settings/provider");
+  });
   await page.getByRole("button", { name: "AI 服务" }).click();
   await loaded;
 
@@ -108,16 +107,15 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
 
   await expect(page.getByLabel("服务地址")).toHaveValue("http://localhost:11434/v1");
   await page.getByLabel("服务地址").fill("http://127.0.0.1:11434/v1/");
-  const saved = page.waitForRequest(
-    (request) =>
-      request.method() === "POST" && request.url().endsWith("/runtime/settings/provider/connections"),
-  );
-  const refreshed = page.waitForRequest(
-    (request) =>
-      request.method() === "POST" &&
-      request.url().includes("/runtime/settings/provider/connections/") &&
-      request.url().endsWith("/refresh-models"),
-  );
+  const saved = page.waitForRequest((request) => {
+    if (request.method() !== "POST") return false;
+    return new URL(request.url()).pathname.endsWith("/settings/provider/connections");
+  });
+  const refreshed = page.waitForRequest((request) => {
+    if (request.method() !== "POST") return false;
+    const path = new URL(request.url()).pathname;
+    return path.includes("/settings/provider/connections/") && path.endsWith("/refresh-models");
+  });
   await page.getByRole("button", { name: "保存连接" }).click();
   expect((await saved).postDataJSON()).toMatchObject({
     template_id: "ollama",
@@ -141,12 +139,14 @@ test("配置私人助理 Skills、工作规则与外部工具", async ({ page })
   await installRuntime(page);
   await signIn(page);
   await page.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("link", { name: "我的助理", exact: true }).click();
   await page.getByRole("button", { name: "高级设置（可选）" }).click();
 
-  const installed = page.waitForRequest(
-    (request) => request.method() === "POST" && request.url().endsWith("/runtime/settings/skills/install"),
-  );
-  await page.getByRole("button", { name: "添加 Skill" }).click();
+  const installed = page.waitForRequest((request) => {
+    if (request.method() !== "POST") return false;
+    return new URL(request.url()).pathname.endsWith("/settings/skills/install");
+  });
+  await page.getByRole("button", { name: "本地上传" }).click();
   await page.getByRole("menuitem", { name: "选择文件夹" }).click();
   expect((await installed).postDataJSON()).toEqual({
     user_id: "patient-a",
@@ -158,13 +158,15 @@ test("配置私人助理 Skills、工作规则与外部工具", async ({ page })
 
 回答简洁。
 `;
-  const agentsSaved = page.waitForRequest(
-    (request) => request.method() === "PUT" && request.url().endsWith("/runtime/settings/agents-md"),
-  );
+  const agentsSaved = page.waitForRequest((request) => {
+    if (request.method() !== "PUT") return false;
+    return new URL(request.url()).pathname.endsWith("/settings/agents-md");
+  });
   await page.getByLabel("工作规则").fill(agentsContent);
-  const mcpSaved = page.waitForRequest(
-    (request) => request.method() === "PUT" && request.url().endsWith("/runtime/settings/mcp"),
-  );
+  const mcpSaved = page.waitForRequest((request) => {
+    if (request.method() !== "PUT") return false;
+    return new URL(request.url()).pathname.endsWith("/settings/mcp");
+  });
   await page.getByLabel("MCP").fill(`{
   "notes": {
     "url": "http://127.0.0.1:9001/mcp"

@@ -1,8 +1,11 @@
 import { expect, type Page } from "@playwright/test";
 
 /** 用浏览器登录闭环（Electron 桥接桩）进入会话页。 */
-export async function signIn(page: Page): Promise<void> {
-  await mockAgentUp(page);
+export async function signIn(
+  page: Page,
+  bridge: Parameters<typeof mockAgentUp>[1] = {},
+): Promise<void> {
+  await mockAgentUp(page, bridge);
   await page.goto("/login");
   await page.getByRole("button", { name: "前往 agentup.me" }).click();
   await expect(page).toHaveURL(/\/$/);
@@ -12,15 +15,39 @@ export async function openUserMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: /^账号：/ }).click();
 }
 
+/**
+ * 打开市场页（路由 `/market`）。
+ * 必须走轨栏 RouterLink：`page.goto` 会整页刷新，冲掉 KeepAlive 会话与进行中的 stream。
+ */
+export async function openMarket(page: Page): Promise<void> {
+  const link = page.getByRole("link", { name: "市场", exact: true });
+  await expect(link).toBeVisible();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await link.click();
+    try {
+      await expect(page).toHaveURL(/\/market/, { timeout: 2_000 });
+      break;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
+  await expect(page.getByRole("heading", { name: "Agent 市场" })).toBeVisible();
+}
+
 /** 从市场招募并回到消息页；市场招募会顺带同步运行包。 */
 export async function startAgent(page: Page, agentName: string): Promise<void> {
-  await page.getByRole("link", { name: "Agent 市场" }).click();
+  await openMarket(page);
   const card = page.getByRole("article").filter({ hasText: agentName });
   await card.getByRole("button", { name: "招募" }).click();
-  await expect(card.getByText("已招募")).toBeVisible();
-  await page.getByRole("link", { name: "消息" }).click();
+  await expect(card.getByLabel("已招")).toBeVisible();
+  await page.getByRole("link", { name: "消息", exact: true }).click();
   await conversationItem(page, agentName).click();
   await expect(page.getByRole("heading", { name: agentName, exact: true })).toBeVisible();
+}
+
+/** contenteditable 作曲器：Playwright toHaveValue 不适用。 */
+export async function expectComposerText(page: Page, text: string): Promise<void> {
+  await expect(page.getByRole("textbox", { name: /^发送消息/ })).toHaveText(text);
 }
 
 export async function syncAgent(page: Page, agentName: string): Promise<void> {

@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import type { LocalAppDeps, LocalAppEnv } from "../http.js";
 import { registerAgentsRoutes } from "./agents.js";
 import { registerAuthRoutes } from "./auth.js";
+import { registerCommunitySkillsRoutes } from "./community-skills.js";
 import { registerHealthRoutes } from "./health.js";
 import { registerHitlRoutes } from "./hitl.js";
 import { registerLocalAgentsRoutes } from "./local-agents.js";
@@ -17,6 +18,7 @@ export function registerLocalRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
   registerHealthRoutes(app);
   registerAuthRoutes(app, deps);
   registerSettingsRoutes(app, deps);
+  registerCommunitySkillsRoutes(app, deps);
   registerPreferencesRoutes(app, deps);
   registerStateRoutes(app, deps);
   registerHitlRoutes(app, deps);

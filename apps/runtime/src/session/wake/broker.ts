@@ -22,6 +22,9 @@ type QueueState = {
  * 异步完成 → 排队 → 父会话空闲时主动 wake（triggerTurn）。
  * 成功 debounce 合并；失败/取消立即 drain。
  * 用户若先发言：VisitChats 用 takePending + nextTurn 并进该轮，避免抢跑。
+ *
+ * wake 执行失败（含用户 409→abort 打断）时：回队但**不**在 finally 里立刻重入 drain，
+ * 否则会与重试 prompt 抢 busy，落半截 user 消息。须等 onParentIdle 或 takePending。
  */
 export class AsyncWakeBroker {
   private readonly queues = new Map<string, QueueState>();
@@ -130,12 +133,11 @@ export class AsyncWakeBroker {
     } catch {
       for (const item of batch) this.inflight.delete(item.id);
       state.items.unshift(...batch);
+      // 失败不自动 drain：避免 abort 后立刻再开 wake 与用户重试 prompt 死锁。
     } finally {
       state.draining = false;
       if (state.items.length === 0) {
         this.queues.delete(key);
-      } else if (!this.isBusy(sample.userId, sample.agentId, sample.kind)) {
-        void this.drain(key);
       }
     }
   }

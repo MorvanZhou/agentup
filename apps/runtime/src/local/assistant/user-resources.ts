@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 
 import { openPromise as openZipPromise } from "yauzl";
 
-import { validateAgentPackage, type PackageIssue } from "../../package/validate.js";
+import {
+  repairSkillMarkdown,
+  validateAgentPackage,
+  type PackageIssue,
+} from "../../package/validate.js";
 import { ensurePersonalAssistant } from "./personal-assistant.js";
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -131,7 +135,10 @@ export async function installSkillPackageTo(
     }
 
     const skillRoot = resolveSkillRoot(staging);
-    const content = fs.readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
+    const skillFile = path.join(skillRoot, "SKILL.md");
+    // 社区包常带未转义内层引号：校验能读过，但落盘原样会导致 Pi 加载失败（skills=0）。
+    const content = repairSkillMarkdown(fs.readFileSync(skillFile, "utf8"));
+    fs.writeFileSync(skillFile, content);
     const name = skillFrontmatterName(content);
     if (!name || !SKILL_NAME.test(name) || name.length > 64) {
       throw new UserResourceError("技能名称无效");

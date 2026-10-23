@@ -1,11 +1,9 @@
 import type { RecruitedAgentInfo } from "./types.js";
 
-/** 花名册不超过此数时全量注入，不做裁剪。 */
-export const DISCOVER_SMALL_ROSTER = 8;
-/** 大花名册检索返回条数。 */
+/** 检索返回条数上限。 */
 export const DISCOVER_TOP_K = 5;
 
-export type DiscoverMode = "empty" | "all" | "search" | "sample";
+export type DiscoverMode = "empty" | "need_query" | "search";
 
 export type DiscoverResult = {
   agents: RecruitedAgentInfo[];
@@ -16,29 +14,18 @@ export type DiscoverResult = {
 
 /**
  * 在已招募花名册上按姓名 / 职业 / 背景 / 备注 / SYSTEM 词法打分，取 Top-K。
- * 小花名册（≤8）全量返回。
+ * 无 query 不返回样本；小花名册也不再全量倾倒。
  */
 export function discoverRecruitedAgents(
   agents: readonly RecruitedAgentInfo[],
   query: string,
-  options: { topK?: number; smallLimit?: number } = {},
+  options: { topK?: number } = {},
 ): DiscoverResult {
   const topK = options.topK ?? DISCOVER_TOP_K;
-  const smallLimit = options.smallLimit ?? DISCOVER_SMALL_ROSTER;
   if (agents.length === 0) return { agents: [], mode: "empty" };
 
-  if (agents.length <= smallLimit) {
-    return { agents: [...agents], mode: "all" };
-  }
-
   const q = query.trim();
-  if (!q) {
-    return {
-      agents: agents.slice(0, topK),
-      mode: "sample",
-      truncated: agents.length > topK,
-    };
-  }
+  if (!q) return { agents: [], mode: "need_query" };
 
   const ranked = agents
     .map((agent) => ({ agent, score: scoreAgent(agent, q) }))
@@ -84,30 +71,28 @@ export function scoreAgent(agent: RecruitedAgentInfo, query: string): number {
   return total;
 }
 
-/** 拼进每轮模型上下文的候选专家块；无候选时返回空串。 */
+/**
+ * 拼进每轮模型上下文的候选专家块。
+ * 无命中 / 无 query / 空花名册 → 空串（不污染本轮；模型应主动 agent_search）。
+ */
 export function formatDiscoveredAgentsContext(result: DiscoverResult): string {
-  if (result.agents.length === 0) {
-    if (result.mode === "empty") return "";
-    return [
-      "# Relevant recruited agents",
-      "",
-      "No matching specialists for this turn. Call list_recruited_agents with a different query, or answer yourself.",
-    ].join("\n");
-  }
+  if (result.agents.length === 0) return "";
 
   const lines = result.agents.map(formatAgentCardLine);
-  const footer =
-    result.truncated && result.mode !== "all"
-      ? "\n\n(More agents available — call list_recruited_agents with a query to refine.)"
-      : "";
+  const footer = result.truncated
+    ? "\n\n(More agents available — call agent_search with a refined query.)"
+    : "";
 
-  return [
-    "# Relevant recruited agents",
-    "",
-    "Candidates from the user's contact list (local private + market recruited). When a specialist's role or background fits the task, prefer list_recruited_agents / delegate_to_agent (user approval required). You keep ownership of the user-facing reply.",
-    "",
-    ...lines,
-  ].join("\n") + footer;
+  return (
+    [
+      "# Relevant recruited agents",
+      "",
+      "This is a collaboration workspace: specialists from the user's contact list (local private + market recruited) can help when their role fits.",
+      "Candidates below matched this turn's message. Prefer agent_search to refine, then delegate_to_agent (user approval required). You keep ownership of the user-facing reply.",
+      "",
+      ...lines,
+    ].join("\n") + footer
+  );
 }
 
 /** 工具 / 日志用的单行名片。 */

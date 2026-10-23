@@ -23,17 +23,20 @@ describe("discoverRecruitedAgents", () => {
     expect(discoverRecruitedAgents([], "汇率")).toEqual({ agents: [], mode: "empty" });
   });
 
-  it("returns all when roster is small", () => {
+  it("requires a query instead of dumping a small roster", () => {
     const agents = [
       card({ agentId: "a", name: "甲", role: "律师", background: "合同法" }),
       card({ agentId: "b", name: "乙", role: "会计", background: "税务" }),
     ];
-    const result = discoverRecruitedAgents(agents, "无关话题");
-    expect(result.mode).toBe("all");
-    expect(result.agents).toHaveLength(2);
+    expect(discoverRecruitedAgents(agents, "")).toEqual({ agents: [], mode: "need_query" });
+    expect(discoverRecruitedAgents(agents, "   ")).toEqual({ agents: [], mode: "need_query" });
+
+    const unrelated = discoverRecruitedAgents(agents, "无关话题");
+    expect(unrelated.mode).toBe("search");
+    expect(unrelated.agents).toEqual([]);
   });
 
-  it("ranks by role when roster is large", () => {
+  it("ranks by role and background", () => {
     const agents = Array.from({ length: 10 }, (_, index) =>
       card({
         agentId: `agent-${index}`,
@@ -45,17 +48,23 @@ describe("discoverRecruitedAgents", () => {
     const byRole = discoverRecruitedAgents(agents, "查一下今天汇率");
     expect(byRole.mode).toBe("search");
     expect(byRole.agents[0]?.agentId).toBe("agent-3");
+    expect(byRole.truncated).toBe(false);
 
     const byBackground = discoverRecruitedAgents(agents, "跨境结算怎么办");
     expect(byBackground.agents[0]?.agentId).toBe("agent-7");
   });
 
-  it("samples when large roster and empty query", () => {
-    const agents = Array.from({ length: 10 }, (_, index) =>
-      card({ agentId: `n${index}`, name: `N${index}` }),
+  it("truncates to topK when many agents match", () => {
+    const agents = Array.from({ length: 8 }, (_, index) =>
+      card({
+        agentId: `fx-${index}`,
+        name: `汇${index}`,
+        role: "汇率分析师",
+        background: "外汇",
+      }),
     );
-    const result = discoverRecruitedAgents(agents, "");
-    expect(result.mode).toBe("sample");
+    const result = discoverRecruitedAgents(agents, "汇率");
+    expect(result.mode).toBe("search");
     expect(result.agents).toHaveLength(5);
     expect(result.truncated).toBe(true);
   });
@@ -72,7 +81,13 @@ describe("discoverRecruitedAgents", () => {
 });
 
 describe("formatDiscoveredAgentsContext", () => {
-  it("formats cards with role and background", () => {
+  it("returns empty when there is nothing to inject", () => {
+    expect(formatDiscoveredAgentsContext({ mode: "empty", agents: [] })).toBe("");
+    expect(formatDiscoveredAgentsContext({ mode: "need_query", agents: [] })).toBe("");
+    expect(formatDiscoveredAgentsContext({ mode: "search", agents: [] })).toBe("");
+  });
+
+  it("formats cards and points at agent_search", () => {
     const text = formatDiscoveredAgentsContext({
       mode: "search",
       agents: [
@@ -84,11 +99,15 @@ describe("formatDiscoveredAgentsContext", () => {
           remark: "小汇",
         }),
       ],
+      truncated: true,
     });
     expect(text).toContain("Relevant recruited agents");
+    expect(text).toContain("collaboration workspace");
+    expect(text).toContain("agent_search");
     expect(text).toContain("小汇");
     expect(text).toContain("agent_id: fx");
     expect(text).toContain("汇率分析师");
     expect(text).toContain("外汇与跨境结算");
+    expect(text).toContain("More agents available");
   });
 });

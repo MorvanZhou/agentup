@@ -16,8 +16,8 @@ import { t, tf } from "../../../shared/model/ui-locale";
 /**
  * 市场发布 / 更新：
  * - 名片层（name/role/background/rules/avatar）→ PUT /card，不升版
- * - 能力层（skills/MCP）→ 本机草稿 + 整包 publish 升版
- * - 打开更新且无草稿 → from-published hydrate
+ * - 能力层（skills/MCP）→ publish-editor 临时组包升版（不创建 loc-*）
+ * - 打开更新 → publish-editor/preview（不 hydrate 本机草稿）
  */
 export function useAgentPublish(
   session: Ref<Session | null>,
@@ -28,7 +28,6 @@ export function useAgentPublish(
   const publishing = ref(false);
   const loading = ref(false);
   const updateAgentId = ref("");
-  const localDraftId = ref("");
   const initial = ref<AgentEditorInitial | null>(null);
   const published = ref<PublishedAgent | null>(null);
   const errorDetails = ref<PackageIssue[]>([]);
@@ -37,11 +36,10 @@ export function useAgentPublish(
     [() => session.value?.token, () => session.value?.userId, agentId],
     ([token, userId, id]) => {
       updateAgentId.value = id ?? "";
-      localDraftId.value = "";
       initial.value = null;
       published.value = null;
       errorDetails.value = [];
-      if (token && userId && id) void loadTarget(token, userId, id);
+      if (token && userId && id) void loadTarget(token, id);
       else if (!id) {
         initial.value = { name: "", role: "", background: "" };
       }
@@ -49,35 +47,18 @@ export function useAgentPublish(
     { immediate: true },
   );
 
-  async function loadTarget(token: string, userId: string, id: string): Promise<void> {
+  async function loadTarget(token: string, id: string): Promise<void> {
     loading.value = true;
     try {
-      const [owned, locals] = await Promise.all([
-        api.ownedAgents(token),
-        api.localAgents(token, userId),
-      ]);
-      const agent = owned.find((item) => item.agentId === id);
-      if (!agent) {
-        showToast("找不到要更新的 Agent", "error");
-        return;
-      }
-      let draft = locals.find((item) => item.publishedAgentId === id);
-      if (!draft) {
-        const hydrated = await api.importPublishedLocal(token, userId, id);
-        draft = hydrated;
-      }
-      const detail = draft.agentId
-        ? await api.getLocalAgent(token, userId, draft.agentId)
-        : draft;
-      localDraftId.value = detail.agentId;
+      const preview = await api.previewPublishEditor(token, id);
       initial.value = {
-        name: detail.name,
-        role: detail.role,
-        background: detail.background,
-        rules: detail.rules ?? agent.rules,
-        skills: detail.skills,
-        mcpServers: detail.mcpServers,
-        avatarUrl: detail.avatarUrl ?? agent.avatarUrl,
+        name: preview.name,
+        role: preview.role,
+        background: preview.background,
+        rules: preview.rules,
+        skills: preview.skills,
+        mcpServers: preview.mcpServers,
+        avatarUrl: preview.avatarUrl,
       };
     } catch (caught) {
       showToast(messageOf(caught), "error");
@@ -85,27 +66,6 @@ export function useAgentPublish(
     } finally {
       loading.value = false;
     }
-  }
-
-  async function publishFromLocal(
-    current: Session,
-    localAgentId: string,
-    input: AgentEditorInput,
-    publishedId?: string,
-  ): Promise<PublishedAgent> {
-    const directory = await api.visitDirectory(current.token, localAgentId, current.userId);
-    await api.inspectAgent(current.token, directory);
-    const result = await api.publish(
-      current.token,
-      directory,
-      input.name,
-      input.role,
-      input.background,
-      publishedId,
-      input.rules ?? "",
-    );
-    await api.bindLocalPublishedAgent(current.token, current.userId, localAgentId, result.agentId);
-    return result;
   }
 
   async function submit(input: AgentEditorInput): Promise<void> {
@@ -118,8 +78,15 @@ export function useAgentPublish(
       published.value = null;
       try {
         if (!updateAgentId.value) {
-          const local = await api.createLocalAgent(current.token, current.userId, input);
-          published.value = await publishFromLocal(current, local.agentId, input);
+          published.value = await api.publishFromEditor(current.token, {
+            name: input.name,
+            role: input.role,
+            background: input.background,
+            rules: input.rules ?? "",
+            skillPaths: input.skillPaths,
+            mcpServers: input.mcpServers,
+            avatarDataUrl: input.avatarDataUrl,
+          });
           showToast(tf("agentsLocalPublished", { id: published.value.agentId }), "success");
         } else {
           const profileDirty = agentEditorProfileChanged(input, initial.value);
@@ -132,6 +99,7 @@ export function useAgentPublish(
               background: input.background,
               rules: input.rules ?? "",
               avatarDataUrl: input.avatarDataUrl,
+              userId: current.userId,
             });
             if (!capabilityDirty) {
               published.value = {
@@ -147,30 +115,17 @@ export function useAgentPublish(
           }
 
           if (capabilityDirty) {
-            if (!localDraftId.value) {
-              const hydrated = await api.importPublishedLocal(
-                current.token,
-                current.userId,
-                updateAgentId.value,
-              );
-              localDraftId.value = hydrated.agentId;
-            }
-            await api.updateLocalAgent(current.token, current.userId, localDraftId.value, {
+            published.value = await api.publishFromEditor(current.token, {
               name: input.name,
               role: input.role,
               background: input.background,
-              rules: input.rules,
+              rules: input.rules ?? "",
+              agentId: updateAgentId.value,
               skillPaths: input.skillPaths,
               removeSkills: input.removeSkills,
               mcpServers: input.mcpServers,
               avatarDataUrl: input.avatarDataUrl,
             });
-            published.value = await publishFromLocal(
-              current,
-              localDraftId.value,
-              input,
-              updateAgentId.value,
-            );
             showToast(tf("agentsLocalRepublished", { id: published.value.agentId }), "success");
           }
         }
@@ -188,7 +143,6 @@ export function useAgentPublish(
     publishing,
     loading,
     initial,
-    localDraftId,
     published,
     errorDetails,
     submit,

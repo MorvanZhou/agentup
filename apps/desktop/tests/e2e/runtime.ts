@@ -139,6 +139,50 @@ export async function installRuntime(
   let localSeq = 0;
   const FAKE_AVATAR = "data:image/png;base64,iVBORw0KGgo=";
 
+  function upsertPublishedWriter(body: {
+    name: string;
+    role?: string;
+    background: string;
+    agent_id?: string;
+  }) {
+    const version = body.agent_id ? 2 : 1;
+    if (!agents.some((agent) => agent.agent_id === "writer")) {
+      agents.push({
+        agent_id: "writer",
+        name: body.name,
+        role: body.role ?? "",
+        background: body.background,
+        latest_version: version,
+        latest_digest: "writer-digest",
+        local_version: 0,
+        recruited: false,
+        has_avatar: true,
+        avatar_url: FAKE_AVATAR,
+        remark: "",
+        recruit_count: 0,
+        created_at: "2026-02-01T00:00:00Z",
+        updated_at: "2026-02-01T00:00:00Z",
+      });
+    } else {
+      const agent = agents.find((item) => item.agent_id === "writer")!;
+      agent.name = body.name;
+      agent.role = body.role ?? "";
+      agent.background = body.background;
+      agent.latest_version = version;
+      agent.has_avatar = true;
+      agent.avatar_url = agent.avatar_url ?? FAKE_AVATAR;
+      agent.updated_at = "2026-02-02T00:00:00Z";
+    }
+    return {
+      agent_id: "writer",
+      name: body.name,
+      role: body.role ?? "",
+      background: body.background,
+      version,
+      digest: "writer-digest",
+    };
+  }
+
   function localCard(agent: LocalAgentRecord) {
     return {
       kind: "local",
@@ -983,9 +1027,48 @@ export async function installRuntime(
       delete uiLastActiveAt[agentId];
       return json(route, 200, { status: "ok" });
     }
+    const deleteOwned = path.match(/^\/agents\/([^/]+)$/);
+    if (request.method() === "DELETE" && deleteOwned) {
+      const agentId = deleteOwned[1];
+      const index = agents.findIndex((item) => item.agent_id === agentId);
+      if (index < 0) return json(route, 404, { error: "找不到 Agent" });
+      agents.splice(index, 1);
+      delete histories[agentId];
+      delete uiUnread[agentId];
+      delete uiPreviews[agentId];
+      delete uiLastActiveAt[agentId];
+      return json(route, 200, { status: "ok" });
+    }
     if (request.method() === "POST" && path === "/agents/inspect") {
       if (options?.inspectError) return json(route, 400, options.inspectError);
       return json(route, 200, { file_count: 2 });
+    }
+    if (request.method() === "POST" && path === "/agents/publish-editor/preview") {
+      const body = request.postDataJSON() as { published_agent_id?: string };
+      const agent = agents.find((item) => item.agent_id === body.published_agent_id);
+      if (!agent) return json(route, 404, { error: "找不到要更新的 Agent" });
+      return json(route, 200, {
+        agent_id: agent.agent_id,
+        name: agent.name,
+        role: agent.role,
+        background: agent.background,
+        rules: "",
+        skills: [],
+        mcp_servers: {},
+        avatar_url: agent.avatar_url,
+      });
+    }
+    if (request.method() === "POST" && path === "/agents/publish-editor") {
+      if (options?.inspectError) return json(route, 400, options.inspectError);
+      if (options?.publishError) return json(route, 403, { error: options.publishError });
+      const body = request.postDataJSON() as {
+        name: string;
+        role?: string;
+        background: string;
+        agent_id?: string;
+        rules?: string;
+      };
+      return json(route, 200, upsertPublishedWriter(body));
     }
     if (request.method() === "POST" && path === "/agents/publish") {
       if (options?.publishError) return json(route, 403, { error: options.publishError });
@@ -996,41 +1079,7 @@ export async function installRuntime(
         agent_id?: string;
         rules?: string;
       };
-      const version = body.agent_id ? 2 : 1;
-      if (!agents.some((agent) => agent.agent_id === "writer")) {
-        agents.push({
-          agent_id: "writer",
-          name: body.name,
-          role: body.role ?? "",
-          background: body.background,
-          latest_version: version,
-          latest_digest: "writer-digest",
-          local_version: 0,
-          recruited: false,
-          has_avatar: true,
-          avatar_url: FAKE_AVATAR,
-          remark: "",
-          recruit_count: 0,
-          created_at: "2026-02-01T00:00:00Z",
-          updated_at: "2026-02-01T00:00:00Z",
-        });
-      } else {
-        const agent = agents.find((item) => item.agent_id === "writer")!;
-        agent.name = body.name;
-        agent.role = body.role ?? "";
-        agent.background = body.background;
-        agent.latest_version = version;
-        agent.has_avatar = true;
-        agent.avatar_url = agent.avatar_url ?? FAKE_AVATAR;
-        agent.updated_at = "2026-02-02T00:00:00Z";
-      }
-      return json(route, 200, {
-        agent_id: "writer",
-        name: body.name,
-        background: body.background,
-        version,
-        digest: "writer-digest",
-      });
+      return json(route, 200, upsertPublishedWriter(body));
     }
     const cardUpdate = path.match(/^\/agents\/([^/]+)\/card$/);
     if (request.method() === "PUT" && cardUpdate) {

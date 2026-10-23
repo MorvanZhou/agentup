@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-import { conversationItem, signIn, startAgent, syncAgent } from "./helpers";
+import {
+  conversationItem,
+  expectComposerText,
+  openMarket,
+  signIn,
+  startAgent,
+  syncAgent,
+} from "./helpers";
 import { installRuntime } from "./runtime";
 
 test("私人助理无需招募即可独立对话", async ({ page }) => {
@@ -43,7 +50,8 @@ test("招募并同步后，发送消息会呈现文本、推理和工具调用",
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("咳嗽三天")).toBeVisible();
   await expect(page.getByRole("list").getByText("你好", { exact: true })).toBeVisible();
-  // turn 结束后：reasoning 与 trailing tool 各成折叠段，夹着总结 text
+  // turn 结束后：总结为默认 tab；过程里 reasoning / trailing tool 各成折叠段
+  await page.getByRole("tab", { name: "过程" }).click();
   const processTriggers = page.getByRole("button", { name: /\d+ 个步骤/ });
   await expect(processTriggers).toHaveCount(2);
   await processTriggers.nth(0).click();
@@ -89,6 +97,7 @@ test("已招募的会话会读回本机聊天记录，续聊不会并入上一�
   await loaded;
   await expect(page.getByText("上海天气怎么样？")).toBeVisible();
   await expect(page.getByText("上海今天晴，24°C。")).toBeVisible();
+  await page.getByRole("tab", { name: "过程" }).click();
   await expect(page.getByRole("button", { name: /\d+ 个步骤/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^bash\b/i })).toHaveCount(0);
   await page.getByRole("button", { name: /\d+ 个步骤/ }).click();
@@ -109,8 +118,8 @@ test("已招募的会话会读回本机聊天记录，续聊不会并入上一�
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("list").getByText("你好", { exact: true })).toHaveCount(2);
 
-  await page.getByRole("link", { name: "Agent 市场" }).click();
-  await page.getByRole("link", { name: "消息" }).click();
+  await openMarket(page);
+  await page.getByRole("link", { name: "消息", exact: true }).click();
   await expect(page.getByText("上海今天晴，24°C。")).toBeVisible();
 });
 
@@ -232,7 +241,7 @@ test("新对话后仍显示历史，并出现分隔标记", async ({ page }) => 
   await expect(page.getByText("上海天气怎么样？")).toBeVisible();
   await expect(page.getByText("上海今天晴，24°C。")).toBeVisible();
   await expect(page.getByRole("separator", { name: "新对话" })).toBeVisible();
-  await expect(composer).toHaveValue("还想问下明天呢");
+  await expectComposerText(page, "还想问下明天呢");
 
   // 勾选「不再提醒」后再次点「新对话」应直接请求，不再弹窗。
   const clearedAgain = page.waitForRequest(
@@ -263,17 +272,20 @@ test("修改备注名后顶栏与侧栏显示备注名，原名仍可见", async
   await expect(page.getByRole("heading", { name: "Weaty" })).toBeVisible();
 
   await page.getByRole("button", { name: "会话菜单" }).click();
-  await page.getByRole("menuitem", { name: "修改备注名" }).click();
+  await page.getByRole("menuitem", { name: "对话配置" }).click();
+  await expect(page.getByRole("heading", { name: "对话配置" })).toBeVisible();
   const saved = page.waitForRequest(
     (request) =>
       request.method() === "PUT" && request.url().includes("/runtime/agents/weather/remark"),
   );
-  await page.getByRole("dialog").getByPlaceholder("输入备注名").fill("小天气");
-  await page.getByRole("dialog").getByRole("button", { name: "保存" }).click();
+  const remark = page.getByPlaceholder("输入备注名");
+  await remark.fill("小天气");
+  await remark.blur();
   expect((await saved).postDataJSON()).toMatchObject({ remark: "小天气" });
 
   await expect(page.getByRole("heading", { name: "小天气" })).toBeVisible();
-  await expect(page.getByText("Weaty", { exact: true }).last()).toBeVisible();
+  // 顶栏副文案仍带原名；侧栏主标题为备注名。
+  await expect(page.getByText(/气象员 · Weaty/)).toBeVisible();
   await expect(page.getByRole("button", { name: /^小天气/ })).toBeVisible();
 });
 
@@ -356,10 +368,10 @@ test("消息列表显示未读角标，选中后清除", async ({ page }) => {
   });
   await signIn(page);
   await expect(page.getByRole("button", { name: "Weaty，2 条未读" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "消息，2 条未读" })).toBeVisible();
+  // 主导航角标只反映待审批 / ask_user，未读只在会话行上。
+  await expect(page.getByRole("link", { name: "消息", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Weaty，2 条未读" }).click();
   await expect(page.getByRole("button", { name: "Weaty", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "消息", exact: true })).toBeVisible();
 });
 
 test("stream 中切换会话或页面再回来，仍接回同一轮回复", async ({ page }) => {
@@ -383,8 +395,8 @@ test("stream 中切换会话或页面再回来，仍接回同一轮回复", asyn
 
   await conversationItem(page, "Weaty").click();
   await expect(page.getByRole("button", { name: "呼吸科医生，正在回复" })).toBeVisible();
-  await page.getByRole("link", { name: "Agent 市场" }).click();
-  await page.getByRole("link", { name: "消息" }).click();
+  await openMarket(page);
+  await page.getByRole("link", { name: "消息", exact: true }).click();
   await conversationItem(page, "呼吸科医生").click();
 
   await expect(page.getByRole("list").getByText("你好", { exact: true })).toBeVisible({ timeout: 10_000 });

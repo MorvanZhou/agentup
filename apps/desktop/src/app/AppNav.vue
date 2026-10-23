@@ -14,7 +14,7 @@ const conversationBadge = computed(() => unreadLabel(blockedCount.value));
 const items = computed(() => [
   { id: "conversation" as const, to: { name: "conversation" as const }, label: t("navMessages"), icon: MessageSquareIcon },
   { id: "market" as const, to: { name: "market" as const }, label: t("navMarket"), icon: StoreIcon },
-  { id: "agents" as const, to: { name: "agents-assistant" as const }, label: t("navAgents"), icon: BotIcon },
+  { id: "agents" as const, to: { name: "agents-local" as const }, label: t("navAgents"), icon: BotIcon },
 ]);
 
 function itemActive(id: "conversation" | "market" | "agents"): boolean {

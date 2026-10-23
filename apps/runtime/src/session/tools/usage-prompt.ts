@@ -22,7 +22,10 @@ export function formatToolsUsagePrompt(
     `- Read files: use \`read\` — never ${shell} with cat/head/tail/less / Get-Content.`,
     `- Edit existing files: use \`edit\` — never ${shell} with sed/awk/perl -i.`,
     `- Create or fully rewrite files: use \`write\` — never ${shell} with echo/printf redirects or heredocs.`,
+    `- Current local date/time: use \`get_local_time\` — never ${shell} with date / Get-Date for ordinary clock reads.`,
+    `- MCP / deferred tools: call \`tool_search\` with a short query first (same idea as \`agent_search\`), then use the loaded tools. Do not assume MCP tools are already declared.`,
     "",
-    `Use ${shell} for builds, tests, git, package managers, and other real shell work. For long-running non-specialist commands, prefer \`bg_run\` (then \`bg_status\` / \`bg_kill\`); \`bg_run\` uses the same shell as ${shell}.`,
+    `Use ${shell} for builds, tests, git, package managers, and other real shell work.`,
+    `Duration rule: if a command may take > ~20s (builds, watches, migrations, heavy scripts, installs), prefer \`bg_run\` instead of blocking ${shell}; then \`bg_status\` / \`bg_kill\`. Short commands stay on ${shell}. \`bg_run\` uses the same shell as ${shell}.`,
   ].join("\n");
 }

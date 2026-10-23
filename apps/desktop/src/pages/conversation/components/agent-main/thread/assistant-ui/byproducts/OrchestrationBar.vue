@@ -9,6 +9,7 @@ import {
 import { computed, ref } from "vue";
 
 import { DesktopApi } from "../../../../../../../shared/api/runtime";
+import type { BusyTurn } from "../../../../../../../shared/api/runtime/chat";
 import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
 import { showToast } from "../../../../../../../shared/model/toast";
 import { t, tf } from "../../../../../../../shared/model/ui-locale";
@@ -21,12 +22,16 @@ import {
 
 const props = defineProps<{
   items: AsyncFleetItem[];
+  /** attention 里本会话的 busy turn；wake 时显性「正在整理」。 */
+  busyTurn?: BusyTurn | null;
   token: string;
   userId: string;
 }>();
 
 const emit = defineEmits<{
   cancelled: [id: string];
+  /** 停止主 agent 当前编排回合（含 wake）。 */
+  "stop-turn": [];
 }>();
 
 const roster = injectThreadRoster();
@@ -35,9 +40,47 @@ const api = new DesktopApi();
 const expanded = ref(false);
 const cancellingId = ref<string | null>(null);
 
-const visible = computed(() => props.items.length > 0);
-const preview = computed(() => props.items.slice(0, 3));
-const overflow = computed(() => Math.max(0, props.items.length - 3));
+const isWake = computed(() => props.busyTurn?.phase === "wake");
+const wakeSources = computed(() => props.busyTurn?.sources ?? []);
+const visible = computed(
+  () => props.items.length > 0 || isWake.value,
+);
+
+const headline = computed(() => {
+  if (isWake.value) {
+    const names = wakeSources.value.map((s) => s.name).filter(Boolean);
+    if (names.length === 1) return tf("orchSynthesizingOne", { name: names[0]! });
+    if (names.length > 1) return tf("orchSynthesizingMany", { count: names.length });
+    return t("orchSynthesizing");
+  }
+  if (props.items.length > 0) {
+    return tf("fleetRunning", { count: props.items.length });
+  }
+  return t("orchWorking");
+});
+
+const preview = computed(() => {
+  if (isWake.value && wakeSources.value.length > 0) {
+    return wakeSources.value.slice(0, 3).map((source, index) => ({
+      key: `wake-${source.agentId || source.name}-${index}`,
+      kind: source.kind === "background" ? ("background" as const) : ("delegation" as const),
+      name: source.name,
+      agentId: source.agentId || "",
+    }));
+  }
+  return props.items.slice(0, 3).map((item) => ({
+    key: `${item.kind}-${item.id}`,
+    kind: item.kind,
+    name: displayName(item),
+    agentId: item.toAgentId || "",
+    item,
+  }));
+});
+
+const overflow = computed(() => {
+  if (isWake.value) return Math.max(0, wakeSources.value.length - 3);
+  return Math.max(0, props.items.length - 3);
+});
 
 function displayName(item: AsyncFleetItem): string {
   if (item.kind === "background") return item.title;
@@ -46,9 +89,14 @@ function displayName(item: AsyncFleetItem): string {
   return agent.remark || agent.name || item.toAgentName || item.title;
 }
 
+function avatarUrlFor(agentId: string, nameHint: string): string | undefined {
+  if (!agentId) return undefined;
+  return resolveRosterAgent(roster.value, agentId, nameHint).avatarUrl;
+}
+
 function avatarUrl(item: AsyncFleetItem): string | undefined {
   if (item.kind === "background") return undefined;
-  return resolveRosterAgent(roster.value, item.toAgentId || "", item.toAgentName).avatarUrl;
+  return avatarUrlFor(item.toAgentId || "", item.toAgentName || item.title);
 }
 
 function shortSubtitle(item: AsyncFleetItem): string {
@@ -96,11 +144,13 @@ async function cancelTask(item: AsyncFleetItem): Promise<void> {
 </script>
 
 <template>
+  <!-- 编排条：等待子任务 / wake 汇总 / 可停主回合 -->
   <div
     v-if="visible"
     class="shrink-0 border-b border-rule bg-paper-deep/60 px-3 py-1.5"
     role="region"
-    :aria-label="t('fleetAria')"
+    :aria-label="isWake ? t('orchAria') : t('fleetAria')"
+    :aria-busy="true"
   >
     <div class="flex min-w-0 items-center gap-2">
       <LoaderCircleIcon
@@ -108,27 +158,27 @@ async function cancelTask(item: AsyncFleetItem): Promise<void> {
         aria-hidden="true"
       />
       <p class="mb-0 min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {{ tf("fleetRunning", { count: items.length }) }}
+        {{ headline }}
       </p>
       <div class="flex items-center">
         <span
-          v-for="(item, index) in preview"
-          :key="`${item.kind}-${item.id}`"
+          v-for="(chip, index) in preview"
+          :key="chip.key"
           class="relative inline-flex rounded-full ring-2 ring-paper-deep"
           :class="index > 0 ? '-ml-1.5' : ''"
           :style="{ zIndex: index + 1 }"
-          :title="displayName(item)"
+          :title="chip.name"
         >
           <span
-            v-if="item.kind === 'background'"
+            v-if="chip.kind === 'background'"
             class="inline-flex size-5 items-center justify-center rounded-full bg-paper text-muted-foreground"
           >
             <TerminalIcon class="size-3" aria-hidden="true" />
           </span>
           <AgentAvatar
             v-else
-            :name="displayName(item)"
-            :avatar-url="avatarUrl(item)"
+            :name="chip.name"
+            :avatar-url="avatarUrlFor(chip.agentId, chip.name)"
             size="xs"
             round
           />
@@ -142,6 +192,18 @@ async function cancelTask(item: AsyncFleetItem): Promise<void> {
         </span>
       </div>
       <button
+        v-if="isWake"
+        type="button"
+        class="inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-destructive transition duration-200 hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+        :aria-label="t('orchStopAria')"
+        :title="t('orchStop')"
+        @click="emit('stop-turn')"
+      >
+        <SquareIcon class="size-3.5 shrink-0 fill-current" aria-hidden="true" />
+        {{ t("orchStop") }}
+      </button>
+      <button
+        v-if="items.length > 0"
         type="button"
         class="inline-flex size-7 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
         :aria-expanded="expanded"
@@ -156,7 +218,7 @@ async function cancelTask(item: AsyncFleetItem): Promise<void> {
       </button>
     </div>
 
-    <ul v-if="expanded" class="mt-1.5 flex flex-col gap-1" role="list">
+    <ul v-if="expanded && items.length > 0" class="mt-1.5 flex flex-col gap-1" role="list">
       <li
         v-for="item in items"
         :key="`${item.kind}-${item.id}`"

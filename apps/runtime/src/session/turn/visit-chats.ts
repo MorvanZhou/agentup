@@ -22,6 +22,11 @@ import {
   modelUnavailableNotice,
 } from "../model/unavailable.js";
 import { expandSkillReferences } from "../skills/expand.js";
+import {
+  consumeStreamDegeneration,
+  sanitizeStreamText,
+  streamDegenerationAbortedMessage,
+} from "../stream-guard.js";
 import type { AskUserBroker } from "../tools/index.js";
 import {
   AsyncWakeBroker,
@@ -30,6 +35,12 @@ import {
   type AsyncWakeItem,
 } from "../wake/index.js";
 import {
+  wakeSourcesFromDetails,
+  type BusyTurnInfo,
+  type BusyTurnPhase,
+  type BusyTurnSource,
+} from "./busy-turn.js";
+import {
   rewindSession,
   slotModelKey,
   trackModelFailure,
@@ -37,12 +48,17 @@ import {
   visitKind,
 } from "./helpers.js";
 import { openPromptSession } from "./open.js";
+import { TurnStreamHub } from "./turn-stream-hub.js";
 import {
   ChatBusy,
   type PromptRewind,
   type PromptSession,
   type VisitChatsWakeDeps,
 } from "./types.js";
+
+export type TurnProgressEvent =
+  | { type: "dirty"; agentId: string; phase: BusyTurnPhase }
+  | { type: "done"; agentId: string };
 
 type Slot = {
   digest: string;
@@ -51,6 +67,10 @@ type Slot = {
   session: PromptSession;
   busy: boolean;
   stale: boolean;
+  /** prompt=用户回合；wake=异步结果主动同步。 */
+  turnPhase?: BusyTurnPhase;
+  /** wake 回合的来源专家 / 后台作业（编排条）。 */
+  wakeSources?: BusyTurnSource[];
   /** 当前 turn 的 finally 完成后 resolve；供 abort 等待 busy 真正解开。 */
   turnDone?: Promise<void>;
   resolveTurn?: () => void;
@@ -59,6 +79,10 @@ type Slot = {
 export class VisitChats {
   private readonly sessions = new Map<string, Slot>();
   private readonly wake: AsyncWakeBroker;
+  /** 编排条：turn 阶段订阅（按 userId）。 */
+  private readonly turnProgress = new Map<string, Set<(event: TurnProgressEvent) => void>>();
+  /** wake 等无 prompt 客户端的回合：UIMessage 旁路流。 */
+  private readonly turnStreams = new TurnStreamHub();
 
   constructor(
     private readonly open: (visit: Visit, model: ModelConfig) => Promise<PromptSession> = openPromptSession,
@@ -87,13 +111,73 @@ export class VisitChats {
 
   /** 当前用户下主会话正在跑 turn 的 agentId（侧栏 working）。 */
   busyAgentIds(userId: string): string[] {
-    const ids: string[] = [];
+    return this.busyTurns(userId).map((item) => item.agentId);
+  }
+
+  /** 带阶段的 busy 快照（attention / 编排条）。 */
+  busyTurns(userId: string): BusyTurnInfo[] {
+    const turns: BusyTurnInfo[] = [];
     for (const [key, slot] of this.sessions) {
       if (!slot.busy) continue;
       const [uid, , agentId] = key.split("/");
-      if (uid === userId && agentId) ids.push(agentId);
+      if (uid !== userId || !agentId) continue;
+      turns.push({
+        agentId,
+        phase: slot.turnPhase ?? "prompt",
+        sources: slot.wakeSources ? [...slot.wakeSources] : [],
+      });
     }
-    return ids;
+    return turns;
+  }
+
+  /** 订阅某用户的 turn 进度（SSE dirty/done）。 */
+  subscribeTurnProgress(
+    userId: string,
+    listener: (event: TurnProgressEvent) => void,
+  ): () => void {
+    const set = this.turnProgress.get(userId) ?? new Set();
+    set.add(listener);
+    this.turnProgress.set(userId, set);
+    return () => {
+      const current = this.turnProgress.get(userId);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) this.turnProgress.delete(userId);
+    };
+  }
+
+  private emitTurnProgress(userId: string, event: TurnProgressEvent): void {
+    const set = this.turnProgress.get(userId);
+    if (!set) return;
+    for (const listener of set) {
+      try {
+        listener(event);
+      } catch {
+        // 订阅方异常不阻断 turn
+      }
+    }
+  }
+
+  /** wake UIMessage 旁路：是否仍有可订阅流（含已关闭但有缓冲）。 */
+  hasTurnStream(userId: string, agentId: string): boolean {
+    const key = TurnStreamHub.key(userId, agentId);
+    return this.turnStreams.isOpen(key) || this.turnStreams.hasBuffer(key);
+  }
+
+  isTurnStreamOpen(userId: string, agentId: string): boolean {
+    return this.turnStreams.isOpen(TurnStreamHub.key(userId, agentId));
+  }
+
+  /**
+   * 订阅 wake 等旁路 UIMessage chunk。
+   * 晚订阅先回放；已关闭则只回放并 closed=true。
+   */
+  subscribeTurnStream(
+    userId: string,
+    agentId: string,
+    listener: (chunk: UIMessageChunk) => void,
+  ): { unsubscribe: () => void; closed: boolean } {
+    return this.turnStreams.subscribe(TurnStreamHub.key(userId, agentId), listener);
   }
 
   /**
@@ -166,8 +250,15 @@ export class VisitChats {
     }
     const slot = current;
     slot.busy = true;
+    slot.turnPhase = "prompt";
+    slot.wakeSources = undefined;
     slot.turnDone = new Promise<void>((resolve) => {
       slot.resolveTurn = resolve;
+    });
+    this.emitTurnProgress(visit.userId, {
+      type: "dirty",
+      agentId: visit.agentId,
+      phase: "prompt",
     });
     return createUIMessageStream({
       execute: async ({ writer }) => {
@@ -177,6 +268,7 @@ export class VisitChats {
         };
         let lastModelError = "";
         let sawAssistantText = false;
+        let lastDirtyAt = 0;
         const unsubscribe = slot.session.subscribe((event) => {
           trackModelFailure(event, (error) => {
             lastModelError = error;
@@ -187,7 +279,24 @@ export class VisitChats {
             typeof event.assistantMessageEvent.delta === "string" &&
             event.assistantMessageEvent.delta.length > 0
           ) {
-            sawAssistantText = true;
+            // 仅统计剥离 special 后的可见正文，避免刷 placeholder 被当成「已有输出」。
+            const { text } = sanitizeStreamText(event.assistantMessageEvent.delta);
+            if (text.length > 0) sawAssistantText = true;
+          }
+          // 节流 dirty：编排条 / 旁路刷新不必每个 delta 都打。
+          const now = Date.now();
+          if (
+            event.type === "entry_appended" ||
+            event.type === "tool_execution_start" ||
+            event.type === "tool_execution_end" ||
+            now - lastDirtyAt > 800
+          ) {
+            lastDirtyAt = now;
+            this.emitTurnProgress(visit.userId, {
+              type: "dirty",
+              agentId: visit.agentId,
+              phase: "prompt",
+            });
           }
           write(projector.project(event));
         });
@@ -256,8 +365,8 @@ export class VisitChats {
           const expanded = expandSkillReferences(promptText || "(图片附件)", skills);
           // 若异步结果已在排队且用户先发言：并进本轮，避免 turn 结束后再抢一次 wake。
           await this.injectPendingAsyncWake(slot.session, visit);
-          // 每轮检索已招募专家，经 nextTurn custom message 注入模型上下文（不污染用户落盘原文）。
-          if (this.delegation && slot.session.sendCustomMessage) {
+          // 每轮按用户话术检索已招募专家；有命中才经 nextTurn 注入（不污染用户落盘原文）。
+          if (this.delegation && slot.session.sendCustomMessage && promptText) {
             try {
               const roster = await this.delegation.listRecruited(visit.userId);
               const others = roster.filter((agent) => agent.agentId !== visit.agentId);
@@ -274,7 +383,7 @@ export class VisitChats {
                 );
               }
             } catch {
-              // 发现失败不阻断对话；模型仍可主动 list_recruited_agents。
+              // 发现失败不阻断对话；模型仍可主动 agent_search。
             }
           }
           await slot.session.prompt(expanded, {
@@ -289,6 +398,12 @@ export class VisitChats {
             const notice = modelUnavailableNotice(locale);
             write(projector.modelUnavailable(notice));
             write(projector.finish());
+          } else if (
+            !sawAssistantText &&
+            slot.session.sessionManager &&
+            consumeStreamDegeneration(slot.session.sessionManager)
+          ) {
+            write(projector.finish(streamDegenerationAbortedMessage(locale)));
           } else {
             write(projector.finish());
           }
@@ -310,9 +425,12 @@ export class VisitChats {
           unsubscribeApproval?.();
           unsubscribe();
           slot.busy = false;
+          slot.turnPhase = undefined;
+          slot.wakeSources = undefined;
           slot.resolveTurn?.();
           slot.resolveTurn = undefined;
           slot.turnDone = undefined;
+          this.emitTurnProgress(visit.userId, { type: "done", agentId: visit.agentId });
           if (slot.stale) this.disposeKey(key);
           this.wake.onParentIdle(visit.userId, visit.agentId, visitKind(visit));
         }
@@ -391,9 +509,107 @@ export class VisitChats {
       throw new Error("会话不支持异步唤醒");
     }
     slot.busy = true;
+    slot.turnPhase = "wake";
+    slot.wakeSources = wakeSourcesFromDetails(input.details);
     slot.turnDone = new Promise<void>((resolve) => {
       slot.resolveTurn = resolve;
     });
+    const streamKey = TurnStreamHub.key(input.userId, input.agentId);
+    // 先开槽再 dirty：桌面连 /turn-stream 时已有可订阅流。
+    this.turnStreams.begin(streamKey);
+    this.emitTurnProgress(input.userId, {
+      type: "dirty",
+      agentId: input.agentId,
+      phase: "wake",
+    });
+    const projector = new PiUIMessageProjector();
+    const write = (chunks: UIMessageChunk[]) => {
+      this.turnStreams.write(streamKey, chunks);
+    };
+    let lastDirtyAt = 0;
+    let lastModelError = "";
+    let sawAssistantText = false;
+    const unsubscribe = slot.session.subscribe((event) => {
+      trackModelFailure(event, (error) => {
+        lastModelError = error;
+      });
+      if (
+        event.type === "message_update" &&
+        event.assistantMessageEvent.type === "text_delta" &&
+        typeof event.assistantMessageEvent.delta === "string" &&
+        event.assistantMessageEvent.delta.length > 0
+      ) {
+        const { text } = sanitizeStreamText(event.assistantMessageEvent.delta);
+        if (text.length > 0) sawAssistantText = true;
+      }
+      const now = Date.now();
+      if (
+        event.type === "entry_appended" ||
+        event.type === "tool_execution_start" ||
+        event.type === "tool_execution_end" ||
+        event.type === "message_start" ||
+        now - lastDirtyAt > 800
+      ) {
+        lastDirtyAt = now;
+        this.emitTurnProgress(input.userId, {
+          type: "dirty",
+          agentId: input.agentId,
+          phase: "wake",
+        });
+      }
+      write(projector.project(event));
+    });
+    const acceptsHitl = (request: {
+      userId: string;
+      agentId: string;
+      origin?: "visit" | "delegation";
+      parentAgentId?: string;
+    }): boolean => {
+      if (request.userId !== input.userId) return false;
+      if (isVisitOwnHitl(request, input.agentId)) return true;
+      if (!this.delegation) return false;
+      return shouldBubbleNestedHitl(
+        request,
+        { userId: input.userId, agentId: input.agentId },
+        (userId, parent, child) => this.delegation!.isNestedUnder(userId, parent, child),
+      );
+    };
+    const unsubscribeApproval = this.approvals?.subscribe((request) => {
+      if (!acceptsHitl(request)) return;
+      write(
+        projector.approval({
+          id: request.id,
+          toolCallId: request.toolCallId,
+          toolName: request.toolName,
+          args: request.args,
+        }),
+      );
+    });
+    const unsubscribeAskUser = this.askUser?.subscribe((request) => {
+      if (!acceptsHitl(request)) return;
+      write(
+        projector.askUser({
+          id: request.id,
+          toolCallId: request.toolCallId,
+          questions: request.questions,
+        }),
+      );
+    });
+    const unsubscribeDelegationStarted = this.delegation?.subscribeStarted((event) => {
+      if (event.userId !== input.userId || event.fromAgentId !== input.agentId) return;
+      write(
+        projector.delegationStarted({
+          taskId: event.taskId,
+          toolCallId: event.toolCallId,
+          toAgentId: event.toAgentId,
+          toAgentName: event.toAgentName,
+          brief: event.brief,
+          wait: event.wait,
+        }),
+      );
+    });
+    /** 用户 abort / 409 重试打断时勿 onParentIdle，否则 broker 会马上再开 wake 抢 busy。 */
+    let aborted = false;
     try {
       await slot.session.sendCustomMessage(
         {
@@ -404,13 +620,57 @@ export class VisitChats {
         },
         { triggerTurn: true },
       );
+      if (
+        !sawAssistantText &&
+        lastModelError &&
+        isModelServiceUnavailable(lastModelError)
+      ) {
+        const notice = modelUnavailableNotice(undefined);
+        write(projector.modelUnavailable(notice));
+        write(projector.finish());
+      } else if (
+        !sawAssistantText &&
+        slot.session.sessionManager &&
+        consumeStreamDegeneration(slot.session.sessionManager)
+      ) {
+        write(projector.finish(streamDegenerationAbortedMessage(undefined)));
+      } else {
+        write(projector.finish());
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "");
+      aborted =
+        isUserCancelError(message) ||
+        (error instanceof Error && /abort/i.test(error.name));
+      if (!aborted) {
+        if (isModelServiceUnavailable(message) && !isUserCancelError(message)) {
+          const notice = modelUnavailableNotice(undefined);
+          if (!sawAssistantText) write(projector.modelUnavailable(notice));
+          write(projector.finish(notice));
+        } else {
+          write(projector.finish(message || "对话失败"));
+        }
+      } else {
+        write(projector.finish(message || "已停止"));
+      }
+      throw error;
     } finally {
+      unsubscribeDelegationStarted?.();
+      unsubscribeAskUser?.();
+      unsubscribeApproval?.();
+      unsubscribe();
+      this.turnStreams.finish(streamKey);
       slot.busy = false;
+      slot.turnPhase = undefined;
+      slot.wakeSources = undefined;
       slot.resolveTurn?.();
       slot.resolveTurn = undefined;
       slot.turnDone = undefined;
+      this.emitTurnProgress(input.userId, { type: "done", agentId: input.agentId });
       if (slot.stale) this.disposeKey(key);
-      this.wake.onParentIdle(input.userId, input.agentId, input.kind);
+      if (!aborted) {
+        this.wake.onParentIdle(input.userId, input.agentId, input.kind);
+      }
     }
   }
 

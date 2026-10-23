@@ -48,6 +48,16 @@ it("composes SYSTEM.md from publish identity fields", () => {
   );
 });
 
+/** 示例 skill 子进程：`--import` 拦截 open-meteo / frankfurter / coingecko。 */
+const mockSkillFetch = path.resolve(import.meta.dirname, "helpers/mock-skill-fetch.mjs");
+
+function runSkillScript(scriptPath: string, args: string[]): string {
+  return execFileSync(process.execPath, ["--import", mockSkillFetch, scriptPath, ...args], {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+}
+
 it("loads and runs the weather source without MCP", () => {
   const source = loadAgentSource(weatherDir);
   expect(Object.keys(source.files).sort()).toEqual([
@@ -58,36 +68,29 @@ it("loads and runs the weather source without MCP", () => {
   expect(source.files["mcp.json"]).toBeUndefined();
   expect(source.avatar).toBeInstanceOf(Uint8Array);
 
-  const output = execFileSync(
-    process.execPath,
-    [path.join(weatherDir, ".agentup", "skills", "check-weather", "scripts", "check-weather.mjs"), "杭州"],
-    { encoding: "utf8" },
+  const output = runSkillScript(
+    path.join(weatherDir, ".agentup", "skills", "check-weather", "scripts", "check-weather.mjs"),
+    ["杭州"],
   );
   const weather = JSON.parse(output) as Record<string, unknown>;
-  expect(weather).toMatchObject({ city: "杭州" });
-  expect(typeof weather.weather).toBe("string");
-  expect(String(weather.weather).length).toBeGreaterThan(0);
-  expect(weather.temperature_c).toEqual(expect.any(Number));
-  expect(weather.wind_level).toEqual(expect.any(Number));
-  expect(weather.wind_level).toBeGreaterThanOrEqual(0);
-  expect(weather.wind_level).toBeLessThanOrEqual(12);
+  expect(weather).toMatchObject({
+    city: "杭州",
+    weather: "晴",
+    temperature_c: 22,
+    wind_level: 3,
+  });
   expect(weather.details).toEqual(
     expect.objectContaining({
-      feels_like_c: expect.any(Number),
-      humidity_pct: expect.any(Number),
-      wind_dir: expect.any(String),
+      feels_like_c: 21,
+      humidity_pct: 60,
+      wind_dir: "东",
     }),
   );
-  expect(weather.sun).toEqual(
-    expect.objectContaining({
-      sunrise: expect.any(String),
-      sunset: expect.any(String),
-    }),
-  );
+  expect(weather.sun).toEqual(expect.objectContaining({ sunrise: "06:00", sunset: "18:00" }));
   expect(Array.isArray(weather.hourly)).toBe(true);
-  expect((weather.hourly as unknown[]).length).toBeGreaterThan(0);
+  expect((weather.hourly as unknown[]).length).toBe(24);
   expect(Array.isArray(weather.daily)).toBe(true);
-  expect((weather.daily as unknown[]).length).toBeGreaterThanOrEqual(7);
+  expect((weather.daily as unknown[]).length).toBe(7);
 });
 
 it("loads and runs the exchange-rate source without MCP", () => {
@@ -100,29 +103,19 @@ it("loads and runs the exchange-rate source without MCP", () => {
   expect(source.files["mcp.json"]).toBeUndefined();
   expect(source.avatar).toBeInstanceOf(Uint8Array);
 
-  const output = execFileSync(
-    process.execPath,
-    [
-      path.join(
-        exchangeRateDir,
-        ".agentup",
-        "skills",
-        "check-exchange-rate",
-        "scripts",
-        "check-exchange-rate.mjs",
-      ),
-      "USD",
-      "CNY",
-      "100",
-    ],
-    { encoding: "utf8" },
+  const output = runSkillScript(
+    path.join(
+      exchangeRateDir,
+      ".agentup",
+      "skills",
+      "check-exchange-rate",
+      "scripts",
+      "check-exchange-rate.mjs",
+    ),
+    ["USD", "CNY", "100"],
   );
   const quote = JSON.parse(output) as Record<string, unknown>;
-  expect(quote).toMatchObject({ from: "USD", to: "CNY", amount: 100 });
-  expect(quote.rate).toEqual(expect.any(Number));
-  expect(quote.converted).toEqual(expect.any(Number));
-  expect(Number(quote.rate)).toBeGreaterThan(0);
-  expect(Number(quote.converted)).toBeGreaterThan(0);
+  expect(quote).toMatchObject({ from: "USD", to: "CNY", amount: 100, rate: 7, converted: 700 });
   expect(quote.inverse).toEqual(expect.objectContaining({ from: "CNY", to: "USD" }));
   expect(quote.change).toEqual(
     expect.objectContaining({
@@ -142,18 +135,13 @@ it("loads and runs the world-clock source without MCP", () => {
   expect(source.files["mcp.json"]).toBeUndefined();
   expect(source.avatar).toBeInstanceOf(Uint8Array);
 
-  const output = execFileSync(
-    process.execPath,
-    [
-      path.join(worldClockDir, ".agentup", "skills", "check-world-clock", "scripts", "check-world-clock.mjs"),
-      "东京",
-    ],
-    { encoding: "utf8" },
+  // 「大阪」不在本地别名表，走 geocode → mock
+  const output = runSkillScript(
+    path.join(worldClockDir, ".agentup", "skills", "check-world-clock", "scripts", "check-world-clock.mjs"),
+    ["大阪"],
   );
   const clock = JSON.parse(output) as Record<string, unknown>;
-  expect(clock).toMatchObject({ city: "东京" });
-  expect(typeof clock.timezone).toBe("string");
-  expect(String(clock.timezone).length).toBeGreaterThan(0);
+  expect(clock).toMatchObject({ city: "大阪", timezone: "Asia/Shanghai" });
   expect(typeof clock.local_time).toBe("string");
   expect(String(clock.local_time)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 });
@@ -168,18 +156,18 @@ it("loads and runs the crypto-price source without MCP", () => {
   expect(source.files["mcp.json"]).toBeUndefined();
   expect(source.avatar).toBeInstanceOf(Uint8Array);
 
-  const output = execFileSync(
-    process.execPath,
-    [
-      path.join(cryptoPriceDir, ".agentup", "skills", "check-crypto-price", "scripts", "check-crypto-price.mjs"),
-      "BTC",
-    ],
-    { encoding: "utf8" },
+  const output = runSkillScript(
+    path.join(cryptoPriceDir, ".agentup", "skills", "check-crypto-price", "scripts", "check-crypto-price.mjs"),
+    ["BTC"],
   );
   const price = JSON.parse(output) as Record<string, unknown>;
-  expect(price).toMatchObject({ id: "bitcoin", symbol: "BTC" });
-  expect(price.usd).toEqual(expect.any(Number));
-  expect(Number(price.usd)).toBeGreaterThan(0);
+  expect(price).toMatchObject({
+    id: "bitcoin",
+    symbol: "BTC",
+    usd: 65000,
+    cny: 470000,
+    change_24h_percent: 1.23,
+  });
 });
 
 it("rejects a package that chooses the user", () => {

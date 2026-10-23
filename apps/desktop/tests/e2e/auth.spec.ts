@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { mockAgentUp, signIn } from "./helpers";
+import { mockAgentUp, openMarket, signIn } from "./helpers";
 import { installRuntime } from "./runtime";
 
 test("无正式账号时打开应用进入主界面（游客）", async ({ page }) => {
@@ -16,7 +16,7 @@ test("尚无第三方招募时侧栏引导去市场，点击进入 Agent 市场"
   await page.goto("/");
   await expect(page.getByText("还没有招募其他 Agent 助手")).toBeVisible();
   await page.getByRole("button", { name: "去 Agent 市场" }).click();
-  await expect(page).toHaveURL(/\/agents/);
+  await expect(page).toHaveURL(/\/market/);
   await expect(page.getByRole("heading", { name: "Agent 市场" })).toBeVisible();
 });
 
@@ -70,7 +70,7 @@ test("游客招募市场 Agent 会叠层引导登录，成功后继续招募", a
   });
   await installRuntime(page);
   await page.goto("/");
-  await page.getByRole("link", { name: "Agent 市场" }).click();
+  await openMarket(page);
   const card = page.getByRole("article").filter({ hasText: "呼吸科医生" });
   const recruited = page.waitForRequest(
     (request) => request.method() === "POST" && request.url().includes("/respiratory-doctor/recruit"),
@@ -78,13 +78,13 @@ test("游客招募市场 Agent 会叠层引导登录，成功后继续招募", a
   await card.getByRole("button", { name: "招募" }).click();
   const dialog = page.getByRole("dialog", { name: "需要登录" });
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/agents/);
+  await expect(page).toHaveURL(/\/market/);
   await dialog.getByRole("button", { name: "去登录" }).click();
   await expect(dialog.getByRole("button", { name: "重新打开浏览器" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "取消" })).toBeEnabled();
   await page.evaluate(() => (window as Window & { releaseOAuth?: () => void }).releaseOAuth?.());
   await recruited;
-  await expect(card.getByText("已招募")).toBeVisible();
+  await expect(card.getByLabel("已招")).toBeVisible();
   await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
 });
 

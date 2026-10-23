@@ -19,16 +19,10 @@ test("用共用表单发布 Agent 并支持只改名片", async ({ page }) => {
   await page.getByLabel("它是干什么的").fill("编辑");
   await page.getByLabel("人物背景").fill("把零散想法整理成清楚的文字。");
 
-  const created = page.waitForRequest(
-    (request) => request.url().endsWith("/runtime/agents/local") && request.method() === "POST",
+  const published = page.waitForRequest(
+    (request) => request.url().endsWith("/runtime/agents/publish-editor") && request.method() === "POST",
   );
-  const published = page.waitForRequest((request) => request.url().endsWith("/runtime/agents/publish"));
   await page.getByRole("button", { name: "发布 Agent" }).click();
-  expect((await created).postDataJSON()).toMatchObject({
-    name: "写作助手",
-    role: "编辑",
-    background: "把零散想法整理成清楚的文字。",
-  });
   expect((await published).postDataJSON()).toMatchObject({
     name: "写作助手",
     role: "编辑",
@@ -41,7 +35,14 @@ test("用共用表单发布 Agent 并支持只改名片", async ({ page }) => {
   await expect(page.getByRole("article").filter({ hasText: "写作助手" })).toBeVisible();
   await openOwnedAgents(page);
 
-  await page.getByRole("link", { name: "更新 写作助手" }).click();
+  const preview = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/runtime/agents/publish-editor/preview") && request.method() === "POST",
+  );
+  const ownedCard = page.getByRole("article").filter({ hasText: "写作助手" });
+  await ownedCard.getByRole("button", { name: "管理 写作助手" }).click();
+  await page.getByRole("menuitem", { name: "更新" }).click();
+  expect((await preview).postDataJSON()).toMatchObject({ published_agent_id: "writer" });
   await expect(page).toHaveURL(/\/agents\/owned\/writer$/);
   await expect(page.getByRole("heading", { name: "更新 Agent" })).toBeVisible();
   await expect(page.getByLabel("名字")).toHaveValue("写作助手");
@@ -57,7 +58,7 @@ test("用共用表单发布 Agent 并支持只改名片", async ({ page }) => {
     name: "写作助手 Pro",
   });
   await expect(page).toHaveURL(/\/agents\/owned$/);
-  await expect(page.getByRole("article").filter({ hasText: "写作助手 Pro" })).toContainText("v1");
+  await expect(page.getByRole("article").filter({ hasText: "写作助手 Pro" })).toBeVisible();
 });
 
 test("发布所有权冲突会显示 backend 错误", async ({ page }) => {

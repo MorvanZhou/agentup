@@ -5,14 +5,16 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import { isGuestSession } from "../../shared/model/session";
-import { t, tf } from "../../shared/model/ui-locale";
+import { t } from "../../shared/model/ui-locale";
 import PublishedAgentCard from "../publish/components/PublishedAgentCard.vue";
+import AgentCatalogSkeleton from "./components/AgentCatalogSkeleton.vue";
 import LocalAgentCard from "./components/local/LocalAgentCard.vue";
 import AgentMarketCard from "./components/market/AgentMarketCard.vue";
 import AgentsSidebar, { type AgentsSection } from "./components/sidebar/AgentsSidebar.vue";
 import { useAgentCatalog } from "./composables/useAgentCatalog";
 import { useAgentMarket } from "./composables/useAgentMarket";
 import { useLocalAgents } from "./composables/useLocalAgents";
+import { useOwnedAgents } from "./composables/useOwnedAgents";
 import AssistantPage from "./AssistantPage.vue";
 
 const route = useRoute();
@@ -41,6 +43,7 @@ const market = useAgentMarket(session, async () => {
   await catalog.reload();
 });
 const local = useLocalAgents(session, catalog.reload);
+const owned = useOwnedAgents(session, catalog.reload);
 
 const searching = computed(() => Boolean(query.value.trim()));
 const showListChrome = computed(() => section.value !== "assistant");
@@ -52,6 +55,10 @@ const guestLocked = computed(
 
 function goMarket(): void {
   void router.push({ name: "market" });
+}
+
+function openOwnedEdit(agentId: string): void {
+  void router.push({ name: "agents-owned-edit", params: { agentId } });
 }
 </script>
 
@@ -84,28 +91,13 @@ function goMarket(): void {
               class="min-h-8 w-full rounded-lg border border-rule bg-paper py-1.5 pr-2.5 pl-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
             />
           </label>
-          <RouterLink
-            v-if="section === 'local'"
-            class="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
-            :to="{ name: 'agents-local-new' }"
-          >
-            <PlusIcon class="size-3.5" aria-hidden="true" />
-            {{ t("agentsLocalNew") }}
-          </RouterLink>
-          <RouterLink
-            v-else-if="section === 'owned'"
-            class="inline-flex min-h-8 shrink-0 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
-            :to="{ name: 'agents-owned-new' }"
-          >
-            {{ t("agentsPublish") }}
-          </RouterLink>
         </div>
       </header>
 
       <div class="min-h-0 flex-1 overflow-auto">
         <div
           class="mx-auto w-full px-4 py-4 sm:px-5 sm:py-5"
-          :class="section === 'assistant' ? 'max-w-2xl' : 'max-w-6xl'"
+          :class="section === 'assistant' ? 'max-w-2xl' : 'max-w-7xl'"
         >
           <!-- 我的助理 -->
           <section v-if="section === 'assistant'" class="min-w-0" :aria-label="title">
@@ -129,7 +121,19 @@ function goMarket(): void {
 
           <!-- 本机 -->
           <section v-else-if="section === 'local'" class="min-w-0" :aria-label="title">
-            <div v-if="catalog.agents.value.length" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div class="mb-3 flex items-center justify-start">
+              <RouterLink
+                class="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
+                :to="{ name: 'agents-local-new' }"
+              >
+                <PlusIcon class="size-3.5" aria-hidden="true" />
+                {{ t("agentsLocalNew") }}
+              </RouterLink>
+            </div>
+            <div
+              v-if="catalog.agents.value.length"
+              class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+            >
               <LocalAgentCard
                 v-for="agent in catalog.agents.value"
                 :key="agent.agentId"
@@ -142,14 +146,15 @@ function goMarket(): void {
                 @remove="local.remove"
               />
             </div>
+            <AgentCatalogSkeleton v-else-if="catalog.loading.value" dense />
             <div
-              v-else-if="!catalog.loading.value && searching"
+              v-else-if="searching"
               class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
             >
               <p class="m-0 text-sm text-muted-foreground">{{ t("agentsNoMatch") }}</p>
             </div>
             <div
-              v-else-if="!catalog.loading.value"
+              v-else
               class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
             >
               <p class="m-0 text-sm text-muted-foreground">{{ t("agentsEmptyLocal") }}</p>
@@ -164,7 +169,10 @@ function goMarket(): void {
 
           <!-- 已招募 -->
           <section v-else-if="section === 'recruited'" class="min-w-0" :aria-label="title">
-            <div v-if="catalog.agents.value.length" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div
+              v-if="catalog.agents.value.length"
+              class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+            >
               <AgentMarketCard
                 v-for="agent in catalog.agents.value"
                 :key="agent.agentId"
@@ -176,14 +184,15 @@ function goMarket(): void {
                 @dismiss="market.dismiss"
               />
             </div>
+            <AgentCatalogSkeleton v-else-if="catalog.loading.value" dense />
             <div
-              v-else-if="!catalog.loading.value && searching"
+              v-else-if="searching"
               class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
             >
               <p class="m-0 text-sm text-muted-foreground">{{ t("agentsNoMatch") }}</p>
             </div>
             <div
-              v-else-if="!catalog.loading.value"
+              v-else
               class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
             >
               <p class="m-0 text-sm text-muted-foreground">{{ t("agentsEmptyRecruited") }}</p>
@@ -199,25 +208,37 @@ function goMarket(): void {
 
           <!-- 我发布的 -->
           <section v-else class="min-w-0" :aria-label="title">
-            <div v-if="catalog.agents.value.length" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div class="mb-3 flex items-center justify-start">
               <RouterLink
-                v-for="agent in catalog.agents.value"
-                :key="agent.agentId"
-                class="group flex h-full min-w-0 text-inherit no-underline outline-none focus-visible:rounded-xl focus-visible:ring-2 focus-visible:ring-accent/40"
-                :aria-label="tf('agentsUpdateAria', { name: agent.name })"
-                :to="{ name: 'agents-owned-edit', params: { agentId: agent.agentId } }"
+                class="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
+                :to="{ name: 'agents-owned-new' }"
               >
-                <PublishedAgentCard :agent="agent" />
+                <PlusIcon class="size-3.5" aria-hidden="true" />
+                {{ t("agentsPublish") }}
               </RouterLink>
             </div>
             <div
-              v-else-if="!catalog.loading.value && searching"
+              v-if="catalog.agents.value.length"
+              class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+            >
+              <PublishedAgentCard
+                v-for="agent in catalog.agents.value"
+                :key="agent.agentId"
+                :agent="agent"
+                :busy="owned.busyAgentId.value === agent.agentId"
+                @update="openOwnedEdit"
+                @remove="owned.remove"
+              />
+            </div>
+            <AgentCatalogSkeleton v-else-if="catalog.loading.value" dense />
+            <div
+              v-else-if="searching"
               class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
             >
               <p class="m-0 text-sm text-muted-foreground">{{ t("agentsNoMatch") }}</p>
             </div>
             <div
-              v-else-if="!catalog.loading.value"
+              v-else
               class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
             >
               <p class="m-0 text-sm text-muted-foreground">{{ t("agentsEmptyOwned") }}</p>

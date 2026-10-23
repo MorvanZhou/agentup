@@ -9,6 +9,7 @@ import { startLocalServer } from "../src/local/server.js";
 import {
   UserResourceError,
   deleteUserSkill,
+  installSkillPackageTo,
   installUserSkillPackage,
   listEnabledUserSkillPaths,
   listUserSkills,
@@ -38,6 +39,30 @@ function writeSkillDir(root: string, name: string, description: string): string 
   fs.writeFileSync(path.join(dir, "SKILL.md"), skillMd(name, description));
   return dir;
 }
+
+it("persists repaired frontmatter when community skill has nested quotes", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-skill-parent-"));
+  const source = fs.mkdtempSync(path.join(os.tmpdir(), "skill-nested-"));
+  fs.writeFileSync(
+    path.join(source, "SKILL.md"),
+    [
+      "---",
+      "name: agent-browser",
+      'description: "Browser automation. Triggers include requests to "open a website", "fill out a form", or login."',
+      "---",
+      "",
+      "Use agent-browser CLI via bash.",
+      "",
+    ].join("\n"),
+  );
+  await installSkillPackageTo(parent, source);
+  const onDisk = fs.readFileSync(path.join(parent, "agent-browser", "SKILL.md"), "utf8");
+  expect(onDisk).toContain('\\"open a website\\"');
+  // Pi / yaml 必须能直接 parse，否则 session 里 skills 为空。
+  const { parseDocument } = await import("yaml");
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(onDisk)?.[1] ?? "";
+  expect(parseDocument(fm).errors).toEqual([]);
+});
 
 it("installs account skills from a folder and toggles enabled state", async () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-user-res-"));

@@ -346,6 +346,19 @@ export function requireEnabledModelRef(userDataRoot: string, ref: ModelRef): Mod
   return model;
 }
 
+/** 会话 sidecar 回落：已连接且已启用则返回规范化 ref，否则 null。 */
+export function tryEnabledModelRef(
+  userDataRoot: string,
+  ref: ModelRef | null | undefined,
+): ModelRef | null {
+  if (!ref) return null;
+  try {
+    return requireEnabledModelRef(userDataRoot, ref);
+  } catch {
+    return null;
+  }
+}
+
 /** 仅更新「最近使用」标记；不自动把未启用模型加进 enabled。 */
 export function touchActiveModel(userDataRoot: string, ref: ModelRef): void {
   const stored = readStored(userDataRoot);
@@ -379,9 +392,14 @@ export function loadModelConfig(userDataRoot: string, env: NodeJS.ProcessEnv = p
   return loadModelConfigFromRef(userDataRoot, active, env);
 }
 
-/** 无会话模型时可回落的候选：enabled 列表第一个。 */
+/** 无会话模型时可回落的候选：仍已连接的 enabled 第一个。 */
 export function firstEnabledModelRef(userDataRoot: string): ModelRef | null {
-  return readStored(userDataRoot).enabledModels[0] ?? null;
+  const stored = readStored(userDataRoot);
+  for (const model of stored.enabledModels) {
+    const usable = tryEnabledModelRef(userDataRoot, model);
+    if (usable) return usable;
+  }
+  return null;
 }
 
 export function loadModelConfigFromRef(

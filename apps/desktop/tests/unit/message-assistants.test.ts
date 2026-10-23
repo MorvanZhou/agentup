@@ -7,7 +7,7 @@ describe("extractAssistAgents", () => {
     const assists = extractAssistAgents([
       {
         type: "tool-call",
-        toolName: "list_recruited_agents",
+        toolName: "agent_search",
         toolCallId: "l1",
         result: "ok",
       },

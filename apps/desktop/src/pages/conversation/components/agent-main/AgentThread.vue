@@ -10,6 +10,7 @@ import WorkspacePanel from "./workspace/WorkspacePanel.vue";
 
 import { createAgentUpTransport } from "../../../../shared/api/agent-transport";
 import { DesktopApi, runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../shared/api/runtime";
+import type { BusyTurn } from "../../../../shared/api/runtime/chat";
 import {
   isAgentUpApproval,
   isAgentUpAskUser,
@@ -24,6 +25,7 @@ import {
 import { showToast } from "../../../../shared/model/toast";
 import { t } from "../../../../shared/model/ui-locale";
 import { useDelegationFleet } from "../../composables/useDelegationFleet";
+import { useWakeTurnStream } from "../../composables/useWakeTurnStream";
 import { useWorkspacePaneWidth } from "../../composables/usePaneWidth";
 import { clampWorkspaceWidth } from "../../model/layout/pane-width";
 import { clearProcessFoldState } from "../../model/message/process-fold-state";
@@ -32,6 +34,8 @@ import { threadActiveKey } from "../../model/thread/thread-active";
 import { threadAgentIdKey } from "../../model/thread/thread-agent-id";
 import { threadApprovalKey } from "../../model/thread/thread-approval";
 import { threadAskUserKey } from "../../model/thread/thread-ask-user";
+import { threadBusyTurnKey } from "../../model/thread/thread-busy-turn";
+import { threadWakeLiveKey } from "../../model/thread/thread-wake-live";
 import {
   threadDelegationKey,
   type DelegationProcessTarget,
@@ -39,7 +43,7 @@ import {
 } from "../../model/thread/thread-delegation";
 import { threadExtrasKey, type ThreadExtras } from "../../model/thread/thread-extras";
 import { threadRosterKey, type ThreadRoster } from "../../model/thread/thread-roster";
-import DelegationFleetBar from "./thread/assistant-ui/byproducts/DelegationFleetBar.vue";
+import OrchestrationBar from "./thread/assistant-ui/byproducts/OrchestrationBar.vue";
 import DelegationProcessDialog from "./thread/assistant-ui/byproducts/DelegationProcessDialog.vue";
 import Thread from "./thread/Thread.vue";
 import ConversationHeader from "./ConversationHeader.vue";
@@ -54,18 +58,22 @@ const props = withDefaults(
     extras: ThreadExtras;
     /** 侧栏名片 + 打开会话，供协助头像解析与跳转。 */
     roster?: ThreadRoster;
+    /** attention 本会话 busy turn（wake 编排可见）。 */
+    busyTurn?: BusyTurn | null;
     /** 主区当前是否显示本线程（切走再进时清空过程折叠记忆）。 */
     active?: boolean;
     approval?: AgentUpApprovalData;
     askUser?: AgentUpAskUserData;
     runtimeBaseUrl?: string;
     abortTurn?: () => Promise<void>;
+    /** wake 流结束后重载历史，并入 AISDKChat（流式过程走 /turn-stream 直播）。 */
+    reloadHistory?: () => Promise<void>;
     clearContext?: () => Promise<void>;
     clearHistory?: () => Promise<void>;
     setRemark?: (remark: string) => Promise<void>;
     dismiss?: () => Promise<void>;
   }>(),
-  { active: true },
+  { active: true, busyTurn: null },
 );
 const emit = defineEmits<{
   decide: [allow: boolean, scope?: ApprovalScope];
@@ -89,9 +97,10 @@ provide(
       },
   ),
 );
-// 顶栏与 Thread 内 Composer 都能读到 pending HITL
+// 顶栏与 Thread 内 Composer 都能读到 pending HITL / wake
 provide(threadAskUserKey, toRef(props, "askUser"));
 provide(threadApprovalKey, toRef(props, "approval"));
+provide(threadBusyTurnKey, toRef(props, "busyTurn"));
 
 /** toolCallId → taskId（transient started）；过程弹窗旁路打开。 */
 const taskIdByToolCall = ref(new Map<string, string>());
@@ -131,6 +140,49 @@ const {
   userId: toRef(props, "userId"),
   active: toRef(props, "active"),
 });
+
+const wakeEnabled = computed(
+  () => Boolean(props.active && props.busyTurn?.phase === "wake"),
+);
+const streamRunning = ref(false);
+
+const { streaming: wakeStreaming, liveMessage: wakeLiveMessage } = useWakeTurnStream({
+  baseUrl: resolvedRuntimeBaseUrl,
+  token: toRef(props, "token"),
+  userId: toRef(props, "userId"),
+  agentId: toRef(props, "agentId"),
+  enabled: wakeEnabled,
+  handlers: {
+    onApproval: (data) => emit("approval", data),
+    onAskUser: (data) => emit("askUser", data),
+    onDelegationStarted: (data) => {
+      delegationApi.value.registerStarted(data);
+      noteFleetStarted(data);
+    },
+    onDone: () => {
+      void props.reloadHistory?.();
+    },
+  },
+});
+
+provide(
+  threadWakeLiveKey,
+  computed(() => ({
+    streaming: wakeStreaming.value,
+    message:
+      wakeEnabled.value || wakeStreaming.value ? wakeLiveMessage.value : null,
+  })),
+);
+
+const orchestrating = computed(
+  () =>
+    wakeEnabled.value ||
+    wakeStreaming.value ||
+    fleetItems.value.length > 0 ||
+    streamRunning.value,
+);
+
+watch(orchestrating, (value) => emit("running", value), { immediate: true });
 
 // 重新进入本对话：清空过程折叠缓存（组件常驻 v-show，不能靠卸载）
 watch(
@@ -292,7 +344,7 @@ const config = AuiConfig({
 
 <template>
   <AuiProvider :config="config">
-    <ThreadRunningBridge @change="emit('running', $event)" @dismiss-hitl="dismissHitl" />
+    <ThreadRunningBridge @change="streamRunning = $event" @dismiss-hitl="dismissHitl" />
     <DelegationProcessDialog
       :open="processOpen"
       :target="processTarget"
@@ -311,12 +363,14 @@ const config = AuiConfig({
         @toggle-workspace="toggleWorkspace"
         @open-chat-settings="openChatSettings"
       />
-      <!-- 异步委托进行中：顶栏下常驻 Fleet -->
-      <DelegationFleetBar
+      <!-- 编排条：异步委托 Fleet + wake 汇总（可停主回合） -->
+      <OrchestrationBar
         :items="fleetItems"
+        :busy-turn="busyTurn"
         :token="token"
         :user-id="userId"
         @cancelled="noteFleetCancelled"
+        @stop-turn="void threadActions.stopTurn()"
       />
       <div ref="bodyEl" class="relative flex min-h-0 min-w-0 flex-1">
         <!-- 对话区；右缘可拖，给右侧功能栏（工作空间等）让宽 -->

@@ -13,7 +13,6 @@ import AgentAvatar from "../../../../shared/components/AgentAvatar.vue";
 import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
 import type { AgentCard } from "../../../../shared/model/runtime";
-import { formatAgentTime } from "../../../../shared/model/time";
 import { t, tf } from "../../../../shared/model/ui-locale";
 
 const props = defineProps<{ agent: AgentCard; busy: boolean }>();
@@ -26,7 +25,6 @@ const emit = defineEmits<{
 }>();
 
 const confirmDelete = ref(false);
-const updatedLabel = computed(() => formatAgentTime(props.agent.updatedAt));
 
 const menuItems = computed((): AppDropdownItem[] => [
   { id: "edit", label: t("agentsLocalEdit"), icon: PencilIcon, disabled: props.busy },
@@ -70,63 +68,75 @@ function confirmDeleteAction(): void {
 
 <template>
   <article
-    class="group flex gap-3.5 rounded-xl border border-rule bg-paper p-3.5 shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+    class="group flex h-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
     :aria-labelledby="`local-agent-${agent.agentId}`"
   >
-    <!-- 本机私有 Agent 卡片 -->
-    <AgentAvatar :name="agent.name" :avatar-url="agent.avatarUrl" size="xl" />
-
-    <div class="flex min-w-0 flex-1 flex-col gap-2.5">
-      <div class="min-w-0">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex min-w-0 items-center gap-1.5">
-            <h2
-              :id="`local-agent-${agent.agentId}`"
-              class="m-0 min-w-0 truncate text-sm font-semibold tracking-tight text-foreground"
-              :title="agent.name"
-            >
-              {{ agent.name }}
-            </h2>
-            <span v-if="agent.role" class="shrink-0 truncate text-xs font-normal text-muted-foreground">
-              {{ agent.role }}
-            </span>
-            <span
-              class="inline-flex shrink-0 items-center rounded-md bg-accent/10 px-1.5 py-0.5 text-xs font-semibold text-accent"
-            >
-              {{ t("agentsLocalBadge") }}
-            </span>
-          </div>
-          <AppDropdownMenu :items="menuItems" @select="onSelect">
-            <template #trigger>
-              <button
-                type="button"
-                class="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent text-muted-foreground transition duration-200 hover:bg-accent/10 hover:text-accent"
-                :aria-label="tf('agentsManageAria', { name: agent.name })"
-                :disabled="busy"
-              >
-                <EllipsisIcon class="size-4" aria-hidden="true" />
-              </button>
-            </template>
-          </AppDropdownMenu>
+    <!-- 身份：头像 + 名职 + 菜单 -->
+    <div class="flex shrink-0 items-start gap-2.5">
+      <AgentAvatar
+        class="ring-1 ring-rule ring-offset-1 ring-offset-paper"
+        :name="agent.name"
+        :avatar-url="agent.avatarUrl"
+        size="sidebar"
+      />
+      <div class="min-w-0 flex-1 pt-0.5">
+        <div class="flex min-w-0 items-center gap-1.5">
+          <h2
+            :id="`local-agent-${agent.agentId}`"
+            class="m-0 min-w-0 truncate text-[15px] font-bold leading-snug tracking-tight text-foreground"
+            :title="agent.name"
+          >
+            {{ agent.name }}
+          </h2>
+          <span
+            class="inline-flex shrink-0 items-center rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-accent"
+          >
+            {{ t("agentsLocalBadge") }}
+          </span>
         </div>
-        <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{{ agent.background }}</p>
-        <p v-if="updatedLabel" class="mt-1 text-xs text-muted-foreground">
-          {{ tf("agentsUpdated", { time: updatedLabel }) }}
-        </p>
-      </div>
-
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-          :disabled="busy"
-          @click="emit('chat', agent)"
+        <p
+          v-if="agent.role"
+          class="m-0 mt-1 truncate text-xs font-semibold leading-tight text-accent"
+          :title="agent.role"
         >
-          <MessageSquareIcon class="size-3.5" aria-hidden="true" />
-          {{ t("agentsLocalChat") }}
-        </button>
+          {{ agent.role }}
+        </p>
+        <p v-else class="m-0 mt-1 h-4" aria-hidden="true" />
       </div>
+      <AppDropdownMenu :items="menuItems" @select="onSelect">
+        <template #trigger>
+          <button
+            type="button"
+            class="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted-foreground outline-none transition duration-200 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
+            :aria-label="tf('agentsManageAria', { name: agent.name })"
+            :disabled="busy"
+          >
+            <EllipsisIcon class="size-3.5" aria-hidden="true" />
+          </button>
+        </template>
+      </AppDropdownMenu>
     </div>
+
+    <!-- 简介 -->
+    <p
+      class="m-0 line-clamp-2 min-h-[2.5rem] flex-1 text-xs leading-snug text-muted-foreground"
+      :title="agent.background"
+    >
+      {{ agent.background }}
+    </p>
+
+    <!-- 底栏：对话 CTA -->
+    <footer class="mt-auto flex shrink-0 items-center justify-end gap-2 pt-0.5">
+      <button
+        type="button"
+        class="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-accent px-2.5 text-xs font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
+        :disabled="busy"
+        @click="emit('chat', agent)"
+      >
+        <MessageSquareIcon class="size-3.5 shrink-0" aria-hidden="true" />
+        {{ t("agentsLocalChat") }}
+      </button>
+    </footer>
 
     <AppDialog
       :open="confirmDelete"

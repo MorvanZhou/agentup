@@ -98,6 +98,7 @@ it("syncs a recruited package from the control plane", async () => {
         name: "税务顾问",
         role: "",
         background: "公开",
+        rules: "",
         latestVersion: 1,
         latestDigest: digest,
         recruited: false,

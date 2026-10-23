@@ -25,6 +25,7 @@ import { injectThreadActions } from "../../model/thread/thread-actions";
 import { injectThreadAgentId } from "../../model/thread/thread-agent-id";
 import { injectThreadApproval } from "../../model/thread/thread-approval";
 import { injectThreadAskUser } from "../../model/thread/thread-ask-user";
+import { injectThreadBusyTurn } from "../../model/thread/thread-busy-turn";
 import { injectThreadExtras } from "../../model/thread/thread-extras";
 
 defineProps<{
@@ -48,11 +49,15 @@ const role = computed(() => extras.value.role);
 const title = computed(() => remark.value || name.value || t("threadPick"));
 const syncedVersion = computed(() => extras.value.syncedVersion);
 const isRunning = useAuiState((state) => state.thread.isRunning);
-// AskUser / 审批等待时也视为忙碌（此时 isRunning 常为 false）
+// AskUser / 审批 / wake 等待时也视为忙碌（此时 isRunning 常为 false）
 const askUser = injectThreadAskUser();
 const approval = injectThreadApproval();
+const busyTurn = injectThreadBusyTurn();
 const turnBusy = computed(
-  () => isRunning.value || Boolean(askUser?.value || approval?.value),
+  () =>
+    isRunning.value ||
+    Boolean(askUser?.value || approval?.value) ||
+    busyTurn?.value?.phase === "wake",
 );
 const confirmOpen = ref(false);
 const skipConfirm = ref(false);

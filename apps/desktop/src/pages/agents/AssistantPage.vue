@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ChevronDownIcon, FolderUpIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
+import { ChevronDownIcon, FolderUpIcon, SearchIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 
 import AppDropdownMenu, { type AppDropdownItem } from "../../shared/components/AppDropdownMenu.vue";
+import CommunitySkillDialog from "../../shared/components/CommunitySkillDialog.vue";
+import UiFormSkeleton from "../../shared/components/UiFormSkeleton.vue";
 import { DesktopApi, DesktopApiError } from "../../shared/api/runtime";
 import { useDesktop } from "../../app/desktop";
+import { formatApiError } from "../../shared/model/package-issues";
 import { showToast } from "../../shared/model/toast";
 import { readUiLocale, t } from "../../shared/model/ui-locale";
 import type { UserSkill } from "../../shared/model/runtime";
@@ -22,6 +25,7 @@ const skills = ref<UserSkill[]>([]);
 const advancedOpen = ref(false);
 const loading = ref(true);
 const saving = ref(false);
+const communityOpen = ref(false);
 
 const skillUploadItems = computed((): AppDropdownItem[] => [
   { id: "directory", label: t("skillsPickDir"), icon: FolderUpIcon },
@@ -93,12 +97,22 @@ async function addSkill(kind: string): Promise<void> {
   }
   const packagePath = await bridge.selectSkillPackage(kind);
   if (!packagePath) return;
+  await installSkillPath(packagePath);
+}
+
+async function installSkillPath(packagePath: string): Promise<void> {
+  if (!session.value) return;
   try {
     await api.installUserSkill(session.value.token, session.value.userId, packagePath);
     skills.value = await api.userSkills(session.value.token, session.value.userId);
     showToast(t("skillsInstalled"), "success");
   } catch (caught) {
-    showToast(caught instanceof DesktopApiError ? caught.message : t("skillsInstallFailed"), "error");
+    const details = caught instanceof DesktopApiError ? caught.details : [];
+    showToast(
+      formatApiError(caught, t("skillsInstallFailed")),
+      "error",
+      details.length ? 10000 : 4000,
+    );
   }
 }
 
@@ -147,7 +161,7 @@ async function submit(): Promise<void> {
 <template>
   <!-- 我的助理：布局对齐本地 Agent 编辑 -->
   <div class="mx-auto w-full max-w-2xl">
-    <p v-if="loading" class="m-0 text-sm text-muted-foreground">{{ t("agentsLocalLoading") }}</p>
+    <UiFormSkeleton v-if="loading" :fields="5" />
     <form v-else class="flex flex-col gap-4" @submit.prevent="submit">
       <label class="grid gap-1.5">
         <span class="text-sm font-medium text-foreground">
@@ -215,18 +229,29 @@ async function submit(): Promise<void> {
         <div class="grid gap-1.5">
           <div class="flex items-center justify-between gap-2">
             <span class="text-sm font-medium text-foreground">{{ t("agentsLocalSkills") }}</span>
-            <AppDropdownMenu :items="skillUploadItems" @select="addSkill">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
-                  :disabled="saving"
-                >
-                  <UploadIcon class="size-3.5" aria-hidden="true" />
-                  {{ t("agentsLocalSkillsAdd") }}
-                </button>
-              </template>
-            </AppDropdownMenu>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+                :disabled="saving"
+                @click="communityOpen = true"
+              >
+                <SearchIcon class="size-3.5" aria-hidden="true" />
+                {{ t("skillsCommunitySearchEntry") }}
+              </button>
+              <AppDropdownMenu :items="skillUploadItems" @select="addSkill">
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+                    :disabled="saving"
+                  >
+                    <UploadIcon class="size-3.5" aria-hidden="true" />
+                    {{ t("agentsLocalSkillsAdd") }}
+                  </button>
+                </template>
+              </AppDropdownMenu>
+            </div>
           </div>
           <p class="m-0 text-xs text-muted-foreground">{{ t("assistantSkillsHint") }}</p>
           <ul v-if="skills.length" class="m-0 flex list-none flex-col gap-1.5 p-0">
@@ -284,5 +309,7 @@ async function submit(): Promise<void> {
         </button>
       </div>
     </form>
+
+    <CommunitySkillDialog v-model:open="communityOpen" @fetched="installSkillPath" />
   </div>
 </template>

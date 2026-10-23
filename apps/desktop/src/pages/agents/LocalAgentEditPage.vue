@@ -5,6 +5,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import AgentEditorForm from "../../shared/components/agent-editor/AgentEditorForm.vue";
+import UiFormSkeleton from "../../shared/components/UiFormSkeleton.vue";
 import type { AgentEditorInitial, AgentEditorInput } from "../../shared/model/agent-editor";
 import type { AgentCard } from "../../shared/model/runtime";
 import { t } from "../../shared/model/ui-locale";
@@ -84,7 +85,7 @@ function onCancel(): void {
         </p>
       </header>
 
-      <p v-if="loading" class="m-0 text-sm text-muted-foreground">{{ t("agentsLocalLoading") }}</p>
+      <UiFormSkeleton v-if="loading" />
       <p v-else-if="loadError" class="m-0 text-sm text-destructive">{{ loadError }}</p>
       <AgentEditorForm
         v-else-if="initial"

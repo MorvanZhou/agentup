@@ -10,6 +10,7 @@ import type {
   ProviderVendorGroup,
 } from "../../../shared/model/runtime";
 import { decryptSecret, encryptSecret, secretEncryptionReady } from "../../../shared/secrets";
+import { bumpProviderConfig, providerConfigEpoch } from "../../../shared/model/provider-config";
 import { showToast } from "../../../shared/model/toast";
 import { readUiLocale, uiLocale } from "../../../shared/model/ui-locale";
 
@@ -19,6 +20,8 @@ export function useProviderSettings(api = new DesktopApi()) {
   const settings = ref<ProviderSettings | null>(null);
   const busy = ref(false);
   const loaded = ref(false);
+  /** 本实例刚 bump 时跳过一次 epoch 监听，避免重复 load。 */
+  let ignoreNextEpoch = false;
 
   const draftVendorId = ref("");
   const draftTemplateId = ref("");
@@ -68,6 +71,14 @@ export function useProviderSettings(api = new DesktopApi()) {
   onMounted(() => void load());
 
   watch(uiLocale, () => {
+    if (loaded.value) void load();
+  });
+
+  watch(providerConfigEpoch, () => {
+    if (ignoreNextEpoch) {
+      ignoreNextEpoch = false;
+      return;
+    }
     if (loaded.value) void load();
   });
 
@@ -195,6 +206,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       if (template.supportsModelDiscovery) {
         await refreshModelsFor(template.id, { quiet: true });
       }
+      notifyProviderConfigChanged();
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
@@ -234,7 +246,10 @@ export function useProviderSettings(api = new DesktopApi()) {
       for (const connection of targets) {
         if (await refreshModelsFor(connection.templateId, { quiet: true })) ok += 1;
       }
-      if (ok > 0) showToast(ok === targets.length ? "模型列表已更新" : `已更新 ${ok}/${targets.length} 个服务商`, "success");
+      if (ok > 0) {
+        notifyProviderConfigChanged();
+        showToast(ok === targets.length ? "模型列表已更新" : `已更新 ${ok}/${targets.length} 个服务商`, "success");
+      }
     } finally {
       busy.value = false;
     }
@@ -249,6 +264,7 @@ export function useProviderSettings(api = new DesktopApi()) {
         const template = selectedTemplate.value;
         if (template) applyTemplateDefaults(template);
       }
+      notifyProviderConfigChanged();
       showToast("已移除服务商配置", "success");
     } catch (caught) {
       showToast(messageOf(caught), "error");
@@ -267,6 +283,7 @@ export function useProviderSettings(api = new DesktopApi()) {
         enabled,
         locale(),
       );
+      notifyProviderConfigChanged();
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
@@ -286,12 +303,18 @@ export function useProviderSettings(api = new DesktopApi()) {
         },
         locale(),
       );
+      notifyProviderConfigChanged();
       showToast(`已切换到 ${model.name}`, "success");
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
       busy.value = false;
     }
+  }
+
+  function notifyProviderConfigChanged(): void {
+    ignoreNextEpoch = true;
+    bumpProviderConfig();
   }
 
   return {

@@ -133,6 +133,13 @@ it("extension does not continue when aborted or canContinue is false", async () 
   ).toBeUndefined();
 });
 
+it("resolveEmptyAssistantError prefers stream degeneration when flagged", async () => {
+  const { noteStreamDegeneration } = await import("../src/session/stream-guard.js");
+  const manager = { getBranch: () => [], id: "deg" } as { getBranch: () => []; id: string };
+  noteStreamDegeneration(manager);
+  expect(resolveEmptyAssistantError(manager, "zh")).toContain("自动停止");
+});
+
 it("resolveEmptyAssistantError distinguishes length from plain empty", () => {
   const lengthManager = {
     getBranch: () => [

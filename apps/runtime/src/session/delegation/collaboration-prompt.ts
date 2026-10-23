@@ -13,12 +13,16 @@ export function formatCollaborationPrompt(
   return [
     "# AgentUp Collaboration",
     "",
-    "Collaborate with specialists from the user's contact list (local + recruited) when their role/background fits.",
-    "Relevant candidates may appear each turn; use list_recruited_agents to search or list more.",
-    "Delegate with delegate_to_agent (user must approve). You own the user-facing reply — synthesize, don't dump or hand off.",
+    "You are in a collaboration workspace with the user's specialist contact list (local private + market recruited).",
+    "When a task may benefit from another agent's role or background, call agent_search with a short query before answering alone or guessing who to involve.",
+    "Relevant candidates may also appear for the current turn; refine with agent_search when needed, then delegate_to_agent (user must approve).",
+    "You own the user-facing reply — synthesize results; do not dump or hand off the conversation.",
     "",
-    "wait=true (default for one short task): need the answer this turn. wait=false: long/parallel work; return task_id, then check_delegation or wait for a session notice — never invent results. cancel_delegation(task_id) stops a running async task.",
-    "Fan-out: prefer one call with tasks=[{agent_id, brief}, ...] (≤8, default async); or multiple wait=false calls. Briefs minimal and non-overlapping; skip trivial work you can do yourself.",
-    `Non-specialist long shell work: bg_run(command) (async, needs approval like \`${commandTool}\`); bg_status / bg_kill. Prefer delegate_to_agent when expertise matters.`,
+    "Before delegate_to_agent, estimate how long the specialist needs (skills, shell, network). " +
+      "If likely ≤ ~20s and you need the answer this turn → wait=true. " +
+      "If likely > ~20s, uncertain/long, or you can continue other work → wait=false (return task_id; check_delegation or wait for a session notice — never invent results). " +
+      "cancel_delegation(task_id) stops a running async task. Do not default to sync just because there is only one specialist.",
+    "Fan-out: prefer one call with tasks=[{agent_id, brief}, ...] (≤8, async unless you set wait=true to join this turn); or multiple wait=false calls. Briefs minimal and non-overlapping; skip trivial work you can do yourself.",
+    `Shell: same duration rule — short ${commandTool} OK; if a command may run > ~20s (build, watch, migrate, heavy script), prefer bg_run (approval like \`${commandTool}\`), then bg_status / bg_kill. Prefer delegate_to_agent when expertise matters.`,
   ].join("\n");
 }

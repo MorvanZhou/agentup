@@ -26,6 +26,7 @@ export {
   verifyEmail,
 } from "./auth-api.js";
 export {
+  deleteOwnedAgent,
   downloadAgentSkill,
   listAgents,
   listOwnedAgents,

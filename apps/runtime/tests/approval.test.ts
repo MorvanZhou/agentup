@@ -56,7 +56,7 @@ it("lets mcp resource list/read tools run without approval", async () => {
   expect(seen).not.toHaveBeenCalled();
 });
 
-it("lets write, edit, web_fetch, and todo run without approval", async () => {
+it("lets write, edit, web_fetch, todo, and get_local_time run without approval", async () => {
   const broker = new ApprovalBroker();
   const handler = await bindToolHandler(broker);
   const seen = vi.fn();
@@ -86,6 +86,12 @@ it("lets write, edit, web_fetch, and todo run without approval", async () => {
         toolName: "todo",
         input: { action: "add", text: "写测试" },
       },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  await expect(
+    handler(
+      { type: "tool_call", toolCallId: "clock-1", toolName: "get_local_time", input: {} },
       { signal: undefined },
     ),
   ).resolves.toBeUndefined();

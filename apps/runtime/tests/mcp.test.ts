@@ -50,6 +50,40 @@ it("merges user MCP under project and stamps the visit user", () => {
   expect(merged.servers).toHaveLength(2);
   expect(hospital && "url" in hospital.config && hospital.config.url).toBe("http://127.0.0.1:8788/mcp");
   expect(hospital?.config.headers?.["X-AgentUp-User-Id"]).toBe("patient");
+  expect(hospital?.config.exposure).toBe("deferred");
   expect(notes?.scope).toBe("global");
   expect(notes?.config.headers?.["X-AgentUp-User-Id"]).toBe("patient");
+  expect(notes?.config.exposure).toBe("deferred");
+});
+
+it("keeps explicit mcp exposure and defaults unset servers to deferred", () => {
+  const stamped = stampVisitUser(
+    {
+      servers: [
+        {
+          name: "hot",
+          config: { url: "http://127.0.0.1:1/mcp", exposure: "direct" },
+          source: "t",
+          scope: "project",
+        },
+        {
+          name: "cold",
+          config: { url: "http://127.0.0.1:2/mcp" },
+          source: "t",
+          scope: "project",
+        },
+        {
+          name: "stdio",
+          config: { command: "echo", args: ["ok"] },
+          source: "t",
+          scope: "project",
+        },
+      ],
+      errors: [],
+    },
+    "patient",
+  );
+  expect(stamped.servers.find((s) => s.name === "hot")?.config.exposure).toBe("direct");
+  expect(stamped.servers.find((s) => s.name === "cold")?.config.exposure).toBe("deferred");
+  expect(stamped.servers.find((s) => s.name === "stdio")?.config.exposure).toBe("deferred");
 });

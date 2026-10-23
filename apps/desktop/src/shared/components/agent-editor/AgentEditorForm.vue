@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDownIcon, DownloadIcon, FolderUpIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
+import { ChevronDownIcon, DownloadIcon, FolderUpIcon, SearchIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
 import { readSession } from "../../../app/session-store";
@@ -14,6 +14,7 @@ import { showToast } from "../../model/toast";
 import { t } from "../../model/ui-locale";
 import AgentAvatar from "../AgentAvatar.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../AppDropdownMenu.vue";
+import CommunitySkillDialog from "../CommunitySkillDialog.vue";
 
 const MCP_PLACEHOLDER = `{
   "example": {
@@ -53,6 +54,7 @@ const installedSkills = ref<string[]>([]);
 /** 编辑：从已装列表移除的技能名 */
 const removeSkills = ref<string[]>([]);
 const downloadingSkill = ref("");
+const communityOpen = ref(false);
 const avatarPreview = ref("");
 const avatarChange = ref("");
 const avatarInput = ref<HTMLInputElement>();
@@ -156,6 +158,10 @@ async function addSkill(kind: string): Promise<void> {
   }
   const packagePath = await bridge.selectSkillPackage(kind);
   if (!packagePath) return;
+  addSkillPath(packagePath);
+}
+
+function addSkillPath(packagePath: string): void {
   if (skillPaths.value.includes(packagePath)) return;
   skillPaths.value = [...skillPaths.value, packagePath];
 }
@@ -392,18 +398,29 @@ function submit(): void {
       <div class="grid gap-1.5">
         <div class="flex items-center justify-between gap-2">
           <span class="text-sm font-medium text-foreground">{{ t("agentsLocalSkills") }}</span>
-          <AppDropdownMenu :items="skillUploadItems" @select="addSkill">
-            <template #trigger>
-              <button
-                type="button"
-                class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
-                :disabled="busy"
-              >
-                <UploadIcon class="size-3.5" aria-hidden="true" />
-                {{ t("agentsLocalSkillsAdd") }}
-              </button>
-            </template>
-          </AppDropdownMenu>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+              :disabled="busy"
+              @click="communityOpen = true"
+            >
+              <SearchIcon class="size-3.5" aria-hidden="true" />
+              {{ t("skillsCommunitySearchEntry") }}
+            </button>
+            <AppDropdownMenu :items="skillUploadItems" @select="addSkill">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+                  :disabled="busy"
+                >
+                  <UploadIcon class="size-3.5" aria-hidden="true" />
+                  {{ t("agentsLocalSkillsAdd") }}
+                </button>
+              </template>
+            </AppDropdownMenu>
+          </div>
         </div>
         <p class="m-0 text-xs text-muted-foreground">{{ t("agentsLocalSkillsHint") }}</p>
         <ul
@@ -500,4 +517,6 @@ function submit(): void {
       </button>
     </div>
   </form>
+
+  <CommunitySkillDialog v-model:open="communityOpen" @fetched="addSkillPath" />
 </template>

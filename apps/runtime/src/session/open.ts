@@ -3,7 +3,9 @@ import path from "node:path";
 
 import {
   createAgentSession,
+  createCodemodeExtension,
   createMcpExtension,
+  createToolSearchExtension,
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
@@ -36,12 +38,14 @@ import { writeSessionModelRef } from "./model/session-model.js";
 import { createArtifactsExtension } from "./history/artifacts.js";
 import { createSummaryExtension } from "./history/summary.js";
 import { createOutputLengthExtension } from "./output-length.js";
+import { createStreamGuardExtension } from "./stream-guard.js";
 import {
   AskUserBroker,
   createAskUserExtension,
   createBackgroundJobsExtension,
   createDelegateExtension,
   createFsGuardExtension,
+  createLocalTimeExtension,
   createTodoExtension,
   createWebToolsExtension,
   formatToolsUsagePrompt,
@@ -84,11 +88,13 @@ export async function openSession(
         return resolveAllowedRoots(plan.cwd, readProjectRoots(visit.root, kind));
       }),
       createWebToolsExtension(),
+      createLocalTimeExtension(),
       createAskUserExtension(askUser, visit.userId, visit.agentId, { origin: "visit" }),
       createTodoExtension(),
       createSummaryExtension(),
       createArtifactsExtension(),
       createOutputLengthExtension(),
+      createStreamGuardExtension(),
       createCheckpointExtension(visit.root),
       ...(delegation
         ? [createDelegateExtension(delegation, visit.userId, visit.agentId)]
@@ -96,7 +102,10 @@ export async function openSession(
       ...(backgroundJobs
         ? [createBackgroundJobsExtension(backgroundJobs, visit.userId, visit.agentId, plan.cwd)]
         : []),
-      ...(mcpEnabled ? [createMcpExtension({ loadConfig: () => mcpConfig })] : []),
+      // MCP deferred → tool_search；包若显式 codemode 则由 MCP 扩展激活 codemode。
+      ...(mcpEnabled
+        ? [createToolSearchExtension(), createCodemodeExtension(), createMcpExtension({ loadConfig: () => mcpConfig })]
+        : []),
       createApprovalExtension(approvals, visit.userId, visit.agentId, {
         hitl: { origin: "visit" },
         projectMount: {
@@ -172,7 +181,10 @@ export async function openSession(
     thinkingLevel: "off",
     noTools: tools ? undefined : mcpEnabled ? "builtin" : "all",
   };
-  return createAgentSession(options);
+  const created = await createAgentSession(options);
+  // SDK 不会自动 session_start；MCP 在此连接，deferred 才可被 tool_search 发现。
+  await created.session.bindExtensions({});
+  return created;
 }
 
 function skillUnderRoot(skill: Skill, rootDir: string): boolean {

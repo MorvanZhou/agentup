@@ -27,7 +27,12 @@ function sessionModelPath(agentId: string, userId: string, locale?: UiLocale): s
 
 export type AttentionApproval = {
   id: string;
+  /** 侧栏 / Dock 展示归属（同步嵌套时可能已 remap 到父）。 */
   agentId: string;
+  /** 真实发起 HITL 的会话（委托子 Agent）。 */
+  originAgentId?: string;
+  /** 委托方；异步时与 agentId 不同，供主 Agent 侧栏提醒。 */
+  parentAgentId?: string;
   toolCallId: string;
   toolName: string;
   args: unknown;
@@ -36,12 +41,31 @@ export type AttentionApproval = {
 export type AttentionAskUser = {
   id: string;
   agentId: string;
+  originAgentId?: string;
+  parentAgentId?: string;
   toolCallId: string;
   questions: AgentUpAskUserData["questions"];
 };
 
+export type BusyTurnPhase = "prompt" | "wake";
+
+export type BusyTurnSource = {
+  name: string;
+  status?: string;
+  agentId?: string;
+  kind?: "delegation" | "background";
+};
+
+/** 主会话当前回合（编排条：wake 汇总 / 普通回复）。 */
+export type BusyTurn = {
+  agentId: string;
+  phase: BusyTurnPhase;
+  sources: BusyTurnSource[];
+};
+
 export type AttentionSnapshot = {
   busyAgentIds: string[];
+  busyTurns: BusyTurn[];
   approvals: AttentionApproval[];
   askUsers: AttentionAskUser[];
 };
@@ -60,6 +84,31 @@ export async function attention(
   const busyAgentIds = Array.isArray(busyRaw)
     ? busyRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
     : [];
+  const busyTurns: BusyTurn[] = [];
+  if (Array.isArray(payload.busy_turns)) {
+    for (const raw of payload.busy_turns) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      if (typeof item.agent_id !== "string" || !item.agent_id) continue;
+      const phase = item.phase === "wake" || item.phase === "prompt" ? item.phase : "prompt";
+      const sources: BusyTurnSource[] = [];
+      if (Array.isArray(item.sources)) {
+        for (const src of item.sources) {
+          if (!src || typeof src !== "object") continue;
+          const row = src as Record<string, unknown>;
+          if (typeof row.name !== "string" || !row.name.trim()) continue;
+          sources.push({
+            name: row.name.trim(),
+            status: typeof row.status === "string" ? row.status : undefined,
+            agentId: typeof row.agent_id === "string" ? row.agent_id : undefined,
+            kind:
+              row.kind === "background" || row.kind === "delegation" ? row.kind : undefined,
+          });
+        }
+      }
+      busyTurns.push({ agentId: item.agent_id, phase, sources });
+    }
+  }
   const approvals: AttentionApproval[] = [];
   if (Array.isArray(payload.approvals)) {
     for (const raw of payload.approvals) {
@@ -76,6 +125,14 @@ export async function attention(
       approvals.push({
         id: item.id,
         agentId: item.agent_id,
+        originAgentId:
+          typeof item.origin_agent_id === "string" && item.origin_agent_id
+            ? item.origin_agent_id
+            : undefined,
+        parentAgentId:
+          typeof item.parent_agent_id === "string" && item.parent_agent_id
+            ? item.parent_agent_id
+            : undefined,
         toolCallId: item.tool_call_id,
         toolName: item.tool_name,
         args: item.args,
@@ -98,12 +155,20 @@ export async function attention(
       askUsers.push({
         id: item.id,
         agentId: item.agent_id,
+        originAgentId:
+          typeof item.origin_agent_id === "string" && item.origin_agent_id
+            ? item.origin_agent_id
+            : undefined,
+        parentAgentId:
+          typeof item.parent_agent_id === "string" && item.parent_agent_id
+            ? item.parent_agent_id
+            : undefined,
         toolCallId: item.tool_call_id,
         questions: item.questions as AgentUpAskUserData["questions"],
       });
     }
   }
-  return { busyAgentIds, approvals, askUsers };
+  return { busyAgentIds, busyTurns, approvals, askUsers };
 }
 
 export async function decideApproval(
@@ -461,4 +526,10 @@ export function delegationStreamUrl(
 ): string {
   const params = new URLSearchParams({ user_id: userId });
   return `${baseUrl}/personal-assistant/delegations/${encodeURIComponent(taskId)}/stream?${params}`;
+}
+
+/** wake 等编排回合旁路 UIMessage SSE（与 /prompt 同形）。 */
+export function turnStreamUrl(baseUrl: string, userId: string, agentId: string): string {
+  const params = new URLSearchParams({ user_id: userId, agent_id: agentId });
+  return `${baseUrl.replace(/\/$/, "")}/turn-stream?${params}`;
 }

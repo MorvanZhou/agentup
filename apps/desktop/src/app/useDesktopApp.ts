@@ -31,6 +31,7 @@ const ATTENTION_POLL_MS = 2_500;
 
 const emptyAttention = (): AttentionSnapshot => ({
   busyAgentIds: [],
+  busyTurns: [],
   approvals: [],
   askUsers: [],
 });
@@ -67,16 +68,39 @@ export function useDesktopApp(api = new DesktopApi()) {
   );
   const blockedAgentIds = computed(() => {
     const ids = new Set<string>();
-    for (const item of attention.value.approvals) ids.add(item.agentId);
-    for (const item of attention.value.askUsers) ids.add(item.agentId);
+    for (const item of attention.value.approvals) {
+      ids.add(item.agentId);
+      // 异步委托：HITL 挂在子会话，父会话也算「待处理」以便 Dock / 导航角标。
+      if (item.parentAgentId && item.parentAgentId !== item.agentId) {
+        ids.add(item.parentAgentId);
+      }
+    }
+    for (const item of attention.value.askUsers) {
+      ids.add(item.agentId);
+      if (item.parentAgentId && item.parentAgentId !== item.agentId) {
+        ids.add(item.parentAgentId);
+      }
+    }
     return ids;
   });
-  const blockedCount = computed(() =>
-    totalBlocked(
+  const blockedCount = computed(() => {
+    const parents: string[] = [];
+    for (const item of attention.value.approvals) {
+      if (item.parentAgentId && item.parentAgentId !== item.agentId) {
+        parents.push(item.parentAgentId);
+      }
+    }
+    for (const item of attention.value.askUsers) {
+      if (item.parentAgentId && item.parentAgentId !== item.agentId) {
+        parents.push(item.parentAgentId);
+      }
+    }
+    return totalBlocked(
       attention.value.approvals.map((item) => item.agentId),
       attention.value.askUsers.map((item) => item.agentId),
-    ),
-  );
+      parents,
+    );
+  });
 
   onMounted(() => {
     if (session.value) void refresh();

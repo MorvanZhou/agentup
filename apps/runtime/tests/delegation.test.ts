@@ -10,7 +10,7 @@ import {
   CANCEL_DELEGATION_TOOL,
   CHECK_DELEGATION_TOOL,
   DELEGATE_TO_AGENT_TOOL,
-  LIST_RECRUITED_AGENTS_TOOL,
+  AGENT_SEARCH_TOOL,
   createDelegateExtension,
 } from "../src/session/tools/index.js";
 import { buildSessionPlan } from "../src/session/plan.js";
@@ -51,7 +51,7 @@ it("adds delegation tools for personal and recruited visits", () => {
     },
     testModel(),
   );
-  expect(personal.tools).toContain(LIST_RECRUITED_AGENTS_TOOL);
+  expect(personal.tools).toContain(AGENT_SEARCH_TOOL);
   expect(personal.tools).toContain(DELEGATE_TO_AGENT_TOOL);
   expect(personal.tools).toContain(CHECK_DELEGATION_TOOL);
   expect(personal.tools).toContain(CANCEL_DELEGATION_TOOL);
@@ -395,7 +395,7 @@ it("registers delegate tools for any visit agent", async () => {
     },
   } as never);
   expect(names).toEqual([
-    LIST_RECRUITED_AGENTS_TOOL,
+    AGENT_SEARCH_TOOL,
     DELEGATE_TO_AGENT_TOOL,
     CANCEL_DELEGATION_TOOL,
     CHECK_DELEGATION_TOOL,

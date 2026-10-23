@@ -1,5 +1,5 @@
 import type { AgentCard } from "../../../../shared/model/runtime";
-import { t } from "../../../../shared/model/ui-locale";
+import { t, tf } from "../../../../shared/model/ui-locale";
 
 /** 会话侧栏一行：展示与检索所需字段已在此收齐。 */
 export interface ConversationRow {
@@ -11,6 +11,15 @@ export interface ConversationRow {
   awaitingApproval: boolean;
   /** 该会话正等待本机用户回答 ask_user。 */
   awaitingAskUser: boolean;
+  /**
+   * 委托出去的子 Agent 正等待授权 / 回答（本会话无 Dock，仅侧栏提醒）。
+   * 异步委托时 HITL 挂在子会话，主 Agent 靠此置顶提示。
+   */
+  awaitingChildHitl: boolean;
+  /** 子 Agent 展示名（备注 / 原名），供提醒文案。 */
+  childHitlName: string;
+  /** 子 HITL 是审批还是提问（影响文案）。 */
+  childHitlKind: "approval" | "ask" | "";
   /** 该会话的 Agent 回合仍在进行（流式回复 / 工具执行中）。 */
   working: boolean;
   unread: number;
@@ -25,6 +34,12 @@ export interface ConversationRow {
 export const AWAITING_APPROVAL_PREVIEW = "等待你的批准";
 export const AWAITING_ASK_USER_PREVIEW = "等待你的回答";
 
+export type ChildHitlHint = {
+  /** 子 Agent 展示名。 */
+  name: string;
+  kind: "approval" | "ask";
+};
+
 export function buildConversationRows(input: {
   conversations: AgentCard[];
   previews: Record<string, string>;
@@ -36,6 +51,8 @@ export function buildConversationRows(input: {
   awaitingApproval?: ReadonlySet<string> | readonly string[];
   /** 有待回答 ask_user 的 agentId 集合。 */
   awaitingAskUser?: ReadonlySet<string> | readonly string[];
+  /** 父会话 → 子 HITL 提醒（异步委托挂在子、主 Agent 需置顶提示）。 */
+  childHitlByParent?: ReadonlyMap<string, ChildHitlHint> | Record<string, ChildHitlHint>;
   /** 回合进行中的 agentId 集合。 */
   working?: ReadonlySet<string> | readonly string[];
 }): ConversationRow[] {
@@ -49,8 +66,13 @@ export function buildConversationRows(input: {
       : new Set(input.awaitingAskUser ?? []);
   const working =
     input.working instanceof Set ? input.working : new Set(input.working ?? []);
+  const childHitl =
+    input.childHitlByParent instanceof Map
+      ? input.childHitlByParent
+      : new Map(Object.entries(input.childHitlByParent ?? {}));
   const ranked = input.conversations.map((agent, index) => {
     const preview = input.previews[agent.agentId] ?? "";
+    const child = childHitl.get(agent.agentId);
     return {
       index,
       row: {
@@ -60,6 +82,9 @@ export function buildConversationRows(input: {
         busy: input.busyAgent === agent.agentId,
         awaitingApproval: awaiting.has(agent.agentId),
         awaitingAskUser: awaitingAsk.has(agent.agentId),
+        awaitingChildHitl: Boolean(child),
+        childHitlName: child?.name ?? "",
+        childHitlKind: child?.kind ?? "",
         working: working.has(agent.agentId),
         unread: input.unread[agent.agentId] ?? 0,
         hasUpdate: agent.latestVersion > agent.localVersion,
@@ -68,14 +93,30 @@ export function buildConversationRows(input: {
       } satisfies ConversationRow,
     };
   });
-  // 微信会话列表：最近有消息的置顶；同时间保持原相对顺序。
+  // 私人助理永远第一；其后：待授权/提问/子 HITL/未读 → 最近活跃。
   ranked.sort((left, right) => {
     if (left.row.agent.kind === "personal" && right.row.agent.kind !== "personal") return -1;
     if (right.row.agent.kind === "personal" && left.row.agent.kind !== "personal") return 1;
+    const leftPin = attentionPinRank(left.row);
+    const rightPin = attentionPinRank(right.row);
+    if (leftPin !== rightPin) return leftPin - rightPin;
     const delta = right.row.lastActiveAt - left.row.lastActiveAt;
     return delta !== 0 ? delta : left.index - right.index;
   });
   return ranked.map((entry) => entry.row);
+}
+
+/** 越小越靠前；无注意力需求为 99。 */
+function attentionPinRank(
+  row: Pick<
+    ConversationRow,
+    "awaitingApproval" | "awaitingAskUser" | "awaitingChildHitl" | "unread"
+  >,
+): number {
+  if (row.awaitingApproval || row.awaitingAskUser) return 0;
+  if (row.awaitingChildHitl) return 1;
+  if (row.unread > 0) return 2;
+  return 99;
 }
 
 export function filterConversationRows(rows: ConversationRow[], query: string): ConversationRow[] {
@@ -107,10 +148,11 @@ export function totalUnread(unread: Record<string, number>): number {
   return sum;
 }
 
-/** Dock / 导航角标：有待审批或 ask_user 的 Agent 个数。 */
+/** Dock / 导航角标：有待审批或 ask_user 的 Agent 个数（含子 HITL 提醒的父会话）。 */
 export function totalBlocked(
   awaitingApproval: ReadonlySet<string> | readonly string[],
   awaitingAskUser: ReadonlySet<string> | readonly string[] = [],
+  childHitlParents: ReadonlySet<string> | readonly string[] = [],
 ): number {
   const ids = new Set<string>(
     awaitingApproval instanceof Set ? awaitingApproval : awaitingApproval,
@@ -118,19 +160,79 @@ export function totalBlocked(
   for (const id of awaitingAskUser instanceof Set ? awaitingAskUser : awaitingAskUser) {
     ids.add(id);
   }
+  for (const id of childHitlParents instanceof Set ? childHitlParents : childHitlParents) {
+    ids.add(id);
+  }
   return ids.size;
 }
 
-/** 侧栏副文案：待审批 / 待回答优先于消息预览。 */
+/** 侧栏副文案：待审批 / 待回答 / 子 HITL 提醒优先于消息预览。 */
 export function conversationPreviewLabel(
-  row: Pick<ConversationRow, "awaitingApproval" | "awaitingAskUser" | "preview">,
+  row: Pick<
+    ConversationRow,
+    | "awaitingApproval"
+    | "awaitingAskUser"
+    | "awaitingChildHitl"
+    | "childHitlName"
+    | "childHitlKind"
+    | "preview"
+  >,
 ): string {
   if (row.awaitingApproval) return t("sideAwaitApproval");
   if (row.awaitingAskUser) return t("sideAwaitAsk");
+  if (row.awaitingChildHitl) {
+    const name = row.childHitlName.trim();
+    if (row.childHitlKind === "ask") {
+      return name
+        ? tf("sideAwaitChildAsk", { name })
+        : t("sideAwaitChildAskGeneric");
+    }
+    return name
+      ? tf("sideAwaitChildApproval", { name })
+      : t("sideAwaitChildApprovalGeneric");
+  }
   return row.preview || t("sideNoMessages");
 }
 
 /** 侧栏与顶栏主标题：有备注名用备注名，否则用原名。 */
 export function conversationDisplayName(row: Pick<ConversationRow, "agent">): string {
   return row.agent.remark || row.agent.name;
+}
+
+/**
+ * 从 attention HITL 条目收集「父会话需提醒」：
+ * 仅当 HITL 展示归属仍是子会话（异步）且存在委托方时。
+ */
+export function childHitlHintsFromAttention(input: {
+  approvals: ReadonlyArray<{
+    agentId: string;
+    originAgentId?: string;
+    parentAgentId?: string;
+  }>;
+  askUsers: ReadonlyArray<{
+    agentId: string;
+    originAgentId?: string;
+    parentAgentId?: string;
+  }>;
+  resolveName: (agentId: string) => string;
+}): Map<string, ChildHitlHint> {
+  const hints = new Map<string, ChildHitlHint>();
+  const consider = (
+    item: { agentId: string; originAgentId?: string; parentAgentId?: string },
+    kind: "approval" | "ask",
+  ) => {
+    const parent = item.parentAgentId?.trim();
+    if (!parent || parent === item.agentId) return;
+    // 已有本会话直接 HITL 时不必再叠子提醒。
+    if (hints.has(parent) && hints.get(parent)!.kind === "approval") return;
+    if (kind === "ask" && hints.has(parent)) return;
+    const origin = item.originAgentId?.trim() || item.agentId;
+    hints.set(parent, {
+      kind,
+      name: input.resolveName(origin) || origin,
+    });
+  };
+  for (const item of input.approvals) consider(item, "approval");
+  for (const item of input.askUsers) consider(item, "ask");
+  return hints;
 }

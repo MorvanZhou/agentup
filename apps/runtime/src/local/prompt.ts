@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { pipeUIMessageStreamToResponse } from "ai";
 
-import type { ModelConfig } from "../config/load.js";
+import { ConfigError, type ModelConfig } from "../config/load.js";
 import type { UiLocale } from "../i18n/locale.js";
 import { AttachmentError, type PromptAttachment } from "../session/workspace/attachments.js";
 import { resolveVisitModelConfig } from "../session/model/session-model.js";
@@ -52,6 +52,10 @@ export async function streamPrompt(
     }
     if (error instanceof AttachmentError) {
       sendNodeJson(res, error.status, { error: error.message });
+      return;
+    }
+    if (error instanceof ConfigError) {
+      sendNodeJson(res, 503, { error: error.message });
       return;
     }
     const message = error instanceof Error && error.message ? error.message : "对话失败";

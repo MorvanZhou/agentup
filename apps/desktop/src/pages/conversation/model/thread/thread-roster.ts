@@ -5,6 +5,8 @@ import { computed, inject } from "vue";
 export type RosterAgent = {
   agentId: string;
   name: string;
+  /** Agent 岗位（名片 role）。 */
+  role: string;
   remark: string;
   avatarUrl?: string;
   /** false 表示已解雇或不在列表。 */
@@ -43,6 +45,7 @@ export function resolveRosterAgent(
   return {
     agentId,
     name: nameHint || agentId,
+    role: "",
     remark: "",
     available: false,
   };

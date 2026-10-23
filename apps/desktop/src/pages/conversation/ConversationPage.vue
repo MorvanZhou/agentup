@@ -8,7 +8,11 @@ import AgentSidebar from "./components/agent-sidebar/AgentSidebar.vue";
 import AgentThread from "./components/agent-main/AgentThread.vue";
 import { useAgentChat } from "./composables/useAgentChat";
 import { useSidebarPaneWidth } from "./composables/usePaneWidth";
-import { buildConversationRows, hasRecruitedMarketAgent } from "./model/sidebar/conversation-row";
+import {
+  buildConversationRows,
+  childHitlHintsFromAttention,
+  hasRecruitedMarketAgent,
+} from "./model/sidebar/conversation-row";
 import type { ThreadExtras } from "./model/thread/thread-extras";
 import type { ThreadRoster } from "./model/thread/thread-roster";
 import { mountedThreads, pruneVisited, rememberVisited } from "./model/thread/visited-threads";
@@ -78,6 +82,20 @@ const rows = computed(() => {
     ...Object.keys(workingAgents.value),
     ...attention.value.busyAgentIds,
   ]);
+  const childHitlByParent = childHitlHintsFromAttention({
+    approvals: attention.value.approvals,
+    askUsers: attention.value.askUsers,
+    resolveName: (agentId) => {
+      const agent = conversations.value.find((item) => item.agentId === agentId);
+      return agent?.remark || agent?.name || agentId;
+    },
+  });
+  // 父会话已有直接 HITL 时去掉子提醒，避免重复角标文案。
+  for (const parentId of [...childHitlByParent.keys()]) {
+    if (awaitingApproval.has(parentId) || awaitingAskUser.has(parentId)) {
+      childHitlByParent.delete(parentId);
+    }
+  }
   return buildConversationRows({
     conversations: conversations.value,
     previews: previews.value,
@@ -87,6 +105,7 @@ const rows = computed(() => {
     unread: unread.value,
     awaitingApproval,
     awaitingAskUser,
+    childHitlByParent,
     working,
   });
 });
@@ -236,6 +255,18 @@ watch(
 async function abortTurn(agentId: string): Promise<void> {
   if (!session.value) return;
   await chat.abortTurn(agentId, session.value.token, session.value.userId);
+  void pullAttention();
+}
+
+function busyTurnFor(agentId: string) {
+  return attention.value.busyTurns.find((item) => item.agentId === agentId) ?? null;
+}
+
+/** wake 流结束后：刷新 attention + 历史（bump epoch 并入 AISDKChat）。 */
+async function reloadHistory(agentId: string): Promise<void> {
+  if (!session.value || !agentId) return;
+  await pullAttention();
+  await chat.load(agentId, session.value.token, session.value.userId, true);
 }
 
 async function clearContext(agentId: string): Promise<void> {
@@ -258,6 +289,7 @@ const threadRoster = computed((): ThreadRoster => ({
   agents: conversations.value.map((agent) => ({
     agentId: agent.agentId,
     name: agent.name,
+    role: agent.role,
     remark: agent.remark,
     avatarUrl: agent.avatarUrl,
     available: agent.recruited === true || agent.kind === "personal" || agent.kind === "local",
@@ -308,7 +340,9 @@ const threadRoster = computed((): ThreadRoster => ({
           :active="selected?.agentId === thread.agentId"
           :approval="chat.approvals.value[thread.agentId]"
           :ask-user="chat.askUsers.value[thread.agentId]"
+          :busy-turn="busyTurnFor(thread.agentId)"
           :abort-turn="() => abortTurn(thread.agentId)"
+          :reload-history="() => reloadHistory(thread.agentId)"
           :clear-context="() => clearContext(thread.agentId)"
           :clear-history="() => clearHistory(thread.agentId)"
           :set-remark="(remark) => setRemark(thread.agentId, remark)"

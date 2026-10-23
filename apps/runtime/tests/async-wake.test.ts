@@ -88,3 +88,49 @@ it("takePending cancels idle wake and hands items to user turn", async () => {
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(calls).toHaveLength(0);
 });
+
+/**
+ * 取消异步 → wake 被用户发言/409 abort 打断后，不得立刻自动再开一轮 wake，
+ * 否则与重试 prompt 抢 busy，会话半截卡死。应等 onParentIdle 或 takePending。
+ */
+it("does not auto-redrain after wake failure; holds until onParentIdle", async () => {
+  let shouldFail = true;
+  let calls = 0;
+  const delivered: string[] = [];
+  const runWake: AsyncWakeRunner = async () => {
+    calls += 1;
+    if (shouldFail) throw new Error("aborted");
+  };
+  const broker = new AsyncWakeBroker(runWake, () => false, 10);
+  broker.enqueue(
+    item({
+      id: "cancel-1",
+      urgency: "immediate",
+      body: "【委托已取消】",
+      markDelivered: () => delivered.push("cancel-1"),
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(calls).toBe(1);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(calls).toBe(1);
+  expect(delivered).toEqual([]);
+
+  shouldFail = false;
+  broker.onParentIdle("u", "a", "personal");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(calls).toBe(2);
+  expect(delivered).toEqual(["cancel-1"]);
+});
+
+it("after wake failure takePending still receives requeued items for user turn", async () => {
+  const runWake: AsyncWakeRunner = async () => {
+    throw new Error("aborted");
+  };
+  const broker = new AsyncWakeBroker(runWake, () => false, 10);
+  broker.enqueue(item({ id: "c", urgency: "immediate", body: "cancelled" }));
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const taken = broker.takePending("u", "a", "personal");
+  expect(taken.map((entry) => entry.id)).toEqual(["c"]);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+});

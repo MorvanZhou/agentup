@@ -3,6 +3,14 @@
 export { formatToolsUsagePrompt } from "./usage-prompt.js";
 
 export {
+  GET_LOCAL_TIME_TOOL,
+  createLocalTimeExtension,
+  formatLocalTime,
+  readLocalTime,
+  type LocalTimeInfo,
+} from "./local-time.js";
+
+export {
   ASK_USER_TOOL,
   AskUserBroker,
   createAskUserExtension,
@@ -41,7 +49,7 @@ export {
   CANCEL_DELEGATION_TOOL,
   CHECK_DELEGATION_TOOL,
   DELEGATE_TO_AGENT_TOOL,
-  LIST_RECRUITED_AGENTS_TOOL,
+  AGENT_SEARCH_TOOL,
   createDelegateExtension,
 } from "./delegate.js";
 

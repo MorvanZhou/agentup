@@ -14,27 +14,27 @@ import {
   type DelegationTask,
 } from "../delegation/types.js";
 
-export const LIST_RECRUITED_AGENTS_TOOL = "list_recruited_agents";
+export const AGENT_SEARCH_TOOL = "agent_search";
 export const DELEGATE_TO_AGENT_TOOL = "delegate_to_agent";
 export const CHECK_DELEGATION_TOOL = "check_delegation";
 export const CANCEL_DELEGATION_TOOL = "cancel_delegation";
 
-const ListParams = Type.Object({
-  query: Type.Optional(
-    Type.String({
-      description:
-        "Optional search over name / role / background / remark. " +
-        "Omit when the roster is small; use a short query when many agents are recruited.",
-    }),
-  ),
+const SearchAgentsParams = Type.Object({
+  query: Type.String({
+    description:
+      "Required search keywords over name / role / background / remark / identity. " +
+      "Use short domain terms (e.g. exchange rate, weather, legal). Do not omit.",
+    minLength: 1,
+  }),
 });
 
 const FanoutItem = Type.Object({
   agent_id: Type.String({
-    description: "已招募专家的 agent_id",
+    description: "agent_id of a recruited specialist",
   }),
   brief: Type.String({
-    description: "交给该专家的有界子任务说明（只写其所需信息）",
+    description:
+      "Bounded subtask for that specialist (only the information they need)",
   }),
 });
 
@@ -42,13 +42,13 @@ const DelegateParams = Type.Object({
   agent_id: Type.Optional(
     Type.String({
       description:
-        "单专家委托时的 agent_id。与 tasks 二选一；批量扇出请用 tasks。",
+        "agent_id for a single-specialist delegation. Mutually exclusive with tasks; use tasks for fan-out.",
     }),
   ),
   brief: Type.Optional(
     Type.String({
       description:
-        "单专家委托时的 brief。与 tasks 二选一。",
+        "Brief for a single-specialist delegation. Mutually exclusive with tasks.",
     }),
   ),
   tasks: Type.Optional(
@@ -56,32 +56,38 @@ const DelegateParams = Type.Object({
       minItems: 1,
       maxItems: MAX_DELEGATION_FANOUT,
       description:
-        `并行扇出：最多 ${MAX_DELEGATION_FANOUT} 个独立专家子任务。` +
-        "默认异步（立刻返回各 task_id）；需要本轮汇总时再设 wait=true。",
+        `Parallel fan-out: up to ${MAX_DELEGATION_FANOUT} independent specialist subtasks. ` +
+        "Async by default (returns each task_id immediately); set wait=true to join results this turn.",
     }),
   ),
   wait: Type.Optional(
     Type.Boolean({
       description:
-        "单专家：true/省略=同步等待；false=立刻返回 task_id。" +
-        "tasks 扇出：默认 false；true=等全部完成再返回。",
+        "Set explicitly after estimating duration: true if the specialist is likely ≤~20s and you need the result this turn; " +
+        "false if likely >~20s, uncertain, or you can continue other work (returns task_id immediately). " +
+        "Fan-out (tasks): defaults to false; true waits until all finish. Do not default to true merely because there is one specialist.",
     }),
   ),
 });
 
 const CheckParams = Type.Object({
-  task_id: Type.Optional(Type.String({ description: "要查询的委托任务 id" })),
+  task_id: Type.Optional(
+    Type.String({ description: "Delegation task id to inspect" }),
+  ),
   task_ids: Type.Optional(
     Type.Array(Type.String(), {
       minItems: 1,
       maxItems: MAX_DELEGATION_FANOUT,
-      description: "批量查询多个 task_id（扇出汇合）；与 task_id 二选一或并用（合并去重）",
+      description:
+        "Batch-inspect multiple task_ids (fan-out join); use instead of or together with task_id (merged, deduped)",
     }),
   ),
 });
 
 const CancelParams = Type.Object({
-  task_id: Type.String({ description: "要取消的委托任务 id（进行中或排队中）" }),
+  task_id: Type.String({
+    description: "Delegation task id to cancel (running or queued)",
+  }),
 });
 
 type ListDetails = { agents: unknown[]; error?: string };
@@ -100,14 +106,15 @@ export function createDelegateExtension(
 ): ExtensionFactory {
   return (pi) => {
     pi.registerTool(
-      defineTool<typeof ListParams, ListDetails>({
-        name: LIST_RECRUITED_AGENTS_TOOL,
-        label: "List Recruited Agents",
+      defineTool<typeof SearchAgentsParams, ListDetails>({
+        name: AGENT_SEARCH_TOOL,
+        label: "Agent Search",
         description:
-          "List available specialist agents (local private + market recruited) by optional query " +
-          "(name, role, background). Relevant candidates may already appear in context each turn; " +
-          "use this to refine or list more. Then call delegate_to_agent when a specialist fits.",
-        parameters: ListParams,
+          "Search the user's specialist contact list (local private + market recruited) by query " +
+          "(name, role, background, remark). This is a collaboration workspace — when the task may " +
+          "fit a specialist, call agent_search before guessing. Matching candidates may also appear " +
+          "in context for the current turn; use this tool to refine. Then call delegate_to_agent when one fits.",
+        parameters: SearchAgentsParams,
         annotations: {
           readOnlyHint: true,
           openWorldHint: false,
@@ -127,37 +134,39 @@ export function createDelegateExtension(
               details: { agents: [] },
             };
           }
-          const query = typeof params.query === "string" ? params.query : "";
+          const query = typeof params.query === "string" ? params.query.trim() : "";
           const discovered = discoverRecruitedAgents(others, query);
+          if (discovered.mode === "need_query") {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "query is required. Pass short keywords (role or domain), then retry agent_search.",
+                },
+              ],
+              details: { agents: [], error: "query required" },
+            };
+          }
           if (discovered.agents.length === 0) {
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: query.trim()
-                    ? `No recruited agents matched query: ${query.trim()}`
-                    : "No recruited agents to list.",
+                  text: `No recruited agents matched query: ${query}. Try different keywords, or answer yourself.`,
                 },
               ],
               details: { agents: [] },
             };
           }
-          const header =
-            discovered.mode === "sample"
-              ? "Recruited agents (partial — pass query to search):\n"
-              : discovered.mode === "search"
-                ? "Matching recruited agents:\n"
-                : "Recruited agents:\n";
-          const footer =
-            discovered.truncated && discovered.mode !== "all"
-              ? "\n\n(More available — refine with query.)"
-              : "";
+          const footer = discovered.truncated
+            ? "\n\n(More available — refine query.)"
+            : "";
           const lines = discovered.agents.map(formatAgentCardLine);
           return {
             content: [
               {
                 type: "text" as const,
-                text: `${header}${lines.join("\n")}${footer}`,
+                text: `Matching recruited agents:\n${lines.join("\n")}${footer}`,
               },
             ],
             details: { agents: discovered.agents },
@@ -174,7 +183,9 @@ export function createDelegateExtension(
           "Delegate bounded subtask(s) to recruited specialist(s) when their role/background fits. " +
           "Single: agent_id + brief. Fan-out: tasks=[{agent_id, brief}, ...] (preferred for parallel). " +
           "User must approve. You keep ownership of the user-facing reply; synthesize results. " +
-          "Prefer wait=true for one short task you need now; wait=false (or tasks fan-out) for long/parallel work.",
+          "Set wait by estimated duration: ≤~20s and need the answer now → wait=true; " +
+          ">~20s / long / parallel / can continue other work → wait=false (or tasks fan-out). " +
+          "Do not default to wait=true merely because there is one specialist.",
         parameters: DelegateParams,
         annotations: {
           readOnlyHint: false,

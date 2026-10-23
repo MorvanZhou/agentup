@@ -1,5 +1,11 @@
+export {
+  wakeSourcesFromDetails,
+  type BusyTurnInfo,
+  type BusyTurnPhase,
+  type BusyTurnSource,
+} from "./busy-turn.js";
 export { openPromptSession } from "./open.js";
-export { VisitChats } from "./visit-chats.js";
+export { VisitChats, type TurnProgressEvent } from "./visit-chats.js";
 export {
   ChatBusy,
   type PromptOptions,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentSessionEvent, SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { UIMessageChunk } from "ai";
 
+import { sanitizeStreamText } from "../stream-guard.js";
 import {
   AGENTUP_ARTIFACTS_CUSTOM_TYPE,
   parseArtifactsEntryData,
@@ -183,6 +184,8 @@ export class PiUIMessageProjector {
   }
 
   private reasoningDelta(delta: string): UIMessageChunk[] {
+    const visible = stripSpecialForDisplay(delta);
+    if (!visible) return [];
     const chunks: UIMessageChunk[] = [...this.ensureMessage()];
     if (this.textOpen) chunks.push(...this.closeText());
     if (!this.reasoningOpen) {
@@ -190,11 +193,13 @@ export class PiUIMessageProjector {
       this.reasoningOpen = true;
       chunks.push({ type: "reasoning-start", id: this.reasoningId });
     }
-    chunks.push({ type: "reasoning-delta", id: this.reasoningId, delta });
+    chunks.push({ type: "reasoning-delta", id: this.reasoningId, delta: visible });
     return chunks;
   }
 
   private textDelta(delta: string): UIMessageChunk[] {
+    const visible = stripSpecialForDisplay(delta);
+    if (!visible) return [];
     const chunks: UIMessageChunk[] = [...this.ensureMessage()];
     if (this.reasoningOpen) chunks.push(...this.closeReasoning());
     if (!this.textOpen) {
@@ -203,8 +208,8 @@ export class PiUIMessageProjector {
       this.openTextLength = 0;
       chunks.push({ type: "text-start", id: this.textId });
     }
-    if (delta) this.openTextLength += delta.length;
-    chunks.push({ type: "text-delta", id: this.textId, delta });
+    this.openTextLength += visible.length;
+    chunks.push({ type: "text-delta", id: this.textId, delta: visible });
     return chunks;
   }
 
@@ -442,4 +447,11 @@ function textOf(value: unknown): string {
     }
   }
   return JSON.stringify(value);
+}
+
+/** 投影层：去掉完整 special；半截前缀暂保留，避免误吞代码里的 `<|`。 */
+function stripSpecialForDisplay(delta: string): string {
+  if (!delta) return "";
+  const { text, pending } = sanitizeStreamText(delta);
+  return text + pending;
 }

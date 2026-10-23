@@ -9,8 +9,8 @@ it("resolves provider copy for zh and en", () => {
   const enOllama = en.find((item) => item.id === "ollama");
   expect(zhOllama?.vendorLabel).toBe("Ollama（本机）");
   expect(enOllama?.vendorLabel).toBe("Ollama (local)");
-  expect(zhOllama?.hint).toContain("ollama list");
-  expect(enOllama?.hint).toContain("ollama list");
+  expect(zhOllama?.hint).toContain("本机已下载的模型");
+  expect(enOllama?.hint).toContain("locally installed models");
 
   const zhZhipu = listVendorGroups("zh").find((item) => item.id === "zhipu");
   const enZhipu = listVendorGroups("en").find((item) => item.id === "zhipu");

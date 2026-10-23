@@ -5,6 +5,7 @@ import { RouterLink } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import { t } from "../../shared/model/ui-locale";
+import AgentCatalogSkeleton from "./components/AgentCatalogSkeleton.vue";
 import AgentMarketCard from "./components/market/AgentMarketCard.vue";
 import { useAgentCatalog } from "./composables/useAgentCatalog";
 import { useAgentMarket } from "./composables/useAgentMarket";
@@ -43,20 +44,25 @@ const searching = computed(() => Boolean(query.value.trim()));
             class="min-h-8 w-full rounded-lg border border-rule bg-paper py-1.5 pr-2.5 pl-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
           />
         </label>
-        <RouterLink
-          class="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
-          :to="{ name: 'agents-owned-new' }"
-        >
-          <PlusIcon class="size-3.5" aria-hidden="true" />
-          {{ t("agentsPublish") }}
-        </RouterLink>
       </div>
     </header>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <div class="mx-auto w-full max-w-6xl px-4 py-4 sm:px-5 sm:py-5">
+      <div class="mx-auto w-full max-w-7xl px-4 py-4 sm:px-5 sm:py-5">
         <section class="min-w-0" :aria-label="t('marketTitle')">
-          <div v-if="catalog.agents.value.length" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div class="mb-3 flex items-center justify-start">
+            <RouterLink
+              class="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
+              :to="{ name: 'agents-owned-new' }"
+            >
+              <PlusIcon class="size-3.5" aria-hidden="true" />
+              {{ t("agentsPublish") }}
+            </RouterLink>
+          </div>
+          <div
+            v-if="catalog.agents.value.length"
+            class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+          >
             <AgentMarketCard
               v-for="agent in catalog.agents.value"
               :key="agent.agentId"
@@ -67,14 +73,15 @@ const searching = computed(() => Boolean(query.value.trim()));
               @dismiss="market.dismiss"
             />
           </div>
+          <AgentCatalogSkeleton v-else-if="catalog.loading.value" dense />
           <div
-            v-else-if="!catalog.loading.value && searching"
+            v-else-if="searching"
             class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
           >
             <p class="m-0 text-sm text-muted-foreground">{{ t("agentsNoMatch") }}</p>
           </div>
           <div
-            v-else-if="!catalog.loading.value"
+            v-else
             class="rounded-xl border border-dashed border-rule bg-background px-4 py-10 text-center"
           >
             <p class="m-0 text-sm text-muted-foreground">{{ t("agentsEmptyMarket") }}</p>

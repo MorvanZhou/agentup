@@ -133,6 +133,77 @@ it("updates card without republishing the package", async () => {
   }
 });
 
+it("rewrites local avatar cache when card update includes a new avatar", async () => {
+  const avatarPng = fs.readFileSync(path.join(weatherDir, "assets", "avatar.png"));
+  const avatarDataUrl = `data:image/png;base64,${avatarPng.toString("base64")}`;
+  const remote = "http://127.0.0.1/statics/agents/generated-id/avatar.webp?v=42";
+  const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-card-avatar-"));
+  const staleDir = path.join(userDataRoot, "users/owner/agents/generated-id/assets");
+  fs.mkdirSync(staleDir, { recursive: true });
+  fs.writeFileSync(path.join(staleDir, "avatar.webp"), Buffer.from("stale-old-avatar"));
+
+  const card = {
+    agent_id: "generated-id",
+    name: "Weaty",
+    role: "气象员",
+    background: "演示",
+    rules: "",
+    latest_version: 1,
+    latest_digest: "digest-v1",
+    recruited: true,
+    has_avatar: true,
+    avatar_url: remote,
+    remark: "",
+    recruit_count: 1,
+    created_at: "2026-02-01T00:00:00Z",
+    updated_at: "2026-02-01T00:00:00Z",
+  };
+  const backend = await listen(async (req, res) => {
+    if (req.method === "PUT" && (req.url ?? "") === "/v1/agents/generated-id/card") {
+      return json(res, 200, card);
+    }
+    if (req.method === "GET" && (req.url ?? "").startsWith("/v1/agents/owned")) {
+      return json(res, 200, { agents: [card] });
+    }
+    return json(res, 404, { error: "没有这个接口" });
+  });
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot,
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const response = await fetch(`${local.url}/agents/generated-id/card`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", authorization: "Bearer owner" },
+      body: JSON.stringify({
+        name: "Weaty",
+        role: "气象员",
+        background: "演示",
+        rules: "",
+        user_id: "owner",
+        avatar_data_url: avatarDataUrl,
+      }),
+    });
+    expect(response.status).toBe(200);
+    const cached = fs.readFileSync(path.join(staleDir, "avatar.png"));
+    expect(cached.equals(avatarPng)).toBe(true);
+    expect(fs.existsSync(path.join(staleDir, "avatar.webp"))).toBe(false);
+    expect(fs.readFileSync(path.join(staleDir, "source.url"), "utf8")).toBe(remote);
+
+    const owned = await fetch(`${local.url}/agents/owned?user_id=owner`, {
+      headers: { authorization: "Bearer owner" },
+    });
+    expect(owned.status).toBe(200);
+    const body = (await owned.json()) as { agents: Array<{ avatar_url: string | null }> };
+    expect(body.agents[0]?.avatar_url).toBe(avatarDataUrl);
+  } finally {
+    await local.close();
+    await close(backend);
+  }
+});
+
 it("passes publish ownership errors through the local API", async () => {
   const backend = await listen((_req, res) => json(res, 403, { error: "不是这个 Agent 的发布者" }));
   const local = await startLocalServer({

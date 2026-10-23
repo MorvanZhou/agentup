@@ -9,8 +9,8 @@ export type AgentsSection = "assistant" | "local" | "recruited" | "owned";
 defineProps<{ section: AgentsSection }>();
 
 const items = computed(() => [
-  { id: "assistant" as const, name: "agents-assistant" as const, label: t("agentsSectionAssistant") },
   { id: "local" as const, name: "agents-local" as const, label: t("agentsSectionLocal") },
+  { id: "assistant" as const, name: "agents-assistant" as const, label: t("agentsSectionAssistant") },
   { id: "recruited" as const, name: "agents-recruited" as const, label: t("agentsSectionRecruited") },
   { id: "owned" as const, name: "agents-owned" as const, label: t("agentsSectionOwned") },
 ]);

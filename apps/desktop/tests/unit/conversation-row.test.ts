@@ -4,6 +4,7 @@ import {
   AWAITING_APPROVAL_PREVIEW,
   AWAITING_ASK_USER_PREVIEW,
   buildConversationRows,
+  childHitlHintsFromAttention,
   conversationDisplayName,
   conversationPreviewLabel,
   filterConversationRows,
@@ -31,6 +32,12 @@ function card(partial: Partial<AgentCard> & Pick<AgentCard, "agentId" | "name">)
   };
 }
 
+const emptyChild = {
+  awaitingChildHitl: false,
+  childHitlName: "",
+  childHitlKind: "" as const,
+};
+
 it("joins agent meta with cached previews and UI flags into one row", () => {
   const rows = buildConversationRows({
     conversations: [
@@ -49,6 +56,7 @@ it("joins agent meta with cached previews and UI flags into one row", () => {
     busy: false,
     awaitingApproval: false,
     awaitingAskUser: false,
+    awaitingChildHitl: false,
     working: false,
     unread: 3,
     hasUpdate: true,
@@ -76,10 +84,20 @@ it("marks rows awaiting approval and prefers that preview label", () => {
   expect(rows.find((row) => row.agent.agentId === "a")?.awaitingApproval).toBe(false);
   expect(rows.find((row) => row.agent.agentId === "b")?.awaitingApproval).toBe(true);
   expect(
-    conversationPreviewLabel({ awaitingApproval: true, awaitingAskUser: false, preview: "花了 20" }),
+    conversationPreviewLabel({
+      awaitingApproval: true,
+      awaitingAskUser: false,
+      ...emptyChild,
+      preview: "花了 20",
+    }),
   ).toBe(AWAITING_APPROVAL_PREVIEW);
   expect(
-    conversationPreviewLabel({ awaitingApproval: false, awaitingAskUser: false, preview: "" }),
+    conversationPreviewLabel({
+      awaitingApproval: false,
+      awaitingAskUser: false,
+      ...emptyChild,
+      preview: "",
+    }),
   ).toBe("暂无消息");
 });
 
@@ -99,7 +117,12 @@ it("marks rows awaiting ask_user and prefers that preview label", () => {
   expect(rows.find((row) => row.agent.agentId === "a")?.awaitingAskUser).toBe(false);
   expect(rows.find((row) => row.agent.agentId === "b")?.awaitingAskUser).toBe(true);
   expect(
-    conversationPreviewLabel({ awaitingApproval: false, awaitingAskUser: true, preview: "花了 20" }),
+    conversationPreviewLabel({
+      awaitingApproval: false,
+      awaitingAskUser: true,
+      ...emptyChild,
+      preview: "花了 20",
+    }),
   ).toBe(AWAITING_ASK_USER_PREVIEW);
 });
 
@@ -120,20 +143,62 @@ it("marks rows whose Agent turn is still working", () => {
   expect(rows.find((row) => row.agent.agentId === "b")?.working).toBe(false);
 });
 
-it("orders rows by lastActiveAt like WeChat chat list", () => {
+it("keeps personal assistant first, then pins approval/unread ahead of lastActiveAt", () => {
   const rows = buildConversationRows({
     conversations: [
-      card({ agentId: "a", name: "天气" }),
-      card({ agentId: "b", name: "记账" }),
-      card({ agentId: "c", name: "翻译" }),
+      card({ agentId: "weather", name: "天气", kind: "recruited" }),
+      card({ agentId: "ledger", name: "记账", kind: "recruited" }),
+      card({ agentId: "personal-assistant", name: "助理", kind: "personal" }),
+      card({ agentId: "idle", name: "闲置", kind: "recruited" }),
     ],
-    previews: { a: "晴", b: "花了 20" },
-    lastActiveAt: { a: 10, b: 30 },
+    previews: {},
+    lastActiveAt: { weather: 50, ledger: 10, "personal-assistant": 1, idle: 99 },
     selectedId: "",
     busyAgent: "",
-    unread: {},
+    unread: { weather: 1 },
+    awaitingApproval: ["ledger"],
   });
-  expect(rows.map((row) => row.agent.agentId)).toEqual(["b", "a", "c"]);
+  expect(rows.map((row) => row.agent.agentId)).toEqual([
+    "personal-assistant",
+    "ledger",
+    "weather",
+    "idle",
+  ]);
+});
+
+it("pins parent with child HITL reminder after direct HITL and before unread", () => {
+  const rows = buildConversationRows({
+    conversations: [
+      card({ agentId: "pm", name: "项目经理", kind: "recruited" }),
+      card({ agentId: "fe", name: "前端", kind: "recruited" }),
+      card({ agentId: "old", name: "旧会话", kind: "recruited" }),
+    ],
+    previews: {},
+    lastActiveAt: { pm: 1, fe: 2, old: 100 },
+    selectedId: "",
+    busyAgent: "",
+    unread: { old: 2 },
+    awaitingApproval: ["fe"],
+    childHitlByParent: {
+      pm: { name: "前端", kind: "approval" },
+    },
+  });
+  expect(rows.map((row) => row.agent.agentId)).toEqual(["fe", "pm", "old"]);
+  expect(rows.find((row) => row.agent.agentId === "pm")).toMatchObject({
+    awaitingChildHitl: true,
+    childHitlName: "前端",
+    childHitlKind: "approval",
+  });
+  expect(
+    conversationPreviewLabel({
+      awaitingApproval: false,
+      awaitingAskUser: false,
+      awaitingChildHitl: true,
+      childHitlName: "前端",
+      childHitlKind: "approval",
+      preview: "闲聊",
+    }),
+  ).toBe("「前端」等待你的批准");
 });
 
 it("filters rows by precomputed searchText", () => {
@@ -182,6 +247,19 @@ it("counts blocked agents once even if both approval and ask_user", () => {
   expect(totalBlocked([], [])).toBe(0);
   expect(totalBlocked(["a", "b"], ["b", "c"])).toBe(3);
   expect(totalBlocked(new Set(["a"]), new Set(["a"]))).toBe(1);
+  expect(totalBlocked(["child"], [], ["parent"])).toBe(2);
+});
+
+it("builds child HITL hints only when surfaced on child (async)", () => {
+  const hints = childHitlHintsFromAttention({
+    approvals: [
+      { agentId: "fe", originAgentId: "fe", parentAgentId: "pm" },
+      { agentId: "pm", originAgentId: "be", parentAgentId: "pm" },
+    ],
+    askUsers: [],
+    resolveName: (id) => (id === "fe" ? "前端" : id),
+  });
+  expect([...hints.entries()]).toEqual([["pm", { kind: "approval", name: "前端" }]]);
 });
 
 it("treats only personal assistant as no market recruits", () => {

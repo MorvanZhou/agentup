@@ -3,7 +3,7 @@ withDefaults(
   defineProps<{
     name: string;
     avatarUrl?: string;
-    size?: "xs" | "sm" | "md" | "lg" | "xl";
+    size?: "xs" | "sm" | "md" | "lg" | "sidebar" | "xl";
     /** 圆形头像（协助挂件）；默认圆角方。 */
     round?: boolean;
   }>(),
@@ -15,6 +15,7 @@ const sizeClass = {
   sm: "size-7 text-xs",
   md: "size-8 text-sm",
   lg: "size-10 text-sm",
+  sidebar: "size-12 text-sm",
   xl: "size-14 text-base",
 } as const;
 </script>

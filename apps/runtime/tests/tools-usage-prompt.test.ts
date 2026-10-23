@@ -11,8 +11,13 @@ it("steers models toward dedicated search/read tools instead of the command shel
   expect(text).toContain("`read`");
   expect(text).toContain("`edit`");
   expect(text).toContain("`write`");
+  expect(text).toContain("`get_local_time`");
+  expect(text).toContain("`tool_search`");
+  expect(text).toContain("`agent_search`");
   expect(text).toContain("never `bash` with grep/rg");
+  expect(text).toContain("never `bash` with date");
   expect(text).toContain("bg_run");
+  expect(text).toContain("> ~20s");
   expect(text).toContain("same shell as `bash`");
 });
 

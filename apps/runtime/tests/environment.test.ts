@@ -102,12 +102,14 @@ it("session plan whitelist follows detected shell tools", () => {
   expect(win.environment.commandTool).toBe("powershell");
   expect(win.tools).toContain("powershell");
   expect(win.tools).not.toContain("bash");
-  // shell 插在 edit 与 web_search 之间
+  // shell 插在 edit 与 get_local_time 之间；get_local_time 再接 web_search
   const edit = win.tools.indexOf("edit");
   const ps = win.tools.indexOf("powershell");
+  const clock = win.tools.indexOf("get_local_time");
   const web = win.tools.indexOf("web_search");
   expect(ps).toBe(edit + 1);
-  expect(web).toBe(ps + 1);
+  expect(clock).toBe(ps + 1);
+  expect(web).toBe(clock + 1);
 
   const unix = buildSessionPlan(
     {

@@ -8,6 +8,7 @@ import {
   loadModelConfig,
   loadModelConfigFromRef,
   touchActiveModel,
+  tryEnabledModelRef,
   type ModelRef,
 } from "../../config/provider.js";
 import type { ModelConfig } from "../../config/load.js";
@@ -64,6 +65,7 @@ export function listSessionFilesByMtime(sessionDir: string): string[] {
 
 /**
  * 只读：最近 session sidecar → 更早 session → enabled 第一个。
+ * 跳过已删除服务商 / 未启用模型的过期 sidecar。
  * 供 GET /session/model，不写盘。
  */
 export function peekVisitModelRef(
@@ -72,7 +74,7 @@ export function peekVisitModelRef(
 ): ModelRef | null {
   const files = listSessionFilesByMtime(sessionDir);
   for (const file of files) {
-    const ref = readSessionModelRef(file);
+    const ref = tryEnabledModelRef(userDataRoot, readSessionModelRef(file));
     if (ref) return ref;
   }
   return firstEnabledModelRef(userDataRoot);
@@ -80,7 +82,7 @@ export function peekVisitModelRef(
 
 /**
  * 解析并锚定 Visit 当前模型（prompt 前）：
- * 1. 最近 session 的 sidecar
+ * 1. 最近 session 的 sidecar（须仍已连接且启用）
  * 2. 更早 session 的 sidecar（新空对话继承）
  * 3. enabled 第一个
  * 写回当前 session sidecar，并刷新设备级 activeModel（委托等回落）。
@@ -98,10 +100,10 @@ export function resolveVisitModelRef(
 
   let ref: ModelRef | null = null;
   if (sessionFile) {
-    ref = readSessionModelRef(sessionFile);
+    ref = tryEnabledModelRef(userDataRoot, readSessionModelRef(sessionFile));
     if (!ref) {
       for (const older of files.slice(1)) {
-        ref = readSessionModelRef(older);
+        ref = tryEnabledModelRef(userDataRoot, readSessionModelRef(older));
         if (ref) break;
       }
     }
@@ -168,7 +170,7 @@ export function setVisitSessionModel(
   return ref;
 }
 
-/** 新对话：把「上一会话模型 → enabled 第一个」写入新 session sidecar。 */
+/** 新对话：把「上一会话模型 → enabled 第一个」写入新 session sidecar（跳过已失效 sidecar）。 */
 export function stampNewSessionModel(userDataRoot: string, cwd: string, sessionDir: string): void {
   const files = listSessionFilesByMtime(sessionDir);
   // clearContext 刚创建的是最新文件；模型从更早会话继承
@@ -176,7 +178,7 @@ export function stampNewSessionModel(userDataRoot: string, cwd: string, sessionD
   if (!newest) return;
   let ref: ModelRef | null = null;
   for (const older of files.slice(1)) {
-    ref = readSessionModelRef(older);
+    ref = tryEnabledModelRef(userDataRoot, readSessionModelRef(older));
     if (ref) break;
   }
   if (!ref) ref = firstEnabledModelRef(userDataRoot);

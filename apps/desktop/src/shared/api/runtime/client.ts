@@ -4,6 +4,9 @@ import type { AskUserAnswer } from "../../model/chat";
 import type {
   AgentCard,
   AgentSourcePreview,
+  CommunitySkillHit,
+  CommunitySkillSort,
+  CommunitySkillSource,
   InvocableSkill,
   PersonalAssistantProfile,
   ProviderModelRef,
@@ -24,6 +27,7 @@ import * as attachmentsApi from "./attachments";
 import * as authApi from "./auth";
 import { runtimeBaseUrl } from "./base-url";
 import * as chatApi from "./chat";
+import * as communitySkillsApi from "./community-skills";
 import { RuntimeHttp } from "./http";
 import * as settingsApi from "./settings";
 import * as stateApi from "./state";
@@ -203,7 +207,7 @@ export class DesktopApi {
     return agentsApi.setRemark(this.http, token, agentId, remark);
   }
 
-  ownedAgents(token: string, options?: { q?: string }): Promise<AgentCard[]> {
+  ownedAgents(token: string, options?: { userId?: string; q?: string }): Promise<AgentCard[]> {
     return agentsApi.ownedAgents(this.http, token, options);
   }
 
@@ -283,6 +287,27 @@ export class DesktopApi {
     return settingsApi.installUserSkill(this.http, token, userId, packagePath, expectName);
   }
 
+  searchCommunitySkills(
+    token: string,
+    source: CommunitySkillSource,
+    query: string,
+    options?: { limit?: number; sort?: CommunitySkillSort },
+  ): Promise<CommunitySkillHit[]> {
+    return communitySkillsApi.searchCommunitySkills(this.http, token, source, query, options);
+  }
+
+  fetchCommunitySkill(
+    token: string,
+    input: {
+      source: CommunitySkillSource;
+      slug: string;
+      owner?: string;
+      version?: string;
+    },
+  ): Promise<string> {
+    return communitySkillsApi.fetchCommunitySkill(this.http, token, input);
+  }
+
   setUserSkillEnabled(token: string, userId: string, name: string, enabled: boolean): Promise<UserSkill> {
     return settingsApi.setUserSkillEnabled(this.http, token, userId, name, enabled);
   }
@@ -315,6 +340,10 @@ export class DesktopApi {
     return agentsApi.dismiss(this.http, token, agentId, userId);
   }
 
+  deleteOwnedAgent(token: string, agentId: string, userId: string): Promise<void> {
+    return agentsApi.deleteOwnedAgent(this.http, token, agentId, userId);
+  }
+
   attention(token: string, userId: string): Promise<chatApi.AttentionSnapshot> {
     return chatApi.attention(this.http, token, userId);
   }
@@ -344,6 +373,38 @@ export class DesktopApi {
     return agentsApi.publish(this.http, token, agentDir, name, role, background, agentId, rules);
   }
 
+  publishFromEditor(
+    token: string,
+    input: {
+      name: string;
+      role: string;
+      background: string;
+      rules?: string;
+      agentId?: string;
+      skillPaths?: string[];
+      removeSkills?: string[];
+      mcpServers?: Record<string, unknown>;
+      avatarDataUrl?: string;
+    },
+  ): Promise<PublishedAgent> {
+    return agentsApi.publishFromEditor(this.http, token, input);
+  }
+
+  previewPublishEditor(
+    token: string,
+    publishedAgentId: string,
+  ): Promise<{
+    name: string;
+    role: string;
+    background: string;
+    rules: string;
+    skills: string[];
+    mcpServers: Record<string, unknown>;
+    avatarUrl?: string;
+  }> {
+    return agentsApi.previewPublishEditor(this.http, token, publishedAgentId);
+  }
+
   updateAgentCard(
     token: string,
     agentId: string,
@@ -353,6 +414,7 @@ export class DesktopApi {
       background: string;
       rules?: string;
       avatarDataUrl?: string;
+      userId?: string;
     },
   ): Promise<AgentCard> {
     return agentsApi.updateCard(this.http, token, agentId, input);

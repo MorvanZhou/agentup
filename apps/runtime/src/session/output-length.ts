@@ -2,6 +2,10 @@ import type { ExtensionFactory, SessionManager } from "@earendil-works/pi-coding
 
 import { t } from "../i18n/index.js";
 import type { UiLocale } from "../i18n/locale.js";
+import {
+  consumeStreamDegeneration,
+  streamDegenerationAbortedMessage,
+} from "./stream-guard.js";
 
 /**
  * 输出上限（`stopReason: length`）自动恢复。
@@ -110,11 +114,14 @@ export function emptyAssistantResultMessage(locale?: UiLocale | string | null): 
   return t("chat.emptyAssistantResult", locale);
 }
 
-/** prompt 已结束后仍无正文：按是否 length 选错误文案。 */
+/** prompt 已结束后仍无正文：优先流式退化，再按是否 length 选错误文案。 */
 export function resolveEmptyAssistantError(
   manager: Pick<SessionManager, "getBranch">,
   locale?: UiLocale | string | null,
 ): string {
+  if (consumeStreamDegeneration(manager)) {
+    return streamDegenerationAbortedMessage(locale);
+  }
   const inspection = inspectLastAssistantFromManager(manager);
   if (inspection?.stopReason === "length") {
     return outputLengthExceededMessage(locale);

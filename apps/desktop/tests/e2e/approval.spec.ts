@@ -46,7 +46,7 @@ test("危险工具调用需要用户按次允许", async ({ page }) => {
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toBeVisible();
   await expect(page.getByRole("paragraph").filter({ hasText: "node weather.mjs" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "仅这一次" })).toBeChecked();
+  // 主按钮默认仅这一次；更长范围在下拉里。
   const decision = page.waitForRequest((request) =>
     request.url().includes("/runtime/approvals/approval-respiratory-doctor"),
   );
@@ -63,11 +63,11 @@ test("命令审批可对本会话持续允许", async ({ page }) => {
   await composer.fill("运行天气脚本");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toBeVisible();
-  await page.getByRole("radio", { name: "本次对话" }).click();
+  await page.getByRole("button", { name: "选择更长的允许范围" }).click();
   const decision = page.waitForRequest((request) =>
     request.url().includes("/runtime/approvals/approval-respiratory-doctor"),
   );
-  await page.getByRole("button", { name: "允许", exact: true }).click();
+  await page.getByRole("menuitem", { name: "本次对话" }).click();
   expect((await decision).postDataJSON()).toEqual({ allow: true, scope: "session" });
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toHaveCount(0);
 });
@@ -80,11 +80,11 @@ test("命令审批可对本 Agent 持续允许", async ({ page }) => {
   await composer.fill("运行天气脚本");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toBeVisible();
-  await page.getByRole("radio", { name: "这个助手" }).click();
+  await page.getByRole("button", { name: "选择更长的允许范围" }).click();
   const decision = page.waitForRequest((request) =>
     request.url().includes("/runtime/approvals/approval-respiratory-doctor"),
   );
-  await page.getByRole("button", { name: "允许", exact: true }).click();
+  await page.getByRole("menuitem", { name: "这个助手" }).click();
   expect((await decision).postDataJSON()).toEqual({ allow: true, scope: "agent" });
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toHaveCount(0);
 });

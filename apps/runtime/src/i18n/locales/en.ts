@@ -67,4 +67,6 @@ export const en: Record<string, string> = {
   "chat.outputLengthExceeded":
     "Output hit the model limit with no usable text after automatic continuation (often spent on reasoning). Split the task or use a model with a higher output cap.",
   "chat.emptyAssistantResult": "No usable result was returned",
+  "chat.streamDegenerationAborted":
+    "The model started repeating itself or flooding control tokens, so generation was stopped. Retry or switch models.",
 };

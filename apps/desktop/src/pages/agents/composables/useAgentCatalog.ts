@@ -47,7 +47,7 @@ export function useAgentCatalog(
           ? await api.publicAgents({ q })
           : await api.agents(current.token, { userId: current.userId, q });
       } else if (section.value === "owned") {
-        next = await api.ownedAgents(current.token, { q });
+        next = await api.ownedAgents(current.token, { userId: current.userId, q });
       } else {
         next = await api.agents(current.token, {
           userId: current.userId,
@@ -76,6 +76,8 @@ export function useAgentCatalog(
     [() => session.value?.token, () => session.value?.userId, () => session.value?.kind, section],
     () => {
       clearTimeout(debounceTimer);
+      // 换分区 / 换身份时立刻清空，避免短暂展示上一区的卡片且「加载中」不出现
+      agents.value = [];
       void reload();
     },
     { immediate: true },

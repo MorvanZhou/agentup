@@ -24,6 +24,7 @@ import { injectThreadActions } from "../../../../model/thread/thread-actions";
 import { injectThreadAgentId } from "../../../../model/thread/thread-agent-id";
 import { injectThreadApproval } from "../../../../model/thread/thread-approval";
 import { injectThreadAskUser } from "../../../../model/thread/thread-ask-user";
+import { injectThreadBusyTurn } from "../../../../model/thread/thread-busy-turn";
 import { injectThreadExtras } from "../../../../model/thread/thread-extras";
 import ImageAttachmentPreview from "./chips/ImageAttachmentPreview.vue";
 import SkillPicker from "./chips/SkillPicker.vue";
@@ -56,6 +57,7 @@ const skillInputRef = ref<{
 const toolbarRef = ref<{ closeEmojiPicker: () => void } | null>(null);
 const { inputHeight, startResize } = useComposerInputHeight();
 const isRunning = useAuiState((state) => state.thread.isRunning);
+const busyTurn = injectThreadBusyTurn();
 const messageCount = useAuiState((state) => state.thread.messages.length);
 const composerText = useAuiState((state) => state.composer.text);
 const cursor = ref(0);
@@ -110,9 +112,12 @@ function onComposerResize(event: PointerEvent): void {
   startResize(event, host);
 }
 
-/** AskUser / 审批等待时 isRunning 常为 false，仍应能停止并收起浮层。 */
+/** AskUser / 审批 / wake 编排时 isRunning 常为 false，仍应能停止。 */
 const hitlPending = computed(() => Boolean(askUser?.value || approval?.value));
-const showStop = computed(() => isRunning.value || hitlPending.value);
+const wakeBusy = computed(() => busyTurn?.value?.phase === "wake");
+const showStop = computed(
+  () => isRunning.value || hitlPending.value || Boolean(wakeBusy.value),
+);
 const synced = computed(() => ({
   ready: Boolean(extras.value.syncedVersion),
   recruited: extras.value.recruited,

@@ -262,17 +262,51 @@ function parseFrontmatter(
     return undefined;
   }
   if (!match[2].trim()) issues.push(issue(filePath, "Markdown 正文不能为空"));
-  const document = parseDocument(match[1], { uniqueKeys: true });
-  if (document.errors.length > 0) {
-    issues.push(issue(filePath, `YAML frontmatter 无效: ${document.errors[0].message}`));
-    return undefined;
-  }
+  const raw = match[1];
+  const parsed = loadFrontmatterObject(raw);
+  if (parsed) return parsed;
+  // 社区包常见：description: "… "quoted" …" 内层双引号未转义。
+  const repaired = loadFrontmatterObject(repairBrokenQuotedScalars(raw));
+  if (repaired) return repaired;
+  const document = parseDocument(raw, { uniqueKeys: true });
+  const reason = document.errors[0]?.message ?? "无法解析";
+  issues.push(issue(filePath, `YAML frontmatter 无效: ${reason}`));
+  return undefined;
+}
+
+/**
+ * 落盘前修好 frontmatter（校验已能「读过」的嵌套引号），否则 Pi 加载 skills 仍会失败。
+ * 无 frontmatter 或无需修复时原样返回。
+ */
+export function repairSkillMarkdown(content: string): string {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---((?:\r?\n|$)[\s\S]*)$/.exec(content);
+  if (!match) return content;
+  const raw = match[1];
+  if (loadFrontmatterObject(raw)) return content;
+  const repairedYaml = repairBrokenQuotedScalars(raw);
+  if (!loadFrontmatterObject(repairedYaml)) return content;
+  return `---\n${repairedYaml}\n---${match[2]}`;
+}
+
+function loadFrontmatterObject(yamlText: string): Record<string, unknown> | undefined {
+  const document = parseDocument(yamlText, { uniqueKeys: true });
+  if (document.errors.length > 0) return undefined;
   const value = document.toJS() as unknown;
-  if (!record(value)) {
-    issues.push(issue(filePath, "YAML frontmatter 必须是对象"));
-    return undefined;
-  }
-  return value;
+  return record(value) ? value : undefined;
+}
+
+/** 修复单行 `key: "… "inner" …"`：把首尾引号之间的正文按 JSON 字符串重新转义。 */
+function repairBrokenQuotedScalars(yamlText: string): string {
+  return yamlText
+    .split(/\r?\n/)
+    .map((line) => {
+      const match = /^(\s*[A-Za-z0-9_-]+:\s*)"(.*)"\s*$/.exec(line);
+      if (!match) return line;
+      const [, prefix, body] = match;
+      if (!body.includes('"')) return line;
+      return `${prefix}${JSON.stringify(body)}`;
+    })
+    .join("\n");
 }
 
 function parseJsonObject(

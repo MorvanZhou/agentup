@@ -116,11 +116,11 @@ test("计划全部完成后挂在助手消息下方，不再占底部", async ({
   await conversationItem(page, "Weaty").click();
   await expect(page.getByText("都完成了。")).toBeVisible();
   await expect(page.getByRole("region", { name: "当前计划" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "待办" }).click();
   const result = page.getByRole("button", { name: "2/2 项已完成" });
   await expect(result).toBeVisible();
   const completed = page.getByRole("list", { name: "已完成待办" });
-  await expect(completed).toHaveCount(0);
-  await result.click();
+  // tab 内默认展开，列表已可见；再点可收起。
   await expect(completed.getByText("读文件")).toBeVisible();
   await expect(completed.getByText("写测试")).toBeVisible();
   await result.click();

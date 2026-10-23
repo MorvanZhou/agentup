@@ -21,6 +21,7 @@ const BUILTIN_TOOLS_BEFORE_SHELL = [
 ] as const;
 
 const BUILTIN_TOOLS_AFTER_SHELL = [
+  "get_local_time",
   "web_search",
   "web_fetch",
   "ask_user",
@@ -30,9 +31,12 @@ const BUILTIN_TOOLS_AFTER_SHELL = [
   "bg_kill",
 ] as const;
 
+/** Pi 内置名；MCP deferred 工具经此发现后再声明（与 agent_search 对称）。 */
+export const TOOL_SEARCH_TOOL = "tool_search";
+
 /** 列出已招募专家并委托子任务（私人助理与第三方 Agent 共用）。 */
 const DELEGATION_TOOLS = [
-  "list_recruited_agents",
+  "agent_search",
   "delegate_to_agent",
   "check_delegation",
   "cancel_delegation",
@@ -77,6 +81,7 @@ export function buildSessionPlan(
     throw new SessionRefused("运行包尚未通过校验");
   }
   const environment = options.environment ?? detectHostEnvironment(options.detect);
+  const mcp = fs.existsSync(path.join(visit.root, "cwd", ".pi", "mcp.json"));
   return {
     cwd: path.join(visit.root, "cwd"),
     sessionDir: path.join(visit.root, "sessions"),
@@ -85,9 +90,10 @@ export function buildSessionPlan(
       ...BUILTIN_TOOLS_BEFORE_SHELL,
       ...environment.shellTools,
       ...BUILTIN_TOOLS_AFTER_SHELL,
+      ...(mcp ? [TOOL_SEARCH_TOOL] : []),
       ...DELEGATION_TOOLS,
     ],
-    mcp: fs.existsSync(path.join(visit.root, "cwd", ".pi", "mcp.json")),
+    mcp,
     provider: {
       templateId: model.templateId,
       providerId: model.providerId,

@@ -52,8 +52,10 @@ export function createBackgroundJobsExtension(
         name: BG_RUN_TOOL,
         label: "Background Run",
         description:
-          "Start a long-running shell command in the background without blocking the chat. " +
-          "Use for builds, watches, migrations, or other non-specialist work. " +
+          "Start a shell command in the background without blocking the chat. " +
+          "Prefer this over blocking " +
+          commandTool +
+          " when the command may take > ~20s (builds, watches, migrations, installs, heavy scripts). " +
           "Returns job_id immediately; use bg_status later or wait for a session notification. " +
           `Requires user approval (same as ${commandTool}); command syntax must match ${commandTool}. ` +
           "Prefer delegate_to_agent for specialist expertise.",

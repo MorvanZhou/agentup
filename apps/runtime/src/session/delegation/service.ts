@@ -272,7 +272,7 @@ export class DelegationService {
       });
     }
 
-    // 扇出默认异步；单项仍可由调用方显式 wait=true。
+    // 扇出：仅显式 wait=true 才同步汇合。单项：模型应按耗时设 wait；省略时回落同步（避免漏参整轮空等）。
     const wait = input.items.length > 1 ? input.wait === true : input.wait !== false;
 
     const created: DelegationTask[] = [];

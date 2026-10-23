@@ -2,6 +2,7 @@ import { computed, onActivated, onMounted, ref, watch, type Ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
+import { providerConfigEpoch } from "../../../shared/model/provider-config";
 import type { SessionModelOption, SessionModelState } from "../../../shared/model/runtime";
 import { showToast } from "../../../shared/model/toast";
 import { readUiLocale, uiLocale } from "../../../shared/model/ui-locale";
@@ -66,6 +67,10 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
   onMounted(() => void load());
   onActivated(() => void load());
   watch([agentId, () => session.value?.userId, uiLocale], () => void load());
+  /** Settings 删服务商 / 启停模型后，KeepAlive 对话页也要立刻同步候选与当前项。 */
+  watch(providerConfigEpoch, () => {
+    if (loaded.value) void load();
+  });
 
   return {
     state,

@@ -66,4 +66,6 @@ export const zh: Record<string, string> = {
   "chat.outputLengthExceeded":
     "输出达到模型上限（自动续写后仍无可用正文，可能被推理占满）。可拆小任务或换更大输出上限的模型。",
   "chat.emptyAssistantResult": "未返回可用结果",
+  "chat.streamDegenerationAborted":
+    "模型输出陷入重复或控制符刷屏，已自动停止。请重试或换模型。",
 };

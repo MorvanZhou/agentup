@@ -14,7 +14,7 @@ test("会话右侧可以浏览并编辑工作空间", async ({ page }) => {
     "true",
   );
   await expect(page.getByRole("navigation", { name: "工作空间分区" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "AI 产物", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "输出产物", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

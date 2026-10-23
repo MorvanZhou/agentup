@@ -15,6 +15,113 @@ import { healInterruptedSessionTools } from "../src/session/history/history.js";
 import { readHitlPending } from "../src/session/hitl/pending.js";
 import { AskUserBroker } from "../src/session/tools/ask-user.js";
 
+it("GET /attention exposes busy_turns phase and sources", async () => {
+  const deps = {
+    chats: {
+      busyTurns: (userId: string) =>
+        userId === "u1"
+          ? [
+              {
+                agentId: "personal-assistant",
+                phase: "wake" as const,
+                sources: [
+                  {
+                    name: "前端",
+                    status: "completed",
+                    agentId: "loc-fe",
+                    kind: "delegation" as const,
+                  },
+                ],
+              },
+            ]
+          : [],
+    },
+    approvals: { restoreUser() {}, listPending: () => [] },
+    askUser: { restoreUser() {}, listPending: () => [] },
+    delegation: { findNestingParent: () => undefined },
+  } as unknown as LocalAppDeps;
+  const app = new Hono<LocalAppEnv>();
+  registerHitlRoutes(app, deps);
+  const res = await app.request("/attention?user_id=u1", {
+    headers: { authorization: "Bearer token" },
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({
+    busy_agent_ids: ["personal-assistant"],
+    busy_turns: [
+      {
+        agent_id: "personal-assistant",
+        phase: "wake",
+        sources: [
+          {
+            name: "前端",
+            status: "completed",
+            agent_id: "loc-fe",
+            kind: "delegation",
+          },
+        ],
+      },
+    ],
+  });
+});
+
+it("GET /turn-progress streams dirty snapshot then done", async () => {
+  type Listener = (event: {
+    type: "dirty" | "done";
+    agentId: string;
+    phase?: "prompt" | "wake";
+  }) => void;
+  const listeners = new Set<Listener>();
+  const deps = {
+    chats: {
+      busyTurns: () => [
+        {
+          agentId: "personal-assistant",
+          phase: "wake" as const,
+          sources: [{ name: "前端", kind: "delegation" as const }],
+        },
+      ],
+      subscribeTurnProgress(_userId: string, listener: Listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+    approvals: { restoreUser() {}, listPending: () => [] },
+    askUser: { restoreUser() {}, listPending: () => [] },
+    delegation: { findNestingParent: () => undefined },
+  } as unknown as LocalAppDeps;
+  const app = new Hono<LocalAppEnv>();
+  registerHitlRoutes(app, deps);
+
+  const res = await app.request(
+    "/turn-progress?user_id=u1&agent_id=personal-assistant",
+    { headers: { authorization: "Bearer token" } },
+  );
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type") ?? "").toContain("text/event-stream");
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline && !buffer.includes("event: dirty")) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+  }
+  expect(buffer).toContain("event: dirty");
+  expect(buffer).toContain('"phase":"wake"');
+  for (const listener of listeners) {
+    listener({ type: "done", agentId: "personal-assistant" });
+  }
+  while (Date.now() < deadline && !buffer.includes("event: done")) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+  }
+  expect(buffer).toContain("event: done");
+  await reader.cancel();
+});
+
 it("GET /attention returns empty snapshot for a user", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-attention-"));
   const local = await startLocalServer({
@@ -29,6 +136,7 @@ it("GET /attention returns empty snapshot for a user", async () => {
     expect(empty.status).toBe(200);
     expect(await empty.json()).toMatchObject({
       busy_agent_ids: [],
+      busy_turns: [],
       approvals: [],
       ask_users: [],
     });
@@ -59,7 +167,10 @@ it("GET /attention surfaces nested child approval to busy parent", async () => {
   });
   const deps = {
     chats: {
-      busyAgentIds: (userId: string) => (userId === "u1" ? ["personal-assistant"] : []),
+      busyTurns: (userId: string) =>
+        userId === "u1"
+          ? [{ agentId: "personal-assistant", phase: "prompt" as const, sources: [] }]
+          : [],
     },
     approvals,
     askUser,
@@ -90,6 +201,8 @@ it("GET /attention surfaces nested child approval to busy parent", async () => {
   expect(body.approvals).toEqual([
     expect.objectContaining({
       agent_id: "personal-assistant",
+      origin_agent_id: "weather",
+      parent_agent_id: "personal-assistant",
       tool_call_id: "call-nested",
     }),
   ]);
@@ -116,7 +229,10 @@ it("GET /attention keeps visit-origin child approval on child while nested", asy
   });
   const deps = {
     chats: {
-      busyAgentIds: (userId: string) => (userId === "u1" ? ["personal-assistant"] : []),
+      busyTurns: (userId: string) =>
+        userId === "u1"
+          ? [{ agentId: "personal-assistant", phase: "prompt" as const, sources: [] }]
+          : [],
     },
     approvals,
     askUser,

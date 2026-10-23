@@ -18,7 +18,6 @@ export {
   formatAgentCardLine,
   formatDiscoveredAgentsContext,
   scoreAgent,
-  DISCOVER_SMALL_ROSTER,
   DISCOVER_TOP_K,
   type DiscoverMode,
   type DiscoverResult,

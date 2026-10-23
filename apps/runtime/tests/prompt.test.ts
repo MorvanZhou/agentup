@@ -7,15 +7,17 @@ import type { AddressInfo } from "node:net";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { expect, it } from "vitest";
 
-import { ConfigError } from "../src/config/load.js";
+import { setModelEnabled, upsertProviderConnection } from "../src/config/provider.js";
 import { startLocalServer } from "../src/local/server.js";
+import { packTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
 import type { Visit } from "../src/package/sync.js";
 import { VisitChats, type PromptSession } from "../src/session/turn/index.js";
 
-const manifest = { version: 1, tools: ["read"], modelCapabilities: ["tools"] };
+const manifest = { version: 1, tools: [] as string[], modelCapabilities: [] as string[] };
 const files = { "SYSTEM.md": Buffer.from("你是呼吸科医生") };
 const digest = packageDigest(manifest, files);
+const archivePromise = packTarGz(files);
 const model = {
   providerId: "ollama",
   templateId: "ollama",
@@ -25,14 +27,24 @@ const model = {
   kind: "ollama" as const,
 };
 
+/** prompt 路由按 visit 解析已启用模型；HTTP 测例需先落盘连接。 */
+function seedModel(userDataRoot: string): void {
+  upsertProviderConnection(userDataRoot, {
+    templateId: "ollama",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    customModelId: "qwen",
+  });
+  setModelEnabled(userDataRoot, { templateId: "ollama", modelId: "qwen" }, true);
+}
+
 it("streams a Pi turn without calling the model", async () => {
   const backend = await listen(backendHandler);
   const root = path.join(os.tmpdir(), `agentup-prompt-${Date.now()}`);
+  seedModel(root);
   const seen: string[] = [];
   const local = await startLocalServer(
     { backendUrl: `http://127.0.0.1:${backend.address.port}`, userDataRoot: root, host: "127.0.0.1", port: 0 },
     {
-      readModel: () => model,
       openPrompt: async () => scriptedSession(seen),
     },
   );
@@ -262,10 +274,10 @@ it("aborts Pi on client disconnect so the next prompt and context reset both wor
   const seen: string[] = [];
   const backend = await listen(backendHandler);
   const root = path.join(os.tmpdir(), `agentup-prompt-abort-${Date.now()}`);
+  seedModel(root);
   const local = await startLocalServer(
     { backendUrl: `http://127.0.0.1:${backend.address.port}`, userDataRoot: root, host: "127.0.0.1", port: 0 },
     {
-      readModel: () => model,
       openPrompt: async () => ({
         subscribe() {
           return () => undefined;
@@ -327,16 +339,19 @@ it("aborts Pi on client disconnect so the next prompt and context reset both wor
 it("refuses to open a session before a local model is configured", async () => {
   const backend = await listen(backendHandler);
   const root = path.join(os.tmpdir(), `agentup-prompt-model-${Date.now()}`);
-  const local = await startLocalServer(
-    { backendUrl: `http://127.0.0.1:${backend.address.port}`, userDataRoot: root, host: "127.0.0.1", port: 0 },
-    { readModel: () => { throw new ConfigError("打开会话前请先在设置中配置本地模型"); } },
-  );
+  // 故意不 seedModel：visit 解析不到已启用模型时应 503。
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot: root,
+    host: "127.0.0.1",
+    port: 0,
+  });
   try {
     const account = await createAccount(local.url, "patient-a@example.com", "secret");
     await post(local.url, "/agents/respiratory-doctor/recruit", {}, account.token as string);
     await post(local.url, "/agents/respiratory-doctor/sync", { user_id: account.user_id }, account.token as string);
     const response = await post(local.url, "/agents/respiratory-doctor/prompt", { user_id: account.user_id, text: "你好" }, account.token as string);
-    expect(response).toMatchObject({ status: 503, error: "打开会话前请先在设置中配置本地模型" });
+    expect(response).toMatchObject({ status: 503, error: "打开会话前请先在设置中连接服务商并启用一个模型" });
   } finally {
     await local.close();
     await close(backend);
@@ -408,13 +423,18 @@ function backendHandler(req: http.IncomingMessage, res: http.ServerResponse): vo
     return;
   }
   if (req.url?.startsWith("/v1/agents/respiratory-doctor/package")) {
-    json(res, 200, {
-      agent_id: "respiratory-doctor",
-      name: "呼吸科医生",
-      background: "演示问诊",
-      manifest: { version: manifest.version, tools: manifest.tools, model_capabilities: manifest.modelCapabilities },
-      files: { "SYSTEM.md": files["SYSTEM.md"].toString("base64") },
-      digest,
+    void archivePromise.then((archive) => {
+      const body = Buffer.from(archive);
+      res.writeHead(200, {
+        "content-type": "application/gzip",
+        "content-length": body.length,
+        "x-agent-id": "respiratory-doctor",
+        "x-package-version": String(manifest.version),
+        "x-package-digest": digest,
+        "x-package-name": encodeURIComponent("呼吸科医生"),
+        "x-package-background": encodeURIComponent("演示问诊"),
+      });
+      res.end(body);
     });
     return;
   }

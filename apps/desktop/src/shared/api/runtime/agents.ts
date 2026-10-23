@@ -174,7 +174,7 @@ export async function publicAgents(
 export async function ownedAgents(
   http: RuntimeHttp,
   token: string,
-  options?: { q?: string },
+  options?: { userId?: string; q?: string },
 ): Promise<AgentCard[]> {
   const payload = await http.request(`/agents/owned${agentListQuery(options)}`, token);
   if (!Array.isArray(payload.agents)) throw new DesktopApiError("Agent 列表无效");
@@ -209,6 +209,21 @@ export async function dismiss(
   await http.request(`/agents/${encodeURIComponent(agentId)}/dismiss`, token, { user_id: userId });
 }
 
+export async function deleteOwnedAgent(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  userId: string,
+): Promise<void> {
+  const params = new URLSearchParams({ user_id: userId });
+  await http.request(
+    `/agents/${encodeURIComponent(agentId)}?${params}`,
+    token,
+    undefined,
+    "DELETE",
+  );
+}
+
 export async function publish(
   http: RuntimeHttp,
   token: string,
@@ -227,6 +242,84 @@ export async function publish(
     rules,
     ...(agentId ? { agent_id: agentId } : {}),
   });
+  return readPublished(payload);
+}
+
+/** 市场发布表单：临时组包，不创建 loc-*。 */
+export async function publishFromEditor(
+  http: RuntimeHttp,
+  token: string,
+  input: {
+    name: string;
+    role: string;
+    background: string;
+    rules?: string;
+    agentId?: string;
+    skillPaths?: string[];
+    removeSkills?: string[];
+    mcpServers?: Record<string, unknown>;
+    avatarDataUrl?: string;
+  },
+): Promise<PublishedAgent> {
+  const payload = await http.request("/agents/publish-editor", token, {
+    name: input.name,
+    role: input.role,
+    background: input.background,
+    rules: input.rules ?? "",
+    ...(input.agentId ? { agent_id: input.agentId } : {}),
+    ...(input.skillPaths?.length ? { skill_paths: input.skillPaths } : {}),
+    ...(input.removeSkills?.length ? { remove_skills: input.removeSkills } : {}),
+    ...(input.mcpServers !== undefined ? { mcp_servers: input.mcpServers } : {}),
+    ...(input.avatarDataUrl ? { avatar_data_url: input.avatarDataUrl } : {}),
+  });
+  return readPublished(payload);
+}
+
+/** 更新页预览：名片 + skills/MCP，不 hydrate loc-*。 */
+export async function previewPublishEditor(
+  http: RuntimeHttp,
+  token: string,
+  publishedAgentId: string,
+): Promise<{
+  name: string;
+  role: string;
+  background: string;
+  rules: string;
+  skills: string[];
+  mcpServers: Record<string, unknown>;
+  avatarUrl?: string;
+}> {
+  const payload = await http.request("/agents/publish-editor/preview", token, {
+    published_agent_id: publishedAgentId,
+  });
+  if (
+    typeof payload.name !== "string" ||
+    typeof payload.role !== "string" ||
+    typeof payload.background !== "string"
+  ) {
+    throw new DesktopApiError("发布预览无效");
+  }
+  const skills = Array.isArray(payload.skills)
+    ? payload.skills.filter((item): item is string => typeof item === "string")
+    : [];
+  const mcpServers =
+    payload.mcp_servers && typeof payload.mcp_servers === "object" && !Array.isArray(payload.mcp_servers)
+      ? (payload.mcp_servers as Record<string, unknown>)
+      : {};
+  return {
+    name: payload.name,
+    role: payload.role,
+    background: payload.background,
+    rules: typeof payload.rules === "string" ? payload.rules : "",
+    skills,
+    mcpServers,
+    ...(typeof payload.avatar_url === "string" && payload.avatar_url
+      ? { avatarUrl: payload.avatar_url }
+      : {}),
+  };
+}
+
+function readPublished(payload: Record<string, unknown>): PublishedAgent {
   if (
     typeof payload.agent_id !== "string" ||
     typeof payload.name !== "string" ||
@@ -257,6 +350,8 @@ export async function updateCard(
     background: string;
     rules?: string;
     avatarDataUrl?: string;
+    /** 有头像变更时传入，用于立刻覆盖本机缓存 */
+    userId?: string;
   },
 ): Promise<AgentCard> {
   const payload = await http.request(
@@ -268,6 +363,7 @@ export async function updateCard(
       background: input.background,
       rules: input.rules ?? "",
       ...(input.avatarDataUrl ? { avatar_data_url: input.avatarDataUrl } : {}),
+      ...(input.userId ? { user_id: input.userId } : {}),
     },
     "PUT",
   );

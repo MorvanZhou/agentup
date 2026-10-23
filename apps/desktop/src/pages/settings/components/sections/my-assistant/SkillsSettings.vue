@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { FolderUpIcon, UploadIcon } from "@lucide/vue";
-import { computed, onMounted } from "vue";
+import { FolderUpIcon, SearchIcon, UploadIcon } from "@lucide/vue";
+import { computed, onMounted, ref } from "vue";
 
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
+import CommunitySkillDialog from "../../../../../shared/components/CommunitySkillDialog.vue";
 import { t } from "../../../../../shared/model/ui-locale";
 import { useUserSkills } from "../../../composables/useUserSkills";
 import SkillCard from "./SkillCard.vue";
 
-const { skills, busy, load, upload, setEnabled, remove } = useUserSkills();
+const { skills, busy, load, upload, installFromPath, setEnabled, remove } = useUserSkills();
+const communityOpen = ref(false);
 
 const uploadItems = computed((): AppDropdownItem[] => [
   { id: "directory", label: t("skillsPickDir"), icon: FolderUpIcon },
@@ -18,6 +20,10 @@ onMounted(() => void load());
 
 function onUpload(id: string): void {
   if (id === "directory" || id === "zip") void upload(id);
+}
+
+function onCommunityFetched(path: string): void {
+  void installFromPath(path);
 }
 </script>
 
@@ -37,6 +43,15 @@ function onUpload(id: string): void {
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition hover:bg-paper-deep disabled:opacity-50"
+              :disabled="busy"
+              @click="communityOpen = true"
+            >
+              <SearchIcon class="size-3.5" aria-hidden="true" />
+              {{ t("skillsCommunitySearchEntry") }}
+            </button>
             <AppDropdownMenu :items="uploadItems" @select="onUpload">
               <template #trigger>
                 <button
@@ -52,6 +67,8 @@ function onUpload(id: string): void {
           </div>
         </div>
       </header>
+
+      <CommunitySkillDialog v-model:open="communityOpen" @fetched="onCommunityFetched" />
 
       <!-- 空状态 -->
       <section

@@ -87,16 +87,18 @@ watch(
     :disabled="!canExpand"
     class="group/tool border-border/60 bg-background/60 w-full max-w-full overflow-hidden rounded-lg border"
   >
-    <!-- 工具摘要行 -->
+    <!-- 工具摘要行；#summary 可替换默认图标+标题（如委托 Agent 身份条） -->
     <CollapsibleTrigger
       class="text-foreground flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 text-left text-sm transition duration-200 hover:bg-paper-deep/60 disabled:cursor-default"
     >
-      <component :is="props.icon" class="text-foreground size-3.5 shrink-0" aria-hidden="true" />
-      <ShimmerTitle
-        :active="isActive"
-        :title="title"
-        :detail="displayDetail"
-      />
+      <slot name="summary">
+        <component :is="props.icon" class="text-foreground size-3.5 shrink-0" aria-hidden="true" />
+        <ShimmerTitle
+          :active="isActive"
+          :title="title"
+          :detail="displayDetail"
+        />
+      </slot>
       <span
         v-if="showStats"
         class="shrink-0 font-mono text-xs tabular-nums"

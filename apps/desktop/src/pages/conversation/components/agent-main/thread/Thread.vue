@@ -41,6 +41,7 @@ import {
   initialWindowStart,
   visibleMessageIds,
 } from "../../../model/thread/thread-window";
+import { injectThreadWakeLive } from "../../../model/thread/thread-wake-live";
 import ApprovalDock from "./dock/ApprovalDock.vue";
 import AskUserDock from "./dock/AskUserDock.vue";
 import PlanDock from "./dock/PlanDock.vue";
@@ -49,6 +50,7 @@ import Composer from "./composer/Composer.vue";
 import ContextResetMessage from "./ContextResetMessage.vue";
 import TimeSeparator from "./TimeSeparator.vue";
 import UserMessage from "./user-message/UserMessage.vue";
+import WakeLiveMessage from "./WakeLiveMessage.vue";
 
 const props = defineProps<{
   approval?: AgentUpApprovalData;
@@ -76,6 +78,9 @@ const ThreadMessage = defineComponent({
 });
 
 const extras = injectThreadExtras();
+const wakeLive = injectThreadWakeLive();
+const wakeLiveMessage = computed(() => wakeLive?.value.message ?? null);
+const wakeLiveStreaming = computed(() => Boolean(wakeLive?.value.streaming));
 const threadMessages = useAuiState((state) => state.thread.messages);
 const messageIds = computed(() => threadMessages.value.map((message) => message.id));
 const messageCount = computed(() => messageIds.value.length);
@@ -242,6 +247,12 @@ onBeforeUnmount(() => {
             </MessageByIdProvider>
           </template>
         </ol>
+        <!-- wake 旁路直播：与 /prompt 同形 UIMessage，结束后再并入历史 -->
+        <WakeLiveMessage
+          v-if="wakeLiveMessage"
+          :message="wakeLiveMessage"
+          :streaming="wakeLiveStreaming"
+        />
         <ThreadPrimitiveScrollToBottom
           class="border-border/60 sticky bottom-2 z-10 mx-auto rounded-full border bg-background p-1.5 shadow-sm transition-[opacity,visibility] disabled:invisible disabled:opacity-0"
           :aria-label="t('threadScrollToBottom')"

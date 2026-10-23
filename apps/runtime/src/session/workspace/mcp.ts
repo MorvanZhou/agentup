@@ -6,6 +6,9 @@ import type { LoadedMcpConfig, McpServerConfig, McpServerEntry } from "@earendil
 /** 与医院 MCP 约定的请求头。运行包里的同名头会被这次出诊的用户覆盖。 */
 export const VISIT_USER_HEADER = "X-AgentUp-User-Id";
 
+/** AgentUp 默认：MCP 工具进 deferred，由 tool_search 发现后再声明（不打满 context）。 */
+export const DEFAULT_MCP_EXPOSURE = "deferred" as const;
+
 export function readProjectMcp(cwd: string): LoadedMcpConfig {
   return readMcpFile(path.join(cwd, ".pi", "mcp.json"), "project");
 }
@@ -39,23 +42,35 @@ export function projectVisitMcp(cwd: string, userId: string): LoadedMcpConfig {
   return stampVisitUser(readProjectMcp(cwd), userId);
 }
 
+/**
+ * 盖章出诊用户；缺省 exposure 写成 deferred（可在 mcp.json 显式设 direct / hidden / codemode）。
+ * 不再强制 HTTP = direct。
+ */
 export function stampVisitUser(config: LoadedMcpConfig, userId: string): LoadedMcpConfig {
   if (!userId || userId !== userId.trim() || /[/\\\u0000]/.test(userId)) {
     throw new Error("缺少用户身份");
   }
   return {
     ...config,
-    servers: config.servers.map((server) => {
-      if (!("url" in server.config) || typeof server.config.url !== "string") return server;
-      return {
-        ...server,
-        config: {
-          ...server.config,
-          headers: { ...(server.config.headers ?? {}), [VISIT_USER_HEADER]: userId },
-          exposure: "direct",
-        },
-      };
-    }),
+    servers: config.servers.map((server) => ({
+      ...server,
+      config: stampServerConfig(server.config, userId),
+    })),
+  };
+}
+
+function stampServerConfig(config: McpServerConfig, userId: string): McpServerConfig {
+  const withExposure: McpServerConfig =
+    config.exposure == null
+      ? { ...config, exposure: DEFAULT_MCP_EXPOSURE }
+      : { ...config };
+
+  if (!("url" in withExposure) || typeof withExposure.url !== "string") {
+    return withExposure;
+  }
+  return {
+    ...withExposure,
+    headers: { ...(withExposure.headers ?? {}), [VISIT_USER_HEADER]: userId },
   };
 }
 

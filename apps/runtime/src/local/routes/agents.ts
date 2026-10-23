@@ -5,6 +5,7 @@ import type { Hono } from "hono";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 
 import {
+  deleteOwnedAgent,
   HttpPackageSource,
   listAgents,
   listOwnedAgents,
@@ -16,6 +17,7 @@ import {
   updateAgentCard,
 } from "../../control/client.js";
 import type { AgentCard } from "../../control/types.js";
+import { previewOwnedPublishEditor, publishFromForm } from "../../package/publish-form.js";
 import { loadAgentSource, preparePublishSource } from "../../package/source.js";
 import { BackendClientError } from "../../control/client.js";
 import { Runtime, type Visit } from "../../package/sync.js";
@@ -25,7 +27,11 @@ import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from 
 import { clearContext, clearHistory, readHistory } from "../../session/history/history.js";
 import { setVisitSessionModel } from "../../session/model/session-model.js";
 import { listVisitSkills } from "../../session/skills/skills.js";
-import { ensureCachedAvatar, readCachedAvatarDataUrl } from "../agents/cached-avatar.js";
+import {
+  ensureCachedAvatar,
+  readCachedAvatarDataUrl,
+  writeCachedAvatarDataUrl,
+} from "../agents/cached-avatar.js";
 import { listDiskSyncedAgents } from "../agents/disk-synced.js";
 import { isLocalAgentId, localAgentVisit } from "../agents/local-agent.js";
 import { readLocalPackageVersions } from "../agents/versions.js";
@@ -141,7 +147,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
               const cached = readCachedAvatarDataUrl(config.userDataRoot, userId, agent.agentId);
               return cached ? { ...agent, hasAvatar: true, avatarUrl: cached } : agent;
             }
-            // 已招募 / 本机已投影：把头像落到 visit，离线侧栏可继续用
+            // 已招募 / 本机已投影：把头像落到 visit；remote URL（含 ?v=）变了会重拉
             const shouldPersist = agent.recruited || Boolean(localVersions[agent.agentId]);
             if (shouldPersist && agent.hasAvatar && agent.avatarUrl) {
               const cached = await ensureCachedAvatar(
@@ -152,6 +158,8 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
               );
               if (cached) return { ...agent, hasAvatar: true, avatarUrl: cached };
             }
+            // 有远程 URL 时勿用未校验版本的旧缓存盖掉（市场浏览走 ?v= 即可）
+            if (agent.hasAvatar && agent.avatarUrl) return agent;
             const cached = readCachedAvatarDataUrl(config.userDataRoot, userId, agent.agentId);
             if (cached) return { ...agent, hasAvatar: true, avatarUrl: cached };
             return agent;
@@ -167,9 +175,27 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
 
   app.get("/agents/owned", async (c) => {
     const q = c.req.query("q") ?? undefined;
+    const userId = c.req.query("user_id") ?? "";
     const agents = await listOwnedAgents(config.backendUrl, bearer(c), { q });
+    // 与已招募列表一致：落到本机 data URL，避免「我发布的」仍吃浏览器对无 ?v= 远程图的缓存
+    const withAvatars = userId
+      ? await Promise.all(
+          agents.map(async (agent) => {
+            if (agent.hasAvatar && agent.avatarUrl) {
+              const cached = await ensureCachedAvatar(
+                config.userDataRoot,
+                userId,
+                agent.agentId,
+                agent.avatarUrl,
+              );
+              if (cached) return { ...agent, hasAvatar: true, avatarUrl: cached };
+            }
+            return agent;
+          }),
+        )
+      : agents;
     return json(c, 200, {
-      agents: agents.map((agent) => ({
+      agents: withAvatars.map((agent) => ({
         agent_id: agent.agentId,
         name: agent.name,
         role: agent.role,
@@ -197,6 +223,64 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
             avatar_preview: `data:${source.avatarMime};base64,${Buffer.from(source.avatar).toString("base64")}`,
           }
         : {}),
+    });
+  });
+
+  /** 更新页预览：名片 + 包内 skills/MCP，不创建 loc-*。 */
+  app.post("/agents/publish-editor/preview", async (c) => {
+    const body = await readJson(c);
+    const preview = await previewOwnedPublishEditor(
+      config.backendUrl,
+      bearer(c),
+      text(body, "published_agent_id"),
+    );
+    return json(c, 200, {
+      agent_id: preview.agentId,
+      name: preview.name,
+      role: preview.role,
+      background: preview.background,
+      rules: preview.rules,
+      skills: preview.skills,
+      mcp_servers: preview.mcpServers,
+      avatar_url: preview.avatarUrl ?? null,
+    });
+  });
+
+  /**
+   * 市场发布表单：临时组包上传，不落盘 loc-*。
+   * 本机 Agent 一键发布仍用下方 /agents/publish + agent_dir。
+   */
+  app.post("/agents/publish-editor", async (c) => {
+    const body = await readJson(c);
+    const locale = uiLocaleFromRequest(c);
+    const skillPaths = readStringList(body.skill_paths, "skill_paths");
+    const removeSkills = readStringList(body.remove_skills, "remove_skills");
+    const mcpServers = readOptionalMcp(body);
+    const agentId = optionalText(body, "agent_id");
+    const avatarDataUrl = optionalText(body, "avatar_data_url");
+    const published = await publishFromForm(
+      config.backendUrl,
+      bearer(c),
+      {
+        name: text(body, "name"),
+        role: text(body, "role"),
+        background: optionalText(body, "background") ?? text(body, "summary"),
+        rules: optionalText(body, "rules") ?? "",
+        ...(agentId ? { agentId } : {}),
+        ...(skillPaths.length ? { skillPaths } : {}),
+        ...(removeSkills.length ? { removeSkills } : {}),
+        ...(mcpServers !== undefined ? { mcpServers } : {}),
+        ...(avatarDataUrl ? { avatarDataUrl } : {}),
+      },
+      locale,
+    );
+    return json(c, 200, {
+      agent_id: published.agentId,
+      name: published.name,
+      role: published.role,
+      background: published.background,
+      version: published.version,
+      digest: published.digest,
     });
   });
 
@@ -232,6 +316,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const agentId = requireAgentId(c.req.param("agentId"));
     const body = await readJson(c);
     const avatarDataUrl = optionalText(body, "avatar_data_url");
+    const userId = optionalText(body, "user_id");
     let avatar: Uint8Array | undefined;
     if (avatarDataUrl) {
       const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(avatarDataUrl);
@@ -245,6 +330,16 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
       rules: typeof body.rules === "string" ? body.rules : "",
       ...(avatar ? { avatar } : {}),
     });
+    // 立刻覆盖本机缓存，避免列表仍展示旧 data URL
+    if (avatarDataUrl && userId) {
+      writeCachedAvatarDataUrl(
+        config.userDataRoot,
+        userId,
+        agentId,
+        avatarDataUrl,
+        card.avatarUrl,
+      );
+    }
     return json(c, 200, serializeAgentCard(card, 0));
   });
 
@@ -436,6 +531,20 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     });
   });
 
+  app.delete("/agents/:agentId", async (c) => {
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const token = bearer(c);
+    const userId = requirePathUserId(c.req.query("user_id") ?? "");
+    if (isLocalAgentId(agentId)) {
+      throw new LocalError("本机 Agent 请使用本地删除接口", 400);
+    }
+    await deleteOwnedAgent(config.backendUrl, token, agentId);
+    chats.release(userId, agentId);
+    removeVisitRoot(config.userDataRoot, userId, agentId);
+    forgetAgent(config.userDataRoot, userId, agentId);
+    return json(c, 200, { status: "ok" });
+  });
+
   app.post("/agents/:agentId/dismiss", async (c) => {
     const agentId = requireAgentId(c.req.param("agentId"));
     const token = bearer(c);
@@ -602,4 +711,22 @@ function requireApprovalChoice(value: unknown, field: string): ApprovalChoice {
     throw new LocalError(`${field} 无效`, 400);
   }
   return value;
+}
+
+function readStringList(value: unknown, field: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new LocalError(`${field} 无效`, 400);
+  }
+  return value.map((item) => item.trim()).filter(Boolean);
+}
+
+function readOptionalMcp(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!Object.prototype.hasOwnProperty.call(body, "mcp_servers")) return undefined;
+  const value = body.mcp_servers;
+  if (value === null || value === "") return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new LocalError("mcp_servers 无效", 400);
+  }
+  return value as Record<string, unknown>;
 }

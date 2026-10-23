@@ -26,7 +26,7 @@ export const router = createRouter({
       children: [
         { path: "", name: "conversation", component: ConversationPage },
         { path: "market", name: "market", component: MarketPage },
-        { path: "agents", redirect: { name: "agents-assistant" } },
+        { path: "agents", redirect: { name: "agents-local" } },
         {
           path: "agents/assistant",
           name: "agents-assistant",

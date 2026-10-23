@@ -25,16 +25,19 @@ const props = defineProps<{
 const emit = defineEmits<{ select: []; start: [] }>();
 const router = useRouter();
 
-/** 待用户操作已有沙漏提示；进行中用转圈占角标，二者不同时叠红点。 */
-const awaitingUser = computed(() => props.row.awaitingApproval || props.row.awaitingAskUser);
+/** 待用户操作（本会话 Dock 或子 Agent 提醒）；进行中用转圈占角标，二者不同时叠红点。 */
+const awaitingUser = computed(
+  () =>
+    props.row.awaitingApproval ||
+    props.row.awaitingAskUser ||
+    props.row.awaitingChildHitl,
+);
 const showWorking = computed(() => props.row.working && !awaitingUser.value);
 const badge = computed(() => (showWorking.value ? "" : unreadLabel(props.row.unread)));
 const displayName = computed(() => conversationDisplayName(props.row));
 const previewLabel = computed(() => conversationPreviewLabel(props.row));
 const personal = computed(() => props.row.agent.kind === "personal");
-const awaitingLabel = computed(() =>
-  props.row.awaitingApproval ? t("sideAwaitApproval") : t("sideAwaitAsk"),
-);
+const awaitingLabel = computed(() => previewLabel.value);
 const ariaLabel = computed(() => {
   const parts = [displayName.value];
   if (awaitingUser.value) parts.push(previewLabel.value);
@@ -79,22 +82,22 @@ function onAction(id: string): void {
   >
     <button
       type="button"
-      class="grid min-w-0 grid-cols-[40px_minmax(0,1fr)] gap-2.5 border-0 bg-transparent px-3 py-2.5 text-left text-inherit"
+      class="grid min-w-0 grid-cols-[48px_minmax(0,1fr)] gap-2.5 border-0 bg-transparent px-3 py-2.5 text-left text-inherit"
       :aria-label="ariaLabel"
       @click="emit('select')"
     >
-      <span class="relative size-10 shrink-0">
-        <AgentAvatar :name="displayName" :avatar-url="row.agent.avatarUrl" size="lg" />
+      <span class="relative size-12 shrink-0">
+        <AgentAvatar :name="displayName" :avatar-url="row.agent.avatarUrl" size="sidebar" />
         <span
           v-if="showWorking"
-          class="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-paper text-accent shadow-sm ring-1 ring-rule"
+          class="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-paper text-accent shadow-sm ring-1 ring-rule"
           aria-hidden="true"
         >
-          <LoaderCircleIcon class="size-3 animate-spin motion-reduce:animate-none" />
+          <LoaderCircleIcon class="size-3.5 animate-spin motion-reduce:animate-none" />
         </span>
         <span
           v-else-if="badge"
-          class="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-destructive px-0.5 text-xs leading-none font-semibold text-white"
+          class="absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full bg-destructive px-1 text-[11px] leading-none font-semibold text-white"
           aria-hidden="true"
         >
           {{ badge }}

@@ -1,10 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { validateAgentPackage } from "../src/package/validate.js";
+import { repairSkillMarkdown, validateAgentPackage } from "../src/package/validate.js";
 
 const bytes = (value: string) => Buffer.from(value);
 
 describe("agent package validation", () => {
+  it("repairs community description with nested unescaped quotes", () => {
+    const broken = [
+      "---",
+      "name: agent-browser",
+      'description: "Browser automation. Triggers include requests to "open a website", "fill out a form", or login."',
+      "---",
+      "",
+      "Use agent-browser CLI.",
+      "",
+    ].join("\n");
+    const issues = validateAgentPackage({
+      "SYSTEM.md": bytes("You are a test agent."),
+      "skills/agent-browser/SKILL.md": bytes(broken),
+    });
+    expect(issues).toEqual([]);
+    const repaired = repairSkillMarkdown(broken);
+    expect(repaired).not.toBe(broken);
+    expect(repaired).toContain('description: "Browser automation. Triggers include requests to \\"open a website\\"');
+  });
+
   it("accepts ecosystem skill frontmatter variants", () => {
     const issues = validateAgentPackage({
       "SYSTEM.md": bytes("You are a test agent."),

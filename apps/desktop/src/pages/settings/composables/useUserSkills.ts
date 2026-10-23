@@ -2,6 +2,7 @@ import { ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
+import { formatApiError } from "../../../shared/model/package-issues";
 import type { UserSkill } from "../../../shared/model/runtime";
 import { showToast } from "../../../shared/model/toast";
 
@@ -34,6 +35,11 @@ export function useUserSkills(api = new DesktopApi()) {
     }
     const packagePath = await bridge.selectSkillPackage(kind);
     if (!packagePath) return;
+    await installFromPath(packagePath, expectName);
+  }
+
+  async function installFromPath(packagePath: string, expectName?: string): Promise<void> {
+    if (!session.value || busy.value) return;
     busy.value = true;
     try {
       const skill = await api.installUserSkill(
@@ -46,7 +52,9 @@ export function useUserSkills(api = new DesktopApi()) {
       loaded = true;
       showToast(expectName ? `已更新 ${skill.name}` : `已安装 ${skill.name}`, "success");
     } catch (caught) {
-      showToast(messageOf(caught, expectName ? "技能更新失败" : "技能安装失败"), "error");
+      const fallback = expectName ? "技能更新失败" : "技能安装失败";
+      const details = caught instanceof DesktopApiError ? caught.details : [];
+      showToast(formatApiError(caught, fallback), "error", details.length ? 10000 : 4000);
     } finally {
       busy.value = false;
     }
@@ -80,7 +88,7 @@ export function useUserSkills(api = new DesktopApi()) {
     }
   }
 
-  return { skills, busy, load, upload, setEnabled, remove };
+  return { skills, busy, load, upload, installFromPath, setEnabled, remove };
 }
 
 function messageOf(caught: unknown, fallback: string): string {

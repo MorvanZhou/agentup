@@ -183,6 +183,23 @@ export type PreferencesUpdate = {
   uiLocale?: UiLocale;
 };
 
+/** 社区 Skill 检索结果（SkillHub / ClawHub）。 */
+export type CommunitySkillSource = "skillhub" | "clawhub";
+export type CommunitySkillSort = "downloads" | "updated";
+
+export interface CommunitySkillHit {
+  source: CommunitySkillSource;
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  owner?: string;
+  version?: string;
+  downloads?: number;
+  updatedAt?: number;
+  homepage?: string;
+}
+
 /** 私人助理 skill：存 users/<uid>/personal-assistant/skills/，与 ~/.agents 无关。 */
 export interface UserSkill {
   name: string;

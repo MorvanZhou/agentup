@@ -94,6 +94,22 @@ export async function unrecruitAgent(
   );
 }
 
+export async function deleteOwnedAgent(
+  backendUrl: string,
+  token: string,
+  agentId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  await requestJson(
+    fetchImpl,
+    backendUrl,
+    "DELETE",
+    `/v1/agents/${encodeURIComponent(agentId)}`,
+    undefined,
+    token,
+  );
+}
+
 export async function setAgentRemark(
   backendUrl: string,
   token: string,

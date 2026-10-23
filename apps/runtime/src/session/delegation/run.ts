@@ -3,7 +3,9 @@ import path from "node:path";
 
 import {
   createAgentSession,
+  createCodemodeExtension,
   createMcpExtension,
+  createToolSearchExtension,
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
@@ -31,6 +33,7 @@ import {
   AskUserBroker,
   createAskUserExtension,
   createFsGuardExtension,
+  createLocalTimeExtension,
   createTodoExtension,
   createWebToolsExtension,
   formatToolsUsagePrompt,
@@ -39,6 +42,7 @@ import {
   createOutputLengthExtension,
   resolveEmptyAssistantError,
 } from "../output-length.js";
+import { createStreamGuardExtension } from "../stream-guard.js";
 import type { DelegationProgressHub } from "./progress.js";
 
 export type DelegationRunOutcome = {
@@ -117,11 +121,15 @@ export async function runDelegatedPrompt(
         return resolveAllowedRoots(plan.cwd, readProjectRoots(visit.root, kind));
       }),
       createWebToolsExtension(),
+      createLocalTimeExtension(),
       createAskUserExtension(askUser, visit.userId, visit.agentId, hitl),
       createTodoExtension(),
       createOutputLengthExtension(),
+      createStreamGuardExtension(),
       createCheckpointExtension(visit.root),
-      ...(mcpEnabled ? [createMcpExtension({ loadConfig: () => mcpConfig })] : []),
+      ...(mcpEnabled
+        ? [createToolSearchExtension(), createCodemodeExtension(), createMcpExtension({ loadConfig: () => mcpConfig })]
+        : []),
       createApprovalExtension(approvals, visit.userId, visit.agentId, {
         hitl,
         projectMount: {
@@ -172,6 +180,7 @@ export async function runDelegatedPrompt(
     noTools: plan.tools.length > 0 ? undefined : mcpEnabled ? "builtin" : "all",
   };
   const { session } = await createAgentSession(sessionOptions);
+  await session.bindExtensions({});
 
   const projector = new PiUIMessageProjector();
   const texts: string[] = [];

@@ -10,12 +10,24 @@ import { openSession } from "../src/session/open.js";
 import { buildSessionPlan, SessionRefused } from "../src/session/plan.js";
 
 const created: unknown[] = [];
-const mcpFactories: Array<{ loadConfig?: () => { servers: Array<{ config: { headers?: Record<string, string>; exposure?: string } }> } }> = [];
+const mcpFactories: Array<{
+  loadConfig?: () => {
+    servers: Array<{
+      name?: string;
+      config: { url?: string; headers?: Record<string, string>; exposure?: string; command?: string };
+    }>;
+  };
+}> = [];
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession: vi.fn(async (options: unknown) => {
     created.push(options);
-    return { session: { dispose() {} } };
+    return {
+      session: {
+        dispose() {},
+        bindExtensions: vi.fn(async () => undefined),
+      },
+    };
   }),
   buildSessionContext: () => ({ messages: [] }),
   defineTool: (tool: unknown) => tool,
@@ -52,7 +64,16 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     }
     async reload() {}
   },
-  createMcpExtension: (options?: { loadConfig?: () => { servers: Array<{ config: { headers?: Record<string, string>; exposure?: string } }> } }) => {
+  createToolSearchExtension: () => ({ name: "tool_search" }),
+  createCodemodeExtension: () => ({ name: "codemode" }),
+  createMcpExtension: (options?: {
+    loadConfig?: () => {
+      servers: Array<{
+        name?: string;
+        config: { url?: string; headers?: Record<string, string>; exposure?: string; command?: string };
+      }>;
+    };
+  }) => {
     mcpFactories.push(options ?? {});
     return { name: "mcp" };
   },
@@ -99,6 +120,7 @@ it("points Pi at the visit directory and keeps the user agent directory out", ()
     "write",
     "edit",
     "bash",
+    "get_local_time",
     "web_search",
     "web_fetch",
     "ask_user",
@@ -106,7 +128,7 @@ it("points Pi at the visit directory and keeps the user agent directory out", ()
     "bg_run",
     "bg_status",
     "bg_kill",
-    "list_recruited_agents",
+    "agent_search",
     "delegate_to_agent",
     "check_delegation",
     "cancel_delegation",
@@ -131,6 +153,7 @@ it("makes builtin tools available for runtime approval", async () => {
     "write",
     "edit",
     "bash",
+    "get_local_time",
     "web_search",
     "web_fetch",
     "ask_user",
@@ -138,7 +161,7 @@ it("makes builtin tools available for runtime approval", async () => {
     "bg_run",
     "bg_status",
     "bg_kill",
-    "list_recruited_agents",
+    "agent_search",
     "delegate_to_agent",
     "check_delegation",
     "cancel_delegation",
@@ -189,6 +212,7 @@ it("passes the explicit session plan to the Pi SDK", async () => {
     "write",
     "edit",
     "bash",
+    "get_local_time",
     "web_search",
     "web_fetch",
     "ask_user",
@@ -196,7 +220,7 @@ it("passes the explicit session plan to the Pi SDK", async () => {
     "bg_run",
     "bg_status",
     "bg_kill",
-    "list_recruited_agents",
+    "agent_search",
     "delegate_to_agent",
     "check_delegation",
     "cancel_delegation",
@@ -205,8 +229,8 @@ it("passes the explicit session plan to the Pi SDK", async () => {
   expect(options.model).toMatchObject({ api: "openai-completions", baseUrl: model.baseUrl, provider: "ollama" });
   expect(options.modelRuntime.getModel("ollama", "qwen")).toMatchObject({ id: "qwen", apiKey: "ollama" });
   expect(options.settingsManager.options.projectTrusted).toBe(true);
-  // fs-guard / web / ask_user / todo / summary / artifacts / output-length / checkpoint / approval（无 MCP / 委托 / 后台时）
-  expect(options.resourceLoader.options.extensionFactories).toHaveLength(9);
+  // fs-guard / web / local-time / ask_user / todo / summary / artifacts / output-length / stream-guard / checkpoint / approval（无 MCP / 委托 / 后台时）
+  expect(options.resourceLoader.options.extensionFactories).toHaveLength(11);
   expect(options.resourceLoader.options.disabledBuiltinExtensions).toEqual(["mcp"]);
   expect(options.resourceLoader.options.noSkills).toBe(true);
   expect(options.resourceLoader.options.additionalSkillPaths).toEqual([]);
@@ -265,7 +289,7 @@ it("appends collaboration policy when delegation is wired", async () => {
   expect(appended?.[4]).toContain("delegate_to_agent");
 });
 
-it("stamps the visit user onto hospital MCP and ignores the package header", async () => {
+it("stamps the visit user onto hospital MCP, defaults exposure to deferred, and keeps explicit exposure", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mcp-"));
   const pi = path.join(root, "cwd", ".pi");
   fs.mkdirSync(pi, { recursive: true });
@@ -276,17 +300,31 @@ it("stamps the visit user onto hospital MCP and ignores the package header", asy
         hospital: {
           url: "http://127.0.0.1:8788/mcp",
           headers: { "X-AgentUp-User-Id": "forged" },
-          exposure: "hidden",
+        },
+        pinned: {
+          url: "http://127.0.0.1:8789/mcp",
+          exposure: "direct",
         },
         local: { command: "echo", args: ["ok"] },
       },
     }),
   );
-  await openSession({ ...visit(), root }, model);
+  const opened = await openSession({ ...visit(), root }, model);
   const loaded = mcpFactories[0]?.loadConfig?.();
-  const hospital = loaded?.servers.find((server) => "url" in server.config);
-  const local = loaded?.servers.find((server) => "command" in server.config);
+  const hospital = loaded?.servers.find((server) => server.name === "hospital");
+  const pinned = loaded?.servers.find((server) => server.name === "pinned");
+  const local = loaded?.servers.find((server) => server.name === "local");
   expect(hospital?.config.headers?.["X-AgentUp-User-Id"]).toBe("patient");
-  expect(hospital?.config.exposure).toBe("direct");
+  expect(hospital?.config.exposure).toBe("deferred");
+  expect(pinned?.config.exposure).toBe("direct");
+  expect(local?.config.exposure).toBe("deferred");
   expect(local && "headers" in local.config).toBe(false);
+  expect(opened.session.bindExtensions).toHaveBeenCalledOnce();
+  const options = created.at(-1) as {
+    tools?: string[];
+    resourceLoader: { options: { extensionFactories: unknown[] } };
+  };
+  expect(options.tools).toContain("tool_search");
+  // + tool_search + codemode + mcp（相对无 MCP 时多 3）
+  expect(options.resourceLoader.options.extensionFactories.length).toBeGreaterThanOrEqual(13);
 });
