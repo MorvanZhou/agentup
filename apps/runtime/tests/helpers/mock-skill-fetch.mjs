@@ -8,6 +8,50 @@ function json(body) {
   return Response.json(body);
 }
 
+function eachDate(start, end) {
+  const out = [];
+  let cur = Date.parse(`${start}T00:00:00Z`);
+  const last = Date.parse(`${end}T00:00:00Z`);
+  while (cur <= last) {
+    out.push(new Date(cur).toISOString().slice(0, 10));
+    cur += 86_400_000;
+  }
+  return out;
+}
+
+function mockHistoryPayload(start, end) {
+  const days = eachDate(start, end);
+  const payload = {
+    daily: {
+      time: days,
+      weather_code: days.map(() => 2),
+      temperature_2m_max: days.map(() => 28),
+      temperature_2m_min: days.map(() => 22),
+      temperature_2m_mean: days.map(() => 25),
+      precipitation_sum: days.map(() => 0),
+      sunrise: days.map((d) => `${d}T06:20`),
+      sunset: days.map((d) => `${d}T17:55`),
+      wind_speed_10m_max: days.map(() => 14),
+      wind_direction_10m_dominant: days.map(() => 90),
+    },
+  };
+  if (start === end) {
+    const hours = Array.from({ length: 24 }, (_, i) => {
+      const h = String(i).padStart(2, "0");
+      return `${start}T${h}:00`;
+    });
+    payload.hourly = {
+      time: hours,
+      temperature_2m: hours.map((_, i) => 22 + (i % 6)),
+      weather_code: hours.map(() => 2),
+      precipitation: hours.map(() => 0),
+      wind_speed_10m: hours.map(() => 12),
+      relative_humidity_2m: hours.map(() => 65),
+    };
+  }
+  return payload;
+}
+
 globalThis.fetch = async (input, init) => {
   const url = String(typeof input === "string" || input instanceof URL ? input : input.url);
   const parsed = new URL(url);
@@ -20,6 +64,11 @@ globalThis.fetch = async (input, init) => {
     });
   }
   if (parsed.hostname === "api.open-meteo.com" && parsed.pathname.includes("/forecast")) {
+    const start = parsed.searchParams.get("start_date");
+    const end = parsed.searchParams.get("end_date");
+    if (start && end) {
+      return json(mockHistoryPayload(start, end));
+    }
     const hours = Array.from({ length: 24 }, (_, i) => {
       const h = String(i).padStart(2, "0");
       return `2026-10-23T${h}:00`;
@@ -57,6 +106,11 @@ globalThis.fetch = async (input, init) => {
         uv_index_max: days.map(() => 5),
       },
     });
+  }
+  if (parsed.hostname === "archive-api.open-meteo.com") {
+    const start = parsed.searchParams.get("start_date") || "2026-10-19";
+    const end = parsed.searchParams.get("end_date") || start;
+    return json(mockHistoryPayload(start, end));
   }
   if (parsed.hostname === "air-quality-api.open-meteo.com") {
     return json({

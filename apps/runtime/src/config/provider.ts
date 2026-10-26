@@ -60,6 +60,8 @@ export interface AvailableModelView {
   optionLabel: string;
   enabled: boolean;
   active: boolean;
+  /** 仅手动追加、不在内置/发现目录中，可从列表移除 */
+  custom: boolean;
 }
 
 export interface ProviderSettingsView {
@@ -137,7 +139,7 @@ export function upsertProviderConnection(
     baseUrl?: string;
     apiKeyCipher?: string;
     clearApiKey?: boolean;
-    /** Ollama / 自定义：追加到可用模型列表 */
+    /** 手动追加到可用模型列表（任意已连接服务商） */
     customModelId?: string;
     locale?: UiLocale;
   },
@@ -215,6 +217,57 @@ export function deleteProviderConnection(
   if (!activeModel && enabledModels.length > 0) activeModel = enabledModels[0]!;
   persist(userDataRoot, { version: FILE_VERSION, connections, enabledModels, activeModel });
   removeProviderCatalog(userDataRoot, templateId);
+  return readProviderSettings(userDataRoot, process.env, locale);
+}
+
+/** 从连接上移除手动追加的模型 id（内置 / 自动发现的目录项不可删）。 */
+export function removeCustomModel(
+  userDataRoot: string,
+  ref: ModelRef,
+  locale: UiLocale = "zh",
+): ProviderSettingsView {
+  const stored = readStored(userDataRoot);
+  const templateId = clean(ref.templateId);
+  const modelId = clean(ref.modelId);
+  if (!templateId || !modelId) throw new ConfigError("模型无效");
+  const index = stored.connections.findIndex((item) => item.templateId === templateId);
+  if (index < 0) throw new ConfigError("请先配置该服务商");
+  const connection = stored.connections[index]!;
+  const template = getProviderTemplate(templateId);
+  if (!template) throw new ConfigError("未知的服务商");
+  const catalogIds = new Set([
+    ...(template.models ?? []).map((model) => model.id),
+    ...(connection.discoveredModelIds ?? []),
+  ]);
+  if (catalogIds.has(modelId)) {
+    throw new ConfigError("内置或自动发现的模型不能删除");
+  }
+  const customModelIds = (connection.customModelIds ?? []).filter((id) => id !== modelId);
+  if ((connection.customModelIds ?? []).length === customModelIds.length) {
+    throw new ConfigError("只能移除手动添加的模型");
+  }
+  const next = validateConnection({
+    ...connection,
+    customModelIds: customModelIds.length ? customModelIds : undefined,
+  });
+  if (connection.apiKeyCipher && !next.apiKeyCipher) next.apiKeyCipher = connection.apiKeyCipher;
+  const connections = [...stored.connections];
+  connections[index] = next;
+
+  const knownIds = new Set(knownModelIdsForConnection(next));
+  let enabledModels = stored.enabledModels.filter(
+    (item) => item.templateId !== templateId || knownIds.has(item.modelId),
+  );
+  let activeModel = stored.activeModel;
+  if (activeModel && (activeModel.templateId !== templateId || !knownIds.has(activeModel.modelId))) {
+    activeModel =
+      enabledModels.find((item) => item.templateId === templateId) ?? enabledModels[0] ?? null;
+  }
+  if (activeModel && !enabledModels.some((item) => modelKey(item) === modelKey(activeModel!))) {
+    enabledModels = [...enabledModels, activeModel];
+  }
+  persist(userDataRoot, { version: FILE_VERSION, connections, enabledModels, activeModel });
+  syncProviderCatalog(userDataRoot, templateId, knownModelIdsForConnection(next));
   return readProviderSettings(userDataRoot, process.env, locale);
 }
 
@@ -499,6 +552,11 @@ function buildAvailableModels(stored: StoredFile, locale: UiLocale): AvailableMo
         reasoning: false,
       });
     }
+    const catalogIds = new Set([
+      ...(template.models ?? []).map((model) => model.id),
+      ...(connection.discoveredModelIds ?? []),
+    ]);
+    const customIds = new Set(connection.customModelIds ?? []);
     const seen = new Set<string>();
     for (const model of models) {
       if (seen.has(model.id)) continue;
@@ -513,6 +571,7 @@ function buildAvailableModels(stored: StoredFile, locale: UiLocale): AvailableMo
         optionLabel: template.optionLabel,
         enabled: enabled.has(key),
         active: key === activeKey,
+        custom: customIds.has(model.id) && !catalogIds.has(model.id),
       });
     }
   }

@@ -1,6 +1,13 @@
 import { expect, it } from "vitest";
 
-import { formatBytes, joinWorkspacePath, parentWorkspacePath, workspaceBaseName } from "../../src/pages/conversation/model/workspace/workspace-path.js";
+import {
+  formatBytes,
+  isHtmlWorkspacePath,
+  isMarkdownWorkspacePath,
+  joinWorkspacePath,
+  parentWorkspacePath,
+  workspaceBaseName,
+} from "../../src/pages/conversation/model/workspace/workspace-path.js";
 import {
   isUnderWorkspaceTab,
   workspaceTabRoot,
@@ -17,6 +24,15 @@ it("joins, splits, and formats workspace paths", () => {
   expect(formatBytes(12)).toBe("12 B");
   expect(formatBytes(1536)).toBe("1.5 KB");
   expect(formatBytes(2 * 1024 * 1024)).toBe("2.0 MB");
+  expect(isHtmlWorkspacePath("index.html")).toBe(true);
+  expect(isHtmlWorkspacePath("reports/Page.HTM")).toBe(true);
+  expect(isHtmlWorkspacePath("note.txt")).toBe(false);
+  expect(isHtmlWorkspacePath("index.html.bak")).toBe(false);
+  expect(isMarkdownWorkspacePath("ARTIFACT/report.md")).toBe(true);
+  expect(isMarkdownWorkspacePath("notes/README.MDX")).toBe(true);
+  expect(isMarkdownWorkspacePath("doc.markdown")).toBe(true);
+  expect(isMarkdownWorkspacePath("note.txt")).toBe(false);
+  expect(isMarkdownWorkspacePath("readme.md.bak")).toBe(false);
 });
 
 it("scopes workspace tabs to ARTIFACT, ATTACHMENTS, and projects", () => {

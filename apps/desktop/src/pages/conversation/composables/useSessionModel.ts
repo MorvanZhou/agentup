@@ -2,10 +2,10 @@ import { computed, onActivated, onMounted, ref, watch, type Ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import { providerConfigEpoch } from "../../../shared/model/provider-config";
-import type { SessionModelOption, SessionModelState } from "../../../shared/model/runtime";
-import { showToast } from "../../../shared/model/toast";
-import { readUiLocale, uiLocale } from "../../../shared/model/ui-locale";
+import { providerConfigEpoch } from "../../../shared/model/runtime/provider-config";
+import type { SessionModelOption, SessionModelState } from "../../../shared/model/runtime/runtime";
+import { showToast } from "../../../shared/model/ui/toast";
+import { readUiLocale, uiLocale } from "../../../shared/model/ui/ui-locale";
 
 /** 当前对话 Pi session 的模型选择（Composer 下拉）。 */
 export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {

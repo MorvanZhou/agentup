@@ -3,8 +3,8 @@ import { ChevronDownIcon } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
-import type { SessionModelOption } from "../../../../../../../shared/model/runtime";
-import { t } from "../../../../../../../shared/model/ui-locale";
+import type { SessionModelOption } from "../../../../../../../shared/model/runtime/runtime";
+import { t } from "../../../../../../../shared/model/ui/ui-locale";
 
 const props = defineProps<{
   models: SessionModelOption[];

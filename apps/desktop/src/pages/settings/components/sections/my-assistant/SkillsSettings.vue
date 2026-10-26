@@ -3,8 +3,8 @@ import { FolderUpIcon, SearchIcon, UploadIcon } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
-import CommunitySkillDialog from "../../../../../shared/components/CommunitySkillDialog.vue";
-import { t } from "../../../../../shared/model/ui-locale";
+import CommunitySkillDialog from "../../../../../shared/components/skills/CommunitySkillDialog.vue";
+import { t } from "../../../../../shared/model/ui/ui-locale";
 import { useUserSkills } from "../../../composables/useUserSkills";
 import SkillCard from "./SkillCard.vue";
 

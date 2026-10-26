@@ -38,6 +38,7 @@ it("GET /attention exposes busy_turns phase and sources", async () => {
     },
     approvals: { restoreUser() {}, listPending: () => [] },
     askUser: { restoreUser() {}, listPending: () => [] },
+    shellHang: { listPending: () => [] },
     delegation: { findNestingParent: () => undefined },
   } as unknown as LocalAppDeps;
   const app = new Hono<LocalAppEnv>();
@@ -88,6 +89,7 @@ it("GET /turn-progress streams dirty snapshot then done", async () => {
     },
     approvals: { restoreUser() {}, listPending: () => [] },
     askUser: { restoreUser() {}, listPending: () => [] },
+    shellHang: { listPending: () => [] },
     delegation: { findNestingParent: () => undefined },
   } as unknown as LocalAppDeps;
   const app = new Hono<LocalAppEnv>();
@@ -139,6 +141,7 @@ it("GET /attention returns empty snapshot for a user", async () => {
       busy_turns: [],
       approvals: [],
       ask_users: [],
+      shell_hangs: [],
     });
     expect((await fetch(`${local.url}/attention`, { headers })).status).toBe(400);
     expect((await fetch(`${local.url}/attention?user_id=u1`)).status).toBe(401);
@@ -174,6 +177,7 @@ it("GET /attention surfaces nested child approval to busy parent", async () => {
     },
     approvals,
     askUser,
+    shellHang: { listPending: () => [] },
     delegation,
   } as unknown as LocalAppDeps;
   const app = new Hono<LocalAppEnv>();
@@ -236,6 +240,7 @@ it("GET /attention keeps visit-origin child approval on child while nested", asy
     },
     approvals,
     askUser,
+    shellHang: { listPending: () => [] },
     delegation,
   } as unknown as LocalAppDeps;
   const app = new Hono<LocalAppEnv>();

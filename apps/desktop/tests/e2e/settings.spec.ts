@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
-import { mockAgentUp, openUserMenu, signIn } from "./helpers";
+import { messagesNav, mockAgentUp, openUserMenu, signIn } from "./helpers";
 import { installRuntime } from "./runtime";
 
 test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
@@ -29,7 +29,7 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
   });
   await expect(page.getByRole("status")).toHaveText("私人助理资料已保存");
 
-  await page.getByRole("link", { name: "消息" }).click();
+  await messagesNav(page).click();
   await expect(page.getByText("小舟", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "会话菜单" }).click();
@@ -37,7 +37,7 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
   await expect(page).toHaveURL(/\/agents\/assistant/);
   await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "消息", exact: true }).click();
+  await messagesNav(page).click();
   await page.getByRole("button", { name: /^更多操作：小舟/ }).click();
   await page.getByRole("menuitem", { name: "助理设置" }).click();
   await expect(page).toHaveURL(/\/agents\/assistant/);
@@ -126,12 +126,52 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
   await expect(page.getByRole("status")).toHaveText("服务商已保存");
   await expect(page.getByRole("switch", { name: "停用 qwen3:4b" })).toBeVisible();
 
-  await page.getByRole("link", { name: "消息" }).click();
+  await messagesNav(page).click();
   await expect(page).toHaveURL(/\/$/);
   await openUserMenu(page);
   await page.getByRole("menuitem", { name: "设置" }).click();
   await page.getByRole("button", { name: "AI 服务" }).click();
   await expect(page.getByRole("switch", { name: "停用 qwen3:4b" })).toBeVisible();
+});
+
+test("手动添加模型 ID 到已连接服务商", async ({ page }) => {
+  await installRuntime(page);
+  await signIn(page);
+  await openUserMenu(page);
+  await page.getByRole("menuitem", { name: "设置" }).click();
+  const loaded = page.waitForResponse((response) => {
+    if (response.request().method() !== "GET") return false;
+    return new URL(response.url()).pathname.endsWith("/settings/provider");
+  });
+  await page.getByRole("button", { name: "AI 服务" }).click();
+  await loaded;
+
+  await page.getByText("找不到你所需的模型？试试手动配置").click();
+  await page.getByLabel("模型 ID").fill("glm-4.7-flash");
+  const added = page.waitForRequest((request) => {
+    if (request.method() !== "POST") return false;
+    if (!new URL(request.url()).pathname.endsWith("/settings/provider/connections")) return false;
+    const body = request.postDataJSON() as { custom_model_id?: string; template_id?: string };
+    return body.custom_model_id === "glm-4.7-flash" && body.template_id === "ollama";
+  });
+  await page.getByRole("button", { name: "添加", exact: true }).click();
+  expect((await added).postDataJSON()).toMatchObject({
+    template_id: "ollama",
+    custom_model_id: "glm-4.7-flash",
+  });
+  await expect(page.getByRole("status")).toHaveText("已添加 glm-4.7-flash");
+  await expect(page.getByRole("switch", { name: "停用 glm-4.7-flash" })).toBeVisible();
+
+  const removed = page.waitForRequest((request) => {
+    if (request.method() !== "DELETE") return false;
+    return new URL(request.url()).pathname.endsWith(
+      "/settings/provider/connections/ollama/custom-models/glm-4.7-flash",
+    );
+  });
+  await page.getByRole("button", { name: "移除 glm-4.7-flash" }).click();
+  await removed;
+  await expect(page.getByRole("status")).toHaveText("已移除 glm-4.7-flash");
+  await expect(page.getByRole("switch", { name: "停用 glm-4.7-flash" })).toHaveCount(0);
 });
 
 test("配置私人助理 Skills、工作规则与外部工具", async ({ page }) => {

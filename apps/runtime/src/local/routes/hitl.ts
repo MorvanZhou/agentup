@@ -4,7 +4,7 @@ import { stream } from "hono/streaming";
 import { createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessageChunk } from "ai";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 
-import { surfaceHitlAgentId } from "../../session/hitl/surface.js";
+import { delegationHitlAttribution, surfaceHitlAgentId } from "../../session/hitl/surface.js";
 import { parseAskUserAnswer } from "../../session/tools/index.js";
 import {
   bearer,
@@ -60,7 +60,7 @@ function streamSse(
 }
 
 export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
-  const { approvals, askUser, chats, delegation } = deps;
+  const { approvals, askUser, shellHang, chats, delegation } = deps;
 
   /** 侧栏 / Dock：busy + 仍可闭合的 HITL（含重启后孤儿）。 */
   app.get("/attention", (c) => {
@@ -90,6 +90,14 @@ export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
         busyAgentIds,
         origin: item.origin,
       });
+    const hitlAttribution = (item: { origin?: "visit" | "delegation"; taskId?: string }) => {
+      if (item.origin !== "delegation" || !item.taskId) return {};
+      const task =
+        "getTask" in delegation && typeof delegation.getTask === "function"
+          ? delegation.getTask(item.taskId)
+          : undefined;
+      return delegationHitlAttribution(task);
+    };
     return json(c, 200, {
       busy_agent_ids: busyAgentIds,
       busy_turns: busyTurns.map((item) => ({
@@ -102,24 +110,49 @@ export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
           kind: source.kind,
         })),
       })),
-      // origin_agent_id / parent_agent_id：异步委托时 HITL 挂在子会话，主 Agent 侧栏仍要提醒。
-      approvals: approvals.listPending(userId).map((item) => ({
-        id: item.id,
-        agent_id: surfaceAgent(item),
-        origin_agent_id: item.agentId,
-        parent_agent_id: nestingParent(item) ?? null,
-        tool_call_id: item.toolCallId,
-        tool_name: item.toolName,
-        args: item.args,
-      })),
-      ask_users: askUser.listPending(userId).map((item) => ({
-        id: item.id,
-        agent_id: surfaceAgent(item),
-        origin_agent_id: item.agentId,
-        parent_agent_id: nestingParent(item) ?? null,
-        tool_call_id: item.toolCallId,
-        questions: item.questions,
-      })),
+      // 委托 HITL 的 agent_id 是跟进方；asked_by_name / task_label 标明是谁的哪件任务。
+      approvals: approvals.listPending(userId).map((item) => {
+        const label = hitlAttribution(item);
+        return {
+          id: item.id,
+          agent_id: surfaceAgent(item),
+          origin_agent_id: item.agentId,
+          parent_agent_id: nestingParent(item) ?? null,
+          tool_call_id: item.toolCallId,
+          tool_name: item.toolName,
+          args: item.args,
+          ...(label.askedByName ? { asked_by_name: label.askedByName } : {}),
+          ...(label.taskLabel ? { task_label: label.taskLabel } : {}),
+        };
+      }),
+      ask_users: askUser.listPending(userId).map((item) => {
+        const label = hitlAttribution(item);
+        return {
+          id: item.id,
+          agent_id: surfaceAgent(item),
+          origin_agent_id: item.agentId,
+          parent_agent_id: nestingParent(item) ?? null,
+          tool_call_id: item.toolCallId,
+          questions: item.questions,
+          ...(label.askedByName ? { asked_by_name: label.askedByName } : {}),
+          ...(label.taskLabel ? { task_label: label.taskLabel } : {}),
+        };
+      }),
+      shell_hangs: shellHang.listPending(userId).map((item) => {
+        const label = hitlAttribution(item);
+        return {
+          id: item.id,
+          agent_id: surfaceAgent(item),
+          origin_agent_id: item.agentId,
+          parent_agent_id: nestingParent(item) ?? null,
+          tool_call_id: item.toolCallId,
+          tool_name: item.toolName,
+          command: item.command,
+          elapsed_ms: item.elapsedMs,
+          ...(label.askedByName ? { asked_by_name: label.askedByName } : {}),
+          ...(label.taskLabel ? { task_label: label.taskLabel } : {}),
+        };
+      }),
     });
   });
 
@@ -267,5 +300,17 @@ export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
       throw new LocalError("提问请求已失效", 404);
     }
     return json(c, 200, { answered: true });
+  });
+
+  /** 阻塞 shell 过久：kill=终止本轮；wait=继续等（之后可再问）。 */
+  app.post("/shell-hangs/:id", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const action = body.action;
+    if (action !== "kill" && action !== "wait") throw new LocalError("请求无效", 400);
+    if (!shellHang.decide(c.req.param("id"), action)) {
+      throw new LocalError("超时询问已失效", 404);
+    }
+    return json(c, 200, { decided: true });
   });
 }

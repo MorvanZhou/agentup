@@ -3,10 +3,10 @@ import { computed, onMounted, ref } from "vue";
 import { useDesktop } from "../../../app/desktop";
 import { applyTheme, readThemeMirror, writeThemeMirror } from "../../../app/theme";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import type { ThemeMode, UiLocale } from "../../../shared/model/runtime";
-import { isGuestSession } from "../../../shared/model/session";
-import { showToast } from "../../../shared/model/toast";
-import { applyUiLocale, t } from "../../../shared/model/ui-locale";
+import type { ThemeMode, UiLocale } from "../../../shared/model/runtime/runtime";
+import { isGuestSession } from "../../../shared/model/session/session";
+import { showToast } from "../../../shared/model/ui/toast";
+import { applyUiLocale, t } from "../../../shared/model/ui/ui-locale";
 
 export function useAppearanceSettings(api = new DesktopApi()) {
   const { session, themeMode, uiLocale, setUiLocale, skipEditResendConfirm } = useDesktop();

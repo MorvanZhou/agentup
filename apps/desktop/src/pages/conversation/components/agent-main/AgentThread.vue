@@ -16,14 +16,17 @@ import {
   isAgentUpAskUser,
   isAgentUpDelegationStarted,
   isAgentUpModelUnavailable,
+  isAgentUpShellHang,
   lastMessagePreview,
   type AgentUpApprovalData,
   type AgentUpAskUserData,
+  type AgentUpShellHangData,
   type ApprovalScope,
   type AskUserAnswer,
-} from "../../../../shared/model/chat";
-import { showToast } from "../../../../shared/model/toast";
-import { t } from "../../../../shared/model/ui-locale";
+  type ShellHangAction,
+} from "../../../../shared/model/chat/chat";
+import { showToast } from "../../../../shared/model/ui/toast";
+import { t } from "../../../../shared/model/ui/ui-locale";
 import { useDelegationFleet } from "../../composables/useDelegationFleet";
 import { useWakeTurnStream } from "../../composables/useWakeTurnStream";
 import { useWorkspacePaneWidth } from "../../composables/usePaneWidth";
@@ -43,10 +46,12 @@ import {
 } from "../../model/thread/thread-delegation";
 import { threadExtrasKey, type ThreadExtras } from "../../model/thread/thread-extras";
 import { threadRosterKey, type ThreadRoster } from "../../model/thread/thread-roster";
+import type { IncomingDelegation } from "../../model/sidebar/delegation-presence";
 import OrchestrationBar from "./thread/assistant-ui/byproducts/OrchestrationBar.vue";
 import DelegationProcessDialog from "./thread/assistant-ui/byproducts/DelegationProcessDialog.vue";
 import Thread from "./thread/Thread.vue";
 import ConversationHeader from "./ConversationHeader.vue";
+import DelegationOccupancyBanner from "./DelegationOccupancyBanner.vue";
 import ThreadRunningBridge from "./thread/ThreadRunningBridge.vue";
 
 const props = withDefaults(
@@ -62,8 +67,11 @@ const props = withDefaults(
     busyTurn?: BusyTurn | null;
     /** 主区当前是否显示本线程（切走再进时清空过程折叠记忆）。 */
     active?: boolean;
+    /** 别人派给本 Agent、仍在进行的异步委托。直聊横幅用，不进历史。 */
+    incomingDelegations?: IncomingDelegation[];
     approval?: AgentUpApprovalData;
     askUser?: AgentUpAskUserData;
+    shellHang?: AgentUpShellHangData;
     runtimeBaseUrl?: string;
     abortTurn?: () => Promise<void>;
     /** wake 流结束后重载历史，并入 AISDKChat（流式过程走 /turn-stream 直播）。 */
@@ -73,13 +81,15 @@ const props = withDefaults(
     setRemark?: (remark: string) => Promise<void>;
     dismiss?: () => Promise<void>;
   }>(),
-  { active: true, busyTurn: null },
+  { active: true, busyTurn: null, incomingDelegations: () => [] },
 );
 const emit = defineEmits<{
   decide: [allow: boolean, scope?: ApprovalScope];
   approval: [value: AgentUpApprovalData | undefined];
   askUser: [value: AgentUpAskUserData | undefined];
+  shellHang: [value: AgentUpShellHangData | undefined];
   answer: [answer: AskUserAnswer];
+  "shell-hang-decide": [action: ShellHangAction];
   "turn-end": [preview: string, messages: UIMessage[]];
   running: [running: boolean];
 }>();
@@ -155,6 +165,7 @@ const { streaming: wakeStreaming, liveMessage: wakeLiveMessage } = useWakeTurnSt
   handlers: {
     onApproval: (data) => emit("approval", data),
     onAskUser: (data) => emit("askUser", data),
+    onShellHang: (data) => emit("shellHang", data),
     onDelegationStarted: (data) => {
       delegationApi.value.registerStarted(data);
       noteFleetStarted(data);
@@ -193,10 +204,11 @@ watch(
 );
 const clearing = ref(false);
 const clearingHistory = ref(false);
-/** 立刻收起 AskUser / 审批浮层（不依赖 SSE）。 */
+/** 立刻收起 AskUser / 审批 / 命令超时浮层（不依赖 SSE）。 */
 function dismissHitl(): void {
   if (props.askUser) emit("askUser", undefined);
   if (props.approval) emit("approval", undefined);
+  if (props.shellHang) emit("shellHang", undefined);
 }
 
 const threadActions = computed<ThreadActions>(() => ({
@@ -320,6 +332,9 @@ const config = AuiConfig({
       if (part.type === "data-agentup-ask-user" && isAgentUpAskUser(part.data)) {
         emit("askUser", part.data);
       }
+      if (part.type === "data-agentup-shell-hang" && isAgentUpShellHang(part.data)) {
+        emit("shellHang", part.data);
+      }
       if (
         part.type === "data-agentup-delegation-started" &&
         isAgentUpDelegationStarted(part.data)
@@ -363,6 +378,10 @@ const config = AuiConfig({
         @toggle-workspace="toggleWorkspace"
         @open-chat-settings="openChatSettings"
       />
+      <DelegationOccupancyBanner
+        v-if="incomingDelegations.length > 0"
+        :tasks="incomingDelegations"
+      />
       <!-- 编排条：异步委托 Fleet + wake 汇总（可停主回合） -->
       <OrchestrationBar
         :items="fleetItems"
@@ -381,8 +400,10 @@ const config = AuiConfig({
           <Thread
             :approval="approval"
             :ask-user="askUser"
+            :shell-hang="shellHang"
             @decide="(allow, scope) => emit('decide', allow, scope)"
             @answer="(answer) => emit('answer', answer)"
+            @shell-hang-decide="(action) => emit('shell-hang-decide', action)"
           />
           <button
             v-if="rightPaneOpen && agentId && token && userId"

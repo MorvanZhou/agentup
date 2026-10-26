@@ -33,3 +33,31 @@ it("resolves the local model API key without writing Pi auth files", async () =>
   expect(await runtime.getAuth(model)).toMatchObject({ auth: { apiKey: "ollama" } });
   expect(fs.readdirSync(root)).toEqual([]);
 });
+
+it("registers a manually added model id on a pi-native provider", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-model-runtime-native-"));
+  const visit: Visit = {
+    userId: "patient",
+    agentId: "weather",
+    root,
+    packageVersion: 1,
+    packageDigest: "digest",
+    tools: ["bash"],
+    modelCapabilities: ["tools"],
+    projectTrust: "granted",
+  };
+  const plan = buildSessionPlan(visit, {
+    providerId: "zai",
+    templateId: "zai",
+    modelId: "glm-4.7-flash",
+    apiKey: "sk-test",
+    kind: "pi-native",
+  });
+  const { model } = await openModelRuntime(plan);
+  expect(model).toMatchObject({
+    id: "glm-4.7-flash",
+    provider: "zai",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+  });
+  expect(fs.readdirSync(root)).toEqual([]);
+});

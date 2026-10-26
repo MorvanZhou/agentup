@@ -5,8 +5,8 @@ import {
   formatPreviewScale,
   nextPreviewScale,
   wheelPreviewScale,
-} from "../../src/shared/model/image-preview.js";
-import { svgMarkupToDataUrl } from "../../src/shared/model/svg-image.js";
+} from "../../src/shared/model/preview/image-preview.js";
+import { svgMarkupToDataUrl } from "../../src/shared/model/preview/svg-image.js";
 
 describe("image-preview scale helpers", () => {
   it("clamps and steps scale", () => {

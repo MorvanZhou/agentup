@@ -1,7 +1,7 @@
 import type { ComputedRef, InjectionKey, Ref } from "vue";
 import { computed, inject } from "vue";
 
-import type { AgentUpDelegationStartedData } from "../../../../shared/model/chat";
+import type { AgentUpDelegationStartedData } from "../../../../shared/model/chat/chat";
 
 /** 打开委托过程弹窗所需的最小信息。 */
 export type DelegationProcessTarget = {

@@ -54,6 +54,21 @@ export {
 } from "./delegate.js";
 
 export {
+  AGENTUP_ARTIFACT_CONFIRM_TYPE,
+  DELIVER_ARTIFACTS_TOOL,
+  buildArtifactConfirmPrompt,
+  candidateArtifactPaths,
+  copyStagedArtifactsToParent,
+  createDelegationInboxExtension,
+  createDeliverArtifactsExtension,
+  normalizeArtifactPaths,
+  shouldForceArtifactConfirm,
+  stageArtifactPaths,
+  type DeliverArtifactsState,
+  type StagedArtifact,
+} from "./deliver-artifacts.js";
+
+export {
   BG_KILL_TOOL,
   BG_RUN_TOOL,
   BG_STATUS_TOOL,

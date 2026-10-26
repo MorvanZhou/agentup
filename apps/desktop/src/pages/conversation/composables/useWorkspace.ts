@@ -2,8 +2,8 @@ import { computed, ref, watch, type Ref } from "vue";
 
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type { WorkspaceEntry, WorkspaceFile, WorkspaceScope } from "../../../shared/api/runtime/workspace";
-import { showToast } from "../../../shared/model/toast";
-import { t } from "../../../shared/model/ui-locale";
+import { showToast } from "../../../shared/model/ui/toast";
+import { t } from "../../../shared/model/ui/ui-locale";
 import { joinWorkspacePath, parentWorkspacePath, workspaceBaseName } from "../model/workspace/workspace-path";
 import {
   type WorkspaceTab,
@@ -434,18 +434,37 @@ export function useWorkspace(options: {
         return;
       }
       const target = joinWorkspacePath(directory.value, entry.name);
+      await revealByPath(target);
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    }
+  }
+
+  async function revealByPath(relativePath: string): Promise<void> {
+    const path = relativePath.replace(/^@/, "").trim();
+    if (!path) return;
+    if (!window.agentUp?.revealInFolder) {
+      showToast(t("wsNeedDesktop"), "error");
+      return;
+    }
+    try {
       const absolute = await api.resolveWorkspaceAbsolute(
         options.token.value,
         options.userId.value,
         options.agentId.value,
         options.personal.value,
-        target,
+        path,
         workspaceScope.value,
       );
       await window.agentUp.revealInFolder(absolute);
     } catch (caught) {
       showToast(messageOf(caught), "error");
     }
+  }
+
+  async function revealPreview(): Promise<void> {
+    if (!previewPath.value) return;
+    await revealByPath(previewPath.value);
   }
 
   watch(
@@ -496,6 +515,7 @@ export function useWorkspace(options: {
     remove,
     removeMany,
     reveal,
+    revealPreview,
     addProject,
   };
 }

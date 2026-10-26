@@ -2,7 +2,7 @@ import { computed, type Ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import { showToast } from "../../../shared/model/toast";
+import { showToast } from "../../../shared/model/ui/toast";
 import { injectThreadAgentId } from "../model/thread/thread-agent-id";
 import { injectThreadExtras } from "../model/thread/thread-extras";
 

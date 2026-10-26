@@ -1,7 +1,7 @@
 import { ref, watch, type Ref } from "vue";
 
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import { showToast } from "../../../shared/model/toast";
+import { showToast } from "../../../shared/model/ui/toast";
 import { insertAttachmentReference } from "../model/composer/attachment-ref";
 import { stagedPathsToRemove } from "../model/composer/composer-staged-files";
 

@@ -5,7 +5,9 @@ import type {} from "@assistant-ui/core/store";
 
 import AskUserTool from "./AskUserTool.vue";
 import BashTool from "./BashTool.vue";
+import BgKillTool from "./BgKillTool.vue";
 import BgRunTool from "./BgRunTool.vue";
+import BgStatusTool from "./BgStatusTool.vue";
 import DelegateTool from "./DelegateTool.vue";
 import EditTool from "./EditTool.vue";
 import FindTool from "./FindTool.vue";
@@ -39,9 +41,11 @@ const component = computed(() => {
     case "powershell":
       return BashTool;
     case "bg_run":
-    case "bg_status":
-    case "bg_kill":
       return BgRunTool;
+    case "bg_status":
+      return BgStatusTool;
+    case "bg_kill":
+      return BgKillTool;
     case "grep":
       return GrepTool;
     case "find":

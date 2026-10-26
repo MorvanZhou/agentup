@@ -6,6 +6,7 @@ import type { LocalConfig, ModelConfig } from "../config/load.js";
 import { localeFromRequest, type UiLocale } from "../i18n/index.js";
 import type { BackgroundJobs } from "../session/background/index.js";
 import type { ApprovalBroker } from "../session/hitl/approval/index.js";
+import type { ShellHangBroker } from "../session/hitl/shell-hang/index.js";
 import type { DelegationService } from "../session/delegation/index.js";
 import type { AskUserBroker } from "../session/tools/index.js";
 import type { VisitChats } from "../session/turn/index.js";
@@ -19,6 +20,7 @@ export interface LocalAppDeps {
   chats: VisitChats;
   approvals: ApprovalBroker;
   askUser: AskUserBroker;
+  shellHang: ShellHangBroker;
   delegation: DelegationService;
   backgroundJobs: BackgroundJobs;
   readModel: () => ModelConfig;

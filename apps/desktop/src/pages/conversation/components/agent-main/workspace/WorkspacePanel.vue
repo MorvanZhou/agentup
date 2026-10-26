@@ -11,8 +11,9 @@ import {
 import { computed, ref, toRef, watch } from "vue";
 
 import AppDialog from "../../../../../shared/components/AppDialog.vue";
+import PreviewRevealButton from "../../../../../shared/components/preview/PreviewRevealButton.vue";
 import type { WorkspaceEntry } from "../../../../../shared/api/runtime/workspace";
-import { t, tf } from "../../../../../shared/model/ui-locale";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useWorkspace } from "../../../composables/useWorkspace";
 import { joinWorkspacePath } from "../../../model/workspace/workspace-path";
 import { WORKSPACE_TABS, workspaceTabLabel } from "../../../model/workspace/workspace-roots";
@@ -58,6 +59,7 @@ const {
   rename,
   removeMany,
   reveal,
+  revealPreview,
   addProject,
 } = useWorkspace({
   token: toRef(props, "token"),
@@ -248,6 +250,7 @@ async function confirmRemove(): Promise<void> {
       >
         {{ saving ? t("saving") : t("save") }}
       </button>
+      <PreviewRevealButton v-if="previewing" @click="revealPreview" />
       <button
         v-if="previewing"
         type="button"
@@ -285,6 +288,7 @@ async function confirmRemove(): Promise<void> {
       :loading="loading"
       :draft="draft"
       @update:draft="draft = $event"
+      @reveal="revealPreview"
     />
     <AppDialog :open="nameOpen" :title="nameTitle" @update:open="nameOpen = $event">
       <!-- 新建名称 -->

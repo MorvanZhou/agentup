@@ -3,7 +3,7 @@ import { useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 import { onBeforeUnmount, ref, watch } from "vue";
 
-import ImagePreview from "../../../../../../../shared/components/ImagePreview.vue";
+import ImagePreview from "../../../../../../../shared/components/preview/ImagePreview.vue";
 
 /** 附件条图片缩略图（仅图、不显示文件名）；点击用 ImagePreview 放大。 */
 const file = useAuiState((s) => s.attachment.file);

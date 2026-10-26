@@ -12,11 +12,11 @@ import { unpackTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
 import { AgentSourceError, loadAgentSource, preparePublishSource } from "../src/package/source.js";
 
-const agentDir = path.resolve(import.meta.dirname, "../../agent_examples/respiratory-doctor/agent");
-const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/weather/agent");
-const exchangeRateDir = path.resolve(import.meta.dirname, "../../agent_examples/exchange-rate/agent");
-const worldClockDir = path.resolve(import.meta.dirname, "../../agent_examples/world-clock/agent");
-const cryptoPriceDir = path.resolve(import.meta.dirname, "../../agent_examples/crypto-price/agent");
+const agentDir = path.resolve(import.meta.dirname, "../../agent_examples/single/respiratory-doctor/agent");
+const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/single/weather/agent");
+const exchangeRateDir = path.resolve(import.meta.dirname, "../../agent_examples/single/exchange-rate/agent");
+const worldClockDir = path.resolve(import.meta.dirname, "../../agent_examples/single/world-clock/agent");
+const cryptoPriceDir = path.resolve(import.meta.dirname, "../../agent_examples/single/crypto-price/agent");
 
 it("loads the respiratory doctor package directly from agent", () => {
   const source = loadAgentSource(agentDir);
@@ -91,6 +91,37 @@ it("loads and runs the weather source without MCP", () => {
   expect((weather.hourly as unknown[]).length).toBe(24);
   expect(Array.isArray(weather.daily)).toBe(true);
   expect((weather.daily as unknown[]).length).toBe(7);
+});
+
+it("runs weather history lookup for a past date", () => {
+  const script = path.join(
+    weatherDir,
+    ".agentup",
+    "skills",
+    "check-weather",
+    "scripts",
+    "check-weather.mjs",
+  );
+  const output = runSkillScript(script, ["深圳", "2026-10-19"]);
+  const history = JSON.parse(output) as Record<string, unknown>;
+  expect(history).toMatchObject({
+    city: "深圳",
+    period: { start: "2026-10-19", end: "2026-10-19" },
+  });
+  expect(history.daily).toEqual([
+    expect.objectContaining({
+      date: "2026-10-19",
+      weather: "多云",
+      high_c: 28,
+      low_c: 22,
+      precip_mm: 0,
+    }),
+  ]);
+  expect(Array.isArray(history.hourly)).toBe(true);
+  expect((history.hourly as unknown[]).length).toBe(24);
+
+  expect(() => runSkillScript(script, ["深圳", "2099-01-01"])).toThrow(/历史天气仅支持今天及以前/);
+  expect(() => runSkillScript(script, ["杭州", "2026-10-01", "2026-11-15"])).toThrow(/最多 31 天/);
 });
 
 it("loads and runs the exchange-rate source without MCP", () => {

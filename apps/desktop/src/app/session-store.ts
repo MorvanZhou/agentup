@@ -1,5 +1,5 @@
-import type { Session } from "../shared/model/runtime";
-import { GUEST_SESSION, isGuestSession } from "../shared/model/session";
+import type { Session } from "../shared/model/runtime/runtime";
+import { GUEST_SESSION, isGuestSession } from "../shared/model/session/session";
 
 const LEGACY_KEY = "agentup.session";
 

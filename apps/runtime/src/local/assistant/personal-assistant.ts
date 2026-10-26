@@ -69,10 +69,24 @@ export function ensurePersonalAssistant(
       background: t("pa.defaultBackground", locale),
     });
   }
-  const stored = localizeFactoryDefaults(readStoredProfile(root), locale);
+  const raw = readStoredProfile(root);
+  const stored = localizeFactoryDefaults(raw, locale);
+  if (
+    stored.name !== raw.name ||
+    stored.role !== raw.role ||
+    stored.background !== raw.background
+  ) {
+    writeStoredProfile(root, {
+      ...raw,
+      name: stored.name,
+      role: stored.role,
+      background: stored.background,
+    });
+  }
   syncSystemPrompt(root, composeSystemPrompt(stored, locale));
   return root;
 }
+
 
 export function readPersonalAssistantProfile(
   userDataRoot: string,
@@ -272,11 +286,32 @@ function localizeFactoryDefaults(profile: StoredProfile, locale: UiLocale): Stor
   };
 }
 
+/** 仍视为出厂默认、可随 locale / 新文案替换的历史词条（含改版前）。 */
+const FACTORY_ROLE_ALIASES = new Set([
+  "我的助理",
+  "Personal assistant",
+  "协调助理",
+  "Coordinator",
+]);
+
+const FACTORY_BACKGROUND_ALIASES = new Set([
+  "优先理解用户目标，使用用户为你配置的 Skills、MCP 与工作规则完成任务。",
+  "Focus on the user's goals. Use the Skills, MCP, and work rules they configured for you.",
+  "你是用户在 AgentUp 中的私人助理。优先理解用户目标，使用用户为你配置的 Skills、AGENTS.md 和 MCP 完成任务。",
+  "你是用户的协调者：对齐目标、分发任务、汇总进度。有匹配专家时先问用户派给谁；取消或失败须再派或问用户，禁止自行接手专家工作。你配置的 Skills/MCP 用于信息对齐与轻量杂务。",
+  "You are the user's coordinator: align goals, route work, report progress. When a specialist matches, ask who should do it. On cancel/failure, re-delegate or ask—never take over specialist work. Use your Skills/MCP for alignment and light chores.",
+]);
+
 function localizeDefaultValue(
   value: string,
   key: "pa.defaultRole" | "pa.defaultBackground",
   locale: UiLocale,
 ): string {
-  if (value === t(key, "zh") || value === t(key, "en")) return t(key, locale);
+  const aliases = key === "pa.defaultRole" ? FACTORY_ROLE_ALIASES : FACTORY_BACKGROUND_ALIASES;
+  if (value === t(key, "zh") || value === t(key, "en") || aliases.has(value)) {
+    return t(key, locale);
+  }
   return value;
 }
+
+

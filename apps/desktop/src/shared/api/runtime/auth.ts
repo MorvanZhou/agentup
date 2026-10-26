@@ -1,4 +1,4 @@
-import type { Session } from "../../model/runtime";
+import type { Session } from "../../model/runtime/runtime";
 
 import { DesktopApiError } from "./error";
 import type { RuntimeHttp } from "./http";

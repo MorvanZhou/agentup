@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { surfaceHitlAgentId } from "../src/session/hitl/surface.js";
+import { delegationHitlAttribution, surfaceHitlAgentId } from "../src/session/hitl/surface.js";
 
 it("keeps origin agent when not nested", () => {
   expect(
@@ -30,12 +30,24 @@ it("does not surface visit-origin child HITL even when nested under busy parent"
   ).toBe("weather");
 });
 
-it("keeps child when nesting parent is no longer busy (async delegate)", () => {
+it("labels a delegation card with the specialist name and a short brief", () => {
+  expect(
+    delegationHitlAttribution({
+      toAgentName: "Remy",
+      brief: "把迷宫需求问清楚，不要写代码。",
+    }),
+  ).toEqual({
+    askedByName: "Remy",
+    taskLabel: "把迷宫需求问清楚，不要写代码。",
+  });
+});
+
+it("surfaces async delegation HITL to the parent even when the parent is idle", () => {
   expect(
     surfaceHitlAgentId("weather", {
       nestingParentId: "personal-assistant",
       busyAgentIds: [],
       origin: "delegation",
     }),
-  ).toBe("weather");
+  ).toBe("personal-assistant");
 });

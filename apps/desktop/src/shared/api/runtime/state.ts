@@ -1,4 +1,4 @@
-import type { UserState } from "../../model/runtime";
+import type { UserState } from "../../model/runtime/runtime";
 
 import type { RuntimeHttp } from "./http";
 import { readUserState } from "./readers";

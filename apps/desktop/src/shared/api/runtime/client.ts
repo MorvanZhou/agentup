@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 
-import type { AskUserAnswer } from "../../model/chat";
+import type { AskUserAnswer } from "../../model/chat/chat";
 import type {
   AgentCard,
   AgentSourcePreview,
@@ -20,7 +20,7 @@ import type {
   UserSkill,
   UserState,
   UserPreferences,
-} from "../../model/runtime";
+} from "../../model/runtime/runtime";
 
 import * as agentsApi from "./agents";
 import * as attachmentsApi from "./attachments";
@@ -254,6 +254,14 @@ export class DesktopApi {
     return settingsApi.setProviderModelEnabled(this.http, token, ref, enabled, locale);
   }
 
+  removeCustomProviderModel(
+    token: string,
+    ref: { templateId: string; modelId: string },
+    locale?: UiLocale,
+  ): Promise<ProviderSettings> {
+    return settingsApi.removeCustomProviderModel(this.http, token, ref, locale);
+  }
+
   setProviderActiveModel(
     token: string,
     ref: { templateId: string; modelId: string },
@@ -355,6 +363,14 @@ export class DesktopApi {
     scope: "once" | "session" | "agent" = "once",
   ): Promise<void> {
     return chatApi.decideApproval(this.http, token, approvalId, allow, scope);
+  }
+
+  decideShellHang(
+    token: string,
+    hangId: string,
+    action: "kill" | "wait",
+  ): Promise<void> {
+    return chatApi.decideShellHang(this.http, token, hangId, action);
   }
 
   answerAskUser(token: string, askUserId: string, answer: AskUserAnswer): Promise<void> {

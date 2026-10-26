@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import type { InvocableSkill } from "../../../../../../../shared/model/runtime";
+import type { InvocableSkill } from "../../../../../../../shared/model/runtime/runtime";
 
 export type SkillPickerAnchor = {
   /** 视口坐标：光标左侧 */

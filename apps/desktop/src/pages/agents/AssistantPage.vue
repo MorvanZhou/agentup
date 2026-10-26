@@ -2,15 +2,17 @@
 import { ChevronDownIcon, FolderUpIcon, SearchIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 
+import AgentAvatarField from "../../shared/components/avatar/AgentAvatarField.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../shared/components/AppDropdownMenu.vue";
-import CommunitySkillDialog from "../../shared/components/CommunitySkillDialog.vue";
+import CommunitySkillDialog from "../../shared/components/skills/CommunitySkillDialog.vue";
 import UiFormSkeleton from "../../shared/components/UiFormSkeleton.vue";
+import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../../shared/model/avatar/personal-assistant-default";
 import { DesktopApi, DesktopApiError } from "../../shared/api/runtime";
 import { useDesktop } from "../../app/desktop";
-import { formatApiError } from "../../shared/model/package-issues";
-import { showToast } from "../../shared/model/toast";
-import { readUiLocale, t } from "../../shared/model/ui-locale";
-import type { UserSkill } from "../../shared/model/runtime";
+import { formatApiError } from "../../shared/model/runtime/package-issues";
+import { showToast } from "../../shared/model/ui/toast";
+import { readUiLocale, t } from "../../shared/model/ui/ui-locale";
+import type { UserSkill } from "../../shared/model/runtime/runtime";
 import { MCP_PLACEHOLDER } from "../settings/composables/useUserMcp";
 
 const api = new DesktopApi();
@@ -19,6 +21,9 @@ const { session, refresh } = useDesktop();
 const name = ref("");
 const role = ref("");
 const background = ref("");
+const avatarPreview = ref("");
+const avatarDataUrl = ref("");
+const officialAvatarId = ref("");
 const mcpText = ref("");
 const rulesText = ref("");
 const skills = ref<UserSkill[]>([]);
@@ -58,6 +63,9 @@ async function loadAll(): Promise<void> {
     name.value = profile.name;
     role.value = profile.role;
     background.value = profile.background;
+    avatarPreview.value = profile.avatarUrl ?? "";
+    avatarDataUrl.value = "";
+    officialAvatarId.value = "";
     mcpText.value =
       mcp && Object.keys(mcp).length ? `${JSON.stringify(mcp, null, 2)}\n` : "";
     rulesText.value = rules;
@@ -126,6 +134,12 @@ async function removeSkill(skillName: string): Promise<void> {
   }
 }
 
+function onAvatarPick(dataUrl: string, officialId: string): void {
+  avatarDataUrl.value = dataUrl;
+  avatarPreview.value = dataUrl;
+  officialAvatarId.value = officialId;
+}
+
 async function submit(): Promise<void> {
   if (!session.value || !canSubmit.value || saving.value) return;
   const mcpServers = parseMcpServers(mcpText.value);
@@ -143,11 +157,13 @@ async function submit(): Promise<void> {
         name: name.value.trim(),
         role: role.value.trim(),
         background: background.value.trim(),
+        ...(avatarDataUrl.value ? { avatarDataUrl: avatarDataUrl.value } : {}),
       },
       readUiLocale(),
     );
     await api.saveUserMcp(session.value.token, session.value.userId, mcpServers);
     await api.saveUserAgentsMd(session.value.token, session.value.userId, rulesText.value);
+    avatarDataUrl.value = "";
     await refresh();
     showToast(t("assistantProfileSaved"), "success");
   } catch (caught) {
@@ -177,6 +193,16 @@ async function submit(): Promise<void> {
           :placeholder="t('assistantNamePlaceholder')"
         />
       </label>
+
+      <AgentAvatarField
+        :name="name"
+        :preview="avatarDataUrl || avatarPreview"
+        :fallback="PERSONAL_ASSISTANT_DEFAULT_AVATAR"
+        :busy="saving"
+        :selected-id="officialAvatarId"
+        :hint="t('assistantAvatarHint')"
+        @pick="onAvatarPick"
+      />
 
       <label class="grid gap-1.5">
         <span class="text-sm font-medium text-foreground">

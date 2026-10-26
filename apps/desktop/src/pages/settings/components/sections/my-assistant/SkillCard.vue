@@ -3,8 +3,8 @@ import { EllipsisVerticalIcon, FolderUpIcon, Trash2Icon, UploadIcon } from "@luc
 import { computed } from "vue";
 
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
-import type { UserSkill } from "../../../../../shared/model/runtime";
-import { t, tf } from "../../../../../shared/model/ui-locale";
+import type { UserSkill } from "../../../../../shared/model/runtime/runtime";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 
 const props = defineProps<{
   skill: UserSkill;

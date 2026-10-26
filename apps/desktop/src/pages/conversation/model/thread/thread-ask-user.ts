@@ -1,7 +1,7 @@
 import type { ComputedRef, InjectionKey, Ref } from "vue";
 import { computed, inject } from "vue";
 
-import type { AgentUpAskUserData } from "../../../../shared/model/chat";
+import type { AgentUpAskUserData } from "../../../../shared/model/chat/chat";
 
 export const threadAskUserKey = Symbol("threadAskUser") as InjectionKey<
   Ref<AgentUpAskUserData | undefined> | ComputedRef<AgentUpAskUserData | undefined>

@@ -4,8 +4,8 @@ import { useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 import { CircleCheckIcon, CircleIcon, ListTodoIcon, XIcon } from "@lucide/vue";
 
-import { isContextResetMessage } from "../../../../../../shared/model/chat";
-import { t } from "../../../../../../shared/model/ui-locale";
+import { isContextResetMessage } from "../../../../../../shared/model/chat/chat";
+import { t } from "../../../../../../shared/model/ui/ui-locale";
 import {
   currentTodoParts,
   isPlanComplete,

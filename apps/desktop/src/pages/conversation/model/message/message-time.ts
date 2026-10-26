@@ -1,4 +1,4 @@
-import { isContextResetMessage } from "../../../../shared/model/chat";
+import { isContextResetMessage } from "../../../../shared/model/chat/chat";
 
 /** 相邻消息间隔超过该值时显示时间分隔（与微信常见阈值一致）。 */
 export const MESSAGE_TIME_GAP_MS = 5 * 60 * 1000;

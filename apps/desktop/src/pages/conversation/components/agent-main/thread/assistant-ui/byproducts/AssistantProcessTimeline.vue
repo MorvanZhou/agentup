@@ -3,7 +3,7 @@ import { PartByIndexProvider, useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 import { computed } from "vue";
 
-import { t } from "../../../../../../../shared/model/ui-locale";
+import { t } from "../../../../../../../shared/model/ui/ui-locale";
 import { buildAssistantTimeline } from "../../../../../model/message/assistant-process";
 import { injectPendingAskUserToolCallId } from "../../../../../model/thread/thread-ask-user";
 import { injectPendingApprovalToolCallId } from "../../../../../model/thread/thread-approval";

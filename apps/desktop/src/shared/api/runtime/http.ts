@@ -1,4 +1,4 @@
-import type { PackageIssue } from "../../model/runtime";
+import type { PackageIssue } from "../../model/runtime/runtime";
 
 import { DesktopApiError } from "./error";
 

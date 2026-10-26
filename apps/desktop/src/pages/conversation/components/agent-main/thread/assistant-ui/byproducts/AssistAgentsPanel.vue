@@ -6,9 +6,9 @@ import {
 } from "@lucide/vue";
 import { computed, onUnmounted, ref, watch } from "vue";
 
-import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
-import { showToast } from "../../../../../../../shared/model/toast";
-import { t, tf } from "../../../../../../../shared/model/ui-locale";
+import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
+import { showToast } from "../../../../../../../shared/model/ui/toast";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import { formatElapsedMs } from "../../../../../model/message/elapsed";
 import type { AssistAgentRef } from "../../../../../model/message/message-assistants";
 import { injectThreadDelegation } from "../../../../../model/thread/thread-delegation";
@@ -89,17 +89,24 @@ function avatarUrl(assist: AssistAgentRef): string | undefined {
 function statusLabel(assist: AssistAgentRef): string {
   if (assist.status === "running") return t("assistStatusRunning");
   if (assist.status === "failed") return t("assistStatusFailed");
+  // 异步派发：父回合工具已结束，但专家可能仍在跑 → 勿标「已完成」。
+  if (assist.asyncDispatched) return t("assistStatusDispatched");
   return t("assistStatusDone");
 }
 
 function statusTone(assist: AssistAgentRef): string {
-  if (assist.status === "running") {
+  if (assist.status === "running" || assist.asyncDispatched) {
     return "bg-accent/10 text-accent";
   }
   if (assist.status === "failed") {
     return "bg-danger-soft text-destructive";
   }
   return "bg-paper-deep text-muted-foreground";
+}
+
+/** 同步协助中，或异步已派发（对方可能仍在执行）。 */
+function isAssisting(assist: AssistAgentRef): boolean {
+  return assist.status === "running" || Boolean(assist.asyncDispatched);
 }
 
 function assistStartMs(assist: AssistAgentRef): number | undefined {
@@ -189,7 +196,7 @@ function openProcess(assist: AssistAgentRef): void {
         class="relative inline-flex rounded-full ring-2 ring-background"
         :class="[
           index > 0 ? '-ml-1.5' : '',
-          assist.status === 'running' ? 'animate-pulse motion-reduce:animate-none' : '',
+          isAssisting(assist) ? 'animate-pulse motion-reduce:animate-none' : '',
         ]"
         :style="{ zIndex: index + 1 }"
         :title="displayName(assist)"
@@ -337,6 +344,25 @@ function openProcess(assist: AssistAgentRef): void {
           >
             {{ t("assistRunning") }}
           </p>
+          <!-- 异步派发：无同步回复，提示正在执行并可点开过程 -->
+          <div
+            v-else-if="assist.asyncDispatched"
+            class="flex min-w-0 flex-col gap-2"
+          >
+            <p class="mb-0 text-sm text-muted-foreground">
+              {{ t("assistAsyncRunning") }}
+            </p>
+            <button
+              v-if="canOpenProcess(assist)"
+              type="button"
+              class="inline-flex min-h-7 w-fit cursor-pointer items-center gap-1 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+              :aria-label="tf('assistSeeProcessAria', { name: displayName(assist) })"
+              @click="openProcess(assist)"
+            >
+              {{ t("assistSeeProcess") }}
+              <ListTreeIcon class="size-3.5 shrink-0" aria-hidden="true" />
+            </button>
+          </div>
           <p
             v-else-if="assist.reply"
             class="mb-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"

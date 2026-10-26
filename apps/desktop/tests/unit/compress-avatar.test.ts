@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { AVATAR_MAX_EDGE, fitAvatarSize } from "../../src/shared/model/compress-avatar.js";
+import { AVATAR_MAX_EDGE, fitAvatarSize } from "../../src/shared/model/avatar/compress-avatar.js";
 
 it("keeps small images unchanged", () => {
   expect(fitAvatarSize(128, 96)).toEqual({ width: 128, height: 96 });

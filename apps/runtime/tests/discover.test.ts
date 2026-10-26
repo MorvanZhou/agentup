@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   discoverRecruitedAgents,
+  formatAgentSearchRequired,
   formatDiscoveredAgentsContext,
   scoreAgent,
 } from "../src/session/delegation/discover.js";
@@ -78,6 +79,32 @@ describe("discoverRecruitedAgents", () => {
     expect(scoreAgent(agent, "气象")).toBeGreaterThan(0);
     expect(scoreAgent(agent, "天气预报")).toBeGreaterThan(0);
   });
+
+  it("scores AGENTS.md work rules when the card itself does not match", () => {
+    const agent = card({
+      agentId: "cody",
+      name: "Cody",
+      role: "软件功能实现",
+      background: "依据 brief 交付可运行改动",
+      agentsText: "主责：在工作区实现可运行改动。范围不清时先找需求澄清。",
+    });
+    expect(scoreAgent(agent, "我要开发一个走迷宫的小游戏")).toBe(0);
+    expect(scoreAgent(agent, "需求澄清")).toBeGreaterThan(0);
+    const found = discoverRecruitedAgents(
+      [agent, card({ agentId: "amy", name: "Amy", role: "汇率员" })],
+      "需求澄清",
+    );
+    expect(found.agents.map((item) => item.agentId)).toEqual(["cody"]);
+  });
+});
+
+describe("formatAgentSearchRequired", () => {
+  it("tells the assistant to search when nothing lexical matched", () => {
+    const text = formatAgentSearchRequired();
+    expect(text).toContain("Roster search");
+    expect(text).toContain("Call agent_search");
+    expect(text).toContain("before ask_user");
+  });
 });
 
 describe("formatDiscoveredAgentsContext", () => {
@@ -102,7 +129,12 @@ describe("formatDiscoveredAgentsContext", () => {
       truncated: true,
     });
     expect(text).toContain("Relevant recruited agents");
-    expect(text).toContain("collaboration workspace");
+    expect(text).toContain("not an agent_search result");
+    expect(text).toContain("Call agent_search");
+    expect(text).toContain("Stay inside your own role");
+    expect(text).toContain("ask the user who should do the work");
+
+    expect(text).toContain("Do not silently self-serve");
     expect(text).toContain("agent_search");
     expect(text).toContain("小汇");
     expect(text).toContain("agent_id: fx");
@@ -111,3 +143,4 @@ describe("formatDiscoveredAgentsContext", () => {
     expect(text).toContain("More agents available");
   });
 });
+

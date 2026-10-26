@@ -1,6 +1,6 @@
 import { getCurrentScope, onScopeDispose, watch, type Ref } from "vue";
 
-import { readUiLocale } from "../../../shared/model/ui-locale";
+import { readUiLocale } from "../../../shared/model/ui/ui-locale";
 
 /**
  * 订阅 runtime `/turn-progress` SSE：

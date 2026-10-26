@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 
-import { t } from "../../../../shared/model/ui-locale";
+import { t } from "../../../../shared/model/ui/ui-locale";
 
 export type AgentsSection = "assistant" | "local" | "recruited" | "owned";
 

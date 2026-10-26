@@ -17,8 +17,17 @@ withDefaults(
     description?: string;
     /** md：确认框默认；lg：过程/历史等较宽内容 */
     size?: "md" | "lg";
+    /** start：确认框；center：头像与标题垂直居中 */
+    align?: "start" | "center";
+    titleClass?: string;
+    descriptionClass?: string;
   }>(),
-  { size: "md" },
+  {
+    size: "md",
+    align: "start",
+    titleClass: "text-base font-semibold tracking-tight",
+    descriptionClass: "mb-0 mt-3 text-sm leading-snug text-muted-foreground",
+  },
 );
 
 defineEmits<{ "update:open": [value: boolean] }>();
@@ -37,14 +46,17 @@ defineEmits<{ "update:open": [value: boolean] }>();
             : 'max-h-[min(80dvh,36rem)] w-[min(calc(100vw-2rem),32rem)]'
         "
       >
-        <!-- 弹窗页头：可选 leading（如 Agent 头像） -->
-        <header class="flex shrink-0 items-start gap-3 px-4 pt-3 pb-1">
-          <div v-if="$slots.leading" class="mt-0.5 shrink-0">
+        <!-- 弹窗页头：可选 leading（如 Agent 头像）；标题与说明在其右侧 -->
+        <header
+          class="flex shrink-0 px-4"
+          :class="align === 'center' ? 'items-center gap-4 pt-4 pb-3' : 'items-start gap-3 pt-3 pb-1'"
+        >
+          <div v-if="$slots.leading" class="shrink-0" :class="align === 'start' ? 'mt-0.5' : ''">
             <slot name="leading" />
           </div>
           <div class="min-w-0 flex-1">
-            <DialogTitle class="text-base font-semibold tracking-tight">{{ title }}</DialogTitle>
-            <DialogDescription v-if="description" class="mb-0 mt-3 text-sm leading-snug text-muted-foreground">
+            <DialogTitle :class="titleClass">{{ title }}</DialogTitle>
+            <DialogDescription v-if="description" :class="descriptionClass">
               {{ description }}
             </DialogDescription>
           </div>

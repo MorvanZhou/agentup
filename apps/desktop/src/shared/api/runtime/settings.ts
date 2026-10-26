@@ -6,7 +6,7 @@ import type {
   UiLocale,
   UserPreferences,
   UserSkill,
-} from "../../model/runtime";
+} from "../../model/runtime/runtime";
 
 import { DesktopApiError } from "./error";
 import type { RuntimeHttp } from "./http";
@@ -126,6 +126,25 @@ export async function refreshProviderModels(
       ),
       token,
       {},
+    ),
+  );
+}
+
+export async function removeCustomProviderModel(
+  http: RuntimeHttp,
+  token: string,
+  ref: ProviderModelRef,
+  locale?: UiLocale,
+): Promise<ProviderSettings> {
+  return readProviderSettings(
+    await http.request(
+      providerPath(
+        `/settings/provider/connections/${encodeURIComponent(ref.templateId)}/custom-models/${encodeURIComponent(ref.modelId)}`,
+        locale,
+      ),
+      token,
+      undefined,
+      "DELETE",
     ),
   );
 }

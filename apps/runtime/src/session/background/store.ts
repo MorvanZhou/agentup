@@ -83,6 +83,19 @@ export class BackgroundJobStore {
     return items;
   }
 
+  /** 本机 `users/` 下可加载后台作业的账号目录。 */
+  listUserIds(): string[] {
+    if (!this.userDataRoot) return [];
+    const users = path.join(this.userDataRoot, "users");
+    if (!fs.existsSync(users)) return [];
+    const ids: string[] = [];
+    for (const entry of fs.readdirSync(users, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !isSafeUserId(entry.name)) continue;
+      ids.push(entry.name);
+    }
+    return ids;
+  }
+
   logPath(userId: string, jobId: string): string | undefined {
     if (!this.userDataRoot) return undefined;
     return path.join(this.dir(userId), `${jobId}.log`);

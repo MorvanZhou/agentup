@@ -1,8 +1,10 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import type { UIMessage } from "ai";
 
 import type { ModelConfig } from "../../config/load.js";
+import { t } from "../../i18n/index.js";
 import { HttpPackageSource } from "../../control/client.js";
 import { composeSystemPrompt } from "../../local/agents/identity.js";
 import { listDiskSyncedAgents } from "../../local/agents/disk-synced.js";
@@ -12,11 +14,18 @@ import {
   localAgentVisit,
   type LocalAgentCard,
 } from "../../local/agents/local-agent.js";
-import { ensurePersonalAssistant, PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
+import {
+  ensurePersonalAssistant,
+  PERSONAL_ASSISTANT_ID,
+  personalAssistantRoot,
+} from "../../local/assistant/personal-assistant.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import type { ApprovalBroker } from "../hitl/approval/index.js";
+import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import type { AskUserBroker } from "../tools/ask-user.js";
+import { copyStagedArtifactsToParent } from "../tools/deliver-artifacts.js";
 import type { AsyncWakeItem } from "../wake/index.js";
+import { ensureCwdLayout } from "../workspace/cwd-layout.js";
 import { DelegationProgressHub, type DelegationStartedEvent } from "./progress.js";
 import { readDelegationHistory, runDelegatedPrompt } from "./run.js";
 import { DelegationStore } from "./store.js";
@@ -40,6 +49,7 @@ export type DelegationServiceOptions = {
   getModel: () => ModelConfig;
   approvals: ApprovalBroker;
   askUser: AskUserBroker;
+  shellHang?: ShellHangBroker;
   /**
    * 异步完成：排队空闲唤醒（不写可见历史气泡）。
    * list/ack 若尚未 notified 会再调 notifyParent 做恢复。
@@ -59,6 +69,8 @@ export class DelegationService {
   private readonly slotWaiters = new Map<string, Array<() => void>>();
   /** taskId -> 可独立取消的 AbortController（与父 turn signal 并联） */
   private readonly controllers = new Map<string, AbortController>();
+  /** 本进程创建并开始的任务；重启收尾不得把它标成退出中断。 */
+  private readonly owned = new Set<string>();
   readonly progress = new DelegationProgressHub();
 
   constructor(private readonly options: DelegationServiceOptions) {
@@ -119,6 +131,10 @@ export class DelegationService {
       fromAgentId?: string;
     } = {},
   ): DelegationTask[] {
+    // 愈合历史：旧版 sync（wait）终态未标 seen/notified，会反复进桌面 toast。
+    for (const task of this.store.list(userId)) {
+      this.settleIfSync(task);
+    }
     return this.store.list(userId, options);
   }
 
@@ -128,6 +144,29 @@ export class DelegationService {
 
   acknowledge(taskId: string): DelegationTask | undefined {
     return this.store.update(taskId, { seen: true });
+  }
+
+  /**
+   * 进程退出后盘上仍是 running / pending_auth 的委托没有执行体。
+   * 标失败并走终态收尾：异步唤醒父会话说明已中断；同步只闭合，不占「进行中」。
+   * 本进程已开始的任务跳过。
+   */
+  recoverInterrupted(): DelegationTask[] {
+    const settled: DelegationTask[] = [];
+    for (const userId of this.store.listUserIds()) {
+      for (const task of this.store.list(userId)) {
+        if (task.status !== "running" && task.status !== "pending_auth") continue;
+        if (this.owned.has(task.id) || this.controllers.has(task.id)) continue;
+        const next = this.store.update(task.id, {
+          status: "failed",
+          error: t("work.interruptedByExit"),
+        });
+        if (!next) continue;
+        this.afterTerminal(next);
+        settled.push(this.store.get(task.id) ?? next);
+      }
+    }
+    return settled;
   }
 
   /**
@@ -155,9 +194,7 @@ export class DelegationService {
         status: "cancelled",
         error: "用户已取消",
       }) ?? task;
-    if (!updated.wait) {
-      this.notifyParent(updated);
-    }
+    this.afterTerminal(updated);
     return this.store.get(taskId) ?? updated;
   }
 
@@ -195,6 +232,7 @@ export class DelegationService {
         background: item.background,
         remark: item.remark,
         ...(item.systemText ? { systemText: item.systemText } : {}),
+        ...(item.agentsText ? { agentsText: item.agentsText } : {}),
       });
     }
 
@@ -287,6 +325,7 @@ export class DelegationService {
         wait,
       });
       this.store.update(task.id, { status: "running" });
+      this.owned.add(task.id);
       this.progress.emitStarted({
         taskId: task.id,
         userId: task.userId,
@@ -337,7 +376,7 @@ export class DelegationService {
           status: "cancelled",
           error: "用户已取消",
         });
-        if (cancelled && !cancelled.wait) this.notifyParent(cancelled);
+        this.afterTerminal(cancelled);
         return;
       }
 
@@ -354,13 +393,17 @@ export class DelegationService {
             parentAgentId: task.fromAgentId,
             signal: linked,
             progress: this.progress,
+            shellHang: this.options.shellHang,
           },
         );
         const latest = this.store.get(task.id);
         if (latest?.status === "cancelled") {
-          if (!latest.wait) this.notifyParent(latest);
+          this.afterTerminal(latest);
           return;
         }
+        const artifactPatch = outcome.artifactsConfirmed
+          ? { artifacts: outcome.artifacts }
+          : {};
         const cancelled =
           linked.aborted ||
           (typeof outcome.error === "string" && /取消|abort|cancelled/i.test(outcome.error));
@@ -369,30 +412,39 @@ export class DelegationService {
             status: "cancelled",
             error: "用户已取消",
             resultSummary: outcome.text || undefined,
+            ...artifactPatch,
           });
         } else if (outcome.error && !outcome.text) {
-          this.store.update(task.id, { status: "failed", error: outcome.error, resultSummary: "" });
+          this.store.update(task.id, {
+            status: "failed",
+            error: outcome.error,
+            resultSummary: "",
+            ...artifactPatch,
+          });
         } else if (outcome.error) {
           this.store.update(task.id, {
             status: "failed",
             error: outcome.error,
             resultSummary: outcome.text,
+            ...artifactPatch,
           });
         } else {
           this.store.update(task.id, {
             status: "completed",
             resultSummary: outcome.text,
             error: undefined,
+            ...artifactPatch,
           });
         }
         const finished = this.store.get(task.id);
-        if (finished && !finished.wait) {
-          this.notifyParent(finished);
+        if (finished?.wait) {
+          this.deliverTaskArtifacts(finished, path.join(visit.root, "cwd"));
         }
+        this.afterTerminal(this.store.get(task.id));
       } catch (error) {
         const latest = this.store.get(task.id);
         if (latest?.status === "cancelled") {
-          if (!latest.wait) this.notifyParent(latest);
+          this.afterTerminal(latest);
           return;
         }
         const aborted = linked.aborted;
@@ -405,10 +457,7 @@ export class DelegationService {
           status: aborted ? "cancelled" : "failed",
           error: message,
         });
-        const finished = this.store.get(task.id);
-        if (finished && !finished.wait) {
-          this.notifyParent(finished);
-        }
+        this.afterTerminal(this.store.get(task.id));
       } finally {
         unmark();
         this.releaseSlot(task.userId);
@@ -417,7 +466,7 @@ export class DelegationService {
       // acquireSlot 因 abort 拒绝
       const latest = this.store.get(taskId);
       if (latest?.status === "cancelled") {
-        if (!latest.wait) this.notifyParent(latest);
+        this.afterTerminal(latest);
         return;
       }
       const aborted = linked.aborted;
@@ -430,7 +479,7 @@ export class DelegationService {
         status: aborted ? "cancelled" : "failed",
         error: message,
       });
-      if (finished && !finished.wait) this.notifyParent(finished);
+      this.afterTerminal(finished);
     } finally {
       this.controllers.delete(taskId);
     }
@@ -511,9 +560,10 @@ export class DelegationService {
   /**
    * 异步结果 → 空闲唤醒队列（Pi display:false + triggerTurn）。
    * 不再 appendCustomMessageEntry 进可见历史。
+   * sync（wait=true）结果已作 tool result，不走 wake。
    */
   notifyParent(task: DelegationTask): void {
-    if (task.notified) return;
+    if (task.wait || task.notified) return;
     if (
       task.status !== "completed" &&
       task.status !== "failed" &&
@@ -528,17 +578,25 @@ export class DelegationService {
       : isLocalAgentId(task.fromAgentId)
         ? "local"
         : "recruited";
+    const artifactNote =
+      task.artifacts && task.artifacts.length > 0
+        ? `\n\n已确认投递 ${task.artifacts.length} 个产物到你的 ARTIFACT/from-${task.toAgentId}/。`
+        : task.artifacts
+          ? "\n\n专家确认本次无产物需要投递。"
+          : "";
     const body =
       task.status === "completed"
         ? `【委托完成】专家「${task.toAgentName}」（${task.toAgentId}）已完成子任务。\n\n` +
-          `任务：${task.brief}\n\n结果：\n${task.resultSummary ?? ""}`
+          `任务：${task.brief}\n\n结果：\n${task.resultSummary ?? ""}${artifactNote}`
         : task.status === "cancelled"
           ? `【委托已取消】专家「${task.toAgentName}」（${task.toAgentId}）的子任务已停止。\n\n` +
             `任务：${task.brief}` +
-            (task.resultSummary ? `\n\n部分输出：\n${task.resultSummary}` : "")
+            (task.resultSummary ? `\n\n部分输出：\n${task.resultSummary}` : "") +
+            artifactNote
           : `【委托失败】专家「${task.toAgentName}」（${task.toAgentId}）未能完成子任务。\n\n` +
             `任务：${task.brief}\n\n原因：${task.error ?? "未知错误"}` +
-            (task.resultSummary ? `\n\n部分输出：\n${task.resultSummary}` : "");
+            (task.resultSummary ? `\n\n部分输出：\n${task.resultSummary}` : "") +
+            artifactNote;
     this.options.enqueueWake({
       id: `delegation:${task.id}`,
       userId: task.userId,
@@ -552,12 +610,95 @@ export class DelegationService {
         toAgentId: task.toAgentId,
         toAgentName: task.toAgentName,
         status: task.status,
+        artifactCount: task.artifacts?.length ?? 0,
       },
       markDelivered: () => {
         this.store.update(task.id, { notified: true });
       },
     });
   }
+
+  /**
+   * 父会话 agent_start：把尚未落盘的委托附件拷入 parentCwd。
+   * 须在 createArtifactsExtension 快照之后调用。
+   */
+  materializePendingArtifacts(userId: string, fromAgentId: string, parentCwd: string): void {
+    const tasks = this.store.list(userId, { fromAgentId });
+    for (const task of tasks) {
+      if (!isTerminalStatus(task.status)) continue;
+      if (task.artifactsDelivered) continue;
+      if (task.artifacts === undefined) continue;
+      const sourceCwd = this.resolveAgentCwd(task.userId, task.toAgentId);
+      if (!sourceCwd) continue;
+      this.deliverTaskArtifacts(task, sourceCwd, parentCwd);
+    }
+  }
+
+  /** sync 或 inbox：把已确认附件拷到父 ARTIFACT/from-<toAgentId>/。 */
+  private deliverTaskArtifacts(
+    task: DelegationTask,
+    sourceCwd: string,
+    parentCwd = this.resolveAgentCwd(task.userId, task.fromAgentId),
+  ): void {
+    if (task.artifactsDelivered) return;
+    if (task.artifacts === undefined) return;
+    if (!parentCwd) return;
+    if (!fs.existsSync(sourceCwd)) return;
+    ensureCwdLayout(parentCwd);
+    try {
+      copyStagedArtifactsToParent({
+        sourceCwd,
+        parentCwd,
+        toAgentId: task.toAgentId,
+        staged: task.artifacts,
+      });
+      this.store.update(task.id, { artifactsDelivered: true });
+    } catch {
+      // 投递失败不阻断委托终态；下次父 turn 可再试
+    }
+  }
+
+  /** 解析 visit cwd：私人助理 / 本机 / 市场专家。 */
+  private resolveAgentCwd(userId: string, agentId: string): string | undefined {
+    try {
+      if (agentId === PERSONAL_ASSISTANT_ID) {
+        const root = personalAssistantRoot(this.options.userDataRoot, userId);
+        return path.join(root, "cwd");
+      }
+      if (isLocalAgentId(agentId)) {
+        return path.join(localAgentVisit(this.options.userDataRoot, userId, agentId).root, "cwd");
+      }
+      const disk = Runtime.openDiskVisit(this.options.userDataRoot, userId, agentId);
+      if (disk) return path.join(disk.root, "cwd");
+      const fallback = path.join(this.options.userDataRoot, "users", userId, "agents", agentId, "cwd");
+      return fs.existsSync(fallback) ? fallback : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * 终态收尾：async → wake；sync → 直接标 seen/notified（结果已在 tool result）。
+   */
+  private afterTerminal(task: DelegationTask | undefined): void {
+    if (!task || !isTerminalStatus(task.status)) return;
+    if (task.wait) {
+      this.settleIfSync(task);
+      return;
+    }
+    this.notifyParent(task);
+  }
+
+  /** sync 委托结果已交付给父 turn，勿再占 unseen 或触发 wake。 */
+  private settleIfSync(task: DelegationTask): DelegationTask {
+    if (!task.wait || !isTerminalStatus(task.status)) return task;
+    if (task.seen && task.notified) return task;
+    return this.store.update(task.id, { seen: true, notified: true }) ?? task;
+  }
+}
+
+function isTerminalStatus(status: DelegationTask["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 export class DelegationError extends Error {}
@@ -604,5 +745,6 @@ function fromLocalCard(card: LocalAgentCard): RecruitedAgentInfo {
       name && role && background
         ? composeSystemPrompt({ name, role, background }, "zh")
         : undefined,
+    ...(card.rules.trim() ? { agentsText: card.rules.trim() } : {}),
   };
 }

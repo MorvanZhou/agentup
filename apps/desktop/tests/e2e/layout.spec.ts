@@ -1,6 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
-import { expectNoHorizontalOverflow, openMarket, openOwnedAgents, signIn } from "./helpers";
+import {
+  expectNoHorizontalOverflow,
+  messagesNav,
+  openMarket,
+  openOwnedAgents,
+  signIn,
+} from "./helpers";
 import { installRuntime } from "./runtime";
 
 test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) => {
@@ -30,7 +36,7 @@ test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) 
   await page.getByRole("button", { name: "AI 服务" }).click();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
   await expect(page.getByRole("button", { name: /保存连接|更新配置/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: "消息", exact: true })).toBeVisible();
+  await expect(messagesNav(page)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 

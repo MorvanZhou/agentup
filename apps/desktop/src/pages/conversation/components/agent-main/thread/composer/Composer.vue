@@ -13,7 +13,7 @@ import { SquareIcon, XIcon } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef } from "vue";
 
 import { useDesktop } from "../../../../../../app/desktop";
-import { t } from "../../../../../../shared/model/ui-locale";
+import { t } from "../../../../../../shared/model/ui/ui-locale";
 import { useComposerFiles, isImageFile } from "../../../../composables/useComposerFiles";
 import { useComposerInputHeight } from "../../../../composables/useComposerHeight";
 import { useComposerSkills } from "../../../../composables/useComposerSkills";

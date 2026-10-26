@@ -5,9 +5,9 @@ import { useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import { ensureGuestSession } from "../../app/session-store";
-import { isAccountSession, isGuestSession } from "../../shared/model/session";
-import { publicUrl } from "../../shared/model/public-url";
-import { t, type UiLocale } from "../../shared/model/ui-locale";
+import { isAccountSession, isGuestSession } from "../../shared/model/session/session";
+import { publicUrl } from "../../shared/model/ui/public-url";
+import { t, type UiLocale } from "../../shared/model/ui/ui-locale";
 
 const route = useRoute();
 const router = useRouter();

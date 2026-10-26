@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { t } from "../../i18n/index.js";
 import { isLocalAgentId } from "../../local/agents/local-agent.js";
 import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
 import { spawnArgsForCommand } from "../environment.js";
@@ -35,6 +36,8 @@ type RunningSlot = {
 export class BackgroundJobs {
   private readonly store: BackgroundJobStore;
   private readonly running = new Map<string, RunningSlot>();
+  /** 本进程 start 过的作业；重启收尾不得把它标成退出中断。 */
+  private readonly owned = new Set<string>();
   private readonly activeByUser = new Map<string, number>();
   private readonly waiters = new Map<string, Array<() => void>>();
 
@@ -87,9 +90,32 @@ export class BackgroundJobs {
       command,
       cwd,
     });
+    this.owned.add(job.id);
     this.store.update(job.id, { status: "running" });
     void this.execute(job.id).catch(() => undefined);
     return this.store.get(job.id)!;
+  }
+
+  /**
+   * 进程退出后盘上仍是 running / pending 的作业没有子进程。
+   * 标失败并唤醒发起方；本进程 start 过的作业不动。
+   */
+  recoverInterrupted(): BackgroundJob[] {
+    const settled: BackgroundJob[] = [];
+    for (const userId of this.store.listUserIds()) {
+      for (const job of this.store.list(userId)) {
+        if (job.status !== "running" && job.status !== "pending") continue;
+        if (this.owned.has(job.id) || this.running.has(job.id)) continue;
+        const next = this.store.update(job.id, {
+          status: "failed",
+          error: t("work.interruptedByExit"),
+        });
+        if (!next) continue;
+        this.notifyOwner(next);
+        settled.push(this.store.get(job.id) ?? next);
+      }
+    }
+    return settled;
   }
 
   cancel(jobId: string, userId: string): BackgroundJob {

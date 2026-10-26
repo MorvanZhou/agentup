@@ -10,7 +10,7 @@ import { packTarGz, unpackTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
 import { startLocalServer } from "../src/local/server.js";
 
-const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/weather/agent");
+const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/single/weather/agent");
 const avatarPng = fs.readFileSync(path.join(weatherDir, "assets", "avatar.png"));
 const avatarDataUrl = `data:image/png;base64,${avatarPng.toString("base64")}`;
 

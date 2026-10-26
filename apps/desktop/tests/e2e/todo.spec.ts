@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
 import { conversationItem, signIn, syncAgent } from "./helpers";
 import { installRuntime } from "./runtime";

@@ -15,8 +15,8 @@ import { useRouter } from "vue-router";
 import { useDesktop } from "../../../../app/desktop";
 import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
-import { showToast } from "../../../../shared/model/toast";
-import { t } from "../../../../shared/model/ui-locale";
+import { showToast } from "../../../../shared/model/ui/toast";
+import { t } from "../../../../shared/model/ui/ui-locale";
 import {
   rememberSkipClearContextConfirm,
   shouldSkipClearContextConfirm,

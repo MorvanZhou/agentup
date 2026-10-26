@@ -1,4 +1,4 @@
-import { tf } from "../../../../shared/model/ui-locale";
+import { tf } from "../../../../shared/model/ui/ui-locale";
 
 /** 从 todo 工具结果文本还原清单。行格式与 runtime `formatTodoList` 一致。 */
 

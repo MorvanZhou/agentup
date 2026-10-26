@@ -35,6 +35,16 @@ export type AgentUpAskUserData = {
   questions: AgentUpAskUserQuestion[];
 };
 
+export type AgentUpShellHangData = {
+  id: string;
+  toolCallId: string;
+  toolName: string;
+  command: string;
+  elapsedMs: number;
+  askedByName?: string;
+  taskLabel?: string;
+};
+
 /** 把 Pi 会话事件投影成 AI SDK UIMessageStream chunks。 */
 export class PiUIMessageProjector {
   private messageId = "";
@@ -116,6 +126,16 @@ export class PiUIMessageProjector {
       ...this.toolInputAvailable(request.toolCallId, "ask_user", { questions: request.questions }),
       {
         type: "data-agentup-ask-user",
+        data: request,
+        transient: true,
+      } as UIMessageChunk,
+    ];
+  }
+
+  shellHang(request: AgentUpShellHangData): UIMessageChunk[] {
+    return [
+      {
+        type: "data-agentup-shell-hang",
         data: request,
         transient: true,
       } as UIMessageChunk,

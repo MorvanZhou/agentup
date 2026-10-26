@@ -2,8 +2,8 @@ import { ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import { showToast } from "../../../shared/model/toast";
-import { t } from "../../../shared/model/ui-locale";
+import { showToast } from "../../../shared/model/ui/toast";
+import { t } from "../../../shared/model/ui/ui-locale";
 
 export function useUserAgentsMd(api = new DesktopApi()) {
   const { session } = useDesktop();

@@ -251,6 +251,41 @@ it("projectHistory attaches agentUpSummary from __agentUpSummary", () => {
   });
 });
 
+it("projectHistory keeps turn-wide summary index across merged assistant messages", () => {
+  // 同回合多条 Pi assistant 会并成一个气泡；summary 序数按整回合非空 text 计。
+  // 若只按「最后一条」content 裁剪，会把 index 1 夹成 0，总结 tab 落到第一段。
+  const messages = projectHistory([
+    { role: "user", content: "hi", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "先说明" },
+        { type: "toolCall", id: "c1", name: "bash", arguments: {} },
+      ],
+      timestamp: 2,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "c1",
+      toolName: "bash",
+      content: [{ type: "text", text: "ok" }],
+      isError: false,
+      timestamp: 3,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "最终总结" }],
+      timestamp: 4,
+      __agentUpSummary: { textPartIndex: 1 },
+    },
+  ]);
+  expect(messages).toHaveLength(2);
+  expect(messages[1]?.parts.filter((part) => part.type === "text")).toHaveLength(2);
+  expect(messages[1]?.metadata).toMatchObject({
+    custom: { agentUpSummary: { textPartIndex: 1 } },
+  });
+});
+
 it("projectHistory marks dangling tool parts even without healing", () => {
   const messages = projectHistory([
     {
@@ -291,6 +326,39 @@ it("fills empty connection-error assistants with model-unavailable notice", () =
     },
   ]);
   expect(textOf(messages[1]!)).toContain("切换模型");
+});
+
+it("fills empty rate-limit assistants with a readable notice", () => {
+  const messages = projectHistory([
+    { role: "user", content: "深圳天气", timestamp: 1 },
+    {
+      ...assistantBase,
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: '429: {"code":"1302","message":"Rate limit reached for requests"}',
+      content: [],
+      timestamp: 2,
+    },
+  ]);
+  expect(textOf(messages[1]!)).toContain("过于频繁");
+  expect(
+    (messages[1]!.metadata as { error?: string } | undefined)?.error,
+  ).toContain("429");
+});
+
+it("fills empty aborted assistants so history is not a blank bubble", () => {
+  const messages = projectHistory([
+    { role: "user", content: "深圳天气", timestamp: 1 },
+    {
+      ...assistantBase,
+      role: "assistant",
+      stopReason: "aborted",
+      errorMessage: "Request aborted",
+      content: [],
+      timestamp: 2,
+    },
+  ]);
+  expect(textOf(messages[1]!)).toContain("已停止");
 });
 
 it("keeps idle async-wake reply as a separate assistant bubble", () => {

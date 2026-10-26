@@ -8,11 +8,11 @@ import type {
   ProviderSettings,
   ProviderTemplate,
   ProviderVendorGroup,
-} from "../../../shared/model/runtime";
+} from "../../../shared/model/runtime/runtime";
 import { decryptSecret, encryptSecret, secretEncryptionReady } from "../../../shared/secrets";
-import { bumpProviderConfig, providerConfigEpoch } from "../../../shared/model/provider-config";
-import { showToast } from "../../../shared/model/toast";
-import { readUiLocale, uiLocale } from "../../../shared/model/ui-locale";
+import { bumpProviderConfig, providerConfigEpoch } from "../../../shared/model/runtime/provider-config";
+import { showToast } from "../../../shared/model/ui/toast";
+import { readUiLocale, t, tf, uiLocale } from "../../../shared/model/ui/ui-locale";
 
 export function useProviderSettings(api = new DesktopApi()) {
   const { session } = useDesktop();
@@ -28,6 +28,9 @@ export function useProviderSettings(api = new DesktopApi()) {
   const draftBaseUrl = ref("");
   const draftApiKey = ref("");
   const modelFilter = ref("");
+  /** 手动追加模型 ID（仅 Ollama / 自定义 OpenAI 兼容可在运行时注册）。 */
+  const draftCustomModelId = ref("");
+  const draftAddTemplateId = ref("");
 
   const vendors = computed(() => settings.value?.vendors ?? []);
   const connections = computed(() => settings.value?.connections ?? []);
@@ -56,6 +59,9 @@ export function useProviderSettings(api = new DesktopApi()) {
       return Boolean(template?.supportsModelDiscovery);
     }),
   );
+  /** 任意已连接服务商均可手动追加模型 ID（runtime 会对内置目录外的 id 按同端点动态注册）。 */
+  const customModelTargets = computed(() => connections.value);
+  const canAddCustomModel = computed(() => customModelTargets.value.length > 0);
   const filteredModels = computed(() => {
     const q = modelFilter.value.trim().toLowerCase();
     if (!q) return availableModels.value;
@@ -105,6 +111,20 @@ export function useProviderSettings(api = new DesktopApi()) {
     const template = vendorOptions.value.find((item) => item.id === templateId);
     if (template) applyTemplateDefaults(template);
   });
+
+  watch(
+    customModelTargets,
+    (targets) => {
+      if (!targets.length) {
+        draftAddTemplateId.value = "";
+        return;
+      }
+      if (!targets.some((item) => item.templateId === draftAddTemplateId.value)) {
+        draftAddTemplateId.value = targets[0]!.templateId;
+      }
+    },
+    { immediate: true },
+  );
 
   async function load(): Promise<void> {
     if (!session.value) return;
@@ -255,6 +275,48 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
+  async function addCustomModel(): Promise<void> {
+    if (!session.value || busy.value) return;
+    const modelId = draftCustomModelId.value.trim();
+    if (!modelId) {
+      showToast(t("providerAddModelEmpty"), "error");
+      return;
+    }
+    if (modelId.length > 200) {
+      showToast(t("providerAddModelEmpty"), "error");
+      return;
+    }
+    const templateId = draftAddTemplateId.value.trim();
+    const target = customModelTargets.value.find((item) => item.templateId === templateId);
+    if (!target) {
+      showToast(t("providerNeedConnection"), "error");
+      return;
+    }
+    const already = availableModels.value.some(
+      (model) => model.templateId === templateId && model.modelId === modelId,
+    );
+    if (already) {
+      showToast(t("providerAddModelExists"), "error");
+      return;
+    }
+
+    busy.value = true;
+    try {
+      settings.value = await api.upsertProviderConnection(
+        session.value.token,
+        { templateId, customModelId: modelId },
+        locale(),
+      );
+      draftCustomModelId.value = "";
+      notifyProviderConfigChanged();
+      showToast(tf("providerAddModelDone", { id: modelId }), "success");
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      busy.value = false;
+    }
+  }
+
   async function removeConnection(templateId: string): Promise<void> {
     if (!session.value || busy.value) return;
     busy.value = true;
@@ -284,6 +346,28 @@ export function useProviderSettings(api = new DesktopApi()) {
         locale(),
       );
       notifyProviderConfigChanged();
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  async function removeCustomModel(model: AvailableProviderModel): Promise<void> {
+    if (!session.value || busy.value) return;
+    if (!model.custom) {
+      showToast(t("providerRemoveModelBuiltin"), "error");
+      return;
+    }
+    busy.value = true;
+    try {
+      settings.value = await api.removeCustomProviderModel(
+        session.value.token,
+        { templateId: model.templateId, modelId: model.modelId },
+        locale(),
+      );
+      notifyProviderConfigChanged();
+      showToast(tf("providerRemoveModelDone", { id: model.modelId }), "success");
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
@@ -332,6 +416,10 @@ export function useProviderSettings(api = new DesktopApi()) {
     draftBaseUrl,
     draftApiKey,
     modelFilter,
+    draftCustomModelId,
+    draftAddTemplateId,
+    customModelTargets,
+    canAddCustomModel,
     selectedVendor,
     vendorOptions,
     selectedTemplate,
@@ -344,6 +432,8 @@ export function useProviderSettings(api = new DesktopApi()) {
     saveConnection,
     removeConnection,
     refreshAllDiscoverableModels,
+    addCustomModel,
+    removeCustomModel,
     toggleModel,
     activateModel,
   };

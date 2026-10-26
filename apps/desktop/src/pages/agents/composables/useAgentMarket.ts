@@ -2,9 +2,9 @@ import { ref, type Ref } from "vue";
 
 import { runWithAccount } from "../../../app/auth-gate";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import type { Session } from "../../../shared/model/runtime";
-import { isGuestSession } from "../../../shared/model/session";
-import { showToast } from "../../../shared/model/toast";
+import type { Session } from "../../../shared/model/runtime/runtime";
+import { isGuestSession } from "../../../shared/model/session/session";
+import { showToast } from "../../../shared/model/ui/toast";
 
 export function useAgentMarket(
   session: Ref<Session | null>,

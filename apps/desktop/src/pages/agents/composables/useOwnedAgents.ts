@@ -1,9 +1,9 @@
 import { ref, type Ref } from "vue";
 
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import type { Session } from "../../../shared/model/runtime";
-import { showToast } from "../../../shared/model/toast";
-import { t } from "../../../shared/model/ui-locale";
+import type { Session } from "../../../shared/model/runtime/runtime";
+import { showToast } from "../../../shared/model/ui/toast";
+import { t } from "../../../shared/model/ui/ui-locale";
 
 export function useOwnedAgents(
   session: Ref<Session | null>,

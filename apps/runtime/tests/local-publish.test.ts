@@ -10,7 +10,7 @@ import { unpackTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
 import { startLocalServer } from "../src/local/server.js";
 
-const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/weather/agent");
+const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/single/weather/agent");
 
 it("publishes a selected agent directory and a later version", async () => {
   const seenVersions: number[] = [];

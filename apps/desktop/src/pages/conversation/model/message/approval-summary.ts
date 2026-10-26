@@ -1,5 +1,5 @@
-import type { AgentUpApprovalData, ApprovalScope } from "../../../../shared/model/chat";
-import { t, tf } from "../../../../shared/model/ui-locale";
+import type { AgentUpApprovalData, ApprovalScope } from "../../../../shared/model/chat/chat";
+import { t, tf } from "../../../../shared/model/ui/ui-locale";
 
 export type ApprovalKind = "command" | "write" | "tool" | "project";
 

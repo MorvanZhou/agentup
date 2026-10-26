@@ -6,7 +6,7 @@ import {
   lastMessagePreview,
   lastUserText,
   parseHistory,
-} from "../../src/shared/model/chat.js";
+} from "../../src/shared/model/chat/chat.js";
 
 it("loads UIMessage history from the local runtime", async () => {
   const fetchImpl = vi.fn(async () =>

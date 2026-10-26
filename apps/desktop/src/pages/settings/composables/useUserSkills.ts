@@ -2,9 +2,9 @@ import { ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import { formatApiError } from "../../../shared/model/package-issues";
-import type { UserSkill } from "../../../shared/model/runtime";
-import { showToast } from "../../../shared/model/toast";
+import { formatApiError } from "../../../shared/model/runtime/package-issues";
+import type { UserSkill } from "../../../shared/model/runtime/runtime";
+import { showToast } from "../../../shared/model/ui/toast";
 
 export function useUserSkills(api = new DesktopApi()) {
   const { session } = useDesktop();

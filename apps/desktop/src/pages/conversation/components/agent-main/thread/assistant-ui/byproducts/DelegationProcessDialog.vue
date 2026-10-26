@@ -2,10 +2,10 @@
 import { computed, ref, watch } from "vue";
 
 import { DesktopApi } from "../../../../../../../shared/api/runtime";
-import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
+import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import AppDialog from "../../../../../../../shared/components/AppDialog.vue";
-import { showToast } from "../../../../../../../shared/model/toast";
-import { t, tf } from "../../../../../../../shared/model/ui-locale";
+import { showToast } from "../../../../../../../shared/model/ui/toast";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import { useDelegationProcess } from "../../../../../composables/useDelegationProcess";
 import type { DelegationProcessTarget } from "../../../../../model/thread/thread-delegation";
 import ReadonlyAssistantProcess from "./ReadonlyAssistantProcess.vue";

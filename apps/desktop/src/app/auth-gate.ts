@@ -1,6 +1,6 @@
 import { ref } from "vue";
 
-import { t } from "../shared/model/ui-locale";
+import { t } from "../shared/model/ui/ui-locale";
 import { capabilityReasonKey, type CapabilityId } from "./capabilities";
 
 type ResumeFn = () => void | Promise<void>;

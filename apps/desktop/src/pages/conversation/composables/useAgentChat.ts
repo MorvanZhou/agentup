@@ -5,11 +5,13 @@ import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type {
   AgentUpApprovalData,
   AgentUpAskUserData,
+  AgentUpShellHangData,
   ApprovalScope,
   AskUserAnswer,
-} from "../../../shared/model/chat";
-import { showToast } from "../../../shared/model/toast";
-import { tf } from "../../../shared/model/ui-locale";
+  ShellHangAction,
+} from "../../../shared/model/chat/chat";
+import { showToast } from "../../../shared/model/ui/toast";
+import { t, tf } from "../../../shared/model/ui/ui-locale";
 import { forgetComposerDraft } from "../model/composer/composer-draft";
 
 /** 异步完成后要较快拉到 idle wake 的助手回复。 */
@@ -36,6 +38,7 @@ export function useAgentChat(
   const histories = ref<Record<string, UIMessage[]>>({});
   const approvals = ref<Record<string, AgentUpApprovalData>>({});
   const askUsers = ref<Record<string, AgentUpAskUserData>>({});
+  const shellHangs = ref<Record<string, AgentUpShellHangData>>({});
   const loaded = new Set<string>();
   const loadEpoch = ref<Record<string, number>>({});
   let delegationPoll: ReturnType<typeof setInterval> | undefined;
@@ -60,6 +63,7 @@ export function useAgentChat(
   async function abortTurn(agentId: string, token: string, userId: string): Promise<void> {
     setApproval(agentId, undefined);
     setAskUser(agentId, undefined);
+    setShellHang(agentId, undefined);
     await api.abortTurn(token, agentId, userId);
   }
 
@@ -67,6 +71,7 @@ export function useAgentChat(
     // 先收起浮层，避免接口失败时问卷/审批仍挂着。
     setApproval(agentId, undefined);
     setAskUser(agentId, undefined);
+    setShellHang(agentId, undefined);
     await api.clearContext(token, agentId, userId);
     await load(agentId, token, userId, true);
   }
@@ -74,6 +79,7 @@ export function useAgentChat(
   async function clearHistory(agentId: string, token: string, userId: string): Promise<void> {
     setApproval(agentId, undefined);
     setAskUser(agentId, undefined);
+    setShellHang(agentId, undefined);
     await api.clearHistory(token, agentId, userId);
     await load(agentId, token, userId, true);
   }
@@ -117,6 +123,23 @@ export function useAgentChat(
     askUsers.value = next;
   }
 
+  function setShellHang(agentId: string, hang: AgentUpShellHangData | undefined): void {
+    if (!hang) {
+      const next = { ...shellHangs.value };
+      delete next[agentId];
+      shellHangs.value = next;
+      return;
+    }
+    const next = { ...shellHangs.value };
+    for (const [otherId, existing] of Object.entries(next)) {
+      if (otherId !== agentId && existing?.id === hang.id) {
+        delete next[otherId];
+      }
+    }
+    next[agentId] = hang;
+    shellHangs.value = next;
+  }
+
   async function decide(
     agentId: string,
     token: string,
@@ -138,6 +161,26 @@ export function useAgentChat(
     if (!askUser) return;
     await api.answerAskUser(token, askUser.id, answer);
     clearAskUserById(askUser.id);
+  }
+
+  async function decideShellHang(
+    agentId: string,
+    token: string,
+    action: ShellHangAction,
+  ): Promise<void> {
+    const hang = shellHangs.value[agentId];
+    if (!hang) return;
+    try {
+      await api.decideShellHang(token, hang.id, action);
+      clearShellHangById(hang.id);
+    } catch (error) {
+      showToast(
+        error instanceof DesktopApiError && error.message
+          ? error.message
+          : t("shellHangDecideFailed"),
+        "error",
+      );
+    }
   }
 
   function clearApprovalById(id: string): void {
@@ -164,6 +207,18 @@ export function useAgentChat(
     if (changed) askUsers.value = next;
   }
 
+  function clearShellHangById(id: string): void {
+    const next = { ...shellHangs.value };
+    let changed = false;
+    for (const [key, existing] of Object.entries(next)) {
+      if (existing?.id === id) {
+        delete next[key];
+        changed = true;
+      }
+    }
+    if (changed) shellHangs.value = next;
+  }
+
   function syncMessages(agentId: string, messages: UIMessage[]): void {
     histories.value = { ...histories.value, [agentId]: messages };
   }
@@ -187,13 +242,17 @@ export function useAgentChat(
     }
     setApproval(agentId, undefined);
     setAskUser(agentId, undefined);
+    setShellHang(agentId, undefined);
   }
 
   function turnEnded(agentId: string, preview: string): void {
     options.onTurnEnd?.(agentId, preview);
   }
 
-  /** 异步委托完成后：重载委托方历史并 toast（私人助理与第三方相同）。 */
+  /**
+   * 异步完成后：仅在 notified（wake 已交付）时 toast + ack + 重载历史。
+   * sync（wait）结果已在父 turn tool result，不 toast；若仍进 unseen 则静默 ack。
+   */
   function watchDelegations(agentId: string, token: string, userId: string): void {
     const key = `${userId}/${agentId}`;
     if (!agentId) {
@@ -209,8 +268,6 @@ export function useAgentChat(
           api.listDelegations(token, userId, { unseenOnly: true }),
           api.listBackgroundJobs(token, userId, { unseenOnly: true }),
         ]);
-        // 终态未 notified：只 toast（runtime 仍在空闲 wake）。
-        // notified：ack + 重载历史，把主动同步的助手回复拉进对话。
         const finished = tasks.filter(
           (task) =>
             task.status === "completed" ||
@@ -228,6 +285,13 @@ export function useAgentChat(
         const previewByAgent = new Map<string, string>();
         const reloadIds = new Set<string>();
         for (const task of finished) {
+          // sync：结果已在父 turn；勿 toast，只清 unseen（兼容旧盘数据）。
+          if (task.wait) {
+            await api.acknowledgeDelegation(token, userId, task.id);
+            continue;
+          }
+          // async：等 wake 标 notified 再提示，避免未交付时反复弹、重启又弹。
+          if (!task.notified) continue;
           const toastKey = `d:${task.id}`;
           if (!toastedAsyncIds.has(toastKey)) {
             toastedAsyncIds.add(toastKey);
@@ -241,18 +305,17 @@ export function useAgentChat(
               task.status === "failed" ? "error" : "success",
             );
           }
-          if (task.notified) {
-            await api.acknowledgeDelegation(token, userId, task.id);
-            if (task.fromAgentId) {
-              reloadIds.add(task.fromAgentId);
-              const hint = (task.resultSummary || task.brief || "").trim();
-              if (hint && !previewByAgent.has(task.fromAgentId)) {
-                previewByAgent.set(task.fromAgentId, hint);
-              }
+          await api.acknowledgeDelegation(token, userId, task.id);
+          if (task.fromAgentId) {
+            reloadIds.add(task.fromAgentId);
+            const hint = (task.resultSummary || task.brief || "").trim();
+            if (hint && !previewByAgent.has(task.fromAgentId)) {
+              previewByAgent.set(task.fromAgentId, hint);
             }
           }
         }
         for (const job of finishedJobs) {
+          if (!job.notified) continue;
           const toastKey = `b:${job.id}`;
           if (!toastedAsyncIds.has(toastKey)) {
             toastedAsyncIds.add(toastKey);
@@ -266,14 +329,12 @@ export function useAgentChat(
               job.status === "failed" ? "error" : "success",
             );
           }
-          if (job.notified) {
-            await api.acknowledgeBackgroundJob(token, userId, job.id);
-            if (job.agentId) {
-              reloadIds.add(job.agentId);
-              const hint = (job.outputTail || job.name || job.command || "").trim();
-              if (hint && !previewByAgent.has(job.agentId)) {
-                previewByAgent.set(job.agentId, hint);
-              }
+          await api.acknowledgeBackgroundJob(token, userId, job.id);
+          if (job.agentId) {
+            reloadIds.add(job.agentId);
+            const hint = (job.outputTail || job.name || job.command || "").trim();
+            if (hint && !previewByAgent.has(job.agentId)) {
+              previewByAgent.set(job.agentId, hint);
             }
           }
         }
@@ -311,6 +372,7 @@ export function useAgentChat(
     histories,
     approvals,
     askUsers,
+    shellHangs,
     loadEpoch,
     load,
     abortTurn,
@@ -319,8 +381,10 @@ export function useAgentChat(
     isLoaded,
     setApproval,
     setAskUser,
+    setShellHang,
     decide,
     answerAsk,
+    decideShellHang,
     syncMessages,
     forget,
     turnEnded,

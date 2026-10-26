@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { ChevronDownIcon, Trash2Icon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import { t, tf } from "../../../../../shared/model/ui-locale";
+import AppSelect from "../../../../../shared/components/AppSelect.vue";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useProviderSettings } from "../../../composables/useProviderSettings";
 
 const MODEL_PREVIEW_COUNT = 5;
@@ -23,12 +25,26 @@ const {
   needsBaseUrl,
   needsApiKey,
   canRefreshModels,
+  canAddCustomModel,
+  customModelTargets,
+  draftCustomModelId,
+  draftAddTemplateId,
   onVendorChange,
   saveConnection,
   removeConnection,
   refreshAllDiscoverableModels,
+  addCustomModel,
+  removeCustomModel,
   toggleModel,
 } = useProviderSettings();
+
+const addTargetOptions = computed(() =>
+  customModelTargets.value.map((item) => ({
+    value: item.templateId,
+    label: item.label,
+    active: true,
+  })),
+);
 
 /** 连接服务商为次要操作，默认折叠。 */
 const providerOpen = ref(false);
@@ -44,6 +60,33 @@ const visibleModels = computed(() =>
 const hiddenModelCount = computed(() =>
   Math.max(0, filteredModels.value.length - MODEL_PREVIEW_COUNT),
 );
+
+/** 已落盘连接 → 下拉绿点 */
+const connectedTemplateIds = computed(
+  () => new Set(connections.value.map((item) => item.templateId)),
+);
+const connectedVendorIds = computed(
+  () => new Set(connections.value.map((item) => item.vendorId)),
+);
+const vendorSelectOptions = computed(() =>
+  vendors.value.map((vendor) => ({
+    value: vendor.id,
+    label: vendor.label,
+    active: connectedVendorIds.value.has(vendor.id),
+  })),
+);
+const modeSelectOptions = computed(() =>
+  vendorOptions.value.map((option) => ({
+    value: option.id,
+    label: option.optionLabel,
+    active: connectedTemplateIds.value.has(option.id),
+  })),
+);
+
+function onVendorSelect(vendorId: string): void {
+  draftVendorId.value = vendorId;
+  onVendorChange();
+}
 
 watch(modelFilter, () => {
   modelsExpanded.value = false;
@@ -95,6 +138,58 @@ watch(modelFilter, () => {
             />
           </label>
 
+          <!-- 手动添加：默认折叠；箭头 + 实线边框示意可展开 -->
+          <details
+            v-if="canAddCustomModel"
+            class="group/add relative z-10 mt-3 rounded-lg border border-rule bg-paper"
+          >
+            <summary
+              class="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-muted-foreground outline-none transition duration-200 hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/15 [&::-webkit-details-marker]:hidden"
+            >
+              <span class="min-w-0 flex-1 text-left leading-snug">{{ t("providerAddModelToggle") }}</span>
+              <ChevronDownIcon
+                class="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-open/add:rotate-180 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </summary>
+            <form class="border-t border-rule bg-paper-deep/40 px-3 py-3" @submit.prevent="addCustomModel">
+              <p class="mb-0 text-xs leading-snug text-muted-foreground">
+                {{ t("providerAddModelLead") }}
+              </p>
+              <div class="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <div class="grid min-w-0 gap-2">
+                  <AppSelect
+                    v-if="customModelTargets.length > 1"
+                    v-model="draftAddTemplateId"
+                    :label="t('providerAddModelTarget')"
+                    :options="addTargetOptions"
+                    :disabled="busy"
+                    :active-hint="t('providerConfiguredActive')"
+                  />
+                  <label class="grid gap-1.5 text-sm font-medium text-foreground">
+                    {{ t("providerAddModelId") }}
+                    <input
+                      v-model="draftCustomModelId"
+                      type="text"
+                      :disabled="busy"
+                      autocomplete="off"
+                      spellcheck="false"
+                      :placeholder="t('providerAddModelPlaceholder')"
+                      class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  :disabled="busy"
+                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background disabled:opacity-50"
+                >
+                  {{ t("providerAddModel") }}
+                </button>
+              </div>
+            </form>
+          </details>
+
           <ul v-if="filteredModels.length" class="m-0 mt-3 grid list-none gap-1 p-0">
             <li
               v-for="model in visibleModels"
@@ -110,21 +205,33 @@ watch(modelFilter, () => {
                   </template>
                 </p>
               </div>
-              <button
-                type="button"
-                role="switch"
-                :aria-checked="model.enabled"
-                :disabled="busy"
-                class="relative h-6 w-11 shrink-0 rounded-full border-0 transition duration-200 disabled:opacity-50"
-                :class="model.enabled ? 'bg-emerald-500' : 'bg-muted'"
-                :aria-label="model.enabled ? tf('providerDisableAria', { name: model.name }) : tf('providerEnableAria', { name: model.name })"
-                @click="toggleModel(model, !model.enabled)"
-              >
-                <span
-                  class="absolute top-0.5 size-5 rounded-full bg-paper shadow transition duration-200"
-                  :class="model.enabled ? 'left-5' : 'left-0.5'"
-                />
-              </button>
+              <div class="flex shrink-0 items-center gap-1.5">
+                <button
+                  v-if="model.custom"
+                  type="button"
+                  :disabled="busy"
+                  class="inline-flex size-8 items-center justify-center rounded-lg border-0 text-muted-foreground transition duration-200 hover:bg-danger-soft hover:text-destructive disabled:opacity-50"
+                  :aria-label="tf('providerRemoveModel', { name: model.name })"
+                  @click="removeCustomModel(model)"
+                >
+                  <Trash2Icon class="size-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="model.enabled"
+                  :disabled="busy"
+                  class="relative h-6 w-11 shrink-0 rounded-full border-0 transition duration-200 disabled:opacity-50"
+                  :class="model.enabled ? 'bg-emerald-500' : 'bg-muted'"
+                  :aria-label="model.enabled ? tf('providerDisableAria', { name: model.name }) : tf('providerEnableAria', { name: model.name })"
+                  @click="toggleModel(model, !model.enabled)"
+                >
+                  <span
+                    class="absolute top-0.5 size-5 rounded-full bg-paper shadow transition duration-200"
+                    :class="model.enabled ? 'left-5' : 'left-0.5'"
+                  />
+                </button>
+              </div>
             </li>
           </ul>
           <button
@@ -175,32 +282,23 @@ watch(modelFilter, () => {
 
           <form class="border-t border-rule px-3 pb-3 pt-3 sm:px-4 sm:pb-4" @submit.prevent="saveConnection">
             <div class="grid gap-3">
-              <label class="grid gap-1.5 text-sm font-medium text-foreground">
-                {{ t("providerVendor") }}
-                <select
-                  v-model="draftVendorId"
-                  :disabled="busy"
-                  class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
-                  @change="onVendorChange"
-                >
-                  <option v-for="vendor in vendors" :key="vendor.id" :value="vendor.id">
-                    {{ vendor.label }}
-                  </option>
-                </select>
-              </label>
+              <AppSelect
+                :model-value="draftVendorId"
+                :label="t('providerVendor')"
+                :options="vendorSelectOptions"
+                :disabled="busy"
+                :active-hint="t('providerConfiguredActive')"
+                @update:model-value="onVendorSelect"
+              />
 
-              <label v-if="vendorOptions.length > 1" class="grid gap-1.5 text-sm font-medium text-foreground">
-                {{ t("providerMode") }}
-                <select
-                  v-model="draftTemplateId"
-                  :disabled="busy"
-                  class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
-                >
-                  <option v-for="option in vendorOptions" :key="option.id" :value="option.id">
-                    {{ option.optionLabel }}
-                  </option>
-                </select>
-              </label>
+              <AppSelect
+                v-if="vendorOptions.length > 1"
+                v-model="draftTemplateId"
+                :label="t('providerMode')"
+                :options="modeSelectOptions"
+                :disabled="busy"
+                :active-hint="t('providerConfiguredActive')"
+              />
 
               <p v-if="selectedTemplate?.hint" class="m-0 text-xs leading-snug text-muted-foreground">
                 {{ selectedTemplate.hint }}

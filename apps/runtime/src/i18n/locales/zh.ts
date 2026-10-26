@@ -35,6 +35,7 @@ export const zh: Record<string, string> = {
   "pa.defaultName": "小A",
   "pa.defaultRole": "我的助理",
   "pa.defaultBackground": "优先理解用户目标，使用用户为你配置的 Skills、MCP 与工作规则完成任务。",
+
   "pa.err.nameLength": "助理名称须为 1–40 个字符",
   "pa.err.roleLength": "岗位须为 1–40 个字符",
   "pa.err.backgroundLength": "人物背景须为 1–300 个字符",
@@ -63,9 +64,20 @@ export const zh: Record<string, string> = {
   "la.err.skillExportFailed": "导出 Skill 失败",
 
   "chat.modelUnavailable": "当前模型服务不可用，请尝试切换模型。",
+  "chat.rateLimited": "模型请求过于频繁或服务繁忙，请稍后再试。",
+  "chat.quotaExhausted":
+    "当前模型额度或套餐已用尽（或未开通付费）。请到该供应商控制台检查余额/账单，或在设置里换一个仍可用的模型后再试。",
+  "chat.authFailed":
+    "模型鉴权失败，可能是 API Key 无效、过期或权限不足。请到设置里检查该供应商的密钥后重试，或切换其他模型。",
+  "chat.providerCallFailed":
+    "模型调用失败：{detail}。可检查 API Key、余额/套餐是否正常，或切换模型后重试。",
+  "chat.turnCancelled": "已停止",
   "chat.outputLengthExceeded":
     "输出达到模型上限（自动续写后仍无可用正文，可能被推理占满）。可拆小任务或换更大输出上限的模型。",
-  "chat.emptyAssistantResult": "未返回可用结果",
+  "chat.emptyAssistantResult":
+    "未返回可用结果。常见原因：模型额度用尽、服务短暂故障，或输出被截断。请检查供应商余额/套餐，或切换模型后重试。",
   "chat.streamDegenerationAborted":
     "模型输出陷入重复或控制符刷屏，已自动停止。请重试或换模型。",
+
+  "work.interruptedByExit": "应用已退出，这项工作在完成前中断",
 };

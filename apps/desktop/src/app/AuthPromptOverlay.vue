@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { t } from "../shared/model/ui-locale";
+import { t } from "../shared/model/ui/ui-locale";
 import { useDesktop } from "./desktop";
 import {
   authPromptBusy,

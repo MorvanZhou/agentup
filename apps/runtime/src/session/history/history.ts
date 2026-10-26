@@ -7,7 +7,7 @@ import type { DynamicToolUIPart, UIDataTypes, UIMessage, UIMessagePart, UITools 
 import { ensurePersonalAssistant } from "../../local/assistant/personal-assistant.js";
 import { clearCheckpoints } from "../checkpoint/checkpoint.js";
 import { DELEGATION_RESULT_CUSTOM_TYPE } from "../delegation/types.js";
-import { isModelServiceUnavailable, modelUnavailableNotice } from "../model/unavailable.js";
+import { assistantFailureNotice } from "../model/unavailable.js";
 import { stampNewSessionModel } from "../model/session-model.js";
 import { ASYNC_WAKE_CUSTOM_TYPE } from "../wake/index.js";
 import {
@@ -285,16 +285,16 @@ export function projectHistory(
       const error = (raw as { errorMessage?: unknown }).errorMessage;
       if (typeof error === "string" && error) {
         assistant.metadata = { ...(typeof assistant.metadata === "object" && assistant.metadata ? assistant.metadata : {}), error };
-        // 模型连不上时 Pi 只留空 assistant + errorMessage；补一条可读正文（重开历史也能看到）。
-        if (
-          isModelServiceUnavailable(error) &&
-          !assistant.parts.some((part) => part.type === "text" && Boolean(part.text?.trim()))
-        ) {
-          assistant.parts.push({
-            type: "text",
-            text: modelUnavailableNotice(),
-            state: "done",
-          });
+        // Pi 常只留空 assistant + errorMessage（连不上 / 429 / abort 等）；补可读正文，重开历史也能看到原因。
+        if (!assistant.parts.some((part) => part.type === "text" && Boolean(part.text?.trim()))) {
+          const notice = assistantFailureNotice(error, undefined, { includeCancel: true });
+          if (notice) {
+            assistant.parts.push({
+              type: "text",
+              text: notice,
+              state: "done",
+            });
+          }
         }
       }
       const summary = parseSummaryEntryData((raw as { __agentUpSummary?: unknown }).__agentUpSummary);
@@ -310,11 +310,12 @@ export function projectHistory(
           prev.custom && typeof prev.custom === "object"
             ? (prev.custom as Record<string, unknown>)
             : {};
+        // 序数按合并后气泡（可能含多条 Pi assistant）计，勿只按本条 content 裁剪。
         assistant.metadata = {
           ...prev,
           custom: {
             ...prevCustom,
-            ...(summary ? { agentUpSummary: clampSummaryIndex(summary, message.content) } : {}),
+            ...(summary ? { agentUpSummary: clampSummaryIndex(summary, assistant.parts) } : {}),
             ...(artifacts ? { agentUpArtifacts: artifacts } : {}),
           },
         };
@@ -436,14 +437,17 @@ export function contextResetMessage(id: string): UIMessage {
 }
 
 /** Pi 消息 timestamp（毫秒）→ UIMessage metadata，供桌面时间分隔使用。 */
-/** 摘要序数按「本条 assistant」计。跨过 async_wake 的旧序号会越界，收到本条最后一段。 */
+/**
+ * 摘要序数按「合并后气泡」非空 text 计。
+ * 越界（例如 wake 前旧序号）收到本气泡最后一段。
+ */
 function clampSummaryIndex(
   summary: { textPartIndex: number },
-  content: unknown,
+  parts: unknown,
 ): { textPartIndex: number } {
   let count = 0;
-  if (Array.isArray(content)) {
-    for (const part of content) {
+  if (Array.isArray(parts)) {
+    for (const part of parts) {
       if (!part || typeof part !== "object") continue;
       const item = part as { type?: unknown; text?: unknown };
       if (item.type === "text" && typeof item.text === "string" && item.text) count += 1;

@@ -14,8 +14,8 @@ import { computed, nextTick, ref, toRef } from "vue";
 
 import { useDesktop } from "../../../../../../app/desktop";
 import AppDialog from "../../../../../../shared/components/AppDialog.vue";
-import UserAvatar from "../../../../../../shared/components/UserAvatar.vue";
-import { sessionDisplayNickname } from "../../../../../../shared/model/session";
+import UserAvatar from "../../../../../../shared/components/avatar/UserAvatar.vue";
+import { sessionDisplayNickname } from "../../../../../../shared/model/session/session";
 import { isImageFile, useComposerFiles } from "../../../../composables/useComposerFiles";
 import { useComposerSkills } from "../../../../composables/useComposerSkills";
 import { sanitizeCopiedText, selectionToComposerText } from "../../../../model/composer/copy-text";

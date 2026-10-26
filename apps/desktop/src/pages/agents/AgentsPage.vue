@@ -4,9 +4,9 @@ import { computed, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
-import { isGuestSession } from "../../shared/model/session";
-import { t } from "../../shared/model/ui-locale";
-import PublishedAgentCard from "../publish/components/PublishedAgentCard.vue";
+import { isGuestSession } from "../../shared/model/session/session";
+import { t } from "../../shared/model/ui/ui-locale";
+import PublishedAgentCard from "./components/owned/PublishedAgentCard.vue";
 import AgentCatalogSkeleton from "./components/AgentCatalogSkeleton.vue";
 import LocalAgentCard from "./components/local/LocalAgentCard.vue";
 import AgentMarketCard from "./components/market/AgentMarketCard.vue";

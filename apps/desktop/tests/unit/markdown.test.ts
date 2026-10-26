@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderMarkdown } from "../../src/pages/conversation/model/render/markdown.js";
+import { renderMarkdown } from "../../src/shared/model/markdown/render.js";
 
 describe("renderMarkdown", () => {
   it("renders GFM table and strikethrough", () => {

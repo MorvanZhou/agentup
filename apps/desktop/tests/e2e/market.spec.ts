@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
-import { mockAgentUp, openMarket, signIn } from "./helpers";
+import { messagesNav, mockAgentUp, openMarket, signIn } from "./helpers";
 import { installRuntime } from "./runtime";
 
 test("市场可按名称经 runtime 检索 Agent", async ({ page }) => {
@@ -60,7 +60,7 @@ test("市场列出 Agent，并能招募Weaty", async ({ page }) => {
   expect((await opened).postDataJSON()).toEqual({ user_id: "patient-a" });
   await expect.poll(() => page.evaluate(() => window.openedVisit)).toBe("/tmp/agentup/users/patient-a/agents/weather");
 
-  await page.getByRole("link", { name: "消息", exact: true }).click();
+  await messagesNav(page).click();
   const conversation = page.getByRole("button", { name: "Weaty", exact: true });
   await expect(conversation).toBeVisible();
   await expect(conversation).toContainText("暂无消息");

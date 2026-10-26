@@ -1,4 +1,4 @@
-import type { PackageIssue } from "../../model/runtime";
+import type { PackageIssue } from "../../model/runtime/runtime";
 
 export class DesktopApiError extends Error {
   constructor(

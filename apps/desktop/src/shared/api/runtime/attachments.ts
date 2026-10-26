@@ -1,4 +1,4 @@
-import { PERSONAL_ASSISTANT_ID } from "../../model/runtime";
+import { PERSONAL_ASSISTANT_ID } from "../../model/runtime/runtime";
 
 import type { RuntimeHttp } from "./http";
 

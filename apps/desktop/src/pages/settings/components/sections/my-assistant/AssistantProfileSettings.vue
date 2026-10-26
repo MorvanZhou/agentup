@@ -1,24 +1,21 @@
 <script setup lang="ts">
-import { ImagePlusIcon } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 
-import AgentAvatar from "../../../../../shared/components/AgentAvatar.vue";
-import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../../../../../shared/model/personal-assistant-default";
-import { t } from "../../../../../shared/model/ui-locale";
+import AgentAvatarField from "../../../../../shared/components/avatar/AgentAvatarField.vue";
+import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../../../../../shared/model/avatar/personal-assistant-default";
+import { t } from "../../../../../shared/model/ui/ui-locale";
 import { usePersonalAssistantSettings } from "../../../composables/usePersonalAssistantSettings";
 
-const { name, role, background, avatarUrl, loading, saving, load, chooseAvatar, commitField } =
+const { name, role, background, avatarUrl, loading, saving, load, applyAvatarDataUrl, commitField } =
   usePersonalAssistantSettings();
-const avatarInput = ref<HTMLInputElement>();
+const officialAvatarId = ref("");
 const defaultAvatar = PERSONAL_ASSISTANT_DEFAULT_AVATAR;
 
 onMounted(() => void load());
 
-function onAvatar(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  void chooseAvatar(input.files?.[0]).finally(() => {
-    input.value = "";
-  });
+function onAvatarPick(dataUrl: string, officialId: string): void {
+  officialAvatarId.value = officialId;
+  void applyAvatarDataUrl(dataUrl);
 }
 </script>
 
@@ -36,53 +33,28 @@ function onAvatar(event: Event): void {
 
       <div class="grid gap-8" :aria-label="t('assistantTitle')">
         <!-- 身份 -->
-        <section class="flex items-start gap-4">
-          <div class="flex shrink-0 flex-col items-center gap-1.5">
-            <button
-              type="button"
-              class="rounded-lg outline-none transition duration-200 focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
-              :disabled="loading || saving"
-              :aria-label="t('accountAvatarPick')"
-              @click="avatarInput?.click()"
-            >
-              <AgentAvatar
-                :name="name || t('assistantNamePlaceholder')"
-                :avatar-url="avatarUrl || defaultAvatar"
-                size="xl"
-              />
-            </button>
-            <input
-              ref="avatarInput"
-              type="file"
-              class="hidden"
-              accept="image/png,image/jpeg,image/webp"
-              @change="onAvatar"
-            />
-            <button
-              type="button"
-              class="inline-flex min-h-7 items-center gap-1 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground disabled:opacity-50"
-              :disabled="loading || saving"
-              @click="avatarInput?.click()"
-            >
-              <ImagePlusIcon class="size-3.5" aria-hidden="true" />
-              {{ avatarUrl ? t("accountAvatarChange") : t("accountAvatarPick") }}
-            </button>
-          </div>
-
-          <label class="grid min-w-0 flex-1 gap-1.5 text-sm font-medium text-foreground">
-            {{ t("assistantName") }}
-            <input
-              v-model="name"
-              type="text"
-              maxlength="40"
-              :disabled="loading"
-              class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
-              :placeholder="t('assistantNamePlaceholder')"
-              @blur="commitField"
-            />
-            <span class="font-normal text-xs text-muted-foreground">{{ t("assistantNameHint") }}</span>
-          </label>
-        </section>
+        <AgentAvatarField
+          :name="name || t('assistantNamePlaceholder')"
+          :preview="avatarUrl || ''"
+          :fallback="defaultAvatar"
+          :busy="loading || saving"
+          :selected-id="officialAvatarId"
+          :hint="t('assistantAvatarHint')"
+          @pick="onAvatarPick"
+        />
+        <label class="grid gap-1.5 text-sm font-medium text-foreground">
+          {{ t("assistantName") }}
+          <input
+            v-model="name"
+            type="text"
+            maxlength="40"
+            :disabled="loading"
+            class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+            :placeholder="t('assistantNamePlaceholder')"
+            @blur="commitField"
+          />
+          <span class="font-normal text-xs text-muted-foreground">{{ t("assistantNameHint") }}</span>
+        </label>
         <label class="grid gap-1.5 text-sm font-medium text-foreground">
           {{ t("agentsLocalRole") }}
           <input

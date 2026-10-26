@@ -273,6 +273,7 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     const task = delegation.getTask(taskId);
     if (!task || task.userId !== userId) throw new LocalError("委托任务不存在", 404);
     if (
+      !task.wait &&
       !task.notified &&
       (task.status === "completed" || task.status === "failed" || task.status === "cancelled")
     ) {

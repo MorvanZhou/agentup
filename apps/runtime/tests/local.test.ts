@@ -16,6 +16,8 @@ const digest = packageDigest(manifest, files);
 const archivePromise = packTarGz(files);
 
 it("lets two accounts recruit one agent and sync separate visits", async () => {
+  const homeUser = path.join(os.homedir(), ".agentup", "users", "patient-a");
+  const homeBefore = directoryStamp(homeUser);
   const recruited = new Set<string>();
   const backend = await listen((req, res) => {
     if (req.url === "/v1/register" && req.method === "POST") {
@@ -148,7 +150,7 @@ it("lets two accounts recruit one agent and sync separate visits", async () => {
     expect(dismissed).toMatchObject({ status: "ok" });
     expect(fs.existsSync(directory.path as string)).toBe(false);
     expect(recruited.has("patient-a")).toBe(false);
-    expect(fs.existsSync(path.join(os.homedir(), ".agentup", "users", "patient-a"))).toBe(false);
+    expect(directoryStamp(homeUser)).toBe(homeBefore);
     expect((await post(local.url, "/messages", { text: "你好" }, first.token as string)).status).toBe(404);
   } finally {
     await local.close();
@@ -226,6 +228,22 @@ function listen(handler: http.RequestListener) {
   return new Promise<{ server: http.Server; address: AddressInfo }>((resolve) => {
     server.listen(0, "127.0.0.1", () => resolve({ server, address: server.address() as AddressInfo }));
   });
+}
+
+/** 默认数据根 `~/.agentup` 在流程前后应一致；本机已有同名用户时不能只断言「目录不存在」。 */
+function directoryStamp(dir: string): string | null {
+  if (!fs.existsSync(dir)) return null;
+  const lines: string[] = [];
+  const walk = (current: string) => {
+    for (const name of fs.readdirSync(current)) {
+      const full = path.join(current, name);
+      const stat = fs.lstatSync(full);
+      lines.push(`${path.relative(dir, full)}\t${stat.mtimeMs}\t${stat.size}`);
+      if (stat.isDirectory()) walk(full);
+    }
+  };
+  walk(dir);
+  return lines.sort().join("\n");
 }
 
 function close(running: { server: http.Server }) {

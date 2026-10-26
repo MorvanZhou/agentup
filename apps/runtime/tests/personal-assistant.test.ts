@@ -25,6 +25,7 @@ it("removes leftover cwd/.pi so personal config stays outside the work tree", ()
 });
 
 it("migrates legacy personal resources into the private assistant directory", () => {
+
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-personal-migrate-"));
   const userRoot = path.join(data, "users", "patient");
   fs.mkdirSync(path.join(userRoot, "skills", "notes"), { recursive: true });
@@ -44,6 +45,7 @@ it("migrates legacy personal resources into the private assistant directory", ()
 });
 
 it("stores editable identity and projects a composed agentDir SYSTEM.md", () => {
+
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-personal-profile-"));
   const saved = writePersonalAssistantProfile(data, "patient", {
     name: "小舟",
@@ -133,3 +135,30 @@ it("migrates legacy instructions into the unified identity profile", () => {
     background: "旧版指令".repeat(75),
   });
 });
+
+it("rolls coordinator factory copy back to personal-assistant defaults", () => {
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-personal-factory-upgrade-"));
+  const root = path.join(data, "users", "patient", "personal-assistant");
+  fs.mkdirSync(path.join(root, ".runtime"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "profile.json"),
+    JSON.stringify({
+      name: "小A",
+      role: "协调助理",
+      background:
+        "你是用户的协调者：对齐目标、分发任务、汇总进度。有匹配专家时先问用户派给谁；取消或失败须再派或问用户，禁止自行接手专家工作。你配置的 Skills/MCP 用于信息对齐与轻量杂务。",
+    }),
+  );
+
+  ensurePersonalAssistant(data, "patient");
+  const system = fs.readFileSync(path.join(root, ".runtime", "SYSTEM.md"), "utf8");
+  expect(system).toContain("岗位：我的助理");
+  expect(system).toContain("优先理解用户目标");
+  expect(system).not.toContain("岗位：协调助理");
+  expect(JSON.parse(fs.readFileSync(path.join(root, "profile.json"), "utf8"))).toMatchObject({
+    role: "我的助理",
+    background: "优先理解用户目标，使用用户为你配置的 Skills、MCP 与工作规则完成任务。",
+  });
+});
+
+

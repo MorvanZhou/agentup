@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import { useAgentChat } from "../../src/pages/conversation/composables/useAgentChat.js";
 import { DesktopApi } from "../../src/shared/api/runtime/index.js";
-import { isAgentUpAskUser } from "../../src/shared/model/chat.js";
+import { isAgentUpAskUser } from "../../src/shared/model/chat/chat.js";
 
 it("accepts valid ask_user stream payloads", () => {
   expect(

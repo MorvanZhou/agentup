@@ -3,13 +3,14 @@ import { BotIcon, MessageSquareIcon, SettingsIcon, StoreIcon } from "@lucide/vue
 import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 
-import { unreadLabel } from "../pages/conversation/model/sidebar/conversation-row";
-import { t } from "../shared/model/ui-locale";
+import { totalUnread, unreadLabel } from "../pages/conversation/model/sidebar/conversation-row";
+import { t } from "../shared/model/ui/ui-locale";
 import { useDesktop } from "./desktop";
 
 const route = useRoute();
-const { blockedCount } = useDesktop();
+const { blockedCount, unread } = useDesktop();
 const conversationBadge = computed(() => unreadLabel(blockedCount.value));
+const unreadCount = computed(() => totalUnread(unread.value));
 
 const items = computed(() => [
   { id: "conversation" as const, to: { name: "conversation" as const }, label: t("navMessages"), icon: MessageSquareIcon },
@@ -25,10 +26,11 @@ function itemActive(id: "conversation" | "market" | "agents"): boolean {
 }
 
 function itemAriaLabel(item: { id: string; label: string }): string {
-  if (item.id === "conversation" && conversationBadge.value) {
-    return `${item.label}，${conversationBadge.value} ${t("navBlocked")}`;
-  }
-  return item.label;
+  if (item.id !== "conversation") return item.label;
+  const parts = [item.label];
+  if (conversationBadge.value) parts.push(`${conversationBadge.value} ${t("navBlocked")}`);
+  if (unreadCount.value > 0) parts.push(`${unreadCount.value} ${t("navUnread")}`);
+  return parts.join("，");
 }
 </script>
 
@@ -57,6 +59,12 @@ function itemAriaLabel(item: { id: string; label: string }): string {
       >
         {{ conversationBadge }}
       </span>
+      <!-- 无待处理件数时，未读消息用红点；件数角标已占同一角 -->
+      <span
+        v-else-if="item.id === 'conversation' && unreadCount > 0"
+        class="absolute top-1.5 right-1.5 size-2 rounded-full bg-destructive ring-2 ring-ink"
+        aria-hidden="true"
+      />
     </RouterLink>
     <!-- 设置入口：宽屏沉底，窄屏跟在主导航后 -->
     <RouterLink

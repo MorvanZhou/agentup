@@ -3,13 +3,29 @@ import { ImagePlusIcon } from "@lucide/vue";
 import { ref } from "vue";
 import { RouterLink } from "vue-router";
 
-import UserAvatar from "../../../../../shared/components/UserAvatar.vue";
-import { isAccountSession, isGuestSession, sessionDisplayNickname } from "../../../../../shared/model/session";
-import { t } from "../../../../../shared/model/ui-locale";
+import { useDesktop } from "../../../../../app/desktop";
+import UserAvatar from "../../../../../shared/components/avatar/UserAvatar.vue";
+import { isAccountSession, isGuestSession, sessionDisplayNickname } from "../../../../../shared/model/session/session";
+import { showToast } from "../../../../../shared/model/ui/toast";
+import { t } from "../../../../../shared/model/ui/ui-locale";
 import { useAccountSettings } from "../../../composables/useAccountSettings";
 
 const { session, nickname, busy, avatarBusy, commitNickname, chooseAvatar } = useAccountSettings();
+const { logout } = useDesktop();
 const avatarInput = ref<HTMLInputElement>();
+const signingOut = ref(false);
+
+async function signOut(): Promise<void> {
+  if (signingOut.value || busy.value || avatarBusy.value) return;
+  signingOut.value = true;
+  try {
+    await logout();
+  } catch {
+    showToast(t("accountLogoutFailed"), "error");
+  } finally {
+    signingOut.value = false;
+  }
+}
 
 function onAvatar(event: Event): void {
   const input = event.target as HTMLInputElement;
@@ -59,7 +75,7 @@ function onAvatar(event: Event): void {
             <button
               type="button"
               class="rounded-lg outline-none transition duration-200 focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
-              :disabled="busy || avatarBusy"
+              :disabled="busy || avatarBusy || signingOut"
               :aria-label="t('accountAvatarPick')"
               @click="avatarInput?.click()"
             >
@@ -75,7 +91,7 @@ function onAvatar(event: Event): void {
             <button
               type="button"
               class="inline-flex min-h-7 items-center gap-1 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground disabled:opacity-50"
-              :disabled="busy || avatarBusy"
+              :disabled="busy || avatarBusy || signingOut"
               @click="avatarInput?.click()"
             >
               <ImagePlusIcon class="size-3.5" aria-hidden="true" />
@@ -106,7 +122,7 @@ function onAvatar(event: Event): void {
             type="text"
             maxlength="64"
             autocomplete="nickname"
-            :disabled="busy || avatarBusy"
+            :disabled="busy || avatarBusy || signingOut"
             class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
             @blur="commitNickname"
             @keydown.enter.prevent="commitNickname"
@@ -116,6 +132,18 @@ function onAvatar(event: Event): void {
             <span v-if="busy" class="text-foreground">{{ t("saving") }}</span>
           </span>
         </label>
+
+        <div class="grid justify-items-start gap-1.5 border-t border-rule pt-5">
+          <button
+            type="button"
+            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-rule px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
+            :disabled="busy || avatarBusy || signingOut"
+            @click="signOut"
+          >
+            {{ t("accountLogout") }}
+          </button>
+          <p class="m-0 text-xs leading-snug text-muted-foreground">{{ t("accountLogoutHint") }}</p>
+        </div>
       </section>
     </div>
   </main>

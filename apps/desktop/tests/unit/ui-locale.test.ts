@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { applyUiLocale, resolveUiLocale, t } from "../../src/shared/model/ui-locale.js";
+import { applyUiLocale, resolveUiLocale, t } from "../../src/shared/model/ui/ui-locale.js";
 
 it("uses the device language while signed out", () => {
   expect(resolveUiLocale(true, "en", "zh")).toBe("en");

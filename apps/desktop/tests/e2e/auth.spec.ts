@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
-import { mockAgentUp, openMarket, signIn } from "./helpers";
+import { mockAgentUp, messagesNav, openMarket, signIn, signOut } from "./helpers";
 import { installRuntime } from "./runtime";
 
 test("无正式账号时打开应用进入主界面（游客）", async ({ page }) => {
@@ -163,9 +163,10 @@ test("登出后落回游客主界面，不进入登录页", async ({ page }) => 
   await mockAgentUp(page);
   await installRuntime(page);
   await signIn(page);
-  await page.getByRole("button", { name: /^账号：/ }).click();
-  await page.getByRole("menuitem", { name: "登出" }).click();
+  await signOut(page);
+  await messagesNav(page).click();
   await expect(page).toHaveURL(/\/$/);
+  await expect(page).not.toHaveURL(/\/login/);
   await expect(page.getByRole("button", { name: "账号：游客" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^小A/ })).toBeVisible();
 });

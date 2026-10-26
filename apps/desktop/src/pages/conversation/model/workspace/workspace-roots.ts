@@ -1,4 +1,4 @@
-import { t } from "../../../../shared/model/ui-locale";
+import { t } from "../../../../shared/model/ui/ui-locale";
 
 /** 与 runtime `cwd-layout` 对齐的工作空间 Tab 根目录。 */
 export const ARTIFACT_DIR = "ARTIFACT";

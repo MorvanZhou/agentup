@@ -2,8 +2,8 @@ import { ref, watch } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApiError } from "../../../shared/api/runtime";
-import { compressAvatarFile } from "../../../shared/model/compress-avatar";
-import { showToast } from "../../../shared/model/toast";
+import { compressAvatarFile } from "../../../shared/model/avatar/compress-avatar";
+import { showToast } from "../../../shared/model/ui/toast";
 
 export function useAccountSettings() {
   const { session, updateNickname, updateProfile } = useDesktop();

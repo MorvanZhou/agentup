@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
+  CircleDotIcon,
   EllipsisVerticalIcon,
   HourglassIcon,
   LoaderCircleIcon,
@@ -8,12 +9,14 @@ import {
 } from "@lucide/vue";
 import { useRouter } from "vue-router";
 
-import AgentAvatar from "../../../../shared/components/AgentAvatar.vue";
+import AgentAvatar from "../../../../shared/components/avatar/AgentAvatar.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
-import { t, tf } from "../../../../shared/model/ui-locale";
+import { t, tf } from "../../../../shared/model/ui/ui-locale";
 import {
+  attentionBadgeCount,
   conversationDisplayName,
   conversationPreviewLabel,
+  delegationPreviewText,
   unreadLabel,
   type ConversationRow,
 } from "../../model/sidebar/conversation-row";
@@ -33,7 +36,13 @@ const awaitingUser = computed(
     props.row.awaitingChildHitl,
 );
 const showWorking = computed(() => props.row.working && !awaitingUser.value);
-const badge = computed(() => (showWorking.value ? "" : unreadLabel(props.row.unread)));
+const delegationLine = computed(() =>
+  awaitingUser.value ? "" : delegationPreviewText(props.row),
+);
+const showIncomingMark = computed(() => !awaitingUser.value && props.row.incomingCount > 0);
+const badge = computed(() =>
+  showWorking.value ? "" : unreadLabel(attentionBadgeCount(props.row)),
+);
 const displayName = computed(() => conversationDisplayName(props.row));
 const previewLabel = computed(() => conversationPreviewLabel(props.row));
 const personal = computed(() => props.row.agent.kind === "personal");
@@ -41,8 +50,11 @@ const awaitingLabel = computed(() => previewLabel.value);
 const ariaLabel = computed(() => {
   const parts = [displayName.value];
   if (awaitingUser.value) parts.push(previewLabel.value);
-  else if (showWorking.value) parts.push(t("sideWorking"));
-  else if (badge.value) parts.push(tf("sideUnread", { n: badge.value }));
+  else {
+    if (showWorking.value) parts.push(t("sideWorking"));
+    if (delegationLine.value) parts.push(delegationLine.value);
+    else if (badge.value) parts.push(tf("sideUnread", { n: badge.value }));
+  }
   return parts.join("，");
 });
 
@@ -125,9 +137,15 @@ function onAction(id: string): void {
         </span>
         <small
           v-else
-          class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground"
+          class="flex min-w-0 items-center gap-1 overflow-hidden text-xs"
+          :class="delegationLine ? 'text-foreground' : 'text-muted-foreground'"
         >
-          {{ previewLabel }}
+          <CircleDotIcon
+            v-if="showIncomingMark"
+            class="size-3 shrink-0 text-accent"
+            aria-hidden="true"
+          />
+          <span class="truncate">{{ previewLabel }}</span>
         </small>
       </span>
     </button>

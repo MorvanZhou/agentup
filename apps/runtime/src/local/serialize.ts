@@ -99,6 +99,7 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       option_label: model.optionLabel,
       enabled: model.enabled,
       active: model.active,
+      custom: model.custom,
     })),
     configured: settings.configured,
     overridden_by_environment: settings.overriddenByEnvironment,

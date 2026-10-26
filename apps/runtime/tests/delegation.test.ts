@@ -36,6 +36,38 @@ it("stores delegation tasks and lists unseen completed ones", () => {
   expect(store.list("patient", { unseenOnly: true })).toHaveLength(0);
 });
 
+it("heals sync wait terminal tasks so they leave unseen and never wake", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-sync-heal-"));
+  const store = new DelegationStore(root);
+  const sync = store.create({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "weather",
+    toAgentName: "Weaty",
+    brief: "查天气",
+    wait: true,
+  });
+  store.update(sync.id, { status: "completed", resultSummary: "晴" });
+  expect(store.list("patient", { unseenOnly: true })).toHaveLength(1);
+
+  const wakes: string[] = [];
+  const service = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => testModel(),
+    approvals: new ApprovalBroker(),
+    askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
+    enqueueWake: (item) => wakes.push(item.id),
+  });
+  const healed = service.listTasks("patient", { unseenOnly: true });
+  expect(healed).toHaveLength(0);
+  const settled = service.getTask(sync.id);
+  expect(settled).toMatchObject({ seen: true, notified: true, status: "completed" });
+
+  service.notifyParent(settled!);
+  expect(wakes).toEqual([]);
+});
+
 it("adds delegation tools for personal and recruited visits", () => {
   const personal = buildSessionPlan(
     {
@@ -390,6 +422,9 @@ it("registers delegate tools for any visit agent", async () => {
     "patient",
     "weather",
   )({
+    on() {
+      return undefined;
+    },
     registerTool(tool: { name: string }) {
       names.push(tool.name);
     },
@@ -472,6 +507,85 @@ it("tracks nesting parent for HITL surface", () => {
   expect(service.findNestingParent("patient", "weather")).toBe("personal-assistant");
   unmark();
   expect(service.findNestingParent("patient", "weather")).toBeUndefined();
+});
+
+it("marks leftover running delegations failed on restart and wakes only async parents", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-deleg-interrupt-"));
+  const store = new DelegationStore(root);
+  const asyncTask = store.create({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "weather",
+    toAgentName: "天气",
+    brief: "异步查天气",
+    wait: false,
+  });
+  store.update(asyncTask.id, { status: "running" });
+  const waitingAuth = store.create({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "maps",
+    toAgentName: "地图",
+    brief: "还在等批准",
+    wait: false,
+  });
+  const syncTask = store.create({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "news",
+    toAgentName: "新闻",
+    brief: "同步查新闻",
+    wait: true,
+  });
+  store.update(syncTask.id, { status: "running" });
+  const done = store.create({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "mail",
+    toAgentName: "邮件",
+    brief: "已完成",
+    wait: false,
+  });
+  store.update(done.id, { status: "completed", resultSummary: "已寄出", seen: true, notified: true });
+
+  const wakes: string[] = [];
+  const service = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => testModel(),
+    approvals: new ApprovalBroker(),
+    askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
+    enqueueWake: (item) => wakes.push(item.body),
+  });
+
+  const settled = service.recoverInterrupted();
+  expect(settled.map((task) => task.id).sort()).toEqual([asyncTask.id, waitingAuth.id, syncTask.id].sort());
+  expect(service.listTasks("patient", { status: "running" })).toHaveLength(0);
+  expect(service.listTasks("patient", { status: "pending_auth" })).toHaveLength(0);
+  expect(service.getTask(asyncTask.id)).toMatchObject({
+    status: "failed",
+    error: "应用已退出，这项工作在完成前中断",
+  });
+  expect(service.getTask(waitingAuth.id)?.status).toBe("failed");
+  expect(service.getTask(syncTask.id)).toMatchObject({ status: "failed", seen: true, notified: true });
+  expect(service.getTask(done.id)).toMatchObject({ status: "completed", resultSummary: "已寄出" });
+  expect(wakes).toHaveLength(2);
+  expect(wakes.join("\n")).toContain("异步查天气");
+  expect(wakes.join("\n")).toContain("还在等批准");
+  expect(wakes.join("\n")).not.toContain("同步查新闻");
+
+  expect(service.recoverInterrupted()).toEqual([]);
+  expect(wakes).toHaveLength(2);
+
+  const reloaded = new DelegationService({
+    userDataRoot: root,
+    backendUrl: "http://127.0.0.1:9",
+    getModel: () => testModel(),
+    approvals: new ApprovalBroker(),
+    askUser: { request: vi.fn(), answer: vi.fn(), subscribe: vi.fn() } as never,
+  });
+  expect(reloaded.listTasks("patient", { status: "running" })).toHaveLength(0);
+  expect(reloaded.getTask(asyncTask.id)?.status).toBe("failed");
 });
 
 function testModel() {

@@ -1,8 +1,8 @@
 import { DefaultChatTransport, type UIMessage } from "ai";
 
-import { agentUpEntryId, lastUserPrompt, userTurnOrdinalAfterReset } from "../model/chat";
-import { PERSONAL_ASSISTANT_ID } from "../model/runtime";
-import { readUiLocale } from "../model/ui-locale";
+import { agentUpEntryId, lastUserPrompt, userTurnOrdinalAfterReset } from "../model/chat/chat";
+import { PERSONAL_ASSISTANT_ID } from "../model/runtime/runtime";
+import { readUiLocale } from "../model/ui/ui-locale";
 
 /** 指向本机 runtime 的 AI SDK ChatTransport；正文 + 附件交给 Pi。 */
 export function createAgentUpTransport(options: {

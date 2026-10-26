@@ -13,16 +13,19 @@ import {
   isAgentUpAskUser,
   isAgentUpDelegationStarted,
   isAgentUpModelUnavailable,
+  isAgentUpShellHang,
   type AgentUpApprovalData,
   type AgentUpAskUserData,
   type AgentUpDelegationStartedData,
-} from "../../../shared/model/chat";
-import { showToast } from "../../../shared/model/toast";
-import { readUiLocale, t } from "../../../shared/model/ui-locale";
+  type AgentUpShellHangData,
+} from "../../../shared/model/chat/chat";
+import { showToast } from "../../../shared/model/ui/toast";
+import { readUiLocale, t } from "../../../shared/model/ui/ui-locale";
 
 export type WakeTurnStreamHandlers = {
   onApproval?: (data: AgentUpApprovalData) => void;
   onAskUser?: (data: AgentUpAskUserData) => void;
+  onShellHang?: (data: AgentUpShellHangData) => void;
   onDelegationStarted?: (data: AgentUpDelegationStartedData) => void;
   /** 流结束：调用方拉一次权威历史，并入 AISDKChat。 */
   onDone?: () => void;
@@ -60,6 +63,10 @@ export function useWakeTurnStream(options: {
     }
     if (type === "data-agentup-ask-user" && isAgentUpAskUser(data)) {
       options.handlers.onAskUser?.(data);
+      return;
+    }
+    if (type === "data-agentup-shell-hang" && isAgentUpShellHang(data)) {
+      options.handlers.onShellHang?.(data);
       return;
     }
     if (type === "data-agentup-delegation-started" && isAgentUpDelegationStarted(data)) {

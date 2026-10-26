@@ -15,8 +15,8 @@ import {
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
-import AgentAvatar from "../../../../../../shared/components/AgentAvatar.vue";
-import { t } from "../../../../../../shared/model/ui-locale";
+import AgentAvatar from "../../../../../../shared/components/avatar/AgentAvatar.vue";
+import { t } from "../../../../../../shared/model/ui/ui-locale";
 import {
   buildAssistantByproducts,
   type ByproductTabId,

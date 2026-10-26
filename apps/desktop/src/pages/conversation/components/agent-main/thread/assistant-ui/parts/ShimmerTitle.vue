@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
-import { t } from "../../../../../../../shared/model/ui-locale";
+import { t } from "../../../../../../../shared/model/ui/ui-locale";
 
 const props = defineProps<{
   active: boolean;

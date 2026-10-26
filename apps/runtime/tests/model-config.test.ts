@@ -10,6 +10,7 @@ import {
   deleteProviderConnection,
   loadModelConfig,
   readProviderSettings,
+  removeCustomModel,
   setActiveModel,
   setModelEnabled,
   setRuntimeProviderSecrets,
@@ -81,6 +82,30 @@ it("toggles enabled models and keeps an active selection", () => {
   expect(settings.activeModel?.modelId).toBe("a");
   deleteProviderConnection(root, "ollama");
   expect(readProviderSettings(root, {}).configured).toBe(false);
+});
+
+it("removes a manually added custom model from the list", () => {
+  clearRuntimeProviderSecrets();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-provider-rm-"));
+  upsertProviderConnection(root, {
+    templateId: "ollama",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    customModelId: "keep-me",
+  });
+  upsertProviderConnection(root, {
+    templateId: "ollama",
+    customModelId: "drop-me",
+  });
+  let settings = setActiveModel(root, { templateId: "ollama", modelId: "drop-me" });
+  expect(settings.availableModels.find((m) => m.modelId === "drop-me")?.custom).toBe(true);
+
+  settings = removeCustomModel(root, { templateId: "ollama", modelId: "drop-me" });
+  expect(settings.connections[0]?.customModelIds).toEqual(["keep-me"]);
+  expect(settings.availableModels.map((m) => m.modelId)).toEqual(["keep-me"]);
+  expect(settings.activeModel).toEqual({ templateId: "ollama", modelId: "keep-me" });
+  expect(() => removeCustomModel(root, { templateId: "ollama", modelId: "keep-me-not" })).toThrow(
+    ConfigError,
+  );
 });
 
 it("keeps environment variables as the highest-priority developer override", () => {

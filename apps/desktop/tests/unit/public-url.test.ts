@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { publicUrl } from "../../src/shared/model/public-url.js";
+import { publicUrl } from "../../src/shared/model/ui/public-url.js";
 
 describe("publicUrl", () => {
   it("joins Vite BASE_URL and strips a leading slash on the asset name", () => {

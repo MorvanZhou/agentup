@@ -3,7 +3,7 @@ import { CircleCheckIcon, ChevronDownIcon } from "@lucide/vue";
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui";
 import { computed, ref } from "vue";
 
-import { t } from "../../../../../../../shared/model/ui-locale";
+import { t } from "../../../../../../../shared/model/ui/ui-locale";
 import {
   completedTodoTitle,
   type TodoListItem,

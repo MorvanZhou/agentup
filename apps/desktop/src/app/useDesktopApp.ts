@@ -3,15 +3,15 @@ import { computed, onMounted, onScopeDispose, ref, watch } from "vue";
 import { totalBlocked } from "../pages/conversation/model/sidebar/conversation-row";
 import { DesktopApi, DesktopApiError } from "../shared/api/runtime";
 import type { AttentionSnapshot } from "../shared/api/runtime/chat";
-import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/personal-assistant-default";
+import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/avatar/personal-assistant-default";
 import {
   PERSONAL_ASSISTANT_ID,
   type AgentCard,
   type PersonalAssistantProfile,
   type Session,
   type ThemeMode,
-} from "../shared/model/runtime";
-import { GUEST_USER_ID, isAccountSession, isGuestSession } from "../shared/model/session";
+} from "../shared/model/runtime/runtime";
+import { GUEST_USER_ID, isAccountSession, isGuestSession } from "../shared/model/session/session";
 import {
   applyUiLocale,
   readDeviceLocale,
@@ -20,8 +20,8 @@ import {
   uiLocale,
   writeDeviceLocale,
   type UiLocale,
-} from "../shared/model/ui-locale";
-import { showToast } from "../shared/model/toast";
+} from "../shared/model/ui/ui-locale";
+import { showToast } from "../shared/model/ui/toast";
 import { syncAppBadge } from "./app-badge";
 import { bindAuthGate, runWithAccount } from "./auth-gate";
 import { clearSession, ensureGuestSession, readSession, saveSession } from "./session-store";
@@ -34,6 +34,7 @@ const emptyAttention = (): AttentionSnapshot => ({
   busyTurns: [],
   approvals: [],
   askUsers: [],
+  shellHangs: [],
 });
 
 export function useDesktopApp(api = new DesktopApi()) {
@@ -76,6 +77,12 @@ export function useDesktopApp(api = new DesktopApi()) {
       }
     }
     for (const item of attention.value.askUsers) {
+      ids.add(item.agentId);
+      if (item.parentAgentId && item.parentAgentId !== item.agentId) {
+        ids.add(item.parentAgentId);
+      }
+    }
+    for (const item of attention.value.shellHangs) {
       ids.add(item.agentId);
       if (item.parentAgentId && item.parentAgentId !== item.agentId) {
         ids.add(item.parentAgentId);

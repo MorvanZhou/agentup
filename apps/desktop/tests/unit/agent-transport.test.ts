@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { UIMessage } from "ai";
 
 import { createAgentUpTransport } from "../../src/shared/api/agent-transport";
-import { agentUpEntryId, userTurnOrdinalAfterReset } from "../../src/shared/model/chat";
+import { agentUpEntryId, userTurnOrdinalAfterReset } from "../../src/shared/model/chat/chat";
 
 it("counts user turns after the latest context reset", () => {
   const messages = [

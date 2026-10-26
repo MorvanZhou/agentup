@@ -4,16 +4,14 @@ import AgentsPage from "../pages/agents/AgentsPage.vue";
 import LocalAgentCreatePage from "../pages/agents/LocalAgentCreatePage.vue";
 import LocalAgentEditPage from "../pages/agents/LocalAgentEditPage.vue";
 import MarketPage from "../pages/agents/MarketPage.vue";
+import PublishEditorPage from "../pages/agents/PublishEditorPage.vue";
 import ConversationPage from "../pages/conversation/ConversationPage.vue";
 import LoginPage from "../pages/login/LoginPage.vue";
-import PublishEditorPage from "../pages/publish/PublishEditorPage.vue";
 import SettingsPage from "../pages/settings/SettingsPage.vue";
-import { isAccountSession } from "../shared/model/session";
+import { isAccountSession } from "../shared/model/session/session";
 import AppLayout from "./AppLayout.vue";
 import { isAuthGateReady, runWithAccount } from "./auth-gate";
 import { ensureGuestSession, readSession } from "./session-store";
-
-const ownedAgents = { name: "agents-owned" as const };
 
 // 打包后 loadFile 走 file://，history 模式无法匹配路由；生产用 hash。
 export const router = createRouter({
@@ -70,16 +68,6 @@ export const router = createRouter({
           meta: { requiresAccount: true },
         },
         { path: "settings", name: "settings", component: SettingsPage },
-        // 旧链：发布编辑器
-        { path: "publish", redirect: ownedAgents },
-        { path: "publish/new", redirect: { name: "agents-owned-new" } },
-        {
-          path: "publish/:agentId",
-          redirect: (to) => ({
-            name: "agents-owned-edit",
-            params: { agentId: to.params.agentId },
-          }),
-        },
       ],
     },
   ],

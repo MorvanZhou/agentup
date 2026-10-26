@@ -11,8 +11,11 @@ import {
 
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
 import type { WorkspaceEntry } from "../../../../../shared/api/runtime/workspace";
-import { t, tf } from "../../../../../shared/model/ui-locale";
-import { detectDesktopPlatform, revealInFolderLabel } from "../../../model/workspace/reveal-label";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
+import {
+  detectDesktopPlatform,
+  revealInFolderLabel,
+} from "../../../../../shared/model/ui/reveal-in-folder";
 
 const props = defineProps<{
   entries: WorkspaceEntry[];

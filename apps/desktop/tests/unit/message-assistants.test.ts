@@ -81,6 +81,32 @@ describe("extractAssistAgents", () => {
     expect(failed[0]?.status).toBe("failed");
   });
 
+  it("异步 started 标记 asyncDispatched，不把说明文当 reply，状态仍为 completed", () => {
+    const assists = extractAssistAgents([
+      {
+        type: "tool-call",
+        toolName: "delegate_to_agent",
+        toolCallId: "d-async",
+        args: { agent_id: "coder", brief: "写补丁" },
+        result:
+          "Delegation started (async).\n" +
+          "task_id: task-async-1\n" +
+          "agent: 编码助手 (coder)\n" +
+          "Use check_delegation with this task_id later, or wait for a session notification when it finishes.",
+      },
+    ]);
+    expect(assists).toHaveLength(1);
+    expect(assists[0]).toMatchObject({
+      agentId: "coder",
+      nameHint: "编码助手",
+      brief: "写补丁",
+      reply: "",
+      status: "completed",
+      asyncDispatched: true,
+      taskId: "task-async-1",
+    });
+  });
+
   it("透传工具 part 的墙钟 timing，升级状态时保留 startedAt", () => {
     const running = extractAssistAgents([
       {

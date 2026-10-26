@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
 
-import { setToastOpen, showToast, toastState } from "../../src/shared/model/toast.js";
+import { setToastOpen, showToast, toastState } from "../../src/shared/model/ui/toast.js";
 
 afterEach(() => {
   setToastOpen(false);

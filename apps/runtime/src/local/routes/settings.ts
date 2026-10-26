@@ -5,6 +5,7 @@ import {
   deleteProviderConnection,
   readProviderSettings,
   refreshProviderModels,
+  removeCustomModel,
   setActiveModel,
   setModelEnabled,
   setRuntimeProviderSecrets,
@@ -171,6 +172,30 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
         c,
         200,
         providerSettingsBody(await refreshProviderModels(config.userDataRoot, templateId, locale)),
+      );
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  app.delete("/settings/provider/connections/:templateId/custom-models/:modelId", (c) => {
+    bearer(c);
+    const locale = uiLocaleFromRequest(c);
+    try {
+      return json(
+        c,
+        200,
+        providerSettingsBody(
+          removeCustomModel(
+            config.userDataRoot,
+            {
+              templateId: c.req.param("templateId"),
+              modelId: decodeURIComponent(c.req.param("modelId")),
+            },
+            locale,
+          ),
+        ),
       );
     } catch (error) {
       if (error instanceof ConfigError) throw new LocalError(error.message, 400);

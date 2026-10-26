@@ -27,10 +27,12 @@ import {
   isContextResetMessage,
   type AgentUpApprovalData,
   type AgentUpAskUserData,
+  type AgentUpShellHangData,
   type ApprovalScope,
   type AskUserAnswer,
-} from "../../../../../shared/model/chat";
-import { t, tf } from "../../../../../shared/model/ui-locale";
+  type ShellHangAction,
+} from "../../../../../shared/model/chat/chat";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { threadAskUserKey } from "../../../model/thread/thread-ask-user";
 import { threadApprovalKey } from "../../../model/thread/thread-approval";
 import { injectThreadExtras } from "../../../model/thread/thread-extras";
@@ -44,6 +46,7 @@ import {
 import { injectThreadWakeLive } from "../../../model/thread/thread-wake-live";
 import ApprovalDock from "./dock/ApprovalDock.vue";
 import AskUserDock from "./dock/AskUserDock.vue";
+import ShellHangDock from "./dock/ShellHangDock.vue";
 import PlanDock from "./dock/PlanDock.vue";
 import AssistantMessage from "./assistant-ui/AssistantMessage.vue";
 import Composer from "./composer/Composer.vue";
@@ -55,10 +58,12 @@ import WakeLiveMessage from "./WakeLiveMessage.vue";
 const props = defineProps<{
   approval?: AgentUpApprovalData;
   askUser?: AgentUpAskUserData;
+  shellHang?: AgentUpShellHangData;
 }>();
 const emit = defineEmits<{
   decide: [allow: boolean, scope?: ApprovalScope];
   answer: [answer: AskUserAnswer];
+  "shell-hang-decide": [action: ShellHangAction];
 }>();
 provide(threadApprovalKey, toRef(props, "approval"));
 provide(threadAskUserKey, toRef(props, "askUser"));
@@ -263,8 +268,12 @@ onBeforeUnmount(() => {
     </ThreadPrimitiveViewport>
 
     <!-- 当前计划（输入区上方，不随消息滚动） -->
-    <PlanDock :suppressed="Boolean(approval || askUser)" />
-    <!-- 本会话审批 / 提问（输入区上方，随 thread 显隐，不走全屏弹窗） -->
+    <PlanDock :suppressed="Boolean(approval || askUser || shellHang)" />
+    <!-- 本会话审批 / 提问 / 命令超时（输入区上方，随 thread 显隐，不走全屏弹窗） -->
+    <ShellHangDock
+      :hang="shellHang"
+      @decide="(action) => emit('shell-hang-decide', action)"
+    />
     <ApprovalDock :approval="approval" @decide="(allow, scope) => emit('decide', allow, scope)" />
     <AskUserDock :ask-user="askUser" @answer="(answer) => emit('answer', answer)" />
     <!-- 输入区 -->

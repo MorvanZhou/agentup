@@ -1,8 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
 import {
   conversationItem,
   expectComposerText,
+  messagesNav,
   openMarket,
   signIn,
   startAgent,
@@ -119,7 +120,7 @@ test("已招募的会话会读回本机聊天记录，续聊不会并入上一�
   await expect(page.getByRole("list").getByText("你好", { exact: true })).toHaveCount(2);
 
   await openMarket(page);
-  await page.getByRole("link", { name: "消息", exact: true }).click();
+  await messagesNav(page).click();
   await expect(page.getByText("上海今天晴，24°C。")).toBeVisible();
 });
 
@@ -369,7 +370,7 @@ test("消息列表显示未读角标，选中后清除", async ({ page }) => {
   await signIn(page);
   await expect(page.getByRole("button", { name: "Weaty，2 条未读" })).toBeVisible();
   // 主导航角标只反映待审批 / ask_user，未读只在会话行上。
-  await expect(page.getByRole("link", { name: "消息", exact: true })).toBeVisible();
+  await expect(messagesNav(page)).toBeVisible();
   await page.getByRole("button", { name: "Weaty，2 条未读" }).click();
   await expect(page.getByRole("button", { name: "Weaty", exact: true })).toBeVisible();
 });
@@ -396,7 +397,7 @@ test("stream 中切换会话或页面再回来，仍接回同一轮回复", asyn
   await conversationItem(page, "Weaty").click();
   await expect(page.getByRole("button", { name: "呼吸科医生，正在回复" })).toBeVisible();
   await openMarket(page);
-  await page.getByRole("link", { name: "消息", exact: true }).click();
+  await messagesNav(page).click();
   await conversationItem(page, "呼吸科医生").click();
 
   await expect(page.getByRole("list").getByText("你好", { exact: true })).toBeVisible({ timeout: 10_000 });

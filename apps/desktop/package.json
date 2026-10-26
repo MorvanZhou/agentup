@@ -1,7 +1,7 @@
 {
   "name": "@agentup/desktop",
   "productName": "AgentUp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "AgentUp desktop — 本机 AI Agent 工作台",
   "author": "AgentUp",
   "private": true,
@@ -29,6 +29,7 @@
     "ai": "^7.0.137",
     "electron": "^38.1.2",
     "electron-builder": "^26.15.3",
+    "happy-dom": "^18.0.1",
     "highlight.js": "^11.12.0",
     "markdown-it": "^15.0.2",
     "mermaid": "^12.1.0",

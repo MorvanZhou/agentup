@@ -36,6 +36,7 @@ export const en: Record<string, string> = {
   "pa.defaultRole": "Personal assistant",
   "pa.defaultBackground":
     "Focus on the user's goals. Use the Skills, MCP, and work rules they configured for you.",
+
   "pa.err.nameLength": "Name must be 1–40 characters",
   "pa.err.roleLength": "Role must be 1–40 characters",
   "pa.err.backgroundLength": "Background must be 1–300 characters",
@@ -64,9 +65,20 @@ export const en: Record<string, string> = {
   "la.err.skillExportFailed": "Failed to export skill",
 
   "chat.modelUnavailable": "The current model service is unavailable. Please try switching models.",
+  "chat.rateLimited": "The model is rate-limited or temporarily busy. Please try again shortly.",
+  "chat.quotaExhausted":
+    "This model's quota or plan is exhausted (or paid billing is not enabled). Check balance/billing in that provider's console, or switch to another available model in Settings.",
+  "chat.authFailed":
+    "Model authentication failed — the API key may be invalid, expired, or lack permission. Check the provider key in Settings, or switch models.",
+  "chat.providerCallFailed":
+    "Model call failed: {detail}. Check the API key and quota/billing, or switch models and retry.",
+  "chat.turnCancelled": "Stopped",
   "chat.outputLengthExceeded":
     "Output hit the model limit with no usable text after automatic continuation (often spent on reasoning). Split the task or use a model with a higher output cap.",
-  "chat.emptyAssistantResult": "No usable result was returned",
+  "chat.emptyAssistantResult":
+    "No usable result was returned. Common causes: exhausted quota, a brief provider outage, or truncated output. Check billing/quota or switch models and retry.",
   "chat.streamDegenerationAborted":
     "The model started repeating itself or flooding control tokens, so generation was stopped. Retry or switch models.",
+
+  "work.interruptedByExit": "The app exited before this work finished.",
 };

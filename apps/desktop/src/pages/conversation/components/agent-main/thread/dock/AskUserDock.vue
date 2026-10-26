@@ -21,8 +21,8 @@ import type {
   AgentUpAskUserQuestion,
   AskUserAnswer,
   AskUserItemAnswer,
-} from "../../../../../../shared/model/chat";
-import { t, tf } from "../../../../../../shared/model/ui-locale";
+} from "../../../../../../shared/model/chat/chat";
+import { t, tf } from "../../../../../../shared/model/ui/ui-locale";
 
 const props = defineProps<{
   askUser?: AgentUpAskUserData;
@@ -223,6 +223,15 @@ function stepHint(index: number): string {
         <div class="min-w-0 flex-1">
           <p class="mb-0 text-xs font-medium tracking-wider text-accent">
             {{ progressLabel }}
+          </p>
+          <p v-if="askUser.askedByName" class="mb-0 mt-0.5 text-xs text-foreground">
+            {{ tf("hitlRelayAsk", { name: askUser.askedByName }) }}
+          </p>
+          <p v-if="askUser.taskLabel" class="mb-0 mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+            {{ tf("hitlRelayTask", { label: askUser.taskLabel }) }}
+          </p>
+          <p v-if="(askUser.queueBehind ?? 0) > 0" class="mb-0 mt-0.5 text-xs text-muted-foreground">
+            {{ tf("hitlQueueBehind", { n: askUser.queueBehind }) }}
           </p>
           <h2
             :id="`ask-user-title-${askUser.id}`"

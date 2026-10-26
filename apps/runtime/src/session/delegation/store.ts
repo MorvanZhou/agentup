@@ -49,7 +49,14 @@ export class DelegationStore {
     patch: Partial<
       Pick<
         DelegationTask,
-        "status" | "resultSummary" | "error" | "seen" | "notified" | "toAgentName"
+        | "status"
+        | "resultSummary"
+        | "error"
+        | "seen"
+        | "notified"
+        | "toAgentName"
+        | "artifacts"
+        | "artifactsDelivered"
       >
     >,
   ): DelegationTask | undefined {
@@ -83,6 +90,19 @@ export class DelegationStore {
     });
     items.sort((left, right) => right.updatedAt - left.updatedAt);
     return items;
+  }
+
+  /** 本机 `users/` 下可加载委托的账号目录。 */
+  listUserIds(): string[] {
+    if (!this.userDataRoot) return [];
+    const users = path.join(this.userDataRoot, "users");
+    if (!fs.existsSync(users)) return [];
+    const ids: string[] = [];
+    for (const entry of fs.readdirSync(users, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !isLooseUserId(entry.name)) continue;
+      ids.push(entry.name);
+    }
+    return ids;
   }
 
   private persist(task: DelegationTask): void {
@@ -159,7 +179,26 @@ function parseTask(raw: unknown): DelegationTask | undefined {
     error: typeof value.error === "string" ? value.error : undefined,
     seen: value.seen === true,
     notified: value.notified === true,
+    artifacts: parseArtifacts(value.artifacts),
+    artifactsDelivered: value.artifactsDelivered === true,
   };
+}
+
+function parseArtifacts(
+  raw: unknown,
+): { path: string; size?: number }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const files: { path: string; size?: number }[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const pathValue = (item as { path?: unknown }).path;
+    if (typeof pathValue !== "string" || !pathValue.startsWith("ARTIFACT/")) continue;
+    const entry: { path: string; size?: number } = { path: pathValue };
+    const size = (item as { size?: unknown }).size;
+    if (typeof size === "number" && Number.isFinite(size) && size >= 0) entry.size = size;
+    files.push(entry);
+  }
+  return files;
 }
 
 function numberOr(value: unknown, fallback: number): number {

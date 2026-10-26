@@ -4,8 +4,8 @@ import { BotIcon, ListIcon, SearchIcon } from "@lucide/vue";
 import { useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 
-import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
-import { t, tf } from "../../../../../../../shared/model/ui-locale";
+import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import {
   parseDelegationResultText,
   parseDelegationTaskId,

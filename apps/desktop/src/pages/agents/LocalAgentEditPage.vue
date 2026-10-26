@@ -6,9 +6,9 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { useDesktop } from "../../app/desktop";
 import AgentEditorForm from "../../shared/components/agent-editor/AgentEditorForm.vue";
 import UiFormSkeleton from "../../shared/components/UiFormSkeleton.vue";
-import type { AgentEditorInitial, AgentEditorInput } from "../../shared/model/agent-editor";
-import type { AgentCard } from "../../shared/model/runtime";
-import { t } from "../../shared/model/ui-locale";
+import type { AgentEditorInitial, AgentEditorInput } from "../../shared/model/agent-editor/agent-editor";
+import type { AgentCard } from "../../shared/model/runtime/runtime";
+import { t } from "../../shared/model/ui/ui-locale";
 import { useLocalAgents } from "./composables/useLocalAgents";
 
 const route = useRoute();

@@ -16,6 +16,10 @@ import {
 import type { ModelConfig } from "../../config/load.js";
 import type { Visit } from "../../package/sync.js";
 import { ApprovalBroker, createApprovalExtension } from "../hitl/approval/index.js";
+import {
+  createShellHangExtension,
+  type ShellHangBroker,
+} from "../hitl/shell-hang/index.js";
 import { createCheckpointExtension } from "../checkpoint/extension.js";
 import { PiUIMessageProjector } from "../history/frames.js";
 import { projectHistoryFromManager } from "../history/history.js";
@@ -32,22 +36,31 @@ import { projectVisitAgentsMd } from "../workspace/agents-md.js";
 import {
   AskUserBroker,
   createAskUserExtension,
+  createDeliverArtifactsExtension,
   createFsGuardExtension,
   createLocalTimeExtension,
   createTodoExtension,
   createWebToolsExtension,
+  DELIVER_ARTIFACTS_TOOL,
   formatToolsUsagePrompt,
+  type DeliverArtifactsState,
+  type StagedArtifact,
 } from "../tools/index.js";
 import {
   createOutputLengthExtension,
   resolveEmptyAssistantError,
 } from "../output-length.js";
 import { createStreamGuardExtension } from "../stream-guard.js";
+import { snapshotArtifactDir } from "../workspace/artifact-diff.js";
 import type { DelegationProgressHub } from "./progress.js";
 
 export type DelegationRunOutcome = {
   text: string;
   error?: string;
+  /** 是否调用过 deliver_artifacts（含 paths: []）。 */
+  artifactsConfirmed: boolean;
+  /** 确认后的附件；未确认时为空数组。 */
+  artifacts: StagedArtifact[];
 };
 
 /** 委托隔离子会话目录（相对 visit.root）。 */
@@ -91,6 +104,7 @@ export async function runDelegatedPrompt(
     /** 父 turn / 工具 signal：用户停止主对话时一并中止子委托（无默认硬超时）。 */
     signal?: AbortSignal;
     progress?: DelegationProgressHub;
+    shellHang?: ShellHangBroker;
   },
 ): Promise<DelegationRunOutcome> {
   const plan = buildSessionPlan(visit, model);
@@ -109,6 +123,8 @@ export async function runDelegatedPrompt(
   const mcpEnabled = mcpConfig.servers.length > 0;
   const settingsManager = SettingsManager.create(plan.cwd, plan.agentDir, { projectTrusted: true });
   const packageSkills = path.join(plan.cwd, ".pi", "skills");
+  const artifactBefore = snapshotArtifactDir(plan.cwd);
+  const deliverState: DeliverArtifactsState = { confirmed: false, staged: [] };
   const resourceLoader = new DefaultResourceLoader({
     cwd: plan.cwd,
     agentDir: plan.agentDir,
@@ -124,9 +140,17 @@ export async function runDelegatedPrompt(
       createLocalTimeExtension(),
       createAskUserExtension(askUser, visit.userId, visit.agentId, hitl),
       createTodoExtension(),
+      createDeliverArtifactsExtension({
+        cwd: plan.cwd,
+        before: artifactBefore,
+        state: deliverState,
+      }),
       createOutputLengthExtension(),
       createStreamGuardExtension(),
       createCheckpointExtension(visit.root),
+      ...(options.shellHang
+        ? [createShellHangExtension(options.shellHang, visit.userId, visit.agentId, { hitl })]
+        : []),
       ...(mcpEnabled
         ? [createToolSearchExtension(), createCodemodeExtension(), createMcpExtension({ loadConfig: () => mcpConfig })]
         : []),
@@ -167,6 +191,9 @@ export async function runDelegatedPrompt(
   fs.writeFileSync(sessionFile, "");
   const sessionManager = SessionManager.open(sessionFile, sessionDir, plan.cwd);
 
+  const sessionTools = plan.tools.includes(DELIVER_ARTIFACTS_TOOL)
+    ? plan.tools
+    : [...plan.tools, DELIVER_ARTIFACTS_TOOL];
   const sessionOptions: CreateAgentSessionOptions = {
     cwd: plan.cwd,
     agentDir: plan.agentDir,
@@ -175,9 +202,9 @@ export async function runDelegatedPrompt(
     resourceLoader,
     sessionManager,
     model: registered,
-    tools: plan.tools,
+    tools: sessionTools,
     thinkingLevel: "off",
-    noTools: plan.tools.length > 0 ? undefined : mcpEnabled ? "builtin" : "all",
+    noTools: sessionTools.length > 0 ? undefined : mcpEnabled ? "builtin" : "all",
   };
   const { session } = await createAgentSession(sessionOptions);
   await session.bindExtensions({});
@@ -202,23 +229,29 @@ export async function runDelegatedPrompt(
     else signal.addEventListener("abort", onAbort, { once: true });
   }
 
+  const artifactsResult = (): Pick<DelegationRunOutcome, "artifactsConfirmed" | "artifacts"> => ({
+    artifactsConfirmed: deliverState.confirmed,
+    artifacts: deliverState.confirmed ? [...deliverState.staged] : [],
+  });
+
   try {
     const promptText = formatDelegationPrompt(brief);
     // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
+    // ARTIFACT 确认由 createDeliverArtifactsExtension 在 before_settle 强制续写。
     await session.prompt(promptText);
     const text = texts.join("").trim() || collectBranchText(sessionManager);
     if (signal?.aborted) {
       const message = "用户已取消";
       if (progress) progress.write(options.taskId, projector.finish(message));
-      return { text, error: message };
+      return { text, error: message, ...artifactsResult() };
     }
     if (!text) {
       const message = resolveEmptyAssistantError(sessionManager);
       if (progress) progress.write(options.taskId, projector.finish(message));
-      return { text: "", error: message };
+      return { text: "", error: message, ...artifactsResult() };
     }
     if (progress) progress.write(options.taskId, projector.finish());
-    return { text };
+    return { text, ...artifactsResult() };
   } catch (error) {
     const message = signal?.aborted
       ? "用户已取消"
@@ -229,7 +262,7 @@ export async function runDelegatedPrompt(
       progress.write(options.taskId, projector.finish(message));
     }
     const partial = texts.join("").trim() || collectBranchText(sessionManager);
-    return { text: partial, error: message };
+    return { text: partial, error: message, ...artifactsResult() };
   } finally {
     signal?.removeEventListener("abort", onAbort);
     unsubscribe();
@@ -241,6 +274,7 @@ export async function runDelegatedPrompt(
 function formatDelegationPrompt(brief: string): string {
   return (
     "你正在处理来自用户私人助理的委托子任务。请只完成下列任务，完成后给出清晰、可引用的结果摘要。" +
+    "成品写入 ARTIFACT/；结束时协议会请你用 deliver_artifacts 确认要投递给调用方的附件。" +
     "不要向用户闲聊；若缺少关键信息，用 ask_user 提问。\n\n" +
     `## 任务\n${brief.trim()}`
   );

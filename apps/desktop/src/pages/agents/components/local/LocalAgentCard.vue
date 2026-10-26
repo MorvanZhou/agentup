@@ -9,11 +9,12 @@ import {
 } from "@lucide/vue";
 import { computed, ref } from "vue";
 
-import AgentAvatar from "../../../../shared/components/AgentAvatar.vue";
+import AgentAvatar from "../../../../shared/components/avatar/AgentAvatar.vue";
 import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
-import type { AgentCard } from "../../../../shared/model/runtime";
-import { t, tf } from "../../../../shared/model/ui-locale";
+import type { AgentCard } from "../../../../shared/model/runtime/runtime";
+import { t, tf } from "../../../../shared/model/ui/ui-locale";
+import AgentProfileDialog from "../AgentProfileDialog.vue";
 
 const props = defineProps<{ agent: AgentCard; busy: boolean }>();
 const emit = defineEmits<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>();
 
 const confirmDelete = ref(false);
+const profileOpen = ref(false);
 
 const menuItems = computed((): AppDropdownItem[] => [
   { id: "edit", label: t("agentsLocalEdit"), icon: PencilIcon, disabled: props.busy },
@@ -68,9 +70,16 @@ function confirmDeleteAction(): void {
 
 <template>
   <article
-    class="group flex h-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+    class="group relative flex h-full w-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 text-left shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
     :aria-labelledby="`local-agent-${agent.agentId}`"
   >
+    <!-- 点卡片空白处看资料；菜单和对话盖在上层 -->
+    <button
+      type="button"
+      class="absolute inset-0 z-10 cursor-pointer rounded-xl border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"
+      :aria-label="tf('agentsViewProfile', { name: agent.name })"
+      @click="profileOpen = true"
+    />
     <!-- 身份：头像 + 名职 + 菜单 -->
     <div class="flex shrink-0 items-start gap-2.5">
       <AgentAvatar
@@ -80,20 +89,13 @@ function confirmDeleteAction(): void {
         size="sidebar"
       />
       <div class="min-w-0 flex-1 pt-0.5">
-        <div class="flex min-w-0 items-center gap-1.5">
-          <h2
-            :id="`local-agent-${agent.agentId}`"
-            class="m-0 min-w-0 truncate text-[15px] font-bold leading-snug tracking-tight text-foreground"
-            :title="agent.name"
-          >
-            {{ agent.name }}
-          </h2>
-          <span
-            class="inline-flex shrink-0 items-center rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-accent"
-          >
-            {{ t("agentsLocalBadge") }}
-          </span>
-        </div>
+        <h2
+          :id="`local-agent-${agent.agentId}`"
+          class="m-0 truncate text-[15px] font-bold leading-snug tracking-tight text-foreground"
+          :title="agent.name"
+        >
+          {{ agent.name }}
+        </h2>
         <p
           v-if="agent.role"
           class="m-0 mt-1 truncate text-xs font-semibold leading-tight text-accent"
@@ -103,6 +105,7 @@ function confirmDeleteAction(): void {
         </p>
         <p v-else class="m-0 mt-1 h-4" aria-hidden="true" />
       </div>
+      <div class="relative z-20">
       <AppDropdownMenu :items="menuItems" @select="onSelect">
         <template #trigger>
           <button
@@ -115,6 +118,7 @@ function confirmDeleteAction(): void {
           </button>
         </template>
       </AppDropdownMenu>
+      </div>
     </div>
 
     <!-- 简介 -->
@@ -125,15 +129,15 @@ function confirmDeleteAction(): void {
       {{ agent.background }}
     </p>
 
-    <!-- 底栏：对话 CTA -->
-    <footer class="mt-auto flex shrink-0 items-center justify-end gap-2 pt-0.5">
+    <!-- 底栏：去对话，位置与已发布卡片的次数一致 -->
+    <footer class="mt-auto flex shrink-0 items-center gap-2 pt-0.5">
       <button
         type="button"
-        class="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-accent px-2.5 text-xs font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
+        class="relative z-20 inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1 truncate border-0 bg-transparent p-0 text-left text-[11px] font-medium text-muted-foreground transition duration-200 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
         :disabled="busy"
         @click="emit('chat', agent)"
       >
-        <MessageSquareIcon class="size-3.5 shrink-0" aria-hidden="true" />
+        <MessageSquareIcon class="size-3 shrink-0 opacity-70" aria-hidden="true" />
         {{ t("agentsLocalChat") }}
       </button>
     </footer>
@@ -161,5 +165,6 @@ function confirmDeleteAction(): void {
         </button>
       </div>
     </AppDialog>
+    <AgentProfileDialog :open="profileOpen" :agent="agent" @update:open="profileOpen = $event" />
   </article>
 </template>

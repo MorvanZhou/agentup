@@ -4,10 +4,10 @@ import { useRouter } from "vue-router";
 import { runWithAccount } from "../../../app/auth-gate";
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import type { AgentCard, Session } from "../../../shared/model/runtime";
-import { isGuestSession } from "../../../shared/model/session";
-import { showToast } from "../../../shared/model/toast";
-import { t, tf } from "../../../shared/model/ui-locale";
+import type { AgentCard, Session } from "../../../shared/model/runtime/runtime";
+import { isGuestSession } from "../../../shared/model/session/session";
+import { showToast } from "../../../shared/model/ui/toast";
+import { t, tf } from "../../../shared/model/ui/ui-locale";
 
 export function useLocalAgents(
   session: Ref<Session | null>,

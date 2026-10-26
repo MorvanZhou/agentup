@@ -2,9 +2,9 @@ import { ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import { compressAvatarFile } from "../../../shared/model/compress-avatar";
-import { showToast } from "../../../shared/model/toast";
-import { readUiLocale, t } from "../../../shared/model/ui-locale";
+import { compressAvatarFile } from "../../../shared/model/avatar/compress-avatar";
+import { showToast } from "../../../shared/model/ui/toast";
+import { readUiLocale, t } from "../../../shared/model/ui/ui-locale";
 
 type Snapshot = {
   name: string;
@@ -52,6 +52,13 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
     } finally {
       loading.value = false;
     }
+  }
+
+  async function applyAvatarDataUrl(dataUrl: string): Promise<void> {
+    if (!dataUrl || loading.value) return;
+    avatarChange.value = dataUrl;
+    avatarUrl.value = dataUrl;
+    await saveIfChanged();
   }
 
   async function chooseAvatar(file?: File): Promise<void> {
@@ -149,6 +156,7 @@ export function usePersonalAssistantSettings(api = new DesktopApi()) {
     saving,
     load,
     chooseAvatar,
+    applyAvatarDataUrl,
     commitField,
   };
 }

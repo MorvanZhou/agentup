@@ -96,6 +96,8 @@ export function mergeToolArgs(args: unknown, argsText: string): Record<string, u
     "command",
     "cmd",
     "script",
+    "job_id",
+    "name",
   ]) {
     const value = partialJsonStringField(argsText, key);
     if (value) fill(key, value);

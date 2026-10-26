@@ -12,7 +12,7 @@ import {
 import type { UIMessage } from "ai";
 import { computed, defineComponent, h, provide, ref } from "vue";
 
-import { t } from "../../../../../../../shared/model/ui-locale";
+import { t } from "../../../../../../../shared/model/ui/ui-locale";
 import { threadActiveKey } from "../../../../../model/thread/thread-active";
 import { threadAgentIdKey } from "../../../../../model/thread/thread-agent-id";
 import { AISDKMessageConverter } from "../../../../../model/thread/ui-to-thread-messages";

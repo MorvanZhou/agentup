@@ -1,8 +1,14 @@
 import type { UIMessage } from "ai";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { useAgentChat } from "../../src/pages/conversation/composables/useAgentChat.js";
 import { DesktopApi } from "../../src/shared/api/runtime/index.js";
+import { setToastOpen, toastState } from "../../src/shared/model/ui/toast.js";
+
+afterEach(() => {
+  setToastOpen(false);
+  vi.useRealTimers();
+});
 
 const sample: UIMessage[] = [
   { id: "user-0", role: "user", parts: [{ type: "text", text: "上海？" }] },
@@ -82,6 +88,130 @@ it("decide clears the approval id from every agent slot", async () => {
   await chat.decide("personal-assistant", "token", true, "once");
   expect(chat.approvals.value.weather).toBeUndefined();
   expect(chat.approvals.value["personal-assistant"]).toBeUndefined();
+});
+
+it("watchDelegations silent-acks sync wait tasks without toasting", async () => {
+  vi.useFakeTimers();
+  const acks: string[] = [];
+  const fetchImpl = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const path = String(url);
+    if (path.includes("/delegations?") && !path.includes("/ack")) {
+      return Response.json({
+        tasks: [
+          {
+            id: "sync-1",
+            from_agent_id: "personal-assistant",
+            to_agent_id: "weather",
+            to_agent_name: "Weaty",
+            brief: "查天气",
+            status: "completed",
+            wait: true,
+            result_summary: "晴",
+            error: null,
+            seen: false,
+            notified: false,
+            created_at: 1,
+            updated_at: 1,
+          },
+          {
+            id: "async-pending",
+            from_agent_id: "personal-assistant",
+            to_agent_id: "weather",
+            to_agent_name: "Weaty",
+            brief: "再查",
+            status: "completed",
+            wait: false,
+            result_summary: "雨",
+            error: null,
+            seen: false,
+            notified: false,
+            created_at: 2,
+            updated_at: 2,
+          },
+        ],
+      });
+    }
+    if (path.includes("/background-jobs?")) {
+      return Response.json({ jobs: [] });
+    }
+    if (path.includes("/ack") && init?.method === "POST") {
+      const id = path.match(/delegations\/([^/]+)\/ack/)?.[1] ?? "";
+      acks.push(decodeURIComponent(id));
+      return Response.json({ id, seen: true, notified: true });
+    }
+    return Response.json({ messages: [] });
+  });
+  const chat = useAgentChat(new DesktopApi("http://runtime", fetchImpl));
+  chat.watchDelegations("personal-assistant", "token", "patient-a");
+  await vi.advanceTimersByTimeAsync(0);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(acks).toEqual(["sync-1"]);
+  expect(toastState.open).toBe(false);
+
+  chat.stopDelegationWatch();
+});
+
+it("watchDelegations toasts and acks only after async notified", async () => {
+  vi.useFakeTimers();
+  const acks: string[] = [];
+  const fetchImpl = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const path = String(url);
+    if (path.includes("/delegations?") && !path.includes("/ack")) {
+      return Response.json({
+        tasks: [
+          {
+            id: "async-done",
+            from_agent_id: "personal-assistant",
+            to_agent_id: "weather",
+            to_agent_name: "Weaty",
+            brief: "查天气",
+            status: "completed",
+            wait: false,
+            result_summary: "晴",
+            error: null,
+            seen: false,
+            notified: true,
+            created_at: 1,
+            updated_at: 1,
+          },
+        ],
+      });
+    }
+    if (path.includes("/background-jobs?")) {
+      return Response.json({ jobs: [] });
+    }
+    if (path.includes("/ack") && init?.method === "POST") {
+      const id = path.match(/delegations\/([^/]+)\/ack/)?.[1] ?? "";
+      acks.push(decodeURIComponent(id));
+      return Response.json({ id, seen: true, notified: true });
+    }
+    if (path.includes("/history")) {
+      return Response.json({
+        messages: [
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [{ type: "text", text: "深圳今天晴。" }],
+          },
+        ],
+      });
+    }
+    return Response.json({});
+  });
+  const chat = useAgentChat(new DesktopApi("http://runtime", fetchImpl));
+  chat.watchDelegations("personal-assistant", "token", "patient-a");
+  await vi.advanceTimersByTimeAsync(0);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(acks).toEqual(["async-done"]);
+  expect(toastState.open).toBe(true);
+  expect(toastState.message).toContain("Weaty");
+
+  chat.stopDelegationWatch();
 });
 
 it("clearContext and clearHistory drop pending askUser and approval", async () => {

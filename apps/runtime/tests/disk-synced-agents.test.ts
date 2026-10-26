@@ -39,6 +39,11 @@ it("lists projected market agents and skips loc-*", () => {
     path.join(marketRoot, "cwd", ".pi", "SYSTEM.md"),
     "你是Ex。岗位：汇率员。\n\n协助用户获取汇率信息\n",
   );
+  fs.mkdirSync(path.join(marketRoot, ".runtime"), { recursive: true });
+  fs.writeFileSync(
+    path.join(marketRoot, ".runtime", "AGENTS.md"),
+    "主责：按用户问题查询并解释汇率。\n",
+  );
   fs.writeFileSync(
     path.join(localRoot, "instance.json"),
     JSON.stringify({ kind: "local", agent_id: "loc-private", name: "Draw" }),
@@ -54,6 +59,22 @@ it("lists projected market agents and skips loc-*", () => {
     packageDigest: "abc",
   });
   expect(listed[0]?.background).toContain("汇率");
+  expect(listed[0]?.agentsText).toContain("查询并解释汇率");
+});
+
+it("falls back to cwd/.pi/AGENTS.md when the runtime copy is missing", () => {
+  const root = tempRoot();
+  const user = "guest";
+  const marketRoot = path.join(root, "users", user, "agents", "Cody");
+  fs.mkdirSync(path.join(marketRoot, "cwd", ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(marketRoot, "instance.json"),
+    JSON.stringify({ agent_id: "Cody", package_version: 1, package_digest: "d" }),
+  );
+  fs.writeFileSync(path.join(marketRoot, "cwd", ".pi", "AGENTS.md"), "实现可运行改动。\n");
+
+  const listed = listDiskSyncedAgents(root, user);
+  expect(listed[0]?.agentsText).toContain("实现可运行改动");
 });
 
 it("returns empty for invalid user id or missing tree", () => {

@@ -4,8 +4,10 @@ import {
 } from "../environment.js";
 
 /**
- * 拼进 Pi appendSystemPrompt 的平台协作策略（仅父会话挂载委托工具时）。
- * 面向模型的英文说明；与 cwd 规范同级，不进用户 SYSTEM.md。
+ * 拼进 Pi appendSystemPrompt 的平台协作契约（仅挂载委托工具的父会话）。
+ * 面向模型的英文说明；与 cwd 规范同级，不进用户 SYSTEM.md / profile。
+ *
+ * 通用契约：只做本职；更合适的 agent 去完成；调用方当协调者。
  */
 export function formatCollaborationPrompt(
   commandTool: CommandToolName = detectHostEnvironment().commandTool,
@@ -13,16 +15,16 @@ export function formatCollaborationPrompt(
   return [
     "# AgentUp Collaboration",
     "",
-    "You are in a collaboration workspace with the user's specialist contact list (local private + market recruited).",
-    "When a task may benefit from another agent's role or background, call agent_search with a short query before answering alone or guessing who to involve.",
-    "Relevant candidates may also appear for the current turn; refine with agent_search when needed, then delegate_to_agent (user must approve).",
-    "You own the user-facing reply — synthesize results; do not dump or hand off the conversation.",
+    "Do only work that fits your own role. If another recruited agent is a better fit, call them and coordinate — do not do their job.",
+    "Call agent_search (role or domain keywords) before ask_user, file writes, or shell, and before deciding no specialist fits.",
+    "A # Relevant recruited agents block is a lexical hint, not a search. A poor hint does not mean the roster is empty.",
+    "If a specialist matches (or the user named one): ask the user who should do it, then delegate_to_agent (tool approval required). Do not silently self-serve or pick an agent.",
+    "Briefs: user wording + confirmed facts + delivery constraints only — do not invent product/design defaults. Summarize outcomes; do not redo specialist deliverables.",
+    "On cancel/failure: re-delegate or ask the user. Never take over the specialist's work unless they say so, or no suitable recruit exists.",
     "",
-    "Before delegate_to_agent, estimate how long the specialist needs (skills, shell, network). " +
-      "If likely ≤ ~20s and you need the answer this turn → wait=true. " +
-      "If likely > ~20s, uncertain/long, or you can continue other work → wait=false (return task_id; check_delegation or wait for a session notice — never invent results). " +
-      "cancel_delegation(task_id) stops a running async task. Do not default to sync just because there is only one specialist.",
-    "Fan-out: prefer one call with tasks=[{agent_id, brief}, ...] (≤8, async unless you set wait=true to join this turn); or multiple wait=false calls. Briefs minimal and non-overlapping; skip trivial work you can do yourself.",
-    `Shell: same duration rule — short ${commandTool} OK; if a command may run > ~20s (build, watch, migrate, heavy script), prefer bg_run (approval like \`${commandTool}\`), then bg_status / bg_kill. Prefer delegate_to_agent when expertise matters.`,
+    "Before delegate_to_agent: if \"# Active delegations\" appears (or you started async work), check_delegation first. Do not re-delegate the same specialist for an overlapping brief while running/pending_auth.",
+    "wait=true only if likely ≤ ~20s and you need the answer this turn; else wait=false (task_id; never invent results). Do not default to sync for a single specialist. cancel_delegation(task_id) stops async work.",
+    "Fan-out: tasks=[{agent_id, brief}, ...] (≤8, async unless wait=true). Briefs minimal and non-overlapping.",
+    `Shell: short ${commandTool} OK for work inside your role; >~20s → bg_run (approval like \`${commandTool}\`), then bg_status / bg_kill. Prefer delegate_to_agent when another agent's expertise fits better.`,
   ].join("\n");
 }

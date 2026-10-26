@@ -7,6 +7,7 @@ import { loadModelConfig } from "../config/provider.js";
 import { Runtime, type Visit } from "../package/sync.js";
 import { BackgroundJobs } from "../session/background/index.js";
 import { ApprovalBroker } from "../session/hitl/approval/index.js";
+import { ShellHangBroker } from "../session/hitl/shell-hang/index.js";
 import { DelegationService } from "../session/delegation/index.js";
 import { resolveVisitModelConfig } from "../session/model/session-model.js";
 import { AskUserBroker } from "../session/tools/index.js";
@@ -52,6 +53,7 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
   if (config.host !== "127.0.0.1") return Promise.reject(new LocalError("只能监听 127.0.0.1", 500));
   const approvals = new ApprovalBroker(config.userDataRoot);
   const askUser = new AskUserBroker(config.userDataRoot);
+  const shellHang = new ShellHangBroker();
   const readModel = options.readModel ?? (() => loadModelConfig(config.userDataRoot));
   let chats!: VisitChats;
   const delegation = new DelegationService({
@@ -60,6 +62,7 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
     getModel: readModel,
     approvals,
     askUser,
+    shellHang,
     enqueueWake: (item) => chats.enqueueAsyncWake(item),
   });
   const backgroundJobs = new BackgroundJobs({
@@ -69,17 +72,28 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
   const open =
     options.openPrompt ??
     ((visit, model) =>
-      openPromptSession(visit, model, approvals, askUser, delegation, backgroundJobs));
-  chats = new VisitChats(open, approvals, askUser, delegation, {
-    resolveVisit: (userId, agentId, kind) =>
-      resolveWakeVisit(config.userDataRoot, userId, agentId, kind),
-    resolveModel: (visit) => resolveVisitModelConfig(config.userDataRoot, visit),
-  });
+      openPromptSession(visit, model, approvals, askUser, delegation, backgroundJobs, shellHang));
+  chats = new VisitChats(
+    open,
+    approvals,
+    askUser,
+    delegation,
+    {
+      resolveVisit: (userId, agentId, kind) =>
+        resolveWakeVisit(config.userDataRoot, userId, agentId, kind),
+      resolveModel: (visit) => resolveVisitModelConfig(config.userDataRoot, visit),
+    },
+    shellHang,
+  );
+  // 监听前收尾：上次退出留下的 running 没有执行体，避免编排条一直转。
+  delegation.recoverInterrupted();
+  backgroundJobs.recoverInterrupted();
   const app = createLocalApp({
     config,
     chats,
     approvals,
     askUser,
+    shellHang,
     delegation,
     backgroundJobs,
     readModel,

@@ -11,7 +11,7 @@ import {
   runWithAccount,
 } from "../../src/app/auth-gate";
 import { CAPABILITIES, isHostedProviderKind } from "../../src/app/capabilities";
-import { applyUiLocale } from "../../src/shared/model/ui-locale";
+import { applyUiLocale } from "../../src/shared/model/ui/ui-locale";
 
 beforeEach(async () => {
   resetAuthGate();

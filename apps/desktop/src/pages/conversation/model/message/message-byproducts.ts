@@ -3,7 +3,7 @@
  * 副产物从 parts / metadata 加工；summary 边界来自 runtime agentUpSummary。
  */
 
-import { t } from "../../../../shared/model/ui-locale";
+import { t } from "../../../../shared/model/ui/ui-locale";
 import {
   formatArtifactCountBadge,
   readAgentUpArtifacts,

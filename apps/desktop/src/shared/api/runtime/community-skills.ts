@@ -2,7 +2,7 @@ import type {
   CommunitySkillHit,
   CommunitySkillSort,
   CommunitySkillSource,
-} from "../../model/runtime";
+} from "../../model/runtime/runtime";
 
 import { DesktopApiError } from "./error";
 import type { RuntimeHttp } from "./http";

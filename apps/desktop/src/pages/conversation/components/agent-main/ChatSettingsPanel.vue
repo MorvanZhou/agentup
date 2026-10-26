@@ -8,8 +8,8 @@ import type {
   AgentApprovals,
   ApprovalChoice,
 } from "../../../../shared/api/runtime/agents";
-import { showToast } from "../../../../shared/model/toast";
-import { t } from "../../../../shared/model/ui-locale";
+import { showToast } from "../../../../shared/model/ui/toast";
+import { t } from "../../../../shared/model/ui/ui-locale";
 import { injectThreadActions } from "../../model/thread/thread-actions";
 import { injectThreadExtras } from "../../model/thread/thread-extras";
 

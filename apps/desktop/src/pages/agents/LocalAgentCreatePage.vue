@@ -4,8 +4,8 @@ import { RouterLink, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import AgentEditorForm from "../../shared/components/agent-editor/AgentEditorForm.vue";
-import type { AgentEditorInput } from "../../shared/model/agent-editor";
-import { t } from "../../shared/model/ui-locale";
+import type { AgentEditorInput } from "../../shared/model/agent-editor/agent-editor";
+import { t } from "../../shared/model/ui/ui-locale";
 import { useLocalAgents } from "./composables/useLocalAgents";
 
 const router = useRouter();

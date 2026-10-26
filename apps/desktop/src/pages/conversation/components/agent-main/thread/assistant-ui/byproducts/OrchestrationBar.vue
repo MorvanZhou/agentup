@@ -6,14 +6,15 @@ import {
   SquareIcon,
   TerminalIcon,
 } from "@lucide/vue";
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 
 import { DesktopApi } from "../../../../../../../shared/api/runtime";
 import type { BusyTurn } from "../../../../../../../shared/api/runtime/chat";
-import AgentAvatar from "../../../../../../../shared/components/AgentAvatar.vue";
-import { showToast } from "../../../../../../../shared/model/toast";
-import { t, tf } from "../../../../../../../shared/model/ui-locale";
+import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
+import { showToast } from "../../../../../../../shared/model/ui/toast";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import type { AsyncFleetItem } from "../../../../../composables/useDelegationFleet";
+import { delegationElapsedLabel } from "../../../../../model/sidebar/delegation-presence";
 import { injectThreadDelegation } from "../../../../../model/thread/thread-delegation";
 import {
   injectThreadRoster,
@@ -39,6 +40,11 @@ const delegation = injectThreadDelegation();
 const api = new DesktopApi();
 const expanded = ref(false);
 const cancellingId = ref<string | null>(null);
+const now = ref(Date.now());
+const elapsedTimer = setInterval(() => {
+  now.value = Date.now();
+}, 30_000);
+onBeforeUnmount(() => clearInterval(elapsedTimer));
 
 const isWake = computed(() => props.busyTurn?.phase === "wake");
 const wakeSources = computed(() => props.busyTurn?.sources ?? []);
@@ -107,6 +113,10 @@ function shortSubtitle(item: AsyncFleetItem): string {
 
 function kindLabel(item: AsyncFleetItem): string {
   return item.kind === "background" ? t("fleetKindBackground") : t("fleetKindDelegation");
+}
+
+function elapsedLabel(item: AsyncFleetItem): string {
+  return delegationElapsedLabel(item.createdAt, now.value);
 }
 
 function openProcess(item: AsyncFleetItem): void {
@@ -242,6 +252,10 @@ async function cancelTask(item: AsyncFleetItem): Promise<void> {
             <p class="mb-0 truncate text-xs font-medium text-foreground">
               {{ displayName(item) }}
             </p>
+            <span class="shrink-0 text-[10px] text-muted-foreground" aria-hidden="true">·</span>
+            <span class="shrink-0 text-[10px] text-muted-foreground">
+              {{ elapsedLabel(item) }}
+            </span>
             <span class="shrink-0 rounded-md bg-paper-deep px-1 py-0.5 text-[10px] text-muted-foreground">
               {{ kindLabel(item) }}
             </span>

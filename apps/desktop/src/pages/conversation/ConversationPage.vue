@@ -3,10 +3,12 @@ import type { UIMessage } from "ai";
 import { computed, onActivated, ref, watch } from "vue";
 
 import { useDesktop } from "../../app/desktop";
-import type { ApprovalScope, AskUserAnswer } from "../../shared/model/chat";
+import { DesktopApi } from "../../shared/api/runtime";
+import type { ApprovalScope, AskUserAnswer } from "../../shared/model/chat/chat";
 import AgentSidebar from "./components/agent-sidebar/AgentSidebar.vue";
 import AgentThread from "./components/agent-main/AgentThread.vue";
 import { useAgentChat } from "./composables/useAgentChat";
+import { useAsyncFleetWorking } from "./composables/useAsyncFleetWorking";
 import { useSidebarPaneWidth } from "./composables/usePaneWidth";
 import {
   buildConversationRows,
@@ -48,10 +50,22 @@ const {
   refresh,
   pullAttention,
 } = useDesktop();
+const sessionToken = computed(() => session.value?.token ?? "");
+const sessionUserId = computed(() => session.value?.userId ?? "");
+const {
+  agentIds: fleetWorkingAgentIds,
+  presence: delegationPresence,
+  refresh: refreshFleetWorking,
+} = useAsyncFleetWorking({
+  api: new DesktopApi(),
+  token: sessionToken,
+  userId: sessionUserId,
+});
 const chat = useAgentChat(undefined, {
   onTurnEnd(agentId, preview) {
     void recordTurnEnd(agentId, preview);
     void pullAttention();
+    void refreshFleetWorking();
   },
 });
 const providerSettings = useProviderSettings();
@@ -64,9 +78,10 @@ onActivated(() => {
   }
   void providerSettings.load();
   void pullAttention();
+  void refreshFleetWorking();
 });
 const visitedAgentIds = ref<string[]>([]);
-/** 各已挂载线程的 isRunning；与 runtime busy 合并进侧栏。 */
+/** 各已挂载线程的 isRunning；与 runtime busy / 页级 Fleet 合并进侧栏。 */
 const workingAgents = ref<Record<string, true>>({});
 
 const rows = computed(() => {
@@ -78,9 +93,13 @@ const rows = computed(() => {
     ...Object.keys(chat.askUsers.value),
     ...attention.value.askUsers.map((item) => item.agentId),
   ]);
+  // 命令超时与审批同属「需用户点一下」；先复用 awaitingApproval 角标。
+  for (const item of attention.value.shellHangs) awaitingApproval.add(item.agentId);
+  for (const id of Object.keys(chat.shellHangs.value)) awaitingApproval.add(id);
   const working = new Set([
     ...Object.keys(workingAgents.value),
     ...attention.value.busyAgentIds,
+    ...fleetWorkingAgentIds.value,
   ]);
   const childHitlByParent = childHitlHintsFromAttention({
     approvals: attention.value.approvals,
@@ -90,12 +109,6 @@ const rows = computed(() => {
       return agent?.remark || agent?.name || agentId;
     },
   });
-  // 父会话已有直接 HITL 时去掉子提醒，避免重复角标文案。
-  for (const parentId of [...childHitlByParent.keys()]) {
-    if (awaitingApproval.has(parentId) || awaitingAskUser.has(parentId)) {
-      childHitlByParent.delete(parentId);
-    }
-  }
   return buildConversationRows({
     conversations: conversations.value,
     previews: previews.value,
@@ -107,6 +120,11 @@ const rows = computed(() => {
     awaitingAskUser,
     childHitlByParent,
     working,
+    delegationPresence: delegationPresence.value,
+    resolveAgentName: (agentId) => {
+      const agent = conversations.value.find((item) => item.agentId === agentId);
+      return agent?.remark || agent?.name || "";
+    },
   });
 });
 /** 尚无第三方招募时，侧栏展示去市场引导。 */
@@ -139,6 +157,8 @@ function setWorking(agentId: string, running: boolean): void {
   if (running) {
     if (workingAgents.value[agentId]) return;
     workingAgents.value = { ...workingAgents.value, [agentId]: true };
+    // 线程刚进入进行中时同步页级 Fleet，避免切走后角标空窗等下一轮询。
+    void refreshFleetWorking();
     return;
   }
   if (!workingAgents.value[agentId]) return;
@@ -222,13 +242,43 @@ function answerAsk(agentId: string, answer: AskUserAnswer): void {
   void chat.answerAsk(agentId, session.value.token, answer).then(() => pullAttention());
 }
 
-/** 冷启动 / 未挂载线程：用 runtime attention 补齐 HITL（只增不删，避免盖住流式尚未入 poll 的请求）。 */
+function decideShellHang(agentId: string, action: "kill" | "wait"): void {
+  if (!session.value) return;
+  void chat.decideShellHang(agentId, session.value.token, action).then(() => pullAttention());
+}
+
+function queueBehind(
+  items: ReadonlyArray<{ id: string; agentId: string }>,
+  item: { id: string; agentId: string },
+): number {
+  const same = items.filter((entry) => entry.agentId === item.agentId);
+  const index = same.findIndex((entry) => entry.id === item.id);
+  if (index < 0) return 0;
+  return same.length - index - 1;
+}
+
+/** 冷启动 / 未挂载线程：用 runtime attention 补齐 HITL。同一跟进会话一次只展示队首。 */
 watch(
   attention,
   (snap) => {
     for (const item of snap.approvals) {
-      // 已有同 id（例如父流先冒泡）则跳过，避免嵌套审批再挂到子 agent。
-      if (Object.values(chat.approvals.value).some((entry) => entry?.id === item.id)) continue;
+      const behind = queueBehind(snap.approvals, item);
+      const existing = Object.values(chat.approvals.value).find((entry) => entry?.id === item.id);
+      if (existing) {
+        if (
+          existing.askedByName !== item.askedByName ||
+          existing.taskLabel !== item.taskLabel ||
+          existing.queueBehind !== behind
+        ) {
+          chat.setApproval(item.agentId, {
+            ...existing,
+            askedByName: item.askedByName,
+            taskLabel: item.taskLabel,
+            queueBehind: behind,
+          });
+        }
+        continue;
+      }
       const current = chat.approvals.value[item.agentId];
       if (current) continue;
       chat.setApproval(item.agentId, {
@@ -236,16 +286,69 @@ watch(
         toolCallId: item.toolCallId,
         toolName: item.toolName,
         args: item.args,
+        askedByName: item.askedByName,
+        taskLabel: item.taskLabel,
+        queueBehind: behind,
       });
     }
     for (const item of snap.askUsers) {
-      if (Object.values(chat.askUsers.value).some((entry) => entry?.id === item.id)) continue;
+      const behind = queueBehind(snap.askUsers, item);
+      const existing = Object.values(chat.askUsers.value).find((entry) => entry?.id === item.id);
+      if (existing) {
+        if (
+          existing.askedByName !== item.askedByName ||
+          existing.taskLabel !== item.taskLabel ||
+          existing.queueBehind !== behind
+        ) {
+          chat.setAskUser(item.agentId, {
+            ...existing,
+            askedByName: item.askedByName,
+            taskLabel: item.taskLabel,
+            queueBehind: behind,
+          });
+        }
+        continue;
+      }
       const current = chat.askUsers.value[item.agentId];
       if (current) continue;
       chat.setAskUser(item.agentId, {
         id: item.id,
         toolCallId: item.toolCallId,
         questions: item.questions,
+        askedByName: item.askedByName,
+        taskLabel: item.taskLabel,
+        queueBehind: behind,
+      });
+    }
+    for (const item of snap.shellHangs) {
+      const behind = queueBehind(snap.shellHangs, item);
+      const existing = Object.values(chat.shellHangs.value).find((entry) => entry?.id === item.id);
+      if (existing) {
+        if (
+          existing.askedByName !== item.askedByName ||
+          existing.taskLabel !== item.taskLabel ||
+          existing.queueBehind !== behind
+        ) {
+          chat.setShellHang(item.agentId, {
+            ...existing,
+            askedByName: item.askedByName,
+            taskLabel: item.taskLabel,
+            queueBehind: behind,
+          });
+        }
+        continue;
+      }
+      const current = chat.shellHangs.value[item.agentId];
+      if (current) continue;
+      chat.setShellHang(item.agentId, {
+        id: item.id,
+        toolCallId: item.toolCallId,
+        toolName: item.toolName,
+        command: item.command,
+        elapsedMs: item.elapsedMs,
+        askedByName: item.askedByName,
+        taskLabel: item.taskLabel,
+        queueBehind: behind,
       });
     }
   },
@@ -340,7 +443,9 @@ const threadRoster = computed((): ThreadRoster => ({
           :active="selected?.agentId === thread.agentId"
           :approval="chat.approvals.value[thread.agentId]"
           :ask-user="chat.askUsers.value[thread.agentId]"
+          :shell-hang="chat.shellHangs.value[thread.agentId]"
           :busy-turn="busyTurnFor(thread.agentId)"
+          :incoming-delegations="delegationPresence.incoming[thread.agentId] ?? []"
           :abort-turn="() => abortTurn(thread.agentId)"
           :reload-history="() => reloadHistory(thread.agentId)"
           :clear-context="() => clearContext(thread.agentId)"
@@ -350,7 +455,9 @@ const threadRoster = computed((): ThreadRoster => ({
           @decide="(allow, scope) => decide(thread.agentId, allow, scope)"
           @approval="chat.setApproval(thread.agentId, $event)"
           @ask-user="chat.setAskUser(thread.agentId, $event)"
+          @shell-hang="chat.setShellHang(thread.agentId, $event)"
           @answer="(answer) => answerAsk(thread.agentId, answer)"
+          @shell-hang-decide="(action) => decideShellHang(thread.agentId, action)"
           @turn-end="(preview, messages) => onTurnEnd(thread.agentId, preview, messages)"
           @running="setWorking(thread.agentId, $event)"
         />

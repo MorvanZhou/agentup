@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 
-import { t } from "../../../../../shared/model/ui-locale";
+import { t } from "../../../../../shared/model/ui/ui-locale";
 import { MCP_PLACEHOLDER, useUserMcp } from "../../../composables/useUserMcp";
 
 const { text, loading, saving, load, commitField } = useUserMcp();

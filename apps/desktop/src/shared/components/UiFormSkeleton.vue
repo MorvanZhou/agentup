@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { t } from "../model/ui-locale";
+import { t } from "../model/ui/ui-locale";
 import UiSkeleton from "./UiSkeleton.vue";
 
 withDefaults(

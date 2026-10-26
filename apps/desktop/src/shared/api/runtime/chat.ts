@@ -4,14 +4,14 @@ import {
   parseHistory,
   type AgentUpAskUserData,
   type AskUserAnswer,
-} from "../../model/chat";
+} from "../../model/chat/chat";
 import {
   PERSONAL_ASSISTANT_ID,
   type InvocableSkill,
   type ProviderModelRef,
   type SessionModelState,
   type UiLocale,
-} from "../../model/runtime";
+} from "../../model/runtime/runtime";
 
 import { DesktopApiError } from "./error";
 import type { RuntimeHttp } from "./http";
@@ -36,6 +36,8 @@ export type AttentionApproval = {
   toolCallId: string;
   toolName: string;
   args: unknown;
+  askedByName?: string;
+  taskLabel?: string;
 };
 
 export type AttentionAskUser = {
@@ -45,6 +47,21 @@ export type AttentionAskUser = {
   parentAgentId?: string;
   toolCallId: string;
   questions: AgentUpAskUserData["questions"];
+  askedByName?: string;
+  taskLabel?: string;
+};
+
+export type AttentionShellHang = {
+  id: string;
+  agentId: string;
+  originAgentId?: string;
+  parentAgentId?: string;
+  toolCallId: string;
+  toolName: string;
+  command: string;
+  elapsedMs: number;
+  askedByName?: string;
+  taskLabel?: string;
 };
 
 export type BusyTurnPhase = "prompt" | "wake";
@@ -68,6 +85,7 @@ export type AttentionSnapshot = {
   busyTurns: BusyTurn[];
   approvals: AttentionApproval[];
   askUsers: AttentionAskUser[];
+  shellHangs: AttentionShellHang[];
 };
 
 /** 侧栏 / Dock：runtime busy + 仍可闭合的 HITL。 */
@@ -136,6 +154,14 @@ export async function attention(
         toolCallId: item.tool_call_id,
         toolName: item.tool_name,
         args: item.args,
+        askedByName:
+          typeof item.asked_by_name === "string" && item.asked_by_name.trim()
+            ? item.asked_by_name.trim()
+            : undefined,
+        taskLabel:
+          typeof item.task_label === "string" && item.task_label.trim()
+            ? item.task_label.trim()
+            : undefined,
       });
     }
   }
@@ -165,10 +191,68 @@ export async function attention(
             : undefined,
         toolCallId: item.tool_call_id,
         questions: item.questions as AgentUpAskUserData["questions"],
+        askedByName:
+          typeof item.asked_by_name === "string" && item.asked_by_name.trim()
+            ? item.asked_by_name.trim()
+            : undefined,
+        taskLabel:
+          typeof item.task_label === "string" && item.task_label.trim()
+            ? item.task_label.trim()
+            : undefined,
       });
     }
   }
-  return { busyAgentIds, busyTurns, approvals, askUsers };
+  const shellHangs: AttentionShellHang[] = [];
+  if (Array.isArray(payload.shell_hangs)) {
+    for (const raw of payload.shell_hangs) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      if (
+        typeof item.id !== "string" ||
+        typeof item.agent_id !== "string" ||
+        typeof item.tool_call_id !== "string" ||
+        typeof item.tool_name !== "string" ||
+        typeof item.command !== "string" ||
+        typeof item.elapsed_ms !== "number"
+      ) {
+        continue;
+      }
+      shellHangs.push({
+        id: item.id,
+        agentId: item.agent_id,
+        originAgentId:
+          typeof item.origin_agent_id === "string" && item.origin_agent_id
+            ? item.origin_agent_id
+            : undefined,
+        parentAgentId:
+          typeof item.parent_agent_id === "string" && item.parent_agent_id
+            ? item.parent_agent_id
+            : undefined,
+        toolCallId: item.tool_call_id,
+        toolName: item.tool_name,
+        command: item.command,
+        elapsedMs: item.elapsed_ms,
+        askedByName:
+          typeof item.asked_by_name === "string" && item.asked_by_name.trim()
+            ? item.asked_by_name.trim()
+            : undefined,
+        taskLabel:
+          typeof item.task_label === "string" && item.task_label.trim()
+            ? item.task_label.trim()
+            : undefined,
+      });
+    }
+  }
+  return { busyAgentIds, busyTurns, approvals, askUsers, shellHangs };
+}
+
+export async function decideShellHang(
+  http: RuntimeHttp,
+  token: string,
+  hangId: string,
+  action: "kill" | "wait",
+): Promise<void> {
+  await http.request(`/shell-hangs/${encodeURIComponent(hangId)}`, token, { action });
 }
 
 export async function decideApproval(

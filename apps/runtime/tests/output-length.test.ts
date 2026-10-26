@@ -162,7 +162,8 @@ it("resolveEmptyAssistantError distinguishes length from plain empty", () => {
     ],
   };
   expect(resolveEmptyAssistantError(lengthManager, "zh")).toContain("输出达到模型上限");
-  expect(resolveEmptyAssistantError(emptyManager, "zh")).toBe("未返回可用结果");
+  expect(resolveEmptyAssistantError(emptyManager, "zh")).toMatch(/未返回可用结果/);
+  expect(resolveEmptyAssistantError(emptyManager, "zh")).toMatch(/模型|供应商|额度|切换/);
   expect(resolveEmptyAssistantError(lengthManager, "en")).toMatch(/output hit/i);
 });
 

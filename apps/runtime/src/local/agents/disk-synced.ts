@@ -15,6 +15,8 @@ export type DiskSyncedAgent = {
   packageVersion: number;
   packageDigest: string;
   systemText?: string;
+  /** `.runtime/AGENTS.md`（缺则 `cwd/.pi/AGENTS.md`）；检索打分用。 */
+  agentsText?: string;
 };
 
 /**
@@ -42,6 +44,7 @@ export function listDiskSyncedAgents(userDataRoot: string, userId: string): Disk
     const systemText = fs.existsSync(systemPath)
       ? fs.readFileSync(systemPath, "utf8").trim()
       : "";
+    const agentsText = readAgentsText(agentRoot);
     const name =
       typeof stored.name === "string" && stored.name.trim()
         ? stored.name.trim()
@@ -83,9 +86,19 @@ export function listDiskSyncedAgents(userDataRoot: string, userId: string): Disk
       packageVersion,
       packageDigest,
       ...(systemText ? { systemText } : {}),
+      ...(agentsText ? { agentsText } : {}),
     });
   }
   return result;
+}
+
+/** Pi 加载的是 agentDir；包投影也留在 cwd/.pi。两处都没有则空。 */
+function readAgentsText(agentRoot: string): string {
+  const runtimeFile = path.join(agentRoot, ".runtime", "AGENTS.md");
+  const piFile = path.join(agentRoot, "cwd", ".pi", "AGENTS.md");
+  const file = fs.existsSync(runtimeFile) ? runtimeFile : piFile;
+  if (!fs.existsSync(file)) return "";
+  return fs.readFileSync(file, "utf8").trim();
 }
 
 /** 「你是Ex。岗位：汇率员。」→ Ex */

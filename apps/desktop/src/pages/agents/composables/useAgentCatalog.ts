@@ -1,10 +1,10 @@
 import { ref, watch, type Ref } from "vue";
 
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import type { AgentCard, Session } from "../../../shared/model/runtime";
-import { isGuestSession } from "../../../shared/model/session";
-import { showToast } from "../../../shared/model/toast";
-import { t } from "../../../shared/model/ui-locale";
+import type { AgentCard, Session } from "../../../shared/model/runtime/runtime";
+import { isGuestSession } from "../../../shared/model/session/session";
+import { showToast } from "../../../shared/model/ui/toast";
+import { t } from "../../../shared/model/ui/ui-locale";
 import type { AgentsSection } from "../components/sidebar/AgentsSidebar.vue";
 
 const DEBOUNCE_MS = 250;

@@ -2,8 +2,12 @@
 import { FileMinusIcon, FilePenIcon, FilePlusIcon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import { t } from "../../../../../../../shared/model/ui-locale";
-import { useOpenWorkspaceFile } from "../../../../../composables/useOpenWorkspaceFile";
+import HtmlPreview from "../../../../../../../shared/components/preview/HtmlPreview.vue";
+import ImagePreview from "../../../../../../../shared/components/preview/ImagePreview.vue";
+import MarkdownPreview from "../../../../../../../shared/components/preview/MarkdownPreview.vue";
+import { t } from "../../../../../../../shared/model/ui/ui-locale";
+import { usePreviewWorkspaceFile } from "../../../../../composables/usePreviewWorkspaceFile";
+import { useRevealWorkspaceFile } from "../../../../../composables/useRevealWorkspaceFile";
 import {
   ARTIFACT_PAGE_SIZE,
   artifactDisplayPath,
@@ -19,7 +23,22 @@ const props = defineProps<{
   artifacts: AgentUpArtifacts;
 }>();
 
-const { openWorkspaceFile } = useOpenWorkspaceFile();
+const {
+  loading,
+  imageOpen,
+  imageSrc,
+  imagePath,
+  htmlOpen,
+  htmlSource,
+  htmlPath,
+  markdownOpen,
+  markdownSource,
+  markdownPath,
+  previewWorkspaceFile,
+} = usePreviewWorkspaceFile();
+
+const { revealWorkspaceFile } = useRevealWorkspaceFile();
+
 const visibleCount = ref(ARTIFACT_PAGE_SIZE);
 
 watch(
@@ -38,17 +57,29 @@ function kindLabel(kind: ArtifactChangeKind): string {
 }
 
 function onOpen(file: ArtifactChange): void {
-  if (file.kind === "deleted") return;
-  void openWorkspaceFile(file.path);
+  if (file.kind === "deleted" || loading.value) return;
+  void previewWorkspaceFile(file.path);
 }
 
 function loadMore(): void {
   visibleCount.value += ARTIFACT_PAGE_SIZE;
 }
+
+function revealImage(): void {
+  if (imagePath.value) void revealWorkspaceFile(imagePath.value);
+}
+
+function revealHtml(): void {
+  if (htmlPath.value) void revealWorkspaceFile(htmlPath.value);
+}
+
+function revealMarkdown(): void {
+  if (markdownPath.value) void revealWorkspaceFile(markdownPath.value);
+}
 </script>
 
 <template>
-  <!-- 本回合 ARTIFACT 差分：单行紧凑卡片 + 分页 -->
+  <!-- 本回合 ARTIFACT 差分：单行紧凑卡片 + 分页；可预览类型走 shared preview -->
   <div class="flex w-full min-w-0 flex-col gap-1.5" data-slot="aui_artifacts" :aria-label="t('tabArtifacts')">
     <ul class="m-0 grid list-none gap-1 p-0">
       <li v-for="file in page.items" :key="`${file.kind}:${file.path}`">
@@ -60,7 +91,7 @@ function loadMore(): void {
               ? 'cursor-default opacity-70'
               : 'hover:border-accent/40 hover:bg-accent/5'
           "
-          :disabled="file.kind === 'deleted'"
+          :disabled="file.kind === 'deleted' || loading"
           :title="`${kindLabel(file.kind)} · ${file.path}`"
           @click="onOpen(file)"
         >
@@ -114,5 +145,25 @@ function loadMore(): void {
     >
       {{ t("artifactTruncated") }}
     </p>
+
+    <ImagePreview
+      v-model:open="imageOpen"
+      :src="imageSrc"
+      :alt="t('msgImagePreview')"
+      :reveal-path="imagePath"
+      @reveal="revealImage"
+    />
+    <HtmlPreview
+      v-model:open="htmlOpen"
+      :source="htmlSource"
+      :reveal-path="htmlPath"
+      @reveal="revealHtml"
+    />
+    <MarkdownPreview
+      v-model:open="markdownOpen"
+      :source="markdownSource"
+      :reveal-path="markdownPath"
+      @reveal="revealMarkdown"
+    />
   </div>
 </template>

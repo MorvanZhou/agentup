@@ -1,4 +1,4 @@
-import { tf } from "../../../../shared/model/ui-locale";
+import { tf } from "../../../../shared/model/ui/ui-locale";
 import { formatElapsedMs } from "./elapsed";
 import { isPartProgressActive, type TurnProgressPart } from "./turn-progress";
 import { isTodoPart, todoPlacement } from "./todo-list";

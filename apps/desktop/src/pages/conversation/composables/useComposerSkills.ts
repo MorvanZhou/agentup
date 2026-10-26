@@ -1,7 +1,7 @@
 import { computed, ref, watch, type Ref } from "vue";
 
 import { DesktopApi } from "../../../shared/api/runtime";
-import type { InvocableSkill } from "../../../shared/model/runtime";
+import type { InvocableSkill } from "../../../shared/model/runtime/runtime";
 import {
   filterSkillsByQuery,
   insertSkillReference,

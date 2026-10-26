@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { BackgroundJobs } from "../src/session/background/index.js";
+import { BackgroundJobs, BackgroundJobStore } from "../src/session/background/index.js";
 import { buildSessionPlan } from "../src/session/plan.js";
 import { PERSONAL_ASSISTANT_ID } from "../src/local/assistant/personal-assistant.js";
 import {
@@ -89,4 +89,57 @@ it("cancels a long-running job", async () => {
     latest = jobs.get(started.id);
   }
   expect(latest?.status).toBe("cancelled");
+});
+
+it("fails leftover background jobs on restart but leaves a live job running", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-bg-interrupt-"));
+  const cwd = path.join(root, "cwd");
+  fs.mkdirSync(cwd, { recursive: true });
+  const store = new BackgroundJobStore(root);
+  const orphan = store.create({
+    userId: "patient",
+    agentId: PERSONAL_ASSISTANT_ID,
+    name: "orphan-sleep",
+    command: "sleep 30",
+    cwd,
+  });
+  store.update(orphan.id, { status: "running" });
+  const queued = store.create({
+    userId: "patient",
+    agentId: PERSONAL_ASSISTANT_ID,
+    name: "queued-build",
+    command: "echo hi",
+    cwd,
+  });
+
+  const wakes: string[] = [];
+  const jobs = new BackgroundJobs({
+    userDataRoot: root,
+    enqueueWake: (item) => wakes.push(item.body),
+  });
+  const live = await jobs.start({
+    userId: "patient",
+    agentId: PERSONAL_ASSISTANT_ID,
+    command: "sleep 30",
+    cwd,
+    name: "live-sleep",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  const settled = jobs.recoverInterrupted();
+  expect(settled.map((job) => job.id).sort()).toEqual([orphan.id, queued.id].sort());
+  expect(jobs.get(orphan.id)).toMatchObject({
+    status: "failed",
+    error: "应用已退出，这项工作在完成前中断",
+  });
+  expect(jobs.get(queued.id)?.status).toBe("failed");
+  expect(jobs.list("patient", { status: "running" }).map((job) => job.id)).toEqual([live.id]);
+  expect(wakes).toHaveLength(2);
+  expect(wakes.join("\n")).toContain("orphan-sleep");
+  expect(wakes.join("\n")).toContain("queued-build");
+  expect(wakes.join("\n")).not.toContain("live-sleep");
+
+  expect(jobs.recoverInterrupted()).toEqual([]);
+  expect(wakes).toHaveLength(2);
+  jobs.cancel(live.id, "patient");
 });

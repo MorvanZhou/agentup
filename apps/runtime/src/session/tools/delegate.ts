@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionFactory, type ToolCallEvent } from "@earendil-works/pi-coding-agent";
 
+import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
 import {
   discoverRecruitedAgents,
   formatAgentCardLine,
@@ -9,6 +10,7 @@ import {
   DelegationError,
   type DelegationService,
 } from "../delegation/service.js";
+import { agentSearchGate, TOOLS_REQUIRING_AGENT_SEARCH } from "../delegation/search-gate.js";
 import {
   MAX_DELEGATION_FANOUT,
   type DelegationTask,
@@ -34,7 +36,9 @@ const FanoutItem = Type.Object({
   }),
   brief: Type.String({
     description:
-      "Bounded subtask for that specialist (only the information they need)",
+      "Bounded subtask for that specialist: user wording, confirmed facts, delivery constraints " +
+      "(do not invent product/design defaults for them)",
+
   }),
 });
 
@@ -47,8 +51,10 @@ const DelegateParams = Type.Object({
   ),
   brief: Type.Optional(
     Type.String({
-      description:
-        "Brief for a single-specialist delegation. Mutually exclusive with tasks.",
+    description:
+      "Brief for a single-specialist delegation: user wording, confirmed facts, delivery constraints " +
+      "(do not invent product/design defaults). Mutually exclusive with tasks.",
+
     }),
   ),
   tasks: Type.Optional(
@@ -105,15 +111,52 @@ export function createDelegateExtension(
   agentId: string,
 ): ExtensionFactory {
   return (pi) => {
+    const enforceSearch = agentId === PERSONAL_ASSISTANT_ID;
+    let searched = false;
+    let rosterChecked = false;
+    let hasOtherAgents = false;
+
+    pi.on("agent_start", () => {
+      searched = false;
+      rosterChecked = false;
+      hasOtherAgents = false;
+    });
+
+    pi.on("tool_call", async (event: ToolCallEvent) => {
+      if (event.toolName === AGENT_SEARCH_TOOL) {
+        searched = true;
+        return undefined;
+      }
+      if (!enforceSearch || searched || !TOOLS_REQUIRING_AGENT_SEARCH.has(event.toolName)) {
+        return undefined;
+      }
+      if (!rosterChecked) {
+        rosterChecked = true;
+        try {
+          const roster = await service.listRecruited(userId);
+          hasOtherAgents = roster.some((agent) => agent.agentId !== agentId);
+        } catch {
+          hasOtherAgents = false;
+        }
+      }
+      return agentSearchGate({
+        toolName: event.toolName,
+        enforce: enforceSearch,
+        hasOtherAgents,
+        searched,
+      });
+    });
+
     pi.registerTool(
       defineTool<typeof SearchAgentsParams, ListDetails>({
         name: AGENT_SEARCH_TOOL,
         label: "Agent Search",
         description:
           "Search the user's specialist contact list (local private + market recruited) by query " +
-          "(name, role, background, remark). This is a collaboration workspace — when the task may " +
-          "fit a specialist, call agent_search before guessing. Matching candidates may also appear " +
-          "in context for the current turn; use this tool to refine. Then call delegate_to_agent when one fits.",
+          "(name, role, background, AGENTS.md). Required before ask_user, file writes, or shell, and before " +
+          "deciding no specialist fits. A # Relevant recruited agents hint is not this search. " +
+          "If anyone matches, ask the user who should do it, then call delegate_to_agent — do not silently self-serve.",
+
         parameters: SearchAgentsParams,
         annotations: {
           readOnlyHint: true,
@@ -152,7 +195,10 @@ export function createDelegateExtension(
               content: [
                 {
                   type: "text" as const,
-                  text: `No recruited agents matched query: ${query}. Try different keywords, or answer yourself.`,
+                  text:
+                    `No recruited agents matched query: ${query}. ` +
+                    "Try different keywords, or ask the user whether you should do the work yourself.",
+
                 },
               ],
               details: { agents: [] },
@@ -180,12 +226,16 @@ export function createDelegateExtension(
         name: DELEGATE_TO_AGENT_TOOL,
         label: "Delegate To Agent",
         description:
-          "Delegate bounded subtask(s) to recruited specialist(s) when their role/background fits. " +
+          "Delegate bounded subtask(s) to recruited specialist(s) after the user chooses who should do the work. " +
           "Single: agent_id + brief. Fan-out: tasks=[{agent_id, brief}, ...] (preferred for parallel). " +
-          "User must approve. You keep ownership of the user-facing reply; synthesize results. " +
+          "Briefs: user wording + confirmed facts + delivery constraints — do not invent specialist-domain defaults. " +
+          "If Active delegations are listed this turn (or you already started async work), call check_delegation first; " +
+          "do not re-delegate the same specialist for a duplicate/overlapping brief. " +
+          "User must approve the tool. You remain the coordinator: summarize outcomes for the user; do not redo the specialist's deliverable. " +
           "Set wait by estimated duration: ≤~20s and need the answer now → wait=true; " +
-          ">~20s / long / parallel / can continue other work → wait=false (or tasks fan-out). " +
+          ">~20s / long / parallel / can continue other coordination → wait=false (or tasks fan-out). " +
           "Do not default to wait=true merely because there is one specialist.",
+
         parameters: DelegateParams,
         annotations: {
           readOnlyHint: false,
@@ -226,7 +276,9 @@ export function createDelegateExtension(
         label: "Cancel Delegation",
         description:
           "Cancel a running or queued delegate_to_agent task by task_id. " +
-          "Use when the user asks to stop a specialist, or the subtask is no longer needed.",
+          "Use when the user asks to stop a specialist, or the subtask is no longer needed. " +
+          "After cancel: re-delegate or ask the user who should take over — do not perform the specialist's work yourself unless they explicitly say so.",
+
         parameters: CancelParams,
         annotations: {
           readOnlyHint: false,
@@ -277,6 +329,7 @@ export function createDelegateExtension(
         label: "Check Delegation",
         description:
           "Check status/result of prior delegate_to_agent task(s). " +
+          "Call before re-delegating when Active delegations are listed or you may overlap an in-progress brief. " +
           "Pass task_id, or task_ids for fan-out join; omit both to list recent tasks.",
         parameters: CheckParams,
         annotations: {

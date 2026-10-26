@@ -4,7 +4,7 @@ import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
-import { t } from "../../shared/model/ui-locale";
+import { t } from "../../shared/model/ui/ui-locale";
 import AgentCatalogSkeleton from "./components/AgentCatalogSkeleton.vue";
 import AgentMarketCard from "./components/market/AgentMarketCard.vue";
 import { useAgentCatalog } from "./composables/useAgentCatalog";

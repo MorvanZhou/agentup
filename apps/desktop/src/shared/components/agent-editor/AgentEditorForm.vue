@@ -8,13 +8,12 @@ import type {
   AgentEditorInitial,
   AgentEditorInput,
   AgentEditorVariant,
-} from "../../model/agent-editor";
-import { compressAvatarFile } from "../../model/compress-avatar";
-import { showToast } from "../../model/toast";
-import { t } from "../../model/ui-locale";
-import AgentAvatar from "../AgentAvatar.vue";
+} from "../../model/agent-editor/agent-editor";
+import { showToast } from "../../model/ui/toast";
+import { t } from "../../model/ui/ui-locale";
+import AgentAvatarField from "../avatar/AgentAvatarField.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../AppDropdownMenu.vue";
-import CommunitySkillDialog from "../CommunitySkillDialog.vue";
+import CommunitySkillDialog from "../skills/CommunitySkillDialog.vue";
 
 const MCP_PLACEHOLDER = `{
   "example": {
@@ -57,8 +56,7 @@ const downloadingSkill = ref("");
 const communityOpen = ref(false);
 const avatarPreview = ref("");
 const avatarChange = ref("");
-const avatarInput = ref<HTMLInputElement>();
-const avatarBusy = ref(false);
+const officialAvatarId = ref("");
 
 const isEdit = computed(
   () => props.variant === "local-edit" || props.variant === "publish-edit",
@@ -108,6 +106,7 @@ function applyInitial(value: AgentEditorInitial | null | undefined): void {
   if (!value) {
     avatarPreview.value = "";
     avatarChange.value = "";
+    officialAvatarId.value = "";
     return;
   }
   name.value = value.name;
@@ -121,26 +120,16 @@ function applyInitial(value: AgentEditorInitial | null | undefined): void {
   skillPaths.value = [];
   avatarPreview.value = value.avatarUrl ?? "";
   avatarChange.value = "";
+  officialAvatarId.value = "";
   if (rules.value.trim() || installedSkills.value.length || Object.keys(servers).length) {
     advancedOpen.value = true;
   }
 }
 
-async function onAvatarPicked(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
-  avatarBusy.value = true;
-  try {
-    const dataUrl = await compressAvatarFile(file);
-    avatarChange.value = dataUrl;
-    avatarPreview.value = dataUrl;
-  } catch {
-    showToast(t("agentsLocalAvatarFailed"), "error");
-  } finally {
-    avatarBusy.value = false;
-  }
+function onAvatarPicked(dataUrl: string, officialId: string): void {
+  avatarChange.value = dataUrl;
+  avatarPreview.value = dataUrl;
+  officialAvatarId.value = officialId;
 }
 
 watch(
@@ -295,43 +284,14 @@ function submit(): void {
       />
     </label>
 
-    <!-- 头像可选；未选时 AgentAvatar 显示名字首字母 -->
-    <div class="grid gap-1.5">
-      <span class="text-sm font-medium text-foreground">{{ t("agentsLocalAvatar") }}</span>
-      <div class="flex items-center gap-3">
-        <button
-          type="button"
-          class="shrink-0 rounded-full border border-rule bg-paper p-0.5 transition hover:border-accent"
-          :disabled="busy || avatarBusy"
-          @click="avatarInput?.click()"
-        >
-          <AgentAvatar
-            :name="name || 'A'"
-            :avatar-url="avatarPreview || undefined"
-            size="xl"
-            round
-          />
-        </button>
-        <div class="min-w-0 flex-1">
-          <input
-            ref="avatarInput"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            class="hidden"
-            @change="onAvatarPicked"
-          />
-          <button
-            type="button"
-            class="inline-flex min-h-8 items-center rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition hover:bg-accent/10"
-            :disabled="busy || avatarBusy"
-            @click="avatarInput?.click()"
-          >
-            {{ avatarPreview ? t("accountAvatarChange") : t("accountAvatarPick") }}
-          </button>
-          <p class="mb-0 mt-1 text-xs text-muted-foreground">{{ t("agentsLocalAvatarHint") }}</p>
-        </div>
-      </div>
-    </div>
+    <!-- 头像可选；未选时显示名字首字母。创建、编辑、发布共用。 -->
+    <AgentAvatarField
+      :name="name"
+      :preview="avatarPreview"
+      :busy="busy"
+      :selected-id="officialAvatarId"
+      @pick="onAvatarPicked"
+    />
 
     <label class="grid gap-1.5">
       <span class="text-sm font-medium text-foreground">

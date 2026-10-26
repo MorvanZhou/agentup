@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useAppearanceSettings } from "../../../composables/useAppearanceSettings";
-import { t } from "../../../../../shared/model/ui-locale";
+import { t } from "../../../../../shared/model/ui/ui-locale";
 
 const { options, themeMode, uiLocale, guest, busy, select, selectLocale } = useAppearanceSettings();
 </script>

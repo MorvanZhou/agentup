@@ -18,6 +18,7 @@ import type { ModelConfig } from "../config/load.js";
 import { listEnabledUserSkillPaths } from "../local/assistant/user-resources.js";
 import type { Visit } from "../package/sync.js";
 import { ApprovalBroker, createApprovalExtension } from "./hitl/approval/index.js";
+import { createShellHangExtension, type ShellHangBroker } from "./hitl/shell-hang/index.js";
 import { createCheckpointExtension } from "./checkpoint/extension.js";
 import type { BackgroundJobs } from "./background/index.js";
 import type { DelegationService } from "./delegation/index.js";
@@ -44,6 +45,7 @@ import {
   createAskUserExtension,
   createBackgroundJobsExtension,
   createDelegateExtension,
+  createDelegationInboxExtension,
   createFsGuardExtension,
   createLocalTimeExtension,
   createTodoExtension,
@@ -58,6 +60,7 @@ export async function openSession(
   askUser = new AskUserBroker(),
   delegation?: DelegationService,
   backgroundJobs?: BackgroundJobs,
+  shellHang?: ShellHangBroker,
 ): Promise<CreateAgentSessionResult> {
   const plan = buildSessionPlan(visit, model);
   fs.mkdirSync(plan.cwd, { recursive: true });
@@ -93,9 +96,26 @@ export async function openSession(
       createTodoExtension(),
       createSummaryExtension(),
       createArtifactsExtension(),
+      // 须在 artifacts 快照之后：落盘委托附件，本回合 settle 才能差分进面板。
+      ...(delegation
+        ? [
+            createDelegationInboxExtension({
+              onAgentStart: () => {
+                delegation.materializePendingArtifacts(visit.userId, visit.agentId, plan.cwd);
+              },
+            }),
+          ]
+        : []),
       createOutputLengthExtension(),
       createStreamGuardExtension(),
       createCheckpointExtension(visit.root),
+      ...(shellHang
+        ? [
+            createShellHangExtension(shellHang, visit.userId, visit.agentId, {
+              hitl: { origin: "visit" },
+            }),
+          ]
+        : []),
       ...(delegation
         ? [createDelegateExtension(delegation, visit.userId, visit.agentId)]
         : []),

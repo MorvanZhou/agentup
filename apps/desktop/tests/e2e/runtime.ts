@@ -271,6 +271,7 @@ export async function installRuntime(
               option_label: "本机",
               enabled: true,
               active: true,
+              custom: true,
             },
           ],
     configured: options?.modelConfigured !== false,
@@ -293,6 +294,11 @@ export async function installRuntime(
     for (const connection of providerSettings.connections) {
       const template = providerSettings.templates.find((item) => item.id === connection.template_id);
       if (!template) continue;
+      const catalogIds = new Set([
+        ...template.models.map((model) => model.id),
+        ...(connection.discovered_model_ids ?? []),
+      ]);
+      const customIds = new Set(connection.custom_model_ids);
       const ids = [
         ...template.models.map((model) => model.id),
         ...(connection.discovered_model_ids ?? []),
@@ -312,6 +318,7 @@ export async function installRuntime(
           option_label: template.option_label,
           enabled: enabled.has(key),
           active: key === activeKey,
+          custom: customIds.has(modelId) && !catalogIds.has(modelId),
         });
       }
     }
@@ -463,6 +470,38 @@ export async function installRuntime(
       if (!activeModel) {
         activeModel = { template_id: templateId, model_id: discovered[0]! };
         enabledModels = [...enabledModels, activeModel];
+      }
+      providerSettings = {
+        ...providerSettings,
+        enabled_models: enabledModels,
+        active_model: activeModel,
+        configured: Boolean(activeModel),
+      };
+      rebuildAvailableModels();
+      return json(route, 200, providerSettings);
+    }
+    if (
+      request.method() === "DELETE" &&
+      path.startsWith("/settings/provider/connections/") &&
+      path.includes("/custom-models/")
+    ) {
+      const rest = path.slice("/settings/provider/connections/".length);
+      const marker = "/custom-models/";
+      const at = rest.indexOf(marker);
+      const templateId = decodeURIComponent(rest.slice(0, at));
+      const modelId = decodeURIComponent(rest.slice(at + marker.length));
+      const connection = providerSettings.connections.find((item) => item.template_id === templateId);
+      if (!connection) return json(route, 400, { error: "请先配置该服务商" });
+      if (!connection.custom_model_ids.includes(modelId)) {
+        return json(route, 400, { error: "只能移除手动添加的模型" });
+      }
+      connection.custom_model_ids = connection.custom_model_ids.filter((id) => id !== modelId);
+      let enabledModels = providerSettings.enabled_models.filter(
+        (item) => !(item.template_id === templateId && item.model_id === modelId),
+      );
+      let activeModel = providerSettings.active_model;
+      if (activeModel?.template_id === templateId && activeModel.model_id === modelId) {
+        activeModel = enabledModels.find((item) => item.template_id === templateId) ?? enabledModels[0] ?? null;
       }
       providerSettings = {
         ...providerSettings,

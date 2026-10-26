@@ -9,6 +9,11 @@ export type AssistAgentRef = {
   brief: string;
   reply: string;
   status: AssistAgentStatus;
+  /**
+   * 工具结果为「Delegation started (async)」：父回合已派发，
+   * 专家可能仍在执行（结果另有 wake / 通知）。
+   */
+  asyncDispatched?: boolean;
   toolCallId: string;
   /** 结果正文或 started 事件里的委托任务 id。 */
   taskId: string;
@@ -58,6 +63,7 @@ export function extractAssistAgents(parts: readonly unknown[]): AssistAgentRef[]
     if (!running && !completed && !failed) continue;
 
     const parsed = parseDelegationResultText(resultText);
+    const asyncDispatched = isDelegationAsyncStarted(resultText);
     const status: AssistAgentStatus = failed
       ? "failed"
       : running
@@ -68,12 +74,14 @@ export function extractAssistAgents(parts: readonly unknown[]): AssistAgentRef[]
       agentId,
       nameHint: parsed.agentName,
       brief,
+      // 异步派发无同步回复正文；勿把「started (async)」说明文塞进 reply。
       reply: failed
         ? resultText
-        : completed
+        : completed && !asyncDispatched
           ? parsed.body || resultText
           : "",
       status,
+      ...(asyncDispatched ? { asyncDispatched: true } : {}),
       toolCallId: part.toolCallId ?? "",
       taskId: parseDelegationTaskId(resultText),
       ...(timing.startedAt !== undefined ? { startedAt: timing.startedAt } : {}),
@@ -172,9 +180,14 @@ function isDelegateFailure(part: ToolLikePart, resultText: string): boolean {
 function isDelegateSuccess(resultText: string): boolean {
   if (/Delegation completed/i.test(resultText)) return true;
   // 异步已获批启动：算已请到协助（结果另有会话通知）
-  if (/Delegation started \(async\)/i.test(resultText)) return true;
+  if (isDelegationAsyncStarted(resultText)) return true;
   // 其它非失败正文视为成功（兼容旧格式）
   return !isDelegateFailure({}, resultText);
+}
+
+/** 异步委托：工具已返回「started」，专家仍可能在跑。 */
+export function isDelegationAsyncStarted(resultText: string): boolean {
+  return /Delegation started \(async\)/i.test(resultText);
 }
 
 /** 从委托工具结果正文解析 task_id。 */

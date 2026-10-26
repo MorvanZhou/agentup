@@ -2,11 +2,12 @@
 import { EllipsisIcon, FolderOpenIcon, UserMinusIcon, UserPlusIcon, UsersIcon } from "@lucide/vue";
 import { computed, ref } from "vue";
 
-import AgentAvatar from "../../../../shared/components/AgentAvatar.vue";
+import AgentAvatar from "../../../../shared/components/avatar/AgentAvatar.vue";
 import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
-import type { AgentCard } from "../../../../shared/model/runtime";
-import { t, tf } from "../../../../shared/model/ui-locale";
+import type { AgentCard } from "../../../../shared/model/runtime/runtime";
+import { t, tf } from "../../../../shared/model/ui/ui-locale";
+import AgentProfileDialog from "../AgentProfileDialog.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -20,6 +21,7 @@ const props = withDefaults(
 const emit = defineEmits<{ recruit: [agentId: string]; open: [agentId: string]; dismiss: [agentId: string] }>();
 
 const confirmDismiss = ref(false);
+const profileOpen = ref(false);
 
 const showManageMenu = computed(() => props.surface === "manage" && props.agent.recruited);
 const showRecruit = computed(() => props.surface === "market" && !props.agent.recruited);
@@ -52,9 +54,16 @@ function confirmDismissAction(): void {
 
 <template>
   <article
-    class="group flex h-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+    class="group relative flex h-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
     :aria-labelledby="`agent-card-${agent.agentId}`"
   >
+    <!-- 点卡片空白处看资料；菜单和招募盖在上层 -->
+    <button
+      type="button"
+      class="absolute inset-0 z-10 cursor-pointer rounded-xl border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"
+      :aria-label="tf('agentsViewProfile', { name: agent.name })"
+      @click="profileOpen = true"
+    />
     <!-- 身份：放大头像 + 名职，作为卡片主视觉 -->
     <div class="flex shrink-0 items-start gap-2.5">
       <AgentAvatar
@@ -89,7 +98,8 @@ function confirmDismissAction(): void {
         </p>
         <p v-else class="m-0 mt-1 h-4" aria-hidden="true" />
       </div>
-      <AppDropdownMenu v-if="showManageMenu" :items="menuItems" @select="onSelect">
+      <div v-if="showManageMenu" class="relative z-20">
+      <AppDropdownMenu :items="menuItems" @select="onSelect">
         <template #trigger>
           <button
             type="button"
@@ -101,6 +111,7 @@ function confirmDismissAction(): void {
           </button>
         </template>
       </AppDropdownMenu>
+      </div>
     </div>
 
     <!-- 简介：固定两行高度，避免短文案导致卡高不一致 -->
@@ -124,7 +135,7 @@ function confirmDismissAction(): void {
         v-if="showRecruit"
         type="button"
         :disabled="busy"
-        class="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-accent px-2.5 text-xs font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
+        class="relative z-20 inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg bg-accent px-2.5 text-xs font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
         :aria-label="tf('agentsRecruitAria', { name: agent.name })"
         @click="$emit('recruit', agent.agentId)"
       >
@@ -156,5 +167,6 @@ function confirmDismissAction(): void {
         </button>
       </template>
     </AppDialog>
+    <AgentProfileDialog :open="profileOpen" :agent="agent" @update:open="profileOpen = $event" />
   </article>
 </template>

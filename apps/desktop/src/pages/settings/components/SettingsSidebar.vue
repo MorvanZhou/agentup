@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { t } from "../../../shared/model/ui-locale";
+import { t } from "../../../shared/model/ui/ui-locale";
 
 type SectionId = "account" | "provider" | "appearance";
 
 const items = computed(() => [
-  { id: "account" as const, label: t("settingsAccount") },
-  { id: "provider" as const, label: t("settingsProvider") },
   { id: "appearance" as const, label: t("settingsAppearance") },
+  { id: "provider" as const, label: t("settingsProvider") },
+  { id: "account" as const, label: t("settingsAccount") },
 ]);
 
 defineProps<{ active: SectionId }>();

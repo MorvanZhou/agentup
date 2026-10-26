@@ -13,7 +13,7 @@ export type DiscoverResult = {
 };
 
 /**
- * 在已招募花名册上按姓名 / 职业 / 背景 / 备注 / SYSTEM 词法打分，取 Top-K。
+ * 在已招募花名册上按姓名 / 职业 / 背景 / 备注 / SYSTEM.md / AGENTS.md 词法打分，取 Top-K。
  * 无 query 不返回样本；小花名册也不再全量倾倒。
  */
 export function discoverRecruitedAgents(
@@ -54,6 +54,7 @@ export function scoreAgent(agent: RecruitedAgentInfo, query: string): number {
     [agent.remark, 2],
     [agent.background, 2],
     [agent.systemText ?? "", 1],
+    [agent.agentsText ?? "", 1],
   ];
   const tokens = tokenize(q);
   let total = 0;
@@ -87,12 +88,28 @@ export function formatDiscoveredAgentsContext(result: DiscoverResult): string {
     [
       "# Relevant recruited agents",
       "",
-      "This is a collaboration workspace: specialists from the user's contact list (local private + market recruited) can help when their role fits.",
-      "Candidates below matched this turn's message. Prefer agent_search to refine, then delegate_to_agent (user approval required). You keep ownership of the user-facing reply.",
+      "Lexical hints only — not an agent_search result. Stay inside your own role.",
+      "Call agent_search with role or domain keywords before ask_user, file writes, or shell. A poor hint does not mean nobody fits.",
+      "If one is a better fit, ask the user who should do the work, then delegate_to_agent (tool approval required) and coordinate. Do not silently self-serve or redo their job.",
+
       "",
       ...lines,
     ].join("\n") + footer
   );
+}
+
+/**
+ * 花名册非空但本轮没有词法命中时，提示私人助理必须先 agent_search。
+ * 有命中时走 formatDiscoveredAgentsContext，不重复注入。
+ */
+export function formatAgentSearchRequired(): string {
+  return [
+    "# Roster search",
+    "",
+    "You have recruited specialists, and this turn has no lexical hint.",
+    "Call agent_search with role or domain keywords before ask_user, file writes, or shell.",
+    "Do not decide you will do the work until that search returns.",
+  ].join("\n");
 }
 
 /** 工具 / 日志用的单行名片。 */

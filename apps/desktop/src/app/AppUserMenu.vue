@@ -11,13 +11,13 @@ import {
   DropdownMenuTrigger,
 } from "reka-ui";
 
-import UserAvatar from "../shared/components/UserAvatar.vue";
-import { isAccountSession, isGuestSession, sessionDisplayNickname } from "../shared/model/session";
-import { t } from "../shared/model/ui-locale";
+import UserAvatar from "../shared/components/avatar/UserAvatar.vue";
+import { isGuestSession, sessionDisplayNickname } from "../shared/model/session/session";
+import { t } from "../shared/model/ui/ui-locale";
 import { useDesktop } from "./desktop";
 
 const router = useRouter();
-const { session, logout } = useDesktop();
+const { session } = useDesktop();
 const open = ref(false);
 const displayName = computed(() => sessionDisplayNickname(session.value));
 
@@ -33,21 +33,6 @@ function goLogin(): void {
     name: "login",
     query: redirect.startsWith("/") && router.currentRoute.value.name !== "login" ? { redirect } : undefined,
   });
-}
-
-function signOut(): void {
-  open.value = false;
-  void (async () => {
-    await logout();
-    const name = router.currentRoute.value.name;
-    if (
-      name === "login" ||
-      name === "agents-owned-new" ||
-      name === "agents-owned-edit"
-    ) {
-      await router.replace({ name: "conversation" });
-    }
-  })();
 }
 </script>
 
@@ -83,13 +68,6 @@ function signOut(): void {
           @select="goLogin"
         >
           {{ t("menuLogin") }}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          v-else-if="isAccountSession(session)"
-          class="flex min-h-8 cursor-pointer items-center rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
-          @select="signOut"
-        >
-          {{ t("menuLogout") }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenuPortal>

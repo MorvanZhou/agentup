@@ -15,6 +15,19 @@ export async function openUserMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: /^账号：/ }).click();
 }
 
+/** 轨栏「消息」入口；未读时 aria-label 会带「n 条未读」后缀。 */
+export function messagesNav(page: Page) {
+  return page.getByRole("link", { name: /^消息/ });
+}
+
+/** 账号菜单 → 设置 → 账号页登出（菜单内不再放登出项）。 */
+export async function signOut(page: Page): Promise<void> {
+  await openUserMenu(page);
+  await page.getByRole("menuitem", { name: "设置" }).click();
+  await expect(page.getByRole("heading", { name: "账号设置" })).toBeVisible();
+  await page.getByRole("button", { name: "登出" }).click();
+}
+
 /**
  * 打开市场页（路由 `/market`）。
  * 必须走轨栏 RouterLink：`page.goto` 会整页刷新，冲掉 KeepAlive 会话与进行中的 stream。
@@ -40,7 +53,7 @@ export async function startAgent(page: Page, agentName: string): Promise<void> {
   const card = page.getByRole("article").filter({ hasText: agentName });
   await card.getByRole("button", { name: "招募" }).click();
   await expect(card.getByLabel("已招")).toBeVisible();
-  await page.getByRole("link", { name: "消息", exact: true }).click();
+  await messagesNav(page).click();
   await conversationItem(page, agentName).click();
   await expect(page.getByRole("heading", { name: agentName, exact: true })).toBeVisible();
 }

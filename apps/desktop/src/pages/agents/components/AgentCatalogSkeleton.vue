@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { t } from "../../../shared/model/ui-locale";
+import { t } from "../../../shared/model/ui/ui-locale";
 import AgentCardSkeleton from "./AgentCardSkeleton.vue";
 
 withDefaults(

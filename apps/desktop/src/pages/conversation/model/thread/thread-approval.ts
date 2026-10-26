@@ -1,7 +1,7 @@
 import type { ComputedRef, InjectionKey, Ref } from "vue";
 import { computed, inject } from "vue";
 
-import type { AgentUpApprovalData } from "../../../../shared/model/chat";
+import type { AgentUpApprovalData } from "../../../../shared/model/chat/chat";
 
 export const threadApprovalKey = Symbol("threadApproval") as InjectionKey<
   Ref<AgentUpApprovalData | undefined> | ComputedRef<AgentUpApprovalData | undefined>

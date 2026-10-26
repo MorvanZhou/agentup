@@ -3,8 +3,8 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { SearchIcon } from "@lucide/vue";
 
-import type { AgentCard } from "../../../../shared/model/runtime";
-import { t } from "../../../../shared/model/ui-locale";
+import type { AgentCard } from "../../../../shared/model/runtime/runtime";
+import { t } from "../../../../shared/model/ui/ui-locale";
 import {
   filterConversationRows,
   type ConversationRow,

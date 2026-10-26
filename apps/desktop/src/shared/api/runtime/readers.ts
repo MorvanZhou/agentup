@@ -12,9 +12,9 @@ import type {
   UserPreferences,
   UserSkill,
   UserState,
-} from "../../model/runtime";
+} from "../../model/runtime/runtime";
 
-import { t } from "../../model/ui-locale";
+import { t } from "../../model/ui/ui-locale";
 
 import { DesktopApiError } from "./error";
 
@@ -305,6 +305,7 @@ function readAvailableProviderModel(value: unknown): AvailableProviderModel {
     optionLabel: payload.option_label,
     enabled: payload.enabled,
     active: payload.active,
+    custom: payload.custom === true,
   };
 }
 

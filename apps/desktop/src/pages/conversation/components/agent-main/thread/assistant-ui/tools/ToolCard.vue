@@ -7,7 +7,7 @@ import {
 } from "reka-ui";
 import { ChevronDownIcon } from "@lucide/vue";
 
-import { t, tf } from "../../../../../../../shared/model/ui-locale";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import ShimmerTitle from "../parts/ShimmerTitle.vue";
 import { useToolPart } from "./useToolPart";
 

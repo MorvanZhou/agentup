@@ -5,7 +5,7 @@ import { router } from "./app/router";
 import { ensureGuestSession, restoreSession } from "./app/session-store";
 import { bootstrapTheme } from "./app/theme";
 import { i18n } from "./shared/i18n";
-import { applyUiLocale, readDeviceLocale } from "./shared/model/ui-locale";
+import { applyUiLocale, readDeviceLocale } from "./shared/model/ui/ui-locale";
 import "./styles/main.css";
 
 let session = await restoreSession();

@@ -3,17 +3,19 @@ import { expect, it } from "vitest";
 import {
   AWAITING_APPROVAL_PREVIEW,
   AWAITING_ASK_USER_PREVIEW,
+  attentionBadgeCount,
   buildConversationRows,
   childHitlHintsFromAttention,
   conversationDisplayName,
   conversationPreviewLabel,
+  delegationPreviewText,
   filterConversationRows,
   hasRecruitedMarketAgent,
   totalBlocked,
   totalUnread,
   unreadLabel,
 } from "../../src/pages/conversation/model/sidebar/conversation-row.js";
-import type { AgentCard } from "../../src/shared/model/runtime.js";
+import type { AgentCard } from "../../src/shared/model/runtime/runtime.js";
 
 function card(partial: Partial<AgentCard> & Pick<AgentCard, "agentId" | "name">): AgentCard {
   return {
@@ -201,6 +203,66 @@ it("pins parent with child HITL reminder after direct HITL and before unread", (
   ).toBe("「前端」等待你的批准");
 });
 
+it("shows who assigned a single delegated task, without pinning or stealing unread", () => {
+  const rows = buildConversationRows({
+    conversations: [
+      card({ agentId: "pm", name: "产品经理", kind: "recruited" }),
+      card({ agentId: "fe", name: "前端", remark: "小前", kind: "recruited" }),
+      card({ agentId: "old", name: "旧会话", kind: "recruited" }),
+    ],
+    previews: { pm: "父预览", fe: "子预览", old: "有未读" },
+    lastActiveAt: { pm: 100, fe: 20, old: 1 },
+    selectedId: "",
+    busyAgent: "",
+    unread: { old: 2 },
+    delegationPresence: {
+      dispatchedCount: { pm: 1 },
+      incoming: {
+        fe: [{ id: "t1", fromAgentId: "pm", brief: "改登录页", createdAt: 1 }],
+      },
+    },
+    resolveAgentName: (id) => (id === "pm" ? "产品经理" : id),
+  });
+  const fe = rows.find((row) => row.agent.agentId === "fe")!;
+  const pm = rows.find((row) => row.agent.agentId === "pm")!;
+  expect(fe).toMatchObject({
+    incomingCount: 1,
+    incomingFromName: "产品经理",
+    dispatchedCount: 0,
+    working: false,
+    unread: 0,
+  });
+  expect(pm).toMatchObject({ dispatchedCount: 1, incomingCount: 0, working: false });
+  expect(conversationPreviewLabel(fe)).toBe("在做产品经理派的活");
+  expect(conversationPreviewLabel(pm)).toBe("已派出 1 人");
+  expect(attentionBadgeCount(fe)).toBe(0);
+  expect(rows.map((row) => row.agent.agentId)).toEqual(["old", "pm", "fe"]);
+  expect(fe.searchText).toContain("产品经理");
+});
+
+it("collapses several incoming tasks and lets direct HITL replace the delegation line", () => {
+  expect(
+    delegationPreviewText({ incomingCount: 2, incomingFromName: "产品经理", dispatchedCount: 3 }),
+  ).toBe("2 项委托进行中");
+  expect(
+    delegationPreviewText({ incomingCount: 1, incomingFromName: "", dispatchedCount: 0 }),
+  ).toBe("在做派来的活");
+  expect(
+    delegationPreviewText({ incomingCount: 0, incomingFromName: "", dispatchedCount: 2 }),
+  ).toBe("已派出 2 人");
+  expect(
+    conversationPreviewLabel({
+      awaitingApproval: true,
+      awaitingAskUser: false,
+      ...emptyChild,
+      preview: "子预览",
+      incomingCount: 1,
+      incomingFromName: "产品经理",
+      dispatchedCount: 4,
+    }),
+  ).toBe(AWAITING_APPROVAL_PREVIEW);
+});
+
 it("filters rows by precomputed searchText", () => {
   const rows = buildConversationRows({
     conversations: [
@@ -237,6 +299,30 @@ it("formats unread badges", () => {
   expect(unreadLabel(12)).toBe("9+");
 });
 
+it("merges HITL into attention badge count with unread", () => {
+  expect(
+    attentionBadgeCount({ unread: 0, awaitingApproval: false, awaitingAskUser: false }),
+  ).toBe(0);
+  expect(
+    attentionBadgeCount({ unread: 3, awaitingApproval: false, awaitingAskUser: false }),
+  ).toBe(3);
+  expect(
+    attentionBadgeCount({ unread: 0, awaitingApproval: true, awaitingAskUser: false }),
+  ).toBe(1);
+  expect(
+    attentionBadgeCount({ unread: 0, awaitingApproval: false, awaitingAskUser: true }),
+  ).toBe(1);
+  expect(
+    attentionBadgeCount({ unread: 2, awaitingApproval: true, awaitingAskUser: false }),
+  ).toBe(3);
+  expect(
+    attentionBadgeCount({ unread: 2, awaitingApproval: true, awaitingAskUser: true }),
+  ).toBe(3);
+  expect(
+    attentionBadgeCount({ unread: 1.8, awaitingApproval: false, awaitingAskUser: false }),
+  ).toBe(1);
+});
+
 it("sums unread across agents", () => {
   expect(totalUnread({})).toBe(0);
   expect(totalUnread({ a: 3, b: 2 })).toBe(5);
@@ -250,14 +336,11 @@ it("counts blocked agents once even if both approval and ask_user", () => {
   expect(totalBlocked(["child"], [], ["parent"])).toBe(2);
 });
 
-it("builds child HITL hints only when surfaced on child (async)", () => {
+it("labels the follow-up session with the specialist who is waiting", () => {
   const hints = childHitlHintsFromAttention({
-    approvals: [
-      { agentId: "fe", originAgentId: "fe", parentAgentId: "pm" },
-      { agentId: "pm", originAgentId: "be", parentAgentId: "pm" },
-    ],
-    askUsers: [],
-    resolveName: (id) => (id === "fe" ? "前端" : id),
+    approvals: [{ agentId: "pm", originAgentId: "fe", parentAgentId: "pm", askedByName: "前端" }],
+    askUsers: [{ agentId: "pm", originAgentId: "be", parentAgentId: "pm" }],
+    resolveName: (id) => (id === "be" ? "后端" : id),
   });
   expect([...hints.entries()]).toEqual([["pm", { kind: "approval", name: "前端" }]]);
 });

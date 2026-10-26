@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./page-faults";
 
 import { openOwnedAgents, openPublishNew, pickAgentAvatar, signIn } from "./helpers";
 import { installRuntime } from "./runtime";
