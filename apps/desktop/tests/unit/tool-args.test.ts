@@ -2,7 +2,9 @@ import { expect, it } from "vitest";
 
 import {
   argString,
+  formatToolErrorMessage,
   formatToolResult,
+  isToolFailureOutput,
   isInterruptedToolOutput,
   isToolProgressActive,
   mergeToolArgs,
@@ -10,7 +12,7 @@ import {
   partialJsonStringField,
   shortPath,
   summarizeArgs,
-} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/tool-args.js";
+} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/shared/tool-args.js";
 
 it("reads string args and shortens paths", () => {
   expect(argString({ path: "a/b/c.ts" }, "path")).toBe("a/b/c.ts");
@@ -71,6 +73,37 @@ it("detects interrupted tool outputs after app exit", () => {
   ).toBe(true);
   expect(isInterruptedToolOutput({ error: "Tool call interrupted: …" })).toBe(true);
   expect(isInterruptedToolOutput("ok")).toBe(false);
+});
+
+it("formats tool failures as an Error line", () => {
+  expect(
+    formatToolErrorMessage(
+      "File has not been read yet: /tmp/a.vue. Read it first before writing to it.",
+    ),
+  ).toBe(
+    "Error: File has not been read yet: /tmp/a.vue. Read it first before writing to it.",
+  );
+  expect(formatToolErrorMessage("Error: job not found")).toBe("Error: job not found");
+  expect(formatToolErrorMessage("  error: already failed  ")).toBe("error: already failed");
+  expect(formatToolErrorMessage("")).toBe("Error");
+  expect(formatToolErrorMessage("   ")).toBe("Error");
+  expect(
+    formatToolErrorMessage({
+      error: "File has not been read yet: /tmp/a.vue. Read it first before writing to it.",
+    }),
+  ).toBe(
+    "Error: File has not been read yet: /tmp/a.vue. Read it first before writing to it.",
+  );
+  expect(formatToolErrorMessage({ error: "Error: job not found" })).toBe("Error: job not found");
+});
+
+it("treats a tool result that is only an Error line as a failure", () => {
+  expect(isToolFailureOutput("Error: task_id required")).toBe(true);
+  expect(isToolFailureOutput("error: query required")).toBe(true);
+  expect(isToolFailureOutput({ error: "委托失败" })).toBe(true);
+  expect(isToolFailureOutput("Delegation completed")).toBe(false);
+  expect(isToolFailureOutput("")).toBe(false);
+  expect(isToolFailureOutput("path:12: Error: not a tool failure")).toBe(false);
 });
 
 it("marks running and pending incomplete tools as active", () => {

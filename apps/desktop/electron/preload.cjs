@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("agentUp", {
   webUrl: () => ipcRenderer.invoke("agentup:web-url"),
   setThemeSource: (mode) => ipcRenderer.invoke("agentup:set-theme-source", mode),
   setAppBadge: (count) => ipcRenderer.invoke("agentup:set-app-badge", count),
+  setMenuBarUnread: (count) => ipcRenderer.invoke("agentup:set-menu-bar-unread", count),
+  setMenuBarVisible: (visible) => ipcRenderer.invoke("agentup:set-menu-bar-visible", visible),
   /** themeSource 覆盖后 matchMedia 可能不准；同步读真实系统外观 */
   systemPrefersDark: () => Boolean(ipcRenderer.sendSync("agentup:system-prefers-dark")),
   onSystemThemeChanged: (listener) => {

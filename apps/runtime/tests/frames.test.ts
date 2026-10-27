@@ -428,6 +428,37 @@ it("emits agentUpSummary message-metadata from summary custom entry", () => {
   ]);
 });
 
+it("projects read image blocks into the tool output", () => {
+  const projector = new PiUIMessageProjector();
+  const png = "iVBORw0KGgo=";
+  projector.project(
+    event({ type: "tool_execution_start", toolCallId: "call-img", toolName: "read", args: { path: "shot.png" } }),
+  );
+  const chunks = projector.project(
+    event({
+      type: "tool_execution_end",
+      toolCallId: "call-img",
+      toolName: "read",
+      result: {
+        content: [
+          { type: "text", text: "Read image file [image/png]" },
+          { type: "image", data: png, mimeType: "image/png" },
+        ],
+      },
+      isError: false,
+    }),
+  );
+  expect(chunks).toContainEqual({
+    type: "tool-output-available",
+    toolCallId: "call-img",
+    output: {
+      text: "Read image file [image/png]",
+      images: [{ mimeType: "image/png", data: png }],
+    },
+    dynamic: true,
+  });
+});
+
 function event(value: Record<string, unknown>): AgentSessionEvent {
   return value as AgentSessionEvent;
 }

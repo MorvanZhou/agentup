@@ -4,6 +4,7 @@ import type { AgentSessionEvent, SessionEntry } from "@earendil-works/pi-coding-
 import type { UIMessageChunk } from "ai";
 
 import { sanitizeStreamText } from "../stream-guard.js";
+import { projectToolOutput, projectToolText } from "./tool-output.js";
 import {
   AGENTUP_ARTIFACTS_CUSTOM_TYPE,
   parseArtifactsEntryData,
@@ -384,7 +385,7 @@ export class PiUIMessageProjector {
       {
         type: "tool-output-available",
         toolCallId,
-        output: textOf(partialResult),
+        output: projectToolText(partialResult),
         dynamic: true,
         preliminary: true,
       },
@@ -404,7 +405,7 @@ export class PiUIMessageProjector {
         {
           type: "tool-output-error",
           toolCallId,
-          errorText: textOf(result) || "工具调用失败",
+          errorText: projectToolText(result) || "工具调用失败",
           dynamic: true,
         },
       ];
@@ -413,7 +414,7 @@ export class PiUIMessageProjector {
       {
         type: "tool-output-available",
         toolCallId,
-        output: textOf(result),
+        output: projectToolOutput(result),
         dynamic: true,
       },
     ];
@@ -453,20 +454,6 @@ function toolCallFromPartial(
   }
   if (!record.id || !record.name) return undefined;
   return { id: record.id, name: record.name };
-}
-
-function textOf(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && "content" in value) {
-    const content = (value as { content: unknown }).content;
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
-        .map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text: unknown }).text) : ""))
-        .join("");
-    }
-  }
-  return JSON.stringify(value);
 }
 
 /** 投影层：去掉完整 special；半截前缀暂保留，避免误吞代码里的 `<|`。 */

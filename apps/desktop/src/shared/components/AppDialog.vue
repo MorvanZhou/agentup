@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import {
   DialogClose,
   DialogContent,
@@ -8,9 +9,11 @@ import {
   DialogRoot,
   DialogTitle,
 } from "reka-ui";
-import { XIcon } from "@lucide/vue";
+import { ChevronDownIcon, XIcon } from "@lucide/vue";
 
-withDefaults(
+import { t } from "../model/ui/ui-locale";
+
+const props = withDefaults(
   defineProps<{
     open: boolean;
     title: string;
@@ -21,16 +24,71 @@ withDefaults(
     align?: "start" | "center";
     titleClass?: string;
     descriptionClass?: string;
+    /** 说明默认两行；超出才出现展开，短说明保持原样 */
+    descriptionClamp?: boolean;
   }>(),
   {
     size: "md",
     align: "start",
     titleClass: "text-base font-semibold tracking-tight",
     descriptionClass: "mb-0 mt-3 text-sm leading-snug text-muted-foreground",
+    descriptionClamp: false,
   },
 );
 
 defineEmits<{ "update:open": [value: boolean] }>();
+
+const descriptionOpen = ref(false);
+const descriptionOverflows = ref(false);
+const descriptionEl = ref<{ $el?: unknown } | HTMLElement | null>(null);
+let descriptionObserver: ResizeObserver | null = null;
+
+const showDescriptionToggle = computed(
+  () => props.descriptionClamp && (descriptionOverflows.value || descriptionOpen.value),
+);
+
+function descriptionNode(): HTMLElement | null {
+  const current = descriptionEl.value;
+  if (current instanceof HTMLElement) return current;
+  const root = current?.$el;
+  return root instanceof HTMLElement ? root : null;
+}
+
+function measureDescription(): void {
+  const el = descriptionNode();
+  if (!el || !props.descriptionClamp || descriptionOpen.value) return;
+  descriptionOverflows.value = el.scrollHeight > el.clientHeight + 1;
+}
+
+function toggleDescription(): void {
+  descriptionOpen.value = !descriptionOpen.value;
+  if (!descriptionOpen.value) void nextTick(measureDescription);
+}
+
+watch(descriptionEl, () => {
+  descriptionObserver?.disconnect();
+  descriptionObserver = null;
+  const node = descriptionNode();
+  if (!node) return;
+  if (typeof ResizeObserver === "undefined") {
+    void nextTick(measureDescription);
+    return;
+  }
+  descriptionObserver = new ResizeObserver(() => measureDescription());
+  descriptionObserver.observe(node);
+  measureDescription();
+});
+
+watch(
+  () => [props.open, props.description] as const,
+  () => {
+    descriptionOpen.value = false;
+    descriptionOverflows.value = false;
+    void nextTick(measureDescription);
+  },
+);
+
+onUnmounted(() => descriptionObserver?.disconnect());
 </script>
 
 <template>
@@ -56,9 +114,36 @@ defineEmits<{ "update:open": [value: boolean] }>();
           </div>
           <div class="min-w-0 flex-1">
             <DialogTitle :class="titleClass">{{ title }}</DialogTitle>
-            <DialogDescription v-if="description" :class="descriptionClass">
+            <DialogDescription v-if="description && !descriptionClamp" :class="descriptionClass">
               {{ description }}
             </DialogDescription>
+            <!-- 过长说明：默认两行；line-clamp 与 block 冲突，折叠态不要再加 display -->
+            <div v-else-if="description" class="min-w-0">
+              <DialogDescription
+                ref="descriptionEl"
+                :class="[
+                  descriptionClass,
+                  'whitespace-pre-wrap break-words',
+                  descriptionOpen
+                    ? 'max-h-48 overflow-y-auto overscroll-contain'
+                    : 'line-clamp-2 max-h-12 overflow-hidden',
+                ]"
+              >{{ description }}</DialogDescription>
+              <button
+                v-if="showDescriptionToggle"
+                type="button"
+                class="mt-1 inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+                :aria-expanded="descriptionOpen"
+                @click="toggleDescription"
+              >
+                <ChevronDownIcon
+                  class="size-3.5 shrink-0 transition-transform duration-200 motion-reduce:transition-none"
+                  :class="descriptionOpen ? 'rotate-180' : ''"
+                  aria-hidden="true"
+                />
+                {{ descriptionOpen ? t("dialogDescriptionCollapse") : t("dialogDescriptionExpand") }}
+              </button>
+            </div>
           </div>
           <DialogClose
             class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

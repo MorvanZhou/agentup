@@ -77,6 +77,8 @@ describe("formatActiveDelegationsContext", () => {
     expect(text).toContain("# Active delegations");
     expect(text).toContain("check_delegation");
     expect(text).toContain("Do not re-delegate");
+    expect(text).toContain("steer_delegation");
+    expect(text).toContain("resolve_delegation_update");
     expect(text).toContain("do not take over that specialist's work yourself");
     expect(text).toContain("t-run");
 

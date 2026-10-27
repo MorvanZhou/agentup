@@ -1,5 +1,5 @@
 const { createOAuthLoopback } = require("./oauth-loopback.cjs");
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell, systemPreferences } =
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } =
   require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -8,6 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { applyAppBadge } = require("./app-badge.cjs");
+const { createMenuBarController } = require("./menu-bar.cjs");
 const { ensureRuntimeModules } = require("./ensure-runtime-modules.cjs");
 const {
   collectErasePaths,
@@ -66,6 +67,16 @@ if (process.defaultApp) {
 } else {
   app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
 }
+
+const menuBar = createMenuBarController({
+  platform: process.platform,
+  Tray,
+  Menu,
+  nativeImage,
+  iconPath: path.join(__dirname, "assets", "icon.png"),
+  productName: appProductName,
+  onOpen: focusAppWindows,
+});
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -183,6 +194,7 @@ app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) {
     app.dock.setIcon(path.join(__dirname, "assets", "icon.png"));
   }
+  menuBar.attach();
   const sessionVault = createSessionVault({
     safeStorage,
     userDataPath: app.getPath("userData"),
@@ -293,6 +305,8 @@ app.whenReady().then(async () => {
       setBadgeCount: (value) => app.setBadgeCount(value),
     });
   });
+  ipcMain.handle("agentup:set-menu-bar-unread", (_event, count) => menuBar.setUnread(count));
+  ipcMain.handle("agentup:set-menu-bar-visible", (_event, visible) => menuBar.setVisible(visible));
   // themeSource 非 system 时 matchMedia 不再反映真实系统外观，故走本机 API
   ipcMain.on("agentup:system-prefers-dark", (event) => {
     event.returnValue = systemPrefersDark();

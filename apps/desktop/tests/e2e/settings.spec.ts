@@ -77,6 +77,15 @@ test("切换账号外观偏好并应用到 document", async ({ page }) => {
   await loaded;
 
   await expect(page.getByRole("heading", { name: "外观" })).toBeVisible();
+  const menuBarSwitch = page.getByRole("switch", { name: "菜单栏图标" });
+  await expect(menuBarSwitch).toBeVisible();
+  await expect(menuBarSwitch).toHaveAttribute("aria-checked", "true");
+  await menuBarSwitch.click();
+  await expect(menuBarSwitch).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("status")).toHaveText("菜单栏设置已保存");
+  await menuBarSwitch.click();
+  await expect(menuBarSwitch).toHaveAttribute("aria-checked", "true");
+
   const saved = page.waitForRequest(
     (request) => request.method() === "PUT" && request.url().endsWith("/runtime/preferences"),
   );

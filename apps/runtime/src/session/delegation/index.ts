@@ -2,7 +2,7 @@ export {
   DelegationError,
   DelegationService,
   type DelegationServiceOptions,
-} from "./service.js";
+} from "./service/index.js";
 export { DelegationStore } from "./store.js";
 export {
   DelegationProgressHub,

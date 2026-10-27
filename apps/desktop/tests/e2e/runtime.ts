@@ -54,6 +54,7 @@ export async function installRuntime(
     prompt?:
       | "stream"
       | "slow-stream"
+      | "interruptible"
       | "missing-model"
       | "approval"
       | "ask-user"
@@ -349,6 +350,8 @@ export async function installRuntime(
     }
   }
   // 只拦截应用的 /runtime 控制面；不要误伤 Vite 的 /src/shared/api/runtime/*.ts 模块。
+  let interruptiblePrompts = 0;
+  let releaseFirstInterrupt: (() => void) | null = null;
   await page.route(/^https?:\/\/[^/]+\/runtime(?:\/|$)/, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -1285,6 +1288,55 @@ export async function installRuntime(
       // 模拟长回复：先挂起再吐完整 SSE，便于测切走再接回。
       if (options?.prompt === "slow-stream") {
         await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      // 第一轮挂起，直到客户端中止或下一轮 prompt 到来；第二轮立刻返回新助手正文。
+      if (options?.prompt === "interruptible") {
+        interruptiblePrompts += 1;
+        if (interruptiblePrompts === 1) {
+          await new Promise<void>((resolve) => {
+            releaseFirstInterrupt = resolve;
+            setTimeout(resolve, 30_000);
+          });
+          try {
+            return await route.fulfill({
+              status: 200,
+              headers: {
+                "content-type": "text/event-stream; charset=utf-8",
+                "x-vercel-ai-ui-message-stream": "v1",
+                "cache-control": "no-cache",
+              },
+              body: sse([
+                { type: "start", messageId: "interrupt-old" },
+                { type: "start-step" },
+                { type: "text-start", id: "interrupt-old-text" },
+                { type: "text-delta", id: "interrupt-old-text", delta: "旧回复" },
+                { type: "text-end", id: "interrupt-old-text" },
+                { type: "finish-step" },
+                { type: "finish" },
+              ]),
+            });
+          } catch {
+            return;
+          }
+        }
+        releaseFirstInterrupt?.();
+        return route.fulfill({
+          status: 200,
+          headers: {
+            "content-type": "text/event-stream; charset=utf-8",
+            "x-vercel-ai-ui-message-stream": "v1",
+            "cache-control": "no-cache",
+          },
+          body: sse([
+            { type: "start", messageId: `interrupt-new-${interruptiblePrompts}` },
+            { type: "start-step" },
+            { type: "text-start", id: "interrupt-new-text" },
+            { type: "text-delta", id: "interrupt-new-text", delta: "新回复" },
+            { type: "text-end", id: "interrupt-new-text" },
+            { type: "finish-step" },
+            { type: "finish" },
+          ]),
+        });
       }
       const agentId = decodeURIComponent(promptMatch[1]);
       const turn = `live-${Date.now()}-${Math.random().toString(16).slice(2)}`;

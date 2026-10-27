@@ -29,6 +29,7 @@ const BUILTIN_TOOLS_AFTER_SHELL = [
   "bg_run",
   "bg_status",
   "bg_kill",
+  "shell_hang_decide",
 ] as const;
 
 /** Pi 内置名；MCP deferred 工具经此发现后再声明（与 agent_search 对称）。 */
@@ -40,6 +41,8 @@ const DELEGATION_TOOLS = [
   "delegate_to_agent",
   "check_delegation",
   "cancel_delegation",
+  "steer_delegation",
+  "resolve_delegation_update",
 ];
 
 export interface SessionProviderBinding {

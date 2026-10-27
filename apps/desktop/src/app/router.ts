@@ -9,9 +9,9 @@ import ConversationPage from "../pages/conversation/ConversationPage.vue";
 import LoginPage from "../pages/login/LoginPage.vue";
 import SettingsPage from "../pages/settings/SettingsPage.vue";
 import { isAccountSession } from "../shared/model/session/session";
-import AppLayout from "./AppLayout.vue";
-import { isAuthGateReady, runWithAccount } from "./auth-gate";
-import { ensureGuestSession, readSession } from "./session-store";
+import { isAuthGateReady, runWithAccount } from "./auth/auth-gate";
+import { ensureGuestSession, readSession } from "./session/session-store";
+import AppLayout from "./shell/AppLayout.vue";
 
 // 打包后 loadFile 走 file://，history 模式无法匹配路由；生产用 hash。
 export const router = createRouter({

@@ -1,6 +1,11 @@
 import { computed, onMounted, onScopeDispose, ref, watch } from "vue";
 
-import { totalBlocked } from "../pages/conversation/model/sidebar/conversation-row";
+import {
+  menuBarAttentionCount,
+  totalAttentionBadge,
+  totalBlocked,
+  totalUnread,
+} from "../pages/conversation/model/sidebar/conversation-row";
 import { DesktopApi, DesktopApiError } from "../shared/api/runtime";
 import type { AttentionSnapshot } from "../shared/api/runtime/chat";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/avatar/personal-assistant-default";
@@ -22,10 +27,16 @@ import {
   type UiLocale,
 } from "../shared/model/ui/ui-locale";
 import { showToast } from "../shared/model/ui/toast";
-import { syncAppBadge } from "./app-badge";
-import { bindAuthGate, runWithAccount } from "./auth-gate";
-import { clearSession, ensureGuestSession, readSession, saveSession } from "./session-store";
-import { applyTheme, clearThemeMirror, readThemeMirror, writeThemeMirror } from "./theme";
+import { bindAuthGate, runWithAccount } from "./auth/auth-gate";
+import { syncAppBadge, syncMenuBarUnread } from "./native/app-badge";
+import {
+  isMenuBarPrefAvailable,
+  readMenuBarVisible,
+  syncMenuBarVisible,
+  writeMenuBarVisible,
+} from "./native/menu-bar-pref";
+import { clearSession, ensureGuestSession, readSession, saveSession } from "./session/session-store";
+import { applyTheme, clearThemeMirror, readThemeMirror, writeThemeMirror } from "./theme/theme";
 
 const ATTENTION_POLL_MS = 2_500;
 
@@ -48,6 +59,8 @@ export function useDesktopApp(api = new DesktopApi()) {
   const lastActiveAt = ref<Record<string, number>>({});
   const themeMode = ref<ThemeMode>("system");
   const skipEditResendConfirm = ref(false);
+  const menuBarVisible = ref(readMenuBarVisible());
+  const menuBarAvailable = computed(() => isMenuBarPrefAvailable());
   const busy = ref(false);
   const busyAgent = ref("");
   /** runtime 汇总：busy + 可闭合 HITL（侧栏 / Dock 真相源之一）。 */
@@ -108,6 +121,14 @@ export function useDesktopApp(api = new DesktopApi()) {
       parents,
     );
   });
+  /** 与侧栏会话行角标之和一致，供主导航「消息」角标使用。 */
+  const conversationAttentionCount = computed(() =>
+    totalAttentionBadge(
+      unread.value,
+      attention.value.approvals.map((item) => item.agentId),
+      attention.value.askUsers.map((item) => item.agentId),
+    ),
+  );
 
   onMounted(() => {
     if (session.value) void refresh();
@@ -121,6 +142,27 @@ export function useDesktopApp(api = new DesktopApi()) {
     },
     { immediate: true },
   );
+
+  watch(
+    () => menuBarAttentionCount(blockedCount.value, totalUnread(unread.value)),
+    (value) => {
+      syncMenuBarUnread(value);
+    },
+    { immediate: true },
+  );
+
+  watch(
+    menuBarVisible,
+    (value) => {
+      syncMenuBarVisible(value);
+    },
+    { immediate: true },
+  );
+
+  function setMenuBarVisible(visible: boolean): void {
+    menuBarVisible.value = visible;
+    writeMenuBarVisible(visible);
+  }
 
   watch(
     () => (session.value ? `${session.value.userId}:${session.value.token}` : ""),
@@ -650,10 +692,14 @@ export function useDesktopApp(api = new DesktopApi()) {
     attention,
     blockedAgentIds,
     blockedCount,
+    conversationAttentionCount,
     themeMode,
     uiLocale,
     setUiLocale,
     skipEditResendConfirm,
+    menuBarAvailable,
+    menuBarVisible,
+    setMenuBarVisible,
     busy,
     busyAgent,
     pullAttention,

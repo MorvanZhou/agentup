@@ -44,7 +44,10 @@ export function formatActiveDelegationsContext(
       "",
       "These specialist tasks from you are still in progress (running or awaiting approval).",
       "Before delegate_to_agent: if an overlapping brief or the same specialist is listed, call check_delegation first.",
-      "Do not re-delegate the same specialist for a duplicate/overlapping brief — wait for completion, check_delegation, or cancel_delegation.",
+      "If the user is refining a running task, call steer_delegation(task_id, note) or resolve_delegation_update(action=steer). The specialist keeps the current run and applies the note after the current step.",
+      "Before you finish this user turn, call resolve_delegation_update once per listed task. A reply that only says you forwarded or noted the change does not reach the specialist. check_delegation does not count.",
+      "Do not re-delegate the same specialist for a duplicate/overlapping brief — steer_delegation, wait for completion, check_delegation, or cancel_delegation.",
+      "pending_auth has not started: steer_delegation will not insert. Wait, or cancel_delegation.",
       "If one ends cancelled/failed: re-delegate or ask the user who should continue — do not take over that specialist's work yourself.",
 
       "",

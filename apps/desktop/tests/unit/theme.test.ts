@@ -8,7 +8,7 @@ import {
   resolveTheme,
   systemPrefersDark,
   writeThemeMirror,
-} from "../../src/app/theme.js";
+} from "../../src/app/theme/theme.js";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

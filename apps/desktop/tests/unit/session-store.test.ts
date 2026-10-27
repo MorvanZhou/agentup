@@ -6,7 +6,7 @@ import {
   resetSessionStore,
   restoreSession,
   saveSession,
-} from "../../src/app/session-store.js";
+} from "../../src/app/session/session-store.js";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

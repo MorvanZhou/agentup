@@ -42,14 +42,12 @@ const threadMessages = computed(
     ) as ExternalThreadMessage[],
 );
 
-/** 仅在 assistant 身份变化时重建 provider；正文增量靠 ExternalThread live config。 */
-const providerKey = computed(() => {
-  for (let i = threadMessages.value.length - 1; i >= 0; i -= 1) {
-    const message = threadMessages.value[i];
-    if (message?.role === "assistant") return message.id;
-  }
-  return props.streaming ? "streaming" : "idle";
-});
+/**
+ * 按旁路任务稳定 key：history→SSE 时 assistant message.id 会变，
+ * 若跟 id 重挂 AuiProvider，中间会落到空态造成弹窗闪缩。
+ * 正文增量靠 ExternalThread live config；MessageByIdProvider 仍订阅最新 assistant id。
+ */
+const providerKey = computed(() => props.agentId || "delegation");
 
 /**
  * ExternalThread 挂在 thread scope 上时，会经 transformScopes 自动挂上
@@ -90,7 +88,7 @@ const AssistantScope = defineComponent({
           props.streaming ? t("assistRunningShort") : t("assistNoProcess"),
         );
       }
-      return h(MessageByIdProvider, { id: id.value }, () =>
+      return h(MessageByIdProvider, { key: id.value, id: id.value }, () =>
         h(AssistantProcessTimeline, { showStatus: true }),
       );
     };

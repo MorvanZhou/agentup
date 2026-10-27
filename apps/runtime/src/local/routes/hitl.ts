@@ -302,12 +302,14 @@ export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
     return json(c, 200, { answered: true });
   });
 
-  /** 阻塞 shell 过久：kill=终止本轮；wait=继续等（之后可再问）。 */
+  /** 阻塞 shell 空闲挂起：kill=杀进程；wait=再等；bg=留下继续跑。 */
   app.post("/shell-hangs/:id", async (c) => {
     bearer(c);
     const body = await readJson(c);
     const action = body.action;
-    if (action !== "kill" && action !== "wait") throw new LocalError("请求无效", 400);
+    if (action !== "kill" && action !== "wait" && action !== "bg") {
+      throw new LocalError("请求无效", 400);
+    }
     if (!shellHang.decide(c.req.param("id"), action)) {
       throw new LocalError("超时询问已失效", 404);
     }

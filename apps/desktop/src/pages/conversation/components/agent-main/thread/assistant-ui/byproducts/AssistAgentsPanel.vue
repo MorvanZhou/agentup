@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {
+  ArrowRightIcon,
   ArrowUpRightIcon,
   ChevronDownIcon,
-  ListTreeIcon,
 } from "@lucide/vue";
 import { computed, onUnmounted, ref, watch } from "vue";
 
@@ -278,7 +278,7 @@ function openProcess(assist: AssistAgentRef): void {
             @click="openProcess(assist)"
           >
             {{ t("assistSeeProcess") }}
-            <ListTreeIcon class="size-3.5 shrink-0" aria-hidden="true" />
+            <ArrowRightIcon class="size-3.5 shrink-0" aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -360,7 +360,7 @@ function openProcess(assist: AssistAgentRef): void {
               @click="openProcess(assist)"
             >
               {{ t("assistSeeProcess") }}
-              <ListTreeIcon class="size-3.5 shrink-0" aria-hidden="true" />
+              <ArrowRightIcon class="size-3.5 shrink-0" aria-hidden="true" />
             </button>
           </div>
           <p

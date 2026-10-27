@@ -2,6 +2,17 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionFactory, type ToolCallEvent } from "@earendil-works/pi-coding-agent";
 
 import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
+import { DELEGATION_BRIEF_LOCATION_RULE } from "../delegation/collaboration-prompt.js";
+import {
+  AGENTUP_DELEGATION_DISPOSITION_TYPE,
+  formatDelegationDispositionPrompt,
+  MAX_DELEGATION_DISPOSITION_FORCES,
+  parseDelegationDisposition,
+  RESOLVE_DELEGATION_UPDATE_TOOL,
+  selectOpenDelegationTaskIds,
+  shouldForceDelegationDisposition,
+  unresolvedDelegationTaskIds,
+} from "../delegation/disposition.js";
 import {
   discoverRecruitedAgents,
   formatAgentCardLine,
@@ -9,8 +20,10 @@ import {
 import {
   DelegationError,
   type DelegationService,
-} from "../delegation/service.js";
+  type DelegationSteerOutcome,
+} from "../delegation/service/index.js";
 import { agentSearchGate, TOOLS_REQUIRING_AGENT_SEARCH } from "../delegation/search-gate.js";
+import { STEER_NOTE_MAX } from "../delegation/steer.js";
 import {
   MAX_DELEGATION_FANOUT,
   type DelegationTask,
@@ -20,6 +33,8 @@ export const AGENT_SEARCH_TOOL = "agent_search";
 export const DELEGATE_TO_AGENT_TOOL = "delegate_to_agent";
 export const CHECK_DELEGATION_TOOL = "check_delegation";
 export const CANCEL_DELEGATION_TOOL = "cancel_delegation";
+export const STEER_DELEGATION_TOOL = "steer_delegation";
+export { RESOLVE_DELEGATION_UPDATE_TOOL };
 
 const SearchAgentsParams = Type.Object({
   query: Type.String({
@@ -36,9 +51,8 @@ const FanoutItem = Type.Object({
   }),
   brief: Type.String({
     description:
-      "Bounded subtask for that specialist: user wording, confirmed facts, delivery constraints " +
-      "(do not invent product/design defaults for them)",
-
+      "Bounded subtask for that specialist: user wording, confirmed facts, and the deliverable (format and filename). " +
+      `${DELEGATION_BRIEF_LOCATION_RULE} Do not invent product/design defaults for them.`,
   }),
 });
 
@@ -52,8 +66,8 @@ const DelegateParams = Type.Object({
   brief: Type.Optional(
     Type.String({
     description:
-      "Brief for a single-specialist delegation: user wording, confirmed facts, delivery constraints " +
-      "(do not invent product/design defaults). Mutually exclusive with tasks.",
+      "Brief for a single-specialist delegation: user wording, confirmed facts, and the deliverable (format and filename). " +
+      `${DELEGATION_BRIEF_LOCATION_RULE} Do not invent product/design defaults. Mutually exclusive with tasks.`,
 
     }),
   ),
@@ -96,6 +110,42 @@ const CancelParams = Type.Object({
   }),
 });
 
+const ResolveParams = Type.Object({
+  task_id: Type.String({
+    description: "task_id of an in-progress delegation from this turn's Active delegations list",
+  }),
+  action: Type.Union([
+    Type.Literal("steer"),
+    Type.Literal("keep"),
+    Type.Literal("cancel"),
+    Type.Literal("new_task"),
+  ]),
+  note: Type.Optional(
+    Type.String({
+      description: "Required for action=steer. The new requirement for that same running task.",
+      maxLength: STEER_NOTE_MAX,
+    }),
+  ),
+  reason: Type.Optional(
+    Type.String({
+      description: "Required for action=keep or new_task. Why this message does not update that task.",
+    }),
+  ),
+});
+
+const SteerParams = Type.Object({
+  task_id: Type.String({
+    description: "task_id of a running delegation to update in place",
+  }),
+  note: Type.String({
+    description:
+      "New requirement for the same in-flight task. The specialist applies it after the current step. " +
+      `Do not restate the whole brief. ${DELEGATION_BRIEF_LOCATION_RULE}`,
+    minLength: 1,
+    maxLength: STEER_NOTE_MAX,
+  }),
+});
+
 type ListDetails = { agents: unknown[]; error?: string };
 type DelegateDetails = {
   task?: DelegationTask;
@@ -104,6 +154,7 @@ type DelegateDetails = {
 };
 type CheckDetails = { task?: DelegationTask; tasks?: DelegationTask[]; error?: string };
 type CancelDetails = { task?: DelegationTask; error?: string };
+type SteerDetails = { task?: DelegationTask; error?: string };
 
 export function createDelegateExtension(
   service: DelegationService,
@@ -116,10 +167,58 @@ export function createDelegateExtension(
     let rosterChecked = false;
     let hasOtherAgents = false;
 
+    const resolvedTaskIds = new Set<string>();
+    let openTaskIds: string[] = [];
+    let dispositionForces = 0;
+
+    const markResolved = (taskId: string) => {
+      if (openTaskIds.includes(taskId)) resolvedTaskIds.add(taskId);
+    };
+
     pi.on("agent_start", () => {
       searched = false;
       rosterChecked = false;
       hasOtherAgents = false;
+      resolvedTaskIds.clear();
+      dispositionForces = 0;
+      openTaskIds = [];
+      if (!service.delegationDispositionArmed(userId, agentId)) return;
+      try {
+        openTaskIds = selectOpenDelegationTaskIds(
+          service.listTasks(userId, { fromAgentId: agentId }),
+          agentId,
+        );
+      } catch {
+        openTaskIds = [];
+      }
+    });
+
+    pi.on("agent_before_settle", (event) => {
+      const unresolved = unresolvedDelegationTaskIds(openTaskIds, resolvedTaskIds);
+      if (
+        !shouldForceDelegationDisposition({
+          outcome: event.outcome,
+          canContinue: Boolean(event.context?.canContinue),
+          unresolvedTaskIds: unresolved,
+          forces: dispositionForces,
+          maxForces: MAX_DELEGATION_DISPOSITION_FORCES,
+        })
+      ) {
+        return undefined;
+      }
+      dispositionForces += 1;
+      return {
+        entries: [
+          ...event.entries,
+          {
+            type: "custom_message" as const,
+            customType: AGENTUP_DELEGATION_DISPOSITION_TYPE,
+            content: formatDelegationDispositionPrompt(unresolved),
+            display: false,
+          },
+        ],
+        continue: true,
+      };
     });
 
     pi.on("tool_call", async (event: ToolCallEvent) => {
@@ -228,9 +327,12 @@ export function createDelegateExtension(
         description:
           "Delegate bounded subtask(s) to recruited specialist(s) after the user chooses who should do the work. " +
           "Single: agent_id + brief. Fan-out: tasks=[{agent_id, brief}, ...] (preferred for parallel). " +
-          "Briefs: user wording + confirmed facts + delivery constraints — do not invent specialist-domain defaults. " +
+          "Briefs: user wording + confirmed facts + the deliverable (format and filename). " +
+          `${DELEGATION_BRIEF_LOCATION_RULE} Do not invent specialist-domain defaults. ` +
           "If Active delegations are listed this turn (or you already started async work), call check_delegation first; " +
           "do not re-delegate the same specialist for a duplicate/overlapping brief. " +
+          "To refine a running task, call steer_delegation instead of cancelling and re-delegating. " +
+          "If this specialist already has a running task from you, this call updates that same task and does not start another. " +
           "User must approve the tool. You remain the coordinator: summarize outcomes for the user; do not redo the specialist's deliverable. " +
           "Set wait by estimated duration: ≤~20s and need the answer now → wait=true; " +
           ">~20s / long / parallel / can continue other coordination → wait=false (or tasks fan-out). " +
@@ -253,7 +355,8 @@ export function createDelegateExtension(
               signal,
               toolCallId,
             });
-            return formatFanoutResult(result.tasks, result.texts);
+            for (const id of result.steeredTaskIds ?? []) markResolved(id);
+            return formatFanoutResult(result.tasks, result.texts, result.steeredTaskIds);
           } catch (error) {
             const message =
               error instanceof DelegationError
@@ -277,6 +380,7 @@ export function createDelegateExtension(
         description:
           "Cancel a running or queued delegate_to_agent task by task_id. " +
           "Use when the user asks to stop a specialist, or the subtask is no longer needed. " +
+          "Do not cancel merely to change the brief; call steer_delegation while the task is running. " +
           "After cancel: re-delegate or ask the user who should take over — do not perform the specialist's work yourself unless they explicitly say so.",
 
         parameters: CancelParams,
@@ -295,6 +399,7 @@ export function createDelegateExtension(
           }
           try {
             const task = service.cancel(taskId, userId);
+            markResolved(task.id);
             return {
               content: [
                 {
@@ -314,6 +419,167 @@ export function createDelegateExtension(
                 : error instanceof Error && error.message
                   ? error.message
                   : "取消失败";
+            return {
+              content: [{ type: "text" as const, text: `Error: ${message}` }],
+              details: { error: message },
+            };
+          }
+        },
+      }),
+    );
+
+    pi.registerTool(
+      defineTool<typeof SteerParams, SteerDetails>({
+        name: STEER_DELEGATION_TOOL,
+        label: "Steer Delegation",
+        description:
+          "Insert a new requirement into a running delegate_to_agent task without cancelling it. " +
+          "Use when the user refines the same in-flight work (simpler method, narrower scope, extra constraint). " +
+          "The specialist keeps the current session and applies the note after the current step, before the next model call. " +
+          "Does not stop an in-flight tool call. " +
+          "If the task is not running yet, already finished, or waiting on the user, this returns why — then wait, resolve that, cancel_delegation, or delegate_to_agent. " +
+          "Do not call this to stop the task.",
+        parameters: SteerParams,
+        annotations: {
+          readOnlyHint: false,
+          openWorldHint: false,
+          destructiveHint: false,
+        },
+        async execute(_toolCallId, params) {
+          const taskId = typeof params.task_id === "string" ? params.task_id.trim() : "";
+          const note = typeof params.note === "string" ? params.note : "";
+          if (!taskId) {
+            return {
+              content: [{ type: "text" as const, text: "Error: task_id required" }],
+              details: { error: "missing_task_id" },
+            };
+          }
+          if (!note.trim()) {
+            return {
+              content: [{ type: "text" as const, text: "Error: note required" }],
+              details: { error: "missing_note" },
+            };
+          }
+          try {
+            const outcome = await service.steer({
+              taskId,
+              userId,
+              fromAgentId: agentId,
+              note,
+            });
+            if (outcome.queued) markResolved(taskId);
+            return {
+              content: [{ type: "text" as const, text: formatSteerResult(outcome) }],
+              details: { task: outcome.task },
+            };
+          } catch (error) {
+            const message =
+              error instanceof DelegationError
+                ? error.message
+                : error instanceof Error && error.message
+                  ? error.message
+                  : "插入失败";
+            return {
+              content: [{ type: "text" as const, text: `Error: ${message}` }],
+              details: { error: message },
+            };
+          }
+        },
+      }),
+    );
+
+    pi.registerTool(
+      defineTool<typeof ResolveParams, SteerDetails>({
+        name: RESOLVE_DELEGATION_UPDATE_TOOL,
+        label: "Resolve Delegation Update",
+        description:
+          "Required before you finish a user turn that started while you still had in-progress delegations. " +
+          "Call once per task_id. Saying you forwarded or noted a change does not reach the specialist. " +
+          "steer inserts the note into that running task (same as steer_delegation). " +
+          "keep means this user message does not change that task. " +
+          "cancel stops it. " +
+          "new_task means this is different work; then call delegate_to_agent if a new specialist run is needed. " +
+          "check_delegation does not dispose of the task.",
+        parameters: ResolveParams,
+        annotations: {
+          readOnlyHint: false,
+          openWorldHint: false,
+          destructiveHint: false,
+        },
+        async execute(_toolCallId, params) {
+          const parsed = parseDelegationDisposition({
+            taskId: typeof params.task_id === "string" ? params.task_id : "",
+            action: typeof params.action === "string" ? params.action : "",
+            note: typeof params.note === "string" ? params.note : "",
+            reason: typeof params.reason === "string" ? params.reason : "",
+            openTaskIds,
+          });
+          if (!parsed.ok) {
+            return {
+              content: [{ type: "text" as const, text: `Error: ${parsed.error}` }],
+              details: { error: parsed.error },
+            };
+          }
+          if (parsed.action === "keep" || parsed.action === "new_task") {
+            markResolved(parsed.taskId);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text:
+                    parsed.action === "keep"
+                      ? `Kept task unchanged.\ntask_id: ${parsed.taskId}\nreason: ${parsed.reason}`
+                      : `Marked as a different task.\ntask_id: ${parsed.taskId}\nreason: ${parsed.reason}\nCall delegate_to_agent only if new work should start.`,
+                },
+              ],
+              details: {},
+            };
+          }
+          if (parsed.action === "cancel") {
+            try {
+              const task = service.cancel(parsed.taskId, userId);
+              markResolved(task.id);
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `Delegation cancelled.\ntask_id: ${task.id}\nagent: ${task.toAgentName} (${task.toAgentId})`,
+                  },
+                ],
+                details: { task },
+              };
+            } catch (error) {
+              const message =
+                error instanceof DelegationError
+                  ? error.message
+                  : error instanceof Error && error.message
+                    ? error.message
+                    : "取消失败";
+              return {
+                content: [{ type: "text" as const, text: `Error: ${message}` }],
+                details: { error: message },
+              };
+            }
+          }
+          try {
+            const outcome = await service.steer({
+              taskId: parsed.taskId,
+              userId,
+              fromAgentId: agentId,
+              note: parsed.note,
+            });
+            if (outcome.queued) markResolved(parsed.taskId);
+            return {
+              content: [{ type: "text" as const, text: formatSteerResult(outcome) }],
+              details: { task: outcome.task },
+            };
+          } catch (error) {
+            const message =
+              error instanceof DelegationError
+                ? error.message
+                : error instanceof Error && error.message
+                  ? error.message
+                  : "插入失败";
             return {
               content: [{ type: "text" as const, text: `Error: ${message}` }],
               details: { error: message },
@@ -434,9 +700,28 @@ function collectTaskIds(params: {
 function formatFanoutResult(
   tasks: DelegationTask[],
   texts?: string[],
+  steeredTaskIds?: string[],
 ): { content: [{ type: "text"; text: string }]; details: DelegateDetails } {
+  const steered = new Set(steeredTaskIds ?? []);
+  if (tasks.length === 1 && tasks[0] && steered.has(tasks[0].id)) {
+    return {
+      content: [{ type: "text" as const, text: formatSteerResult({ queued: true, task: tasks[0] }) }],
+      details: { task: tasks[0] },
+    };
+  }
   if (tasks.length === 1) {
     return formatDelegateResult(tasks[0]!, texts?.[0]);
+  }
+  if (steered.size > 0) {
+    const lines = tasks.map((task) =>
+      steered.has(task.id)
+        ? `Steered existing task (no new task).\ntask_id: ${task.id}\nagent: ${task.toAgentName} (${task.toAgentId})`
+        : `Delegation started (async).\ntask_id: ${task.id}\nagent: ${task.toAgentName} (${task.toAgentId})`,
+    );
+    return {
+      content: [{ type: "text" as const, text: lines.join("\n\n") }],
+      details: { tasks },
+    };
   }
   const running = tasks.every(
     (task) => task.status === "running" || (task.status !== "completed" && task.status !== "failed" && !task.wait),
@@ -553,4 +838,32 @@ function formatTaskText(task: DelegationTask): string {
   if (task.resultSummary) lines.push(`result: ${task.resultSummary}`);
   if (task.error) lines.push(`error: ${task.error}`);
   return lines.join("\n");
+}
+
+function formatSteerResult(outcome: DelegationSteerOutcome): string {
+  const task = outcome.task;
+  const who = `task_id: ${task.id}\nagent: ${task.toAgentName} (${task.toAgentId})`;
+  if (outcome.queued) {
+    return (
+      `Steering queued.\n${who}\n` +
+      "The specialist keeps this run and applies the note after the current step, before the next model call. " +
+      "Do not cancel or re-delegate this task for the same change."
+    );
+  }
+  if (outcome.reason === "waiting_user") {
+    return (
+      `Cannot steer while the specialist is waiting on the user.\n${who}\n` +
+      "Resolve the pending approval or question first, or cancel_delegation."
+    );
+  }
+  if (outcome.reason === "finished") {
+    return (
+      `This delegation already finished (${task.status}).\n${who}\n` +
+      "steer_delegation only works while it is running. delegate_to_agent if more work is needed."
+    );
+  }
+  return (
+    `Cannot steer yet.\n${who}\nstatus: ${task.status}\n` +
+    "The specialist has not started this run. Wait and retry steer_delegation, or cancel_delegation if the user wants it stopped."
+  );
 }

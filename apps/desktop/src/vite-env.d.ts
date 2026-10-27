@@ -46,8 +46,12 @@ interface Window {
     webUrl?(): Promise<string>;
     /** 同步 Electron nativeTheme（DevTools / 菜单等）与应用主题。 */
     setThemeSource?(mode: "system" | "light" | "dark"): Promise<void>;
-    /** 同步 Dock / 任务栏未读角标（0 清除）。 */
+    /** 同步 Dock / 任务栏待处理角标（0 清除）。 */
     setAppBadge?(count: number): Promise<void>;
+    /** 同步 macOS 菜单栏图标右侧数字（待审批 + 未读，0 清除）。非 darwin 主进程忽略。 */
+    setMenuBarUnread?(count: number): Promise<void>;
+    /** 显示或隐藏 macOS 菜单栏图标（含未读提示）。非 darwin 主进程忽略。 */
+    setMenuBarVisible?(visible: boolean): Promise<void>;
     /** 真实系统是否深色（不受应用 themeSource 覆盖影响） */
     systemPrefersDark?: () => boolean;
     onSystemThemeChanged?: (listener: (prefersDark: boolean) => void) => () => void;

@@ -9,6 +9,7 @@ import {
   createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
+  detectSupportedImageMimeTypeFromFile,
   type ExtensionFactory,
   type FindOperations,
 } from "@earendil-works/pi-coding-agent";
@@ -43,6 +44,10 @@ export function createFsGuardExtension(
           access: async (absolutePath) => {
             guard(absolutePath);
             await fsAccess(absolutePath, constants.R_OK);
+          },
+          detectImageMimeType: async (absolutePath) => {
+            guard(absolutePath);
+            return detectSupportedImageMimeTypeFromFile(absolutePath);
           },
         },
       }),

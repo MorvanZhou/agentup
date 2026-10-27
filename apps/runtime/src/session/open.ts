@@ -39,6 +39,7 @@ import { writeSessionModelRef } from "./model/session-model.js";
 import { createArtifactsExtension } from "./history/artifacts.js";
 import { createSummaryExtension } from "./history/summary.js";
 import { createOutputLengthExtension } from "./output-length.js";
+import { createDefaultSamplingExtension } from "./sampling.js";
 import { createStreamGuardExtension } from "./stream-guard.js";
 import {
   AskUserBroker,
@@ -112,6 +113,8 @@ export async function openSession(
       ...(shellHang
         ? [
             createShellHangExtension(shellHang, visit.userId, visit.agentId, {
+              cwd: plan.cwd,
+              shellTools: plan.environment.shellTools,
               hitl: { origin: "visit" },
             }),
           ]
@@ -144,6 +147,7 @@ export async function openSession(
             }
           : undefined,
       }),
+      createDefaultSamplingExtension(),
     ],
     disabledBuiltinExtensions: mcpEnabled ? [] : ["mcp"],
     // 运行包 skills 全保留；私人助理只留 skills-state.json 已激活的项。

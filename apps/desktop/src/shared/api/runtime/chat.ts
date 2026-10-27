@@ -250,7 +250,7 @@ export async function decideShellHang(
   http: RuntimeHttp,
   token: string,
   hangId: string,
-  action: "kill" | "wait",
+  action: "kill" | "wait" | "bg",
 ): Promise<void> {
   await http.request(`/shell-hangs/${encodeURIComponent(hangId)}`, token, { action });
 }

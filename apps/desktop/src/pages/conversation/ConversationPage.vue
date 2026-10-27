@@ -242,7 +242,7 @@ function answerAsk(agentId: string, answer: AskUserAnswer): void {
   void chat.answerAsk(agentId, session.value.token, answer).then(() => pullAttention());
 }
 
-function decideShellHang(agentId: string, action: "kill" | "wait"): void {
+function decideShellHang(agentId: string, action: "kill" | "wait" | "bg"): void {
   if (!session.value) return;
   void chat.decideShellHang(agentId, session.value.token, action).then(() => pullAttention());
 }

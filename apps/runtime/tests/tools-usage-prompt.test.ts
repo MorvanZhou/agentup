@@ -19,6 +19,7 @@ it("steers models toward dedicated search/read tools instead of the command shel
   expect(text).toContain("bg_run");
   expect(text).toContain("> ~20s");
   expect(text).toContain("same shell as `bash`");
+  expect(text).toContain("shell_hang_decide");
 });
 
 it("names powershell when that is the command tool", () => {

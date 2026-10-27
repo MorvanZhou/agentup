@@ -49,7 +49,7 @@ export type AgentUpShellHangData = {
   queueBehind?: number;
 };
 
-export type ShellHangAction = "kill" | "wait";
+export type ShellHangAction = "kill" | "wait" | "bg";
 
 /** 委托子任务已启动（transient；过程走旁路 stream，不进父消息）。 */
 export type AgentUpDelegationStartedData = {

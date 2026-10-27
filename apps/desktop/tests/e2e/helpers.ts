@@ -137,15 +137,34 @@ export async function mockAgentUp(
   );
 }
 
+/**
+ * 打开 Agents 管理页（默认本机分区）。
+ * 轨栏 RouterLink 偶发点中未跳转（与 openMarket 同类），须等 URL 再继续。
+ */
+export async function openAgents(page: Page): Promise<void> {
+  const link = page.getByRole("link", { name: "Agents", exact: true });
+  await expect(link).toBeVisible();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await link.click();
+    try {
+      await expect(page).toHaveURL(/\/agents\//, { timeout: 2_000 });
+      break;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
+}
+
 export async function openOwnedAgents(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Agents" }).click();
+  await openAgents(page);
   await page.getByRole("link", { name: "我发布的" }).click();
+  await expect(page).toHaveURL(/\/agents\/owned/);
 }
 
 export async function openPublishNew(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Agents" }).click();
-  await page.getByRole("link", { name: "我发布的" }).click();
+  await openOwnedAgents(page);
   await page.getByRole("link", { name: "发布 Agent" }).click();
+  await expect(page).toHaveURL(/\/agents\/owned\/new/);
 }
 
 /** 给 Agent 编辑表单选一张最小合法 PNG 头像（可选）。 */

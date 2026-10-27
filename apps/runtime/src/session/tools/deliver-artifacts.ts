@@ -136,16 +136,43 @@ export function stageArtifactPaths(cwd: string, paths: readonly string[]): Stage
   return staged;
 }
 
-/** 把 staging 拷到父 cwd：`ARTIFACT/from-<toAgentId>/…`。空 staging 不写盘。 */
+/**
+ * 父 ARTIFACT 下只建一层投递目录。
+ * 有显示名时为 `from-<name>-<id>`，否则 `from-<id>`。
+ */
+export function deliveryDirName(agentId: string, agentName?: string): string {
+  const id = sanitizeDeliveryLabel(agentId) || "agent";
+  const name = sanitizeDeliveryLabel(agentName ?? "");
+  if (!name || name === id) return `from-${id}`;
+  return `from-${name}-${id}`;
+}
+
+/**
+ * 去掉相对路径开头已有的 `from-…/`。
+ * 那是下游投递信封；再套一层就会变成 `from-父/from-子/文件`。
+ */
+export function stripInboundDeliveryDirs(relUnderArtifact: string): string {
+  const parts = relUnderArtifact
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..");
+  while (parts.length > 1 && isInboundDeliveryDir(parts[0] ?? "")) {
+    parts.shift();
+  }
+  return parts.join("/");
+}
+
+/** 把 staging 拷到父 cwd：`ARTIFACT/from-<name>-<id>/…`。空 staging 不写盘。 */
 export function copyStagedArtifactsToParent(input: {
   sourceCwd: string;
   parentCwd: string;
   toAgentId: string;
+  toAgentName?: string;
   staged: readonly StagedArtifact[];
 }): string[] {
   if (input.staged.length === 0) return [];
-  const safeAgent = sanitizeAgentSegment(input.toAgentId);
+  const folder = deliveryDirName(input.toAgentId, input.toAgentName);
   const delivered: string[] = [];
+  const used = new Set<string>();
   const sourceRoot = path.resolve(input.sourceCwd);
   const parentRoot = path.resolve(input.parentCwd);
   const parentArtifact = path.join(parentRoot, ARTIFACT_DIR);
@@ -155,8 +182,12 @@ export function copyStagedArtifactsToParent(input: {
     const relUnderArtifact = item.path.startsWith(`${ARTIFACT_DIR}/`)
       ? item.path.slice(ARTIFACT_DIR.length + 1)
       : item.path;
+    const flat = stripInboundDeliveryDirs(relUnderArtifact);
+    if (!flat) throw new Error(`refusing empty artifact path: ${item.path}`);
+    let destRel = `${ARTIFACT_DIR}/${folder}/${flat}`;
+    destRel = disambiguateDeliveryPath(destRel, used);
+    used.add(destRel);
     const sourceAbs = path.resolve(sourceRoot, ...item.path.split("/"));
-    const destRel = `${ARTIFACT_DIR}/from-${safeAgent}/${relUnderArtifact}`;
     const destAbs = path.resolve(parentRoot, ...destRel.split("/"));
     if (!destAbs.startsWith(`${parentArtifact}${path.sep}`)) {
       throw new Error(`refusing deliver outside parent ARTIFACT: ${destRel}`);
@@ -168,9 +199,38 @@ export function copyStagedArtifactsToParent(input: {
   return delivered;
 }
 
-function sanitizeAgentSegment(agentId: string): string {
-  const cleaned = agentId.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+/, "");
-  return cleaned || "agent";
+function isInboundDeliveryDir(segment: string): boolean {
+  return segment.startsWith("from-") && segment.length > "from-".length;
+}
+
+/** 同一批投递里展平后重名时，后到的文件加 `-2`、`-3`。 */
+function disambiguateDeliveryPath(destRel: string, used: Set<string>): string {
+  if (!used.has(destRel)) return destRel;
+  const slash = destRel.lastIndexOf("/");
+  const dir = destRel.slice(0, slash);
+  const base = destRel.slice(slash + 1);
+  const dot = base.lastIndexOf(".");
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : "";
+  let next = destRel;
+  let n = 2;
+  while (used.has(next)) {
+    next = `${dir}/${stem}-${n}${ext}`;
+    n += 1;
+  }
+  return next;
+}
+
+function sanitizeDeliveryLabel(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/\.{2,}/g, "")
+    .replace(/^\.+/, "")
+    .replace(/^-+|[-.]+$/g, "")
+    .replace(/-+/g, "-");
+  return Array.from(cleaned).slice(0, 40).join("");
 }
 
 /** 本任务开始后新增/修改的 ARTIFACT 路径（不含 deleted）。 */

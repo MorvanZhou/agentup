@@ -4,7 +4,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
-import { ensureGuestSession } from "../../app/session-store";
+import { ensureGuestSession } from "../../app/session/session-store";
 import { isAccountSession, isGuestSession } from "../../shared/model/session/session";
 import { publicUrl } from "../../shared/model/ui/public-url";
 import { t, type UiLocale } from "../../shared/model/ui/ui-locale";

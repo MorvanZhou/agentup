@@ -11,6 +11,8 @@ import {
   delegationPreviewText,
   filterConversationRows,
   hasRecruitedMarketAgent,
+  menuBarAttentionCount,
+  totalAttentionBadge,
   totalBlocked,
   totalUnread,
   unreadLabel,
@@ -327,6 +329,25 @@ it("sums unread across agents", () => {
   expect(totalUnread({})).toBe(0);
   expect(totalUnread({ a: 3, b: 2 })).toBe(5);
   expect(totalUnread({ a: 0, b: -1, c: 1.8 })).toBe(1);
+});
+
+it("sums approvals and unread for the menu bar count", () => {
+  expect(menuBarAttentionCount(0, 0)).toBe(0);
+  expect(menuBarAttentionCount(1, 0)).toBe(1);
+  expect(menuBarAttentionCount(0, 4)).toBe(4);
+  expect(menuBarAttentionCount(2, 3)).toBe(5);
+  expect(menuBarAttentionCount(1.8, 1.2)).toBe(2);
+  expect(menuBarAttentionCount(-1, Number.NaN)).toBe(0);
+});
+
+it("matches the sum of conversation-list attention badges for the main nav", () => {
+  // 同会话：1 未读 + 1 HITL → 列表角标 2，主导航也应是 2（不是只显示 blocked=1）
+  expect(totalAttentionBadge({ a: 1 }, ["a"], [])).toBe(2);
+  expect(totalAttentionBadge({ a: 2 }, [], [])).toBe(2);
+  expect(totalAttentionBadge({ a: 2, b: 1 }, ["b"], ["c"])).toBe(5);
+  // 同一 agent 同时审批+提问只 +1；子 HITL 父会话提醒不计入（与 attentionBadgeCount 一致）
+  expect(totalAttentionBadge({ a: 1 }, ["a"], ["a"])).toBe(2);
+  expect(totalAttentionBadge({}, [], [])).toBe(0);
 });
 
 it("counts blocked agents once even if both approval and ask_user", () => {

@@ -128,10 +128,13 @@ it("points Pi at the visit directory and keeps the user agent directory out", ()
     "bg_run",
     "bg_status",
     "bg_kill",
+    "shell_hang_decide",
     "agent_search",
     "delegate_to_agent",
     "check_delegation",
     "cancel_delegation",
+    "steer_delegation",
+    "resolve_delegation_update",
   ]);
   expect(plan.mcp).toBe(false);
   expect(plan.provider).toMatchObject({
@@ -161,10 +164,13 @@ it("makes builtin tools available for runtime approval", async () => {
     "bg_run",
     "bg_status",
     "bg_kill",
+    "shell_hang_decide",
     "agent_search",
     "delegate_to_agent",
     "check_delegation",
     "cancel_delegation",
+    "steer_delegation",
+    "resolve_delegation_update",
   ]);
   expect(options.noTools).toBeUndefined();
 });
@@ -220,17 +226,20 @@ it("passes the explicit session plan to the Pi SDK", async () => {
     "bg_run",
     "bg_status",
     "bg_kill",
+    "shell_hang_decide",
     "agent_search",
     "delegate_to_agent",
     "check_delegation",
     "cancel_delegation",
+    "steer_delegation",
+    "resolve_delegation_update",
   ]);
   expect(options.thinkingLevel).toBe("off");
   expect(options.model).toMatchObject({ api: "openai-completions", baseUrl: model.baseUrl, provider: "ollama" });
   expect(options.modelRuntime.getModel("ollama", "qwen")).toMatchObject({ id: "qwen", apiKey: "ollama" });
   expect(options.settingsManager.options.projectTrusted).toBe(true);
-  // fs-guard / web / local-time / ask_user / todo / summary / artifacts / output-length / stream-guard / checkpoint / approval（无 MCP / 委托 / 后台时）
-  expect(options.resourceLoader.options.extensionFactories).toHaveLength(11);
+  // fs-guard / web / local-time / ask_user / todo / summary / artifacts / output-length / stream-guard / checkpoint / approval / sampling（无 MCP / 委托 / 后台时）
+  expect(options.resourceLoader.options.extensionFactories).toHaveLength(12);
   expect(options.resourceLoader.options.disabledBuiltinExtensions).toEqual(["mcp"]);
   expect(options.resourceLoader.options.noSkills).toBe(true);
   expect(options.resourceLoader.options.additionalSkillPaths).toEqual([]);

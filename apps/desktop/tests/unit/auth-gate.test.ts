@@ -9,8 +9,8 @@ import {
   confirmAuthPrompt,
   resetAuthGate,
   runWithAccount,
-} from "../../src/app/auth-gate";
-import { CAPABILITIES, isHostedProviderKind } from "../../src/app/capabilities";
+} from "../../src/app/auth/auth-gate";
+import { CAPABILITIES, isHostedProviderKind } from "../../src/app/auth/capabilities";
 import { applyUiLocale } from "../../src/shared/model/ui/ui-locale";
 
 beforeEach(async () => {

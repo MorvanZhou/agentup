@@ -172,7 +172,7 @@ export function attentionBadgeCount(
   return unread + hitl;
 }
 
-/** 各 agent 未读条数之和。导航「消息」红点用；Dock 角标改用 totalBlocked。 */
+/** 各 agent 未读条数之和。 */
 export function totalUnread(unread: Record<string, number>): number {
   let sum = 0;
   for (const count of Object.values(unread)) {
@@ -199,6 +199,28 @@ export function totalBlocked(
     ids.add(id);
   }
   return ids.size;
+}
+
+/**
+ * 菜单栏图标右侧的数字：待审批/待回答的会话数，加上未读条数。
+ * 只有其中一类时也要显示出数字。
+ */
+export function menuBarAttentionCount(blocked: number, unread: number): number {
+  const whole = (count: number) =>
+    typeof count === "number" && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  return whole(blocked) + whole(unread);
+}
+
+/**
+ * 主导航「消息」角标：与侧栏各行 `attentionBadgeCount` 之和一致。
+ * 未读条数 + 有本会话 HITL（审批/提问）的 agent 数；不含仅子 HITL 提醒的父会话。
+ */
+export function totalAttentionBadge(
+  unread: Record<string, number>,
+  awaitingApproval: ReadonlySet<string> | readonly string[],
+  awaitingAskUser: ReadonlySet<string> | readonly string[] = [],
+): number {
+  return totalUnread(unread) + totalBlocked(awaitingApproval, awaitingAskUser);
 }
 
 /** 侧栏副文案里的委托在场感。接活优先于派出；都没有则空串。 */

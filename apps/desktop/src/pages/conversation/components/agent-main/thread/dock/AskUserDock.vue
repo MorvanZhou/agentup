@@ -231,7 +231,7 @@ function stepHint(index: number): string {
             {{ tf("hitlRelayTask", { label: askUser.taskLabel }) }}
           </p>
           <p v-if="(askUser.queueBehind ?? 0) > 0" class="mb-0 mt-0.5 text-xs text-muted-foreground">
-            {{ tf("hitlQueueBehind", { n: askUser.queueBehind }) }}
+            {{ tf("hitlQueueBehind", { n: askUser.queueBehind ?? 0 }) }}
           </p>
           <h2
             :id="`ask-user-title-${askUser.id}`"

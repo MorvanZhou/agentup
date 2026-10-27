@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import { PERSONAL_ASSISTANT_ID } from "../src/local/assistant/personal-assistant.js";
 import { agentSearchGate } from "../src/session/delegation/search-gate.js";
-import type { DelegationService } from "../src/session/delegation/service.js";
+import type { DelegationService } from "../src/session/delegation/service/index.js";
 import { createDelegateExtension } from "../src/session/tools/delegate.js";
 
 const enforced = { enforce: true, hasOtherAgents: true, searched: false };
@@ -31,6 +31,7 @@ it("personal-assistant tool hook blocks ask_user until agent_search", async () =
     listRecruited: vi.fn(async () => [
       { agentId: "cody", name: "Cody", role: "实现", background: "", remark: "" },
     ]),
+    delegationDispositionArmed: () => false,
   } as unknown as DelegationService;
   let onTool:
     | ((event: { toolName: string; toolCallId: string; input: Record<string, unknown> }) => Promise<unknown>)

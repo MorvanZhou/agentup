@@ -3,7 +3,7 @@ import { RouterView } from "vue-router";
 
 import AppToast from "../shared/components/AppToast.vue";
 import { setToastOpen, toastState } from "../shared/model/ui/toast";
-import AuthPromptOverlay from "./AuthPromptOverlay.vue";
+import AuthPromptOverlay from "./auth/AuthPromptOverlay.vue";
 import { provideDesktop } from "./desktop";
 
 provideDesktop();

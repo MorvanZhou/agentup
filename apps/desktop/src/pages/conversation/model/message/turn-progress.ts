@@ -1,4 +1,4 @@
-import { isToolProgressActive } from "../../components/agent-main/thread/assistant-ui/tools/tool-args";
+import { isToolProgressActive } from "../../components/agent-main/thread/assistant-ui/tools/shared/tool-args";
 
 /** 判定步骤间隙用的最小 part 形状。 */
 export type TurnProgressPart = {

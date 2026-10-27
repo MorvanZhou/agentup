@@ -51,6 +51,7 @@ import {
   resolveEmptyAssistantError,
 } from "../output-length.js";
 import { createStreamGuardExtension } from "../stream-guard.js";
+import { createDefaultSamplingExtension } from "../sampling.js";
 import { snapshotArtifactDir } from "../workspace/artifact-diff.js";
 import type { DelegationProgressHub } from "./progress.js";
 
@@ -105,6 +106,11 @@ export async function runDelegatedPrompt(
     signal?: AbortSignal;
     progress?: DelegationProgressHub;
     shellHang?: ShellHangBroker;
+    /**
+     * 会话进入 prompt 后登记 steer。返回解除函数。
+     * 新要求在当前步骤结束后、下一次找模型之前送达，不打断这一步。
+     */
+    bindSteer?: (steer: (text: string) => Promise<void>) => () => void;
   },
 ): Promise<DelegationRunOutcome> {
   const plan = buildSessionPlan(visit, model);
@@ -149,7 +155,13 @@ export async function runDelegatedPrompt(
       createStreamGuardExtension(),
       createCheckpointExtension(visit.root),
       ...(options.shellHang
-        ? [createShellHangExtension(options.shellHang, visit.userId, visit.agentId, { hitl })]
+        ? [
+            createShellHangExtension(options.shellHang, visit.userId, visit.agentId, {
+              cwd: plan.cwd,
+              shellTools: plan.environment.shellTools,
+              hitl,
+            }),
+          ]
         : []),
       ...(mcpEnabled
         ? [createToolSearchExtension(), createCodemodeExtension(), createMcpExtension({ loadConfig: () => mcpConfig })]
@@ -166,6 +178,7 @@ export async function runDelegatedPrompt(
               : path.resolve(visit.root, "..", "..", ".."),
         },
       }),
+      createDefaultSamplingExtension(),
     ],
     disabledBuiltinExtensions: mcpEnabled ? [] : ["mcp"],
     skillsOverride: (loaded) => ({
@@ -234,7 +247,12 @@ export async function runDelegatedPrompt(
     artifacts: deliverState.confirmed ? [...deliverState.staged] : [],
   });
 
+  let releaseSteer: (() => void) | undefined;
   try {
+    releaseSteer = options.bindSteer?.(async (text) => {
+      const disposition = await session.steer(text);
+      if (disposition !== "queued") throw new Error("steering was not queued");
+    });
     const promptText = formatDelegationPrompt(brief);
     // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
     // ARTIFACT 确认由 createDeliverArtifactsExtension 在 before_settle 强制续写。
@@ -264,6 +282,7 @@ export async function runDelegatedPrompt(
     const partial = texts.join("").trim() || collectBranchText(sessionManager);
     return { text: partial, error: message, ...artifactsResult() };
   } finally {
+    releaseSteer?.();
     signal?.removeEventListener("abort", onAbort);
     unsubscribe();
     progress?.finish(options.taskId);
@@ -271,13 +290,18 @@ export async function runDelegatedPrompt(
   }
 }
 
-function formatDelegationPrompt(brief: string): string {
-  return (
-    "你正在处理来自用户私人助理的委托子任务。请只完成下列任务，完成后给出清晰、可引用的结果摘要。" +
-    "成品写入 ARTIFACT/；结束时协议会请你用 deliver_artifacts 确认要投递给调用方的附件。" +
-    "不要向用户闲聊；若缺少关键信息，用 ask_user 提问。\n\n" +
-    `## 任务\n${brief.trim()}`
-  );
+/** 委托子会话的用户消息。面向模型，英文。 */
+export function formatDelegationPrompt(brief: string): string {
+  return [
+    "You are handling a delegated subtask from the user's assistant. Complete only the task below, then return a clear, citable summary.",
+    "Put scratch files in WORK/ and finished files only in ARTIFACT/ under your own cwd.",
+    "When you finish, the protocol asks you to confirm attachments with deliver_artifacts. The platform copies those files to the caller. Do not copy them yourself.",
+    "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
+    "Do not chat with the user. If a critical fact is missing, ask with ask_user.",
+    "",
+    "## Task",
+    brief.trim(),
+  ].join("\n");
 }
 
 function extractAssistantText(event: AgentSessionEvent): string {

@@ -423,6 +423,7 @@ export class VisitChats {
               // 发现失败不阻断对话；模型仍可主动 agent_search。
             }
           }
+          this.delegation?.armDelegationDisposition(visit.userId, visit.agentId);
           await slot.session.prompt(expanded, {
             expandPromptTemplates: false,
             ...(images.length > 0 ? { images } : {}),
@@ -447,6 +448,7 @@ export class VisitChats {
             write(projector.finish(notice ?? raw));
           }
         } finally {
+          this.delegation?.clearDelegationDisposition(visit.userId, visit.agentId);
           // busy 跟 Pi prompt 对齐，不跟 HTTP 消费者断开（onEnd/cancel）对齐；
           // 停止时由 signal / VisitChats.abort 调用 session.abort()，再在这里清 busy。
           signal?.removeEventListener("abort", onAbort);
@@ -688,6 +690,7 @@ export class VisitChats {
     /** 用户 abort / 409 重试打断时勿 onParentIdle，否则 broker 会马上再开 wake 抢 busy。 */
     let aborted = false;
     try {
+      this.delegation?.clearDelegationDisposition(input.userId, input.agentId);
       // wake 回合也可能再委托；先注入进行中摘要。
       await this.injectActiveDelegations(slot.session, visit);
       await slot.session.sendCustomMessage(

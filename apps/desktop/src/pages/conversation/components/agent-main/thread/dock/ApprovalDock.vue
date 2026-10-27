@@ -83,17 +83,17 @@ function decide(allow: boolean, scope: ApprovalScope = "once"): void {
           <component :is="kindIcon" class="size-3.5" />
         </span>
         <div class="min-w-0 flex-1">
-          <p class="mb-0 text-xs font-medium tracking-wider text-accent">
+          <!-- 子代理：谁 + 类型同一行；任务原文不占审批条 -->
+          <p
+            v-if="approval.askedByName"
+            class="mb-0 truncate text-xs"
+            :title="`${approval.askedByName} · ${kindLabel}`"
+          >
+            <span class="font-medium text-accent">{{ approval.askedByName }}</span>
+            <span class="text-muted-foreground"> · {{ kindLabel }}</span>
+          </p>
+          <p v-else class="mb-0 text-xs font-medium tracking-wider text-accent">
             {{ kindLabel }}
-          </p>
-          <p v-if="approval.askedByName" class="mb-0 mt-0.5 text-xs text-foreground">
-            {{ tf("hitlRelayApproval", { name: approval.askedByName }) }}
-          </p>
-          <p v-if="approval.taskLabel" class="mb-0 mt-0.5 truncate text-xs text-muted-foreground">
-            {{ tf("hitlRelayTask", { label: approval.taskLabel }) }}
-          </p>
-          <p v-if="(approval.queueBehind ?? 0) > 0" class="mb-0 mt-0.5 text-xs text-muted-foreground">
-            {{ tf("hitlQueueBehind", { n: approval.queueBehind }) }}
           </p>
           <h2
             :id="`approval-title-${approval.id}`"
@@ -102,6 +102,12 @@ function decide(allow: boolean, scope: ApprovalScope = "once"): void {
           >
             {{ summary.title }}
           </h2>
+          <p
+            v-if="(approval.queueBehind ?? 0) > 0"
+            class="mb-0 mt-0.5 text-xs text-muted-foreground"
+          >
+            {{ tf("hitlQueueBehind", { n: approval.queueBehind ?? 0 }) }}
+          </p>
           <p class="sr-only">{{ summary.description }}</p>
         </div>
         <div class="flex shrink-0 items-center gap-1.5">

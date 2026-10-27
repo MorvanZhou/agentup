@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleDotIcon, ListTreeIcon } from "@lucide/vue";
+import { ArrowRightIcon, CircleDotIcon } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref } from "vue";
 
 import AgentAvatar from "../../../../shared/components/avatar/AgentAvatar.vue";
@@ -109,7 +109,7 @@ function openParent(fromAgentId: string): void {
             @click="openDetails(line)"
           >
             {{ t("assistSeeProcess") }}
-            <ListTreeIcon class="size-3.5 shrink-0" aria-hidden="true" />
+            <ArrowRightIcon class="size-3.5 shrink-0" aria-hidden="true" />
           </button>
           <button
             type="button"

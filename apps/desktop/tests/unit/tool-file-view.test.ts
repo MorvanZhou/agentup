@@ -9,7 +9,7 @@ import {
   parseEditHunks,
   splitContentLines,
   summarizeDiff,
-} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/tool-file-view.js";
+} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/files/tool-file-view.js";
 import {
   escapeHtml,
   highlightCodeHtml,

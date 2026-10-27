@@ -14,6 +14,10 @@ import {
   type DelegationHistoryDto,
 } from "../../../shared/api/runtime/chat";
 import { RuntimeHttp } from "../../../shared/api/runtime/http";
+import {
+  assistantPartCount,
+  shouldApplyStreamMessage,
+} from "../model/thread/delegation-process-stream";
 
 export type DelegationProcessState = {
   loading: boolean;
@@ -75,20 +79,25 @@ export function useDelegationProcess() {
 
       streaming.value = true;
       loading.value = false;
-      await consumeStream({
+      // history 已展示时，SSE 回放未追上前不覆盖，避免时间线闪缩
+      const historyFloor = assistantPartCount(messages.value);
+      const appliedStream = await consumeStream({
         baseUrl: base,
         token: options.token,
         userId: options.userId,
         taskId: options.taskId,
         signal,
+        historyFloor,
       });
 
-      // 流结束后再拉一次 history 对齐终态
+      // 流结束后对齐 task 终态；已接上流则保留流式 messages，避免再盖一次
       if (!signal.aborted) {
         try {
           const snap = await delegationHistory(http, options.token, options.userId, options.taskId);
           task.value = snap.task;
-          if (snap.messages.length > 0) messages.value = snap.messages;
+          if (snap.messages.length > 0 && !appliedStream) {
+            messages.value = snap.messages;
+          }
         } catch {
           // 保留流式结果
         }
@@ -126,7 +135,8 @@ export function useDelegationProcess() {
     userId: string;
     taskId: string;
     signal: AbortSignal;
-  }): Promise<void> {
+    historyFloor: number;
+  }): Promise<boolean> {
     const url = delegationStreamUrl(options.baseUrl, options.userId, options.taskId);
     let response: Response;
     try {
@@ -136,7 +146,7 @@ export function useDelegationProcess() {
         signal: options.signal,
       });
     } catch (err) {
-      if (options.signal.aborted) return;
+      if (options.signal.aborted) return false;
       throw err instanceof Error ? err : new Error("本机 runtime 没有启动");
     }
     if (!response.ok) {
@@ -149,7 +159,7 @@ export function useDelegationProcess() {
       }
       throw new DesktopApiError(message, response.status);
     }
-    if (!response.body) return;
+    if (!response.body) return false;
 
     const chunkStream = parseJsonEventStream({
       stream: response.body,
@@ -163,16 +173,15 @@ export function useDelegationProcess() {
       }),
     );
 
-    let sawChunk = false;
+    let applied = false;
     for await (const message of readUIMessageStream({ stream: chunkStream })) {
-      if (options.signal.aborted) return;
-      sawChunk = true;
+      if (options.signal.aborted) return applied;
       // 流式累积为单条 assistant；与 history 的 user+assistant 不同，弹窗只关心过程 parts
+      if (!shouldApplyStreamMessage(message, options.historyFloor)) continue;
       messages.value = [message];
+      applied = true;
     }
-    if (!sawChunk && messages.value.length === 0) {
-      // 空流：调用方会再拉 history
-    }
+    return applied;
   }
 
   function stop(): void {

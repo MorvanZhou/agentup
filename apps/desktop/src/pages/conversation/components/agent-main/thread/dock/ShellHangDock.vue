@@ -44,7 +44,7 @@ const detailsText = computed(() => {
 </script>
 
 <template>
-  <!-- 阻塞 shell 过久：继续等待 / 终止本轮；命令可展开查看全文 -->
+  <!-- agent 未决时的人审兜底：终止 / 再等 / 转后台 -->
   <section
     v-if="hang"
     class="shrink-0 border-t border-border bg-paper animate-rise motion-reduce:animate-none"
@@ -79,13 +79,20 @@ const detailsText = computed(() => {
             {{ t("shellHangDesc") }}
           </p>
         </div>
-        <div class="flex shrink-0 items-center gap-1.5">
+        <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           <button
             type="button"
             class="inline-flex h-8 min-w-[4.5rem] cursor-pointer items-center justify-center rounded-lg border border-rule px-3 text-sm text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             @click="emit('decide', 'wait')"
           >
             {{ t("shellHangWait") }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-8 min-w-[4.5rem] cursor-pointer items-center justify-center rounded-lg border border-rule px-3 text-sm text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            @click="emit('decide', 'bg')"
+          >
+            {{ t("shellHangBg") }}
           </button>
           <button
             type="button"

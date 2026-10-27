@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
+  ArrowRightIcon,
   ChevronDownIcon,
-  ListTreeIcon,
   LoaderCircleIcon,
   SquareIcon,
   TerminalIcon,
@@ -272,7 +272,7 @@ async function cancelTask(item: AsyncFleetItem): Promise<void> {
           @click="openProcess(item)"
         >
           {{ t("assistSeeProcess") }}
-          <ListTreeIcon class="size-3.5 shrink-0" aria-hidden="true" />
+          <ArrowRightIcon class="size-3.5 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"

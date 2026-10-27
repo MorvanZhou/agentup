@@ -1,8 +1,20 @@
 <script setup lang="ts">
-import { useAppearanceSettings } from "../../../composables/useAppearanceSettings";
+import AppSwitch from "../../../../../shared/components/AppSwitch.vue";
 import { t } from "../../../../../shared/model/ui/ui-locale";
+import { useAppearanceSettings } from "../../../composables/useAppearanceSettings";
 
-const { options, themeMode, uiLocale, guest, busy, select, selectLocale } = useAppearanceSettings();
+const {
+  options,
+  themeMode,
+  uiLocale,
+  guest,
+  busy,
+  menuBarAvailable,
+  menuBarVisible,
+  select,
+  selectLocale,
+  toggleMenuBar,
+} = useAppearanceSettings();
 </script>
 
 <template>
@@ -53,7 +65,7 @@ const { options, themeMode, uiLocale, guest, busy, select, selectLocale } = useA
       </section>
 
       <!-- 主题 -->
-      <section class="grid gap-2" :aria-label="t('appearanceTheme')">
+      <section class="mb-4 grid gap-2" :aria-label="t('appearanceTheme')">
         <h2 class="m-0 text-sm font-semibold text-foreground">{{ t("appearanceTheme") }}</h2>
         <div class="grid gap-2 sm:grid-cols-3">
           <button
@@ -72,6 +84,30 @@ const { options, themeMode, uiLocale, guest, busy, select, selectLocale } = useA
             <span class="block text-sm font-semibold text-foreground">{{ option.label }}</span>
             <span class="mt-1 block text-xs leading-snug text-muted-foreground">{{ option.hint }}</span>
           </button>
+        </div>
+      </section>
+
+      <!-- macOS 菜单栏图标：仅 Electron darwin 展示 -->
+      <section
+        v-if="menuBarAvailable"
+        class="grid gap-2"
+        :aria-label="t('appearanceMenuBar')"
+      >
+        <div
+          class="flex items-center justify-between gap-4 rounded-xl border border-rule bg-paper px-3 py-3"
+        >
+          <div class="min-w-0">
+            <h2 class="m-0 text-sm font-semibold text-foreground">{{ t("appearanceMenuBar") }}</h2>
+            <p class="mb-0 mt-1 text-xs leading-snug text-muted-foreground">
+              {{ t("appearanceMenuBarHint") }}
+            </p>
+          </div>
+          <AppSwitch
+            :model-value="menuBarVisible"
+            :disabled="busy"
+            :aria-label="t('appearanceMenuBar')"
+            @update:model-value="toggleMenuBar"
+          />
         </div>
       </section>
     </div>

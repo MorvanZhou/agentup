@@ -1,6 +1,6 @@
 import { ref, watch, type Ref } from "vue";
 
-import { runWithAccount } from "../../../app/auth-gate";
+import { runWithAccount } from "../../../app/auth/auth-gate";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import {
   agentEditorCapabilityChanged,

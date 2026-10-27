@@ -10,7 +10,7 @@ import {
   useAuiState,
 } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
-import { ArrowDownIcon } from "@lucide/vue";
+import { ArrowDownToLineIcon, ArrowUpIcon } from "@lucide/vue";
 import {
   computed,
   defineComponent,
@@ -93,6 +93,8 @@ const windowStart = ref(0);
 const windowReady = ref(false);
 const loadingEarlier = ref(false);
 const earlierSentinel = ref<HTMLElement | null>(null);
+const threadNav = ref<HTMLElement | null>(null);
+const scrollingToPreviousUser = ref(false);
 let earlierObserver: IntersectionObserver | null = null;
 
 const visibleIds = computed(() => visibleMessageIds(messageIds.value, windowStart.value));
@@ -191,6 +193,43 @@ onBeforeUnmount(() => {
   earlierObserver?.disconnect();
   earlierObserver = null;
 });
+
+/**
+ * 相对当前视口找「再往上一条」user 气泡：
+ * 先认顶边已越过 pin 线的最后一条为锚点，再取它的上一条；
+ * 若所有 user 都还在 pin 下方（短对话贴底），则跳到最新一条 user。
+ */
+function previousUserMessageEl(scroller: HTMLElement): HTMLElement | null {
+  const pin = scroller.getBoundingClientRect().top + 8;
+  const users = [...scroller.querySelectorAll<HTMLElement>('li[data-role="user"]')];
+  if (users.length === 0) return null;
+  let anchor = -1;
+  for (let i = 0; i < users.length; i += 1) {
+    if (users[i]!.getBoundingClientRect().top <= pin) anchor = i;
+  }
+  if (anchor === -1) return users[users.length - 1]!;
+  if (anchor === 0) return null;
+  return users[anchor - 1]!;
+}
+
+async function scrollToPreviousUserMessage(): Promise<void> {
+  if (scrollingToPreviousUser.value) return;
+  scrollingToPreviousUser.value = true;
+  try {
+    const scroller = scrollParentOf(threadNav.value);
+    if (!scroller) return;
+    let target = previousUserMessageEl(scroller);
+    // 视口顶部已无更早的已挂载 user 气泡时，先揭开历史再找一次。
+    if (!target && hasEarlier.value) {
+      await loadEarlier();
+      await nextTick();
+      target = previousUserMessageEl(scroller);
+    }
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    scrollingToPreviousUser.value = false;
+  }
+}
 </script>
 
 <template>
@@ -258,12 +297,27 @@ onBeforeUnmount(() => {
           :message="wakeLiveMessage"
           :streaming="wakeLiveStreaming"
         />
-        <ThreadPrimitiveScrollToBottom
-          class="border-border/60 sticky bottom-2 z-10 mx-auto rounded-full border bg-background p-1.5 shadow-sm transition-[opacity,visibility] disabled:invisible disabled:opacity-0"
-          :aria-label="t('threadScrollToBottom')"
+        <!-- 右侧导航：上一条 user / 最新消息（连体控件） -->
+        <div
+          ref="threadNav"
+          class="sticky bottom-3 z-10 ml-auto flex w-fit flex-col overflow-hidden rounded-xl border border-rule bg-paper/95 shadow-sm backdrop-blur-sm"
         >
-          <ArrowDownIcon class="size-3.5" />
-        </ThreadPrimitiveScrollToBottom>
+          <button
+            type="button"
+            class="inline-flex size-9 cursor-pointer items-center justify-center text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/30 disabled:cursor-default disabled:opacity-40"
+            :aria-label="t('threadScrollToPreviousUser')"
+            :disabled="scrollingToPreviousUser || messageCount === 0"
+            @click="scrollToPreviousUserMessage"
+          >
+            <ArrowUpIcon class="size-4" stroke-width="2" />
+          </button>
+          <ThreadPrimitiveScrollToBottom
+            class="inline-flex size-9 cursor-pointer items-center justify-center border-t border-rule text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/30 disabled:hidden"
+            :aria-label="t('threadScrollToBottom')"
+          >
+            <ArrowDownToLineIcon class="size-4" stroke-width="2" />
+          </ThreadPrimitiveScrollToBottom>
+        </div>
       </div>
     </ThreadPrimitiveViewport>
 

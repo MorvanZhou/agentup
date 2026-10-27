@@ -43,11 +43,7 @@ const title = computed(() => {
   return name ? tf("assistProcessTitle", { name }) : t("assistProcessFallback");
 });
 
-const description = computed(() => {
-  const brief = props.target?.brief?.trim() ?? "";
-  if (!brief) return undefined;
-  return brief.length > 80 ? `${brief.slice(0, 79)}…` : brief;
-});
+const description = computed(() => props.target?.brief?.trim() || undefined);
 
 const canCancel = computed(() => {
   const status = task.value?.status;
@@ -108,6 +104,7 @@ async function cancelTask(): Promise<void> {
     :open="open"
     :title="title"
     :description="description"
+    description-clamp
     size="lg"
     @update:open="onOpen"
   >
@@ -120,22 +117,33 @@ async function cancelTask(): Promise<void> {
       />
     </template>
     <div class="flex min-h-40 min-w-0 flex-col gap-2 pb-2">
-      <p v-if="loading" class="mb-0 text-sm text-muted-foreground">
+      <!-- 已有 messages 时保留过程视图，避免 loading 闸门卸掉时间线造成闪缩 -->
+      <p
+        v-if="loading && messages.length === 0"
+        class="mb-0 text-sm text-muted-foreground"
+      >
         {{ t("assistLoading") }}
       </p>
       <p
-        v-else-if="error"
+        v-else-if="error && messages.length === 0"
         class="mb-0 rounded-lg border border-destructive/20 bg-danger-soft px-3 py-2 text-sm text-destructive"
         role="alert"
       >
         {{ error }}
       </p>
       <ReadonlyAssistantProcess
-        v-else
+        v-else-if="messages.length > 0 || (!loading && !error)"
         :messages="messages"
         :streaming="streaming"
         :agent-id="target?.toAgentId || target?.taskId || 'delegation'"
       />
+      <p
+        v-if="error && messages.length > 0"
+        class="mb-0 rounded-lg border border-destructive/20 bg-danger-soft px-3 py-2 text-sm text-destructive"
+        role="alert"
+      >
+        {{ error }}
+      </p>
       <p
         v-if="task?.status === 'failed' && task.error"
         class="mb-0 text-xs text-destructive"

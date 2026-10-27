@@ -15,6 +15,7 @@ import {
   parseArtifactsEntryData,
 } from "./artifacts.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE, parseSummaryEntryData } from "./summary.js";
+import { projectToolOutput, projectToolText } from "./tool-output.js";
 
 export const CONTEXT_RESET_TEXT = "已开始新对话，之后不再带入此前上下文";
 
@@ -326,7 +327,7 @@ export function projectHistory(
       const record = raw as { toolCallId?: unknown; isError?: unknown };
       const tool = typeof record.toolCallId === "string" ? tools.get(record.toolCallId) : undefined;
       if (!tool) return;
-      const output = userText(message.content);
+      const output = projectToolOutput(message.content);
       const next: DynamicToolUIPart =
         record.isError === true
           ? {
@@ -335,7 +336,7 @@ export function projectHistory(
               toolName: tool.toolName,
               state: "output-error",
               input: tool.input ?? {},
-              errorText: output || "工具调用失败",
+              errorText: projectToolText(message.content) || "工具调用失败",
             }
           : {
               type: "dynamic-tool",

@@ -30,7 +30,7 @@ import {
   writePersonalAssistantProfile,
 } from "../assistant/personal-assistant.js";
 import { BackgroundJobError } from "../../session/background/service.js";
-import { DelegationError } from "../../session/delegation/service.js";
+import { DelegationError } from "../../session/delegation/service/index.js";
 import { promptRewind, promptText, streamPrompt } from "../prompt.js";
 import { sessionModelBody } from "../serialize.js";
 import { clearAgentChatUi } from "../user/state.js";

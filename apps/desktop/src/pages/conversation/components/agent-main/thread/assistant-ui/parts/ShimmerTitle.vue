@@ -7,6 +7,8 @@ const props = defineProps<{
   active: boolean;
   title: string;
   detail?: string;
+  /** 工具执行失败：标题下加红色波浪线 */
+  error?: boolean;
 }>();
 
 const displayTitle = computed(() => {
@@ -41,7 +43,11 @@ onUnmounted(() => {
   >
     <span
       class="shrink-0 font-medium"
-      :class="active && !reduceMotion && 'aui-title-shimmer'"
+      :class="
+        error
+          ? 'underline decoration-destructive decoration-wavy underline-offset-[3px]'
+          : active && !reduceMotion && 'aui-title-shimmer'
+      "
     >{{ displayTitle }}</span>
     <span
       v-if="detail"

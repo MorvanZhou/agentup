@@ -1,7 +1,7 @@
 import { computed, onMounted, ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
-import { applyTheme, readThemeMirror, writeThemeMirror } from "../../../app/theme";
+import { applyTheme, readThemeMirror, writeThemeMirror } from "../../../app/theme/theme";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type { ThemeMode, UiLocale } from "../../../shared/model/runtime/runtime";
 import { isGuestSession } from "../../../shared/model/session/session";
@@ -9,7 +9,16 @@ import { showToast } from "../../../shared/model/ui/toast";
 import { applyUiLocale, t } from "../../../shared/model/ui/ui-locale";
 
 export function useAppearanceSettings(api = new DesktopApi()) {
-  const { session, themeMode, uiLocale, setUiLocale, skipEditResendConfirm } = useDesktop();
+  const {
+    session,
+    themeMode,
+    uiLocale,
+    setUiLocale,
+    skipEditResendConfirm,
+    menuBarAvailable,
+    menuBarVisible,
+    setMenuBarVisible,
+  } = useDesktop();
   const busy = ref(false);
   const guest = computed(() => !session.value || isGuestSession(session.value));
   const options = computed(() => [
@@ -81,7 +90,24 @@ export function useAppearanceSettings(api = new DesktopApi()) {
     showToast(guest.value ? t("localeSavedLocal") : t("localeSavedAccount"), "success");
   }
 
-  return { options, themeMode, uiLocale, guest, busy, select, selectLocale };
+  function toggleMenuBar(visible: boolean): void {
+    if (busy.value || menuBarVisible.value === visible) return;
+    setMenuBarVisible(visible);
+    showToast(t("appearanceMenuBarSaved"), "success");
+  }
+
+  return {
+    options,
+    themeMode,
+    uiLocale,
+    guest,
+    busy,
+    menuBarAvailable,
+    menuBarVisible,
+    select,
+    selectLocale,
+    toggleMenuBar,
+  };
 }
 
 function messageOf(caught: unknown): string {

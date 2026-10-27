@@ -39,7 +39,7 @@ export type DelegationTask = {
    * 未确认则缺省/空：协议不投递。
    */
   artifacts?: { path: string; size?: number }[];
-  /** 是否已拷入父 visit 的 ARTIFACT/from-<toAgentId>/。 */
+  /** 是否已拷入父 visit 的 ARTIFACT/from-<name>-<id>/。 */
   artifactsDelivered?: boolean;
 };
 
@@ -62,6 +62,8 @@ export type DelegateRunResult = {
   task: DelegationTask;
   /** 同步完成时的正文；异步启动时为空。 */
   text?: string;
+  /** 没有新开任务，而是插入了已在跑的同一专员任务。 */
+  steered?: boolean;
 };
 
 /** 单次 fan-out 里的一项（agent_id + brief）。 */
@@ -74,6 +76,8 @@ export type DelegateFanoutItem = {
 export type DelegateFanoutResult = {
   tasks: DelegationTask[];
   texts?: string[];
+  /** 这些 task_id 是插入已有任务，不是新开的。 */
+  steeredTaskIds?: string[];
 };
 
 /** 同用户并发执行中的委托上限（扇出排队，不拒收）。 */

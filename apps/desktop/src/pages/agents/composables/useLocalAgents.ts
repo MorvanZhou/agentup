@@ -1,7 +1,7 @@
 import { ref, type Ref } from "vue";
 import { useRouter } from "vue-router";
 
-import { runWithAccount } from "../../../app/auth-gate";
+import { runWithAccount } from "../../../app/auth/auth-gate";
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type { AgentCard, Session } from "../../../shared/model/runtime/runtime";

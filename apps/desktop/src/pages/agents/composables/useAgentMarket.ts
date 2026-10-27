@@ -1,6 +1,6 @@
 import { ref, type Ref } from "vue";
 
-import { runWithAccount } from "../../../app/auth-gate";
+import { runWithAccount } from "../../../app/auth/auth-gate";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type { Session } from "../../../shared/model/runtime/runtime";
 import { isGuestSession } from "../../../shared/model/session/session";

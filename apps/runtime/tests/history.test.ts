@@ -233,6 +233,37 @@ it("projectHistory maps user ImageContent to file parts", () => {
   ]);
 });
 
+it("projectHistory keeps read image blocks on the tool output", () => {
+  const png = "iVBORw0KGgo=";
+  const messages = projectHistory([
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "call-img", name: "read", arguments: { path: "shot.png" } }],
+      timestamp: 1,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "call-img",
+      toolName: "read",
+      content: [
+        { type: "text", text: "Read image file [image/png]" },
+        { type: "image", data: png, mimeType: "image/png" },
+      ],
+      isError: false,
+      timestamp: 2,
+    },
+  ]);
+  expect(messages[0]?.parts[0]).toMatchObject({
+    type: "dynamic-tool",
+    toolName: "read",
+    state: "output-available",
+    output: {
+      text: "Read image file [image/png]",
+      images: [{ mimeType: "image/png", data: png }],
+    },
+  });
+});
+
 it("projectHistory attaches agentUpSummary from __agentUpSummary", () => {
   const messages = projectHistory([
     { role: "user", content: "hi", timestamp: 1 },

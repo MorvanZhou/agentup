@@ -9,6 +9,8 @@ import { DelegationService, DelegationStore } from "../src/session/delegation/in
 import {
   CANCEL_DELEGATION_TOOL,
   CHECK_DELEGATION_TOOL,
+  STEER_DELEGATION_TOOL,
+  RESOLVE_DELEGATION_UPDATE_TOOL,
   DELEGATE_TO_AGENT_TOOL,
   AGENT_SEARCH_TOOL,
   createDelegateExtension,
@@ -433,6 +435,8 @@ it("registers delegate tools for any visit agent", async () => {
     AGENT_SEARCH_TOOL,
     DELEGATE_TO_AGENT_TOOL,
     CANCEL_DELEGATION_TOOL,
+    STEER_DELEGATION_TOOL,
+    RESOLVE_DELEGATION_UPDATE_TOOL,
     CHECK_DELEGATION_TOOL,
   ]);
 });

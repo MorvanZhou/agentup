@@ -2,7 +2,7 @@
 import { ChevronDownIcon, DownloadIcon, FolderUpIcon, SearchIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import { readSession } from "../../../app/session-store";
+import { readSession } from "../../../app/session/session-store";
 import { DesktopApi, DesktopApiError } from "../../api/runtime";
 import type {
   AgentEditorInitial,

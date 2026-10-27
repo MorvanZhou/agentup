@@ -10,6 +10,7 @@ import { ApprovalBroker } from "../src/session/hitl/approval/index.js";
 import {
   buildArtifactConfirmPrompt,
   copyStagedArtifactsToParent,
+  deliveryDirName,
   normalizeArtifactPaths,
   shouldForceArtifactConfirm,
   stageArtifactPaths,
@@ -65,6 +66,14 @@ it("stageArtifactPaths allows empty confirmation", () => {
   expect(stageArtifactPaths(cwd, [])).toEqual([]);
 });
 
+it("deliveryDirName uses from-<name>-<id> and falls back to from-<id>", () => {
+  expect(deliveryDirName("6HhyiCvG", "迷宫工匠")).toBe("from-迷宫工匠-6HhyiCvG");
+  expect(deliveryDirName("6HhyiCvG", "走迷宫/质检")).toBe("from-走迷宫-质检-6HhyiCvG");
+  expect(deliveryDirName("6HhyiCvG")).toBe("from-6HhyiCvG");
+  expect(deliveryDirName("6HhyiCvG", "  ")).toBe("from-6HhyiCvG");
+  expect(deliveryDirName("../evil", "../../")).toBe("from-evil");
+});
+
 it("copyStagedArtifactsToParent only copies staged files under from-<agentId>", () => {
   const specialist = tempCwd("agentup-deliver-src-");
   const parent = tempCwd("agentup-deliver-dst-");
@@ -85,6 +94,63 @@ it("copyStagedArtifactsToParent only copies staged files under from-<agentId>", 
   );
   expect(fs.existsSync(path.join(parent, "ARTIFACT", "from-6HhyiCvG", "noise.txt"))).toBe(false);
   expect(fs.existsSync(path.join(parent, "ARTIFACT", "noise.txt"))).toBe(false);
+});
+
+it("copyStagedArtifactsToParent names the folder from-<name>-<id> and flattens inbound from-*", () => {
+  const specialist = tempCwd("agentup-deliver-nest-src-");
+  const parent = tempCwd("agentup-deliver-nest-dst-");
+  fs.mkdirSync(path.join(specialist, "ARTIFACT", "from-6HhyiCvG"), { recursive: true });
+  fs.mkdirSync(path.join(specialist, "ARTIFACT", "notes"), { recursive: true });
+  fs.writeFileSync(path.join(specialist, "ARTIFACT", "质检报告.md"), "report");
+  fs.writeFileSync(path.join(specialist, "ARTIFACT", "from-6HhyiCvG", "maze.html"), "game");
+  fs.writeFileSync(path.join(specialist, "ARTIFACT", "notes", "extra.txt"), "keep");
+  const staged: StagedArtifact[] = [
+    { path: "ARTIFACT/质检报告.md" },
+    { path: "ARTIFACT/from-6HhyiCvG/maze.html" },
+    { path: "ARTIFACT/notes/extra.txt" },
+  ];
+
+  const delivered = copyStagedArtifactsToParent({
+    sourceCwd: specialist,
+    parentCwd: parent,
+    toAgentId: "iVUb9Wry",
+    toAgentName: "质检员",
+    staged,
+  });
+
+  const folder = "from-质检员-iVUb9Wry";
+  expect(delivered).toEqual([
+    `ARTIFACT/${folder}/质检报告.md`,
+    `ARTIFACT/${folder}/maze.html`,
+    `ARTIFACT/${folder}/notes/extra.txt`,
+  ]);
+  expect(fs.existsSync(path.join(parent, "ARTIFACT", folder, "from-6HhyiCvG"))).toBe(false);
+  expect(fs.readFileSync(path.join(parent, "ARTIFACT", folder, "maze.html"), "utf8")).toBe("game");
+});
+
+it("copyStagedArtifactsToParent disambiguates flattened names that collide", () => {
+  const specialist = tempCwd("agentup-deliver-collide-src-");
+  const parent = tempCwd("agentup-deliver-collide-dst-");
+  fs.mkdirSync(path.join(specialist, "ARTIFACT", "from-child"), { recursive: true });
+  fs.writeFileSync(path.join(specialist, "ARTIFACT", "maze.html"), "own");
+  fs.writeFileSync(path.join(specialist, "ARTIFACT", "from-child", "maze.html"), "inbound");
+  const delivered = copyStagedArtifactsToParent({
+    sourceCwd: specialist,
+    parentCwd: parent,
+    toAgentId: "qa",
+    toAgentName: "质检",
+    staged: [{ path: "ARTIFACT/maze.html" }, { path: "ARTIFACT/from-child/maze.html" }],
+  });
+  expect(delivered).toEqual([
+    "ARTIFACT/from-质检-qa/maze.html",
+    "ARTIFACT/from-质检-qa/maze-2.html",
+  ]);
+  expect(fs.readFileSync(path.join(parent, "ARTIFACT", "from-质检-qa", "maze.html"), "utf8")).toBe(
+    "own",
+  );
+  expect(fs.readFileSync(path.join(parent, "ARTIFACT", "from-质检-qa", "maze-2.html"), "utf8")).toBe(
+    "inbound",
+  );
 });
 
 it("copyStagedArtifactsToParent with empty staged writes nothing", () => {
@@ -196,7 +262,7 @@ it("DelegationStore persists artifacts and materializePendingArtifacts copies on
   });
 
   service.materializePendingArtifacts(userId, PERSONAL_ASSISTANT_ID, parentCwd);
-  const dest = path.join(parentCwd, "ARTIFACT", `from-${specialistId}`, "maze.html");
+  const dest = path.join(parentCwd, "ARTIFACT", "from-Spec-spec1", "maze.html");
   expect(fs.readFileSync(dest, "utf8")).toBe("game");
   expect(service.getTask(task.id)?.artifactsDelivered).toBe(true);
 

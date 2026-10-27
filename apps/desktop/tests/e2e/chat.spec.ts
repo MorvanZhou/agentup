@@ -369,10 +369,55 @@ test("消息列表显示未读角标，选中后清除", async ({ page }) => {
   });
   await signIn(page);
   await expect(page.getByRole("button", { name: "Weaty，2 条未读" })).toBeVisible();
-  // 主导航角标只反映待审批 / ask_user，未读只在会话行上。
-  await expect(messagesNav(page)).toBeVisible();
+  // 主导航角标与侧栏会话行汇总数一致（此处仅未读 2）。
+  await expect(messagesNav(page)).toHaveAttribute("aria-label", /2 条未读/);
+  await expect(messagesNav(page).locator("span").filter({ hasText: "2" })).toBeVisible();
   await page.getByRole("button", { name: "Weaty，2 条未读" }).click();
   await expect(page.getByRole("button", { name: "Weaty", exact: true })).toBeVisible();
+});
+
+test("输出中发送新要求会停下当前回复，并以新的用户消息另起一条", async ({ page }) => {
+  await installRuntime(page, {
+    prompt: "interruptible",
+    recruited: ["respiratory-doctor"],
+    localVersions: { "respiratory-doctor": 1 },
+  });
+  await signIn(page);
+  await conversationItem(page, "呼吸科医生").click();
+  const composer = page.getByRole("textbox", { name: /^发送消息/ });
+  await composer.fill("先查全国");
+  await page.getByRole("button", { name: "发送" }).click();
+
+  await expect(page.getByText("先查全国")).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "发送" })).toHaveCount(0);
+
+  await composer.fill("只要北京");
+  const send = page.getByRole("button", { name: "发送" });
+  await expect(send).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止回复" })).toHaveCount(0);
+
+  await composer.fill("");
+  await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "发送" })).toHaveCount(0);
+
+  await composer.fill("只要北京");
+  await expect(send).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止回复" })).toHaveCount(0);
+
+  const followUp = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      request.url().includes("/agents/respiratory-doctor/prompt") &&
+      (request.postData() ?? "").includes("只要北京"),
+  );
+  await send.click();
+  expect((await followUp).postDataJSON()).toMatchObject({ text: "只要北京" });
+
+  const thread = page.getByRole("list");
+  await expect(thread.getByText("只要北京")).toBeVisible();
+  await expect(thread.getByText("新回复", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止回复" })).toHaveCount(0);
 });
 
 test("stream 中切换会话或页面再回来，仍接回同一轮回复", async ({ page }) => {

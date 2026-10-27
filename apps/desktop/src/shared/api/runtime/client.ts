@@ -368,7 +368,7 @@ export class DesktopApi {
   decideShellHang(
     token: string,
     hangId: string,
-    action: "kill" | "wait",
+    action: "kill" | "wait" | "bg",
   ): Promise<void> {
     return chatApi.decideShellHang(this.http, token, hangId, action);
   }

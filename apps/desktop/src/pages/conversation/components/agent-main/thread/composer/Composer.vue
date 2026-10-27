@@ -10,7 +10,7 @@ import {
 import type {} from "@assistant-ui/core/store";
 import { RouterLink } from "vue-router";
 import { SquareIcon, XIcon } from "@lucide/vue";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
 
 import { useDesktop } from "../../../../../../app/desktop";
 import { t } from "../../../../../../shared/model/ui/ui-locale";
@@ -18,6 +18,7 @@ import { useComposerFiles, isImageFile } from "../../../../composables/useCompos
 import { useComposerInputHeight } from "../../../../composables/useComposerHeight";
 import { useComposerSkills } from "../../../../composables/useComposerSkills";
 import { useSessionModel } from "../../../../composables/useSessionModel";
+import { composerRunActions } from "../../../../model/composer/composer-actions";
 import { rememberComposerDraft, takeComposerDraft } from "../../../../model/composer/composer-draft";
 import { insertEmojiAt } from "../../../../model/composer/emoji-data";
 import { injectThreadActions } from "../../../../model/thread/thread-actions";
@@ -115,7 +116,7 @@ function onComposerResize(event: PointerEvent): void {
 /** AskUser / 审批 / wake 编排时 isRunning 常为 false，仍应能停止。 */
 const hitlPending = computed(() => Boolean(askUser?.value || approval?.value));
 const wakeBusy = computed(() => busyTurn?.value?.phase === "wake");
-const showStop = computed(
+const turnBusy = computed(
   () => isRunning.value || hitlPending.value || Boolean(wakeBusy.value),
 );
 const synced = computed(() => ({
@@ -129,6 +130,22 @@ const synced = computed(() => ({
 const inputDisabled = computed(
   () => !synced.value.ready || !synced.value.modelLoaded || !synced.value.modelConfigured,
 );
+const hasDraft = computed(() => composerText.value.trim().length > 0);
+/** AskUser / 审批 / wake 已经在等用户，不再把自由文本插进当前回复。 */
+const steerBlocked = computed(() => hitlPending.value || Boolean(wakeBusy.value));
+const runActions = computed(() =>
+  composerRunActions({
+    streaming: isRunning.value,
+    stopVisible: turnBusy.value,
+    hasText: hasDraft.value,
+    inputDisabled: inputDisabled.value,
+    steerBlocked: steerBlocked.value,
+  }),
+);
+const showStop = computed(() => runActions.value.stop);
+const showSend = computed(() => runActions.value.send);
+const showInterruptSend = computed(() => runActions.value.interrupt);
+const interrupting = ref(false);
 
 onMounted(() => {
   const draft = takeComposerDraft(agentId);
@@ -174,7 +191,44 @@ function onComposerInputKeydown(event: KeyboardEvent) {
     return;
   }
   event.preventDefault();
+  if (showInterruptSend.value) {
+    void interruptAndSend();
+    return;
+  }
+  if (showStop.value) return;
   trySend();
+}
+
+/**
+ * 输出中再发送：先停掉当前 stream，再把这段文字当成新的用户消息发出，
+ * 下一条助手消息另起。
+ */
+function whenRunStops(): Promise<void> {
+  if (!isRunning.value) return Promise.resolve();
+  return new Promise((resolve) => {
+    const stop = watch(isRunning, (running) => {
+      if (running) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
+async function interruptAndSend(): Promise<void> {
+  if (interrupting.value || !showInterruptSend.value) return;
+  prepareSend();
+  const text = aui.composer.getState().text.trim();
+  if (!text) return;
+  interrupting.value = true;
+  try {
+    aui.thread.cancelRun();
+    await Promise.all([actions?.value.stopTurn(), whenRunStops()]);
+    aui.composer.setText(text);
+    await nextTick();
+    void aui.composer.send();
+  } finally {
+    interrupting.value = false;
+  }
 }
 
 function onSelectSkill(name: string): void {
@@ -348,21 +402,13 @@ function onToolbarPickFiles(files: File[]): void {
           <ComposerModelPicker
             :models="sessionModels"
             :current-label="sessionModelLabel"
-            :disabled="inputDisabled || showStop"
+            :disabled="inputDisabled || turnBusy"
             :busy="sessionModelBusy"
             @select="selectSessionModel"
           />
-          <ComposerPrimitiveSend
-            v-if="!showStop"
-            class="bg-primary text-primary-foreground min-h-8 rounded-lg px-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
-            :aria-label="t('composerSend')"
-            @click="onComposerSendClick"
-          >
-            {{ t("composerSend") }}
-          </ComposerPrimitiveSend>
           <!-- HITL 等待时 isRunning 常为 false，PrimitiveCancel 会禁用；统一走 stopTurn -->
           <button
-            v-else
+            v-if="showStop"
             type="button"
             class="flex min-h-8 items-center gap-1.5 rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:bg-destructive/90"
             :aria-label="t('composerStopAria')"
@@ -371,6 +417,24 @@ function onToolbarPickFiles(files: File[]): void {
             <SquareIcon class="size-3 fill-current" />
             {{ t("composerStop") }}
           </button>
+          <button
+            v-if="showInterruptSend"
+            type="button"
+            class="bg-primary text-primary-foreground min-h-8 rounded-lg px-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+            :aria-label="t('composerSend')"
+            :disabled="interrupting"
+            @click="interruptAndSend"
+          >
+            {{ t("composerSend") }}
+          </button>
+          <ComposerPrimitiveSend
+            v-if="showSend && !showInterruptSend"
+            class="bg-primary text-primary-foreground min-h-8 rounded-lg px-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+            :aria-label="t('composerSend')"
+            @click="onComposerSendClick"
+          >
+            {{ t("composerSend") }}
+          </ComposerPrimitiveSend>
         </div>
       </ComposerPrimitiveAttachmentDropzone>
     </div>
