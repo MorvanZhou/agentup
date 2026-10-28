@@ -23,7 +23,7 @@ xattr -cr /Applications/AgentUp.app
 ```
 
 <p align="center">
-  <img src="docs/images/feature-hero.png" alt="AgentUp desktop — contacts and multi-assistant chat" width="640" />
+  <img src="docs/images/feature-hero.gif" alt="AgentUp desktop — contacts and multi-assistant chat" width="640" />
 </p>
 
 ---
@@ -50,7 +50,7 @@ Use AI like you message people — not like you open another developer tool.
 You add a specialist that keeps getting better. When they improve, your side updates too. No redo.
 
 <p align="center">
-  <img src="docs/images/feature-add-assistant.png" alt="Find a specialist and start chatting" width="640" />
+  <img src="docs/images/feature-add-assistant.gif" alt="Find a specialist and start chatting" width="640" />
 </p>
 
 - **The right helper for each job** — Papers, code, and weather each get their own assistant.
@@ -64,7 +64,7 @@ You add a specialist that keeps getting better. When they improve, your side upd
 Organize your own Agent team. Every assistant brings their own skills; when a job spans roles, they talk to each other and solve it together.
 
 <p align="center">
-  <img src="docs/images/feature-agent-team.png" alt="Build an Agent team with specialties that collaborate" width="640" />
+  <img src="docs/images/feature-agent-team.gif" alt="Build an Agent team with specialties that collaborate" width="640" />
 </p>
 
 - **Each one owns a craft** — Product, design, frontend, backend, app — separate jobs.
@@ -78,7 +78,7 @@ Organize your own Agent team. Every assistant brings their own skills; when a jo
 Cram papers, code, and work plans into one assistant, and even “do I need an umbrella?” goes sideways. Chat separately, and the answer gets clear.
 
 <p align="center">
-  <img src="docs/images/feature-one-chat.png" alt="One all-in-one AI vs many separate AIs" width="640" />
+  <img src="docs/images/feature-one-chat.gif" alt="One all-in-one AI vs many separate AIs" width="640" />
 </p>
 
 - **Each assistant remembers one kind of thing** — Ask the weather helper, and it will not dig up last week’s paper chat.
@@ -92,7 +92,7 @@ Cram papers, code, and work plans into one assistant, and even “do I need an u
 The assistant runs on your own computer. It can see desktop files, then put a PPT or other results right back on your desktop.
 
 <p align="center">
-  <img src="docs/images/feature-on-computer.png" alt="Agent reads desktop files and writes results back" width="640" />
+  <img src="docs/images/feature-on-computer.gif" alt="Agent reads desktop files and writes results back" width="640" />
 </p>
 
 - **Sees your files** — Notes and research on your desktop can be opened and used.

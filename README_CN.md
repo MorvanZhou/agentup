@@ -23,7 +23,7 @@ xattr -cr /Applications/AgentUp.app
 ```
 
 <p align="center">
-  <img src="docs/images/feature-hero.png" alt="AgentUp 桌面端 — 通讯录与多助手协作" width="640" />
+  <img src="docs/images/feature-hero.gif" alt="AgentUp 桌面端 — 通讯录与多助手协作" width="640" />
 </p>
 
 ---
@@ -50,7 +50,7 @@ xattr -cr /Applications/AgentUp.app
 你加的是一个会持续变好的专家。他们变好了，你这边也会跟着更新。不用重来。
 
 <p align="center">
-  <img src="docs/images/feature-add-assistant.png" alt="找到合适的助手并开始聊天" width="640" />
+  <img src="docs/images/feature-add-assistant.gif" alt="找到合适的助手并开始聊天" width="640" />
 </p>
 
 - **每件事找对帮手** — 论文、代码、天气，各有各的助手。
@@ -64,7 +64,7 @@ xattr -cr /Applications/AgentUp.app
 你可以组织属于自己的 Agent 团队。每个助手带着自己的专业技能；遇到跨领域的事，他们还能沟通协作，一起把问题解决掉。
 
 <p align="center">
-  <img src="docs/images/feature-agent-team.png" alt="自建 Agent 团队，专长分工并协同解决问题" width="640" />
+  <img src="docs/images/feature-agent-team.gif" alt="自建 Agent 团队，专长分工并协同解决问题" width="640" />
 </p>
 
 - **每人有自己的本事** — 产品、设计、前端、后端、APP，各管一块。
@@ -78,7 +78,7 @@ xattr -cr /Applications/AgentUp.app
 把论文、代码、工作计划塞进同一个助手，连「今天要不要带伞」都会跑偏。分开聊，答案就清楚了。
 
 <p align="center">
-  <img src="docs/images/feature-one-chat.png" alt="全能助手 vs 多个专属助手" width="640" />
+  <img src="docs/images/feature-one-chat.gif" alt="全能助手 vs 多个专属助手" width="640" />
 </p>
 
 - **每个助手只记一类事** — 问天气助手，它不会翻出上周聊论文的记录。
@@ -92,7 +92,7 @@ xattr -cr /Applications/AgentUp.app
 助手跑在你自己的电脑上。它能看到桌面上的文件，再把 PPT 或其他结果放回桌面。
 
 <p align="center">
-  <img src="docs/images/feature-on-computer.png" alt="助手读取桌面文件并把结果写回" width="640" />
+  <img src="docs/images/feature-on-computer.gif" alt="助手读取桌面文件并把结果写回" width="640" />
 </p>
 
 - **看得到你的文件** — 桌面上的笔记和资料可以直接打开使用。
