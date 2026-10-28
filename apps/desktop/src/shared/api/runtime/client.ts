@@ -31,7 +31,9 @@ import * as communitySkillsApi from "./community-skills";
 import { RuntimeHttp } from "./http";
 import * as settingsApi from "./settings";
 import * as stateApi from "./state";
+import * as groupsApi from "./groups";
 import * as projectRootsApi from "./project-roots";
+import * as pulseApi from "./pulse";
 import * as workspaceApi from "./workspace";
 import type { WorkspaceEntry, WorkspaceFile } from "./workspace";
 import type { StagedAttachment } from "./attachments";
@@ -356,6 +358,10 @@ export class DesktopApi {
     return chatApi.attention(this.http, token, userId);
   }
 
+  desktopPulse(token: string, userId: string): Promise<pulseApi.DesktopPulseSnapshot> {
+    return pulseApi.desktopPulse(this.http, token, userId);
+  }
+
   decideApproval(
     token: string,
     approvalId: string,
@@ -479,8 +485,13 @@ export class DesktopApi {
     return attachmentsApi.deleteStagedAttachment(this.http, token, userId, agentId, relativePath);
   }
 
-  history(token: string, agentId: string, userId: string): Promise<UIMessage[]> {
-    return chatApi.history(this.http, token, agentId, userId);
+  history(
+    token: string,
+    agentId: string,
+    userId: string,
+    options?: { limit?: number; before?: string },
+  ) {
+    return chatApi.history(this.http, token, agentId, userId, options);
   }
 
   sessionModel(
@@ -572,6 +583,23 @@ export class DesktopApi {
 
   sync(token: string, agentId: string, userId: string): Promise<SyncedVisit> {
     return agentsApi.sync(this.http, token, agentId, userId);
+  }
+
+  stageGroupAttachment(
+    token: string,
+    userId: string,
+    groupId: string,
+    file: { name: string; mediaType: string; dataBase64: string },
+  ): Promise<StagedAttachment> {
+    return groupsApi.stageGroupAttachment(this.http, token, userId, groupId, file);
+  }
+
+  deleteGroupAttachment(token: string, userId: string, groupId: string, path: string): Promise<void> {
+    return groupsApi.deleteGroupAttachment(this.http, token, userId, groupId, path);
+  }
+
+  clearGroupContext(token: string, userId: string, groupId: string): Promise<groupsApi.GroupLive> {
+    return groupsApi.clearGroupContext(this.http, token, userId, groupId);
   }
 
   agentApprovals(
@@ -757,5 +785,59 @@ export class DesktopApi {
     path: string,
   ): Promise<string[]> {
     return projectRootsApi.removeProjectRoot(this.http, token, userId, agentId, personal, path);
+  }
+
+  listGroups(token: string, userId: string) {
+    return groupsApi.listGroups(this.http, token, userId);
+  }
+
+  createGroup(
+    token: string,
+    userId: string,
+    title: string,
+    members: groupsApi.GroupMember[],
+  ) {
+    return groupsApi.createGroup(this.http, token, userId, title, members);
+  }
+
+  renameGroup(token: string, userId: string, groupId: string, title: string) {
+    return groupsApi.renameGroup(this.http, token, userId, groupId, title);
+  }
+
+  getGroup(token: string, userId: string, groupId: string) {
+    return groupsApi.getGroup(this.http, token, userId, groupId);
+  }
+
+  groupLines(
+    token: string,
+    userId: string,
+    groupId: string,
+    options: { limit: number; before?: string },
+  ) {
+    return groupsApi.groupLines(this.http, token, userId, groupId, options);
+  }
+
+  postGroupMessage(token: string, userId: string, groupId: string, text: string) {
+    return groupsApi.postGroupMessage(this.http, token, userId, groupId, text);
+  }
+
+  editGroupMessage(token: string, userId: string, groupId: string, messageId: string, text: string) {
+    return groupsApi.editGroupMessage(this.http, token, userId, groupId, messageId, text);
+  }
+
+  cancelGroupQueue(token: string, userId: string, groupId: string, queueId: string) {
+    return groupsApi.cancelGroupQueue(this.http, token, userId, groupId, queueId);
+  }
+
+  stopGroup(token: string, userId: string, groupId: string) {
+    return groupsApi.stopGroup(this.http, token, userId, groupId);
+  }
+
+  deleteGroup(token: string, userId: string, groupId: string): Promise<void> {
+    return groupsApi.deleteGroup(this.http, token, userId, groupId);
+  }
+
+  clearGroupWorkspace(token: string, userId: string, groupId: string, includeWork: boolean): Promise<void> {
+    return groupsApi.clearGroupWorkspace(this.http, token, userId, groupId, includeWork);
   }
 }

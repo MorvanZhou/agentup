@@ -51,6 +51,32 @@ describe("composerRunActions", () => {
     ).toEqual({ stop: true, send: false, interrupt: false });
   });
 
+  it("shows only stop while a group subtask is running, the holder is idle, and the composer is empty", () => {
+    expect(
+      composerRunActions({
+        streaming: false,
+        stopVisible: true,
+        hasText: false,
+        inputDisabled: false,
+        steerBlocked: false,
+        tasksBusy: true,
+      }),
+    ).toEqual({ stop: true, send: false, interrupt: false });
+  });
+
+  it("shows only send while a group subtask is running and the composer has text", () => {
+    expect(
+      composerRunActions({
+        streaming: false,
+        stopVisible: true,
+        hasText: true,
+        inputDisabled: false,
+        steerBlocked: false,
+        tasksBusy: true,
+      }),
+    ).toEqual({ stop: false, send: true, interrupt: false });
+  });
+
   it("does not send when the composer cannot accept input", () => {
     expect(
       composerRunActions({

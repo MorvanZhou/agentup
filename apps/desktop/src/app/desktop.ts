@@ -4,7 +4,7 @@ import { useDesktopApp } from "./useDesktopApp";
 
 type DesktopApp = ReturnType<typeof useDesktopApp>;
 
-const desktopKey: InjectionKey<DesktopApp> = Symbol("desktop");
+export const desktopKey: InjectionKey<DesktopApp> = Symbol("desktop");
 
 export function provideDesktop(): void {
   provide(desktopKey, useDesktopApp());

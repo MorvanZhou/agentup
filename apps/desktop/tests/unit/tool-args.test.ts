@@ -12,7 +12,7 @@ import {
   partialJsonStringField,
   shortPath,
   summarizeArgs,
-} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/shared/tool-args.js";
+} from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/shared/tool-args.js";
 
 it("reads string args and shortens paths", () => {
   expect(argString({ path: "a/b/c.ts" }, "path")).toBe("a/b/c.ts");

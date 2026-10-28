@@ -2,11 +2,13 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 
 import {
   clearSession,
+  ensureGuestSession,
   readSession,
   resetSessionStore,
   restoreSession,
   saveSession,
 } from "../../src/app/session/session-store.js";
+import { GUEST_SESSION } from "../../src/shared/model/session/session.js";
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();
@@ -94,6 +96,20 @@ it("有 safeStorage 桥时经 IPC 读写，并清掉旧 localStorage", async () 
   expect(vault).toEqual({ kind: "account", userId: "u2", email: "bob@example.com", nickname: "bob", token: "secure" });
   expect(localStorage.getItem("agentup.session")).toBeNull();
   expect(readSession()).toEqual({ kind: "account", userId: "u2", email: "bob@example.com", nickname: "bob", token: "secure" });
+});
+
+it("clearSession 后 ensureGuestSession 强制落回游客，不沿用账号", async () => {
+  await saveSession({
+    kind: "account",
+    userId: "patient-a",
+    email: "patient-a@example.com",
+    nickname: "patient-a",
+    token: "tok",
+  });
+  await clearSession();
+  expect(readSession()).toBeNull();
+  await expect(ensureGuestSession()).resolves.toEqual(GUEST_SESSION);
+  expect(readSession()).toEqual(GUEST_SESSION);
 });
 
 it("首次 restore 会把旧 localStorage 迁进 safeStorage 桥", async () => {

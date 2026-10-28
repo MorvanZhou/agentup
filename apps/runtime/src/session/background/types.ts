@@ -14,6 +14,8 @@ export type BackgroundJob = {
   userId: string;
   /** 发起方 visit（私人助理或专家会话）。 */
   agentId: string;
+  /** 群执掌者发起时，结果回到这间群，不唤醒一对一。 */
+  groupId?: string;
   /** 可选短名，便于 Fleet / 模型识别。 */
   name: string;
   command: string;

@@ -73,6 +73,11 @@ export type BuildSessionPlanOptions = {
   /** 测试或显式覆盖本机探测 */
   environment?: HostEnvironment;
   detect?: DetectHostEnvironmentOptions;
+  /**
+   * 覆盖 Pi 会话目录。群执掌者用 `groups/…/holders/…/sessions`，
+   * 不写进该 Agent 的一对一 `sessions/`。
+   */
+  sessionDir?: string;
 };
 
 export function buildSessionPlan(
@@ -87,7 +92,7 @@ export function buildSessionPlan(
   const mcp = fs.existsSync(path.join(visit.root, "cwd", ".pi", "mcp.json"));
   return {
     cwd: path.join(visit.root, "cwd"),
-    sessionDir: path.join(visit.root, "sessions"),
+    sessionDir: options.sessionDir?.trim() || path.join(visit.root, "sessions"),
     agentDir: path.join(visit.root, ".runtime"),
     tools: [
       ...BUILTIN_TOOLS_BEFORE_SHELL,

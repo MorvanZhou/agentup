@@ -145,6 +145,9 @@ export async function resolveWorkspaceAbsolute(
 }
 
 function base(personal: boolean, agentId: string): string {
+  if (agentId.startsWith("group:")) {
+    return `/groups/${encodeURIComponent(agentId.slice("group:".length))}/workspace`;
+  }
   return personal ? "/personal-assistant/workspace" : `/agents/${encodeURIComponent(agentId)}/workspace`;
 }
 

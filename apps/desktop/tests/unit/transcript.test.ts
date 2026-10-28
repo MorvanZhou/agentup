@@ -31,11 +31,13 @@ it("loads UIMessage history from the local runtime", async () => {
       ],
     }),
   );
-  const history = await new DesktopApi("http://runtime", fetchImpl).history("token", "weather", "patient a");
+  const page = await new DesktopApi("http://runtime", fetchImpl).history("token", "weather", "patient a");
   expect(fetchImpl).toHaveBeenCalledWith(
     "http://runtime/agents/weather/history?user_id=patient%20a",
     expect.objectContaining({ method: "GET", headers: { authorization: "Bearer token" } }),
   );
+  expect(page.hasMore).toBe(false);
+  const history = page.messages;
   expect(history).toMatchObject([
     { role: "user", parts: [{ type: "text", text: "上海？" }] },
     {
@@ -147,4 +149,33 @@ it("builds a single-line preview from the latest message text", () => {
     },
   ]);
   expect(lastMessagePreview(afterReset)).toBe("旧消息");
+});
+
+it("prefers agentUpSummary text for sidebar preview over earlier process text", () => {
+  const history = parseHistory([
+    { id: "user-0", role: "user", parts: [{ type: "text", text: "总结一下" }] },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "先说明过程" },
+        { type: "text", text: "最终结论" },
+      ],
+      metadata: { custom: { agentUpSummary: { textPartIndex: 1 } } },
+    },
+  ]);
+  expect(lastMessagePreview(history)).toBe("最终结论");
+
+  const byId = parseHistory([
+    {
+      id: "assistant-2",
+      role: "assistant",
+      parts: [
+        { type: "text", id: "t0", text: "过程段" },
+        { type: "text", id: "t1", text: "总结段" },
+      ],
+      metadata: { custom: { agentUpSummary: { textPartIndex: 0, textPartId: "t1" } } },
+    },
+  ]);
+  expect(lastMessagePreview(byId)).toBe("总结段");
 });

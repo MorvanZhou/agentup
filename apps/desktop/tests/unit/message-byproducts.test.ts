@@ -4,6 +4,7 @@ import {
   formatArtifactCountBadge,
 } from "../../src/pages/conversation/model/message/message-artifacts";
 import {
+  buildLatestAssistantByproducts,
   buildAssistantByproducts,
   readAgentUpSummary,
   resolveSummaryPartIndex,
@@ -95,6 +96,42 @@ describe("message-byproducts", () => {
     expect(state.summaryPartIndex).toBe(2);
     expect(state.tabs.map((tab) => tab.id)).toContain("summary");
     expect(state.defaultTabId).toBe("summary");
+  });
+
+  it("builds readonly byproducts from the latest assistant only", () => {
+    const state = buildLatestAssistantByproducts(
+      [
+        {
+          id: "user-1",
+          role: "user",
+          parts: [{ type: "text", text: "做登录页" }],
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "旧回复" }],
+          metadata: { custom: { agentUpSummary: { textPartIndex: 0 } } },
+        },
+        {
+          id: "assistant-2",
+          role: "assistant",
+          parts: [{ type: "text", text: "最新总结" }],
+          metadata: { custom: { agentUpSummary: { textPartIndex: 0 } } },
+        },
+      ] as never,
+      false,
+    );
+    expect(state?.summaryPartIndex).toBe(0);
+    expect(state?.tabs.map((tab) => tab.id)).toEqual(["summary"]);
+  });
+
+  it("returns null when readonly history has no assistant", () => {
+    expect(
+      buildLatestAssistantByproducts(
+        [{ id: "user-1", role: "user", parts: [{ type: "text", text: "你好" }] }] as never,
+        false,
+      ),
+    ).toBeNull();
   });
 
   it("resolveSummaryPartIndex prefers textPartId then ordinal", () => {

@@ -41,6 +41,8 @@ export type DelegationTask = {
   artifacts?: { path: string; size?: number }[];
   /** 是否已拷入父 visit 的 ARTIFACT/from-<name>-<id>/。 */
   artifactsDelivered?: boolean;
+  /** 群内派出的工作单。有值时结果回到群，不唤醒一对一。 */
+  groupId?: string;
 };
 
 /** 已招募（或本机离线回退）专家名片；检索用语料。 */

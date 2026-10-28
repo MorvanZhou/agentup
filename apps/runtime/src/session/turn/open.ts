@@ -4,7 +4,7 @@ import type { BackgroundJobs } from "../background/index.js";
 import type { DelegationService } from "../delegation/index.js";
 import type { ApprovalBroker } from "../hitl/approval/index.js";
 import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
-import { openSession } from "../open.js";
+import { openSession, type OpenSessionOptions } from "../open.js";
 import type { AskUserBroker } from "../tools/index.js";
 import type { PromptSession } from "./types.js";
 
@@ -16,6 +16,7 @@ export async function openPromptSession(
   delegation?: DelegationService,
   backgroundJobs?: BackgroundJobs,
   shellHang?: ShellHangBroker,
+  sessionDirOrOptions?: string | OpenSessionOptions,
 ): Promise<PromptSession> {
   const opened = await openSession(
     visit,
@@ -25,6 +26,7 @@ export async function openPromptSession(
     delegation,
     backgroundJobs,
     shellHang,
+    sessionDirOrOptions,
   );
   return opened.session;
 }

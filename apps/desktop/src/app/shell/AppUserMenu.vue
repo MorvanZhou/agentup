@@ -17,7 +17,7 @@ import { t } from "../../shared/model/ui/ui-locale";
 import { useDesktop } from "../desktop";
 
 const router = useRouter();
-const { session } = useDesktop();
+const { session, beginBrowserLogin } = useDesktop();
 const open = ref(false);
 const displayName = computed(() => sessionDisplayNickname(session.value));
 
@@ -28,11 +28,7 @@ function goSettings(): void {
 
 function goLogin(): void {
   open.value = false;
-  const redirect = router.currentRoute.value.fullPath;
-  void router.push({
-    name: "login",
-    query: redirect.startsWith("/") && router.currentRoute.value.name !== "login" ? { redirect } : undefined,
-  });
+  beginBrowserLogin();
 }
 </script>
 

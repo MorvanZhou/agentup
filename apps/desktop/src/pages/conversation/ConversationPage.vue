@@ -3,11 +3,13 @@ import type { UIMessage } from "ai";
 import { computed, onActivated, ref, watch } from "vue";
 
 import { useDesktop } from "../../app/desktop";
-import { DesktopApi } from "../../shared/api/runtime";
 import type { ApprovalScope, AskUserAnswer } from "../../shared/model/chat/chat";
+import GroupCreatePanel from "./components/chat-main/group/GroupCreatePanel.vue";
+import GroupThread from "./components/chat-main/group/GroupThread.vue";
 import AgentSidebar from "./components/agent-sidebar/AgentSidebar.vue";
-import AgentThread from "./components/agent-main/AgentThread.vue";
+import AgentThread from "./components/chat-main/single/AgentThread.vue";
 import { useAgentChat } from "./composables/useAgentChat";
+import { useConversationGroups } from "./composables/useConversationGroups";
 import { useAsyncFleetWorking } from "./composables/useAsyncFleetWorking";
 import { useSidebarPaneWidth } from "./composables/usePaneWidth";
 import {
@@ -15,6 +17,7 @@ import {
   childHitlHintsFromAttention,
   hasRecruitedMarketAgent,
 } from "./model/sidebar/conversation-row";
+import { groupAttentionFromSnapshot } from "./model/sidebar/group-sidebar";
 import type { ThreadExtras } from "./model/thread/thread-extras";
 import type { ThreadRoster } from "./model/thread/thread-roster";
 import { mountedThreads, pruneVisited, rememberVisited } from "./model/thread/visited-threads";
@@ -39,6 +42,7 @@ const {
   previews,
   lastActiveAt,
   attention,
+  pulseFleets,
   session,
   selected,
   busyAgent,
@@ -49,23 +53,21 @@ const {
   dismiss,
   refresh,
   pullAttention,
+  pullPulse,
 } = useDesktop();
+const roomGroups = useConversationGroups();
 const sessionToken = computed(() => session.value?.token ?? "");
 const sessionUserId = computed(() => session.value?.userId ?? "");
-const {
-  agentIds: fleetWorkingAgentIds,
-  presence: delegationPresence,
-  refresh: refreshFleetWorking,
-} = useAsyncFleetWorking({
-  api: new DesktopApi(),
-  token: sessionToken,
-  userId: sessionUserId,
+const runningDelegations = computed(() => pulseFleets.value.runningDelegations);
+const runningJobs = computed(() => pulseFleets.value.runningJobs);
+const { agentIds: fleetWorkingAgentIds, presence: delegationPresence } = useAsyncFleetWorking({
+  runningDelegations,
+  runningJobs,
 });
 const chat = useAgentChat(undefined, {
   onTurnEnd(agentId, preview) {
     void recordTurnEnd(agentId, preview);
-    void pullAttention();
-    void refreshFleetWorking();
+    void pullPulse();
   },
 });
 const providerSettings = useProviderSettings();
@@ -77,24 +79,45 @@ onActivated(() => {
     return;
   }
   void providerSettings.load();
-  void pullAttention();
-  void refreshFleetWorking();
+  void pullPulse();
+  void roomGroups.load();
 });
+
+/** pulse unseen → toast / ack / 重载历史（不再单独轮询 delegations）。 */
+watch(
+  () =>
+    [
+      sessionToken.value,
+      sessionUserId.value,
+      pulseFleets.value.unseenDelegations,
+      pulseFleets.value.unseenJobs,
+    ] as const,
+  ([token, userId, tasks, jobs]) => {
+    if (!token || !userId) return;
+    if (tasks.length === 0 && jobs.length === 0) return;
+    void chat.ingestUnseenAsync(token, userId, tasks, jobs);
+  },
+  { deep: true },
+);
 const visitedAgentIds = ref<string[]>([]);
 /** 各已挂载线程的 isRunning；与 runtime busy / 页级 Fleet 合并进侧栏。 */
 const workingAgents = ref<Record<string, true>>({});
 
 const rows = computed(() => {
+  // 群 HITL 挂群 Dock，不点亮一对一 Agent 侧栏角标。
+  const visitApprovals = attention.value.approvals.filter((item) => !item.groupId);
+  const visitAskUsers = attention.value.askUsers.filter((item) => !item.groupId);
+  const visitShellHangs = attention.value.shellHangs.filter((item) => !item.groupId);
   const awaitingApproval = new Set([
     ...Object.keys(chat.approvals.value),
-    ...attention.value.approvals.map((item) => item.agentId),
+    ...visitApprovals.map((item) => item.agentId),
   ]);
   const awaitingAskUser = new Set([
     ...Object.keys(chat.askUsers.value),
-    ...attention.value.askUsers.map((item) => item.agentId),
+    ...visitAskUsers.map((item) => item.agentId),
   ]);
   // 命令超时与审批同属「需用户点一下」；先复用 awaitingApproval 角标。
-  for (const item of attention.value.shellHangs) awaitingApproval.add(item.agentId);
+  for (const item of visitShellHangs) awaitingApproval.add(item.agentId);
   for (const id of Object.keys(chat.shellHangs.value)) awaitingApproval.add(id);
   const working = new Set([
     ...Object.keys(workingAgents.value),
@@ -102,8 +125,8 @@ const rows = computed(() => {
     ...fleetWorkingAgentIds.value,
   ]);
   const childHitlByParent = childHitlHintsFromAttention({
-    approvals: attention.value.approvals,
-    askUsers: attention.value.askUsers,
+    approvals: visitApprovals,
+    askUsers: visitAskUsers,
     resolveName: (agentId) => {
       const agent = conversations.value.find((item) => item.agentId === agentId);
       return agent?.remark || agent?.name || agentId;
@@ -129,6 +152,8 @@ const rows = computed(() => {
 });
 /** 尚无第三方招募时，侧栏展示去市场引导。 */
 const showRecruitNudge = computed(() => !hasRecruitedMarketAgent(conversations.value));
+/** 群 HITL 不点亮单聊角标，单独喂给群侧栏行。 */
+const groupAttention = computed(() => groupAttentionFromSnapshot(attention.value));
 const threads = computed(() => mountedThreads(visitedAgentIds.value, chat.loadEpoch.value));
 
 watch(
@@ -157,8 +182,8 @@ function setWorking(agentId: string, running: boolean): void {
   if (running) {
     if (workingAgents.value[agentId]) return;
     workingAgents.value = { ...workingAgents.value, [agentId]: true };
-    // 线程刚进入进行中时同步页级 Fleet，避免切走后角标空窗等下一轮询。
-    void refreshFleetWorking();
+    // 线程刚进入进行中时补一拍 pulse，避免切走后角标空窗等下一轮。
+    void pullPulse();
     return;
   }
   if (!workingAgents.value[agentId]) return;
@@ -257,12 +282,13 @@ function queueBehind(
   return same.length - index - 1;
 }
 
-/** 冷启动 / 未挂载线程：用 runtime attention 补齐 HITL。同一跟进会话一次只展示队首。 */
+/** 冷启动 / 未挂载线程：用 runtime attention 补齐一对一 HITL。群 HITL 走 roomGroups。 */
 watch(
   attention,
   (snap) => {
     for (const item of snap.approvals) {
-      const behind = queueBehind(snap.approvals, item);
+      if (item.groupId) continue;
+      const behind = queueBehind(snap.approvals.filter((row) => !row.groupId), item);
       const existing = Object.values(chat.approvals.value).find((entry) => entry?.id === item.id);
       if (existing) {
         if (
@@ -292,7 +318,8 @@ watch(
       });
     }
     for (const item of snap.askUsers) {
-      const behind = queueBehind(snap.askUsers, item);
+      if (item.groupId) continue;
+      const behind = queueBehind(snap.askUsers.filter((row) => !row.groupId), item);
       const existing = Object.values(chat.askUsers.value).find((entry) => entry?.id === item.id);
       if (existing) {
         if (
@@ -321,7 +348,8 @@ watch(
       });
     }
     for (const item of snap.shellHangs) {
-      const behind = queueBehind(snap.shellHangs, item);
+      if (item.groupId) continue;
+      const behind = queueBehind(snap.shellHangs.filter((row) => !row.groupId), item);
       const existing = Object.values(chat.shellHangs.value).find((entry) => entry?.id === item.id);
       if (existing) {
         if (
@@ -388,6 +416,21 @@ function onTurnEnd(agentId: string, preview: string, messages: UIMessage[]): voi
   chat.turnEnded(agentId, preview);
 }
 
+const groupSurface = computed(() => Boolean(roomGroups.openRoom.value) || roomGroups.creating.value);
+
+watch(
+  () => session.value?.userId,
+  () => {
+    void roomGroups.load();
+  },
+  { immediate: true },
+);
+
+function selectAgent(agent: Parameters<typeof select>[0]): void {
+  roomGroups.closeSurface();
+  select(agent);
+}
+
 const threadRoster = computed((): ThreadRoster => ({
   agents: conversations.value.map((agent) => ({
     agentId: agent.agentId,
@@ -402,6 +445,8 @@ const threadRoster = computed((): ThreadRoster => ({
     if (!agent || (agent.kind !== "personal" && agent.kind !== "local" && !agent.recruited)) {
       return "dismissed";
     }
+    // 群表面叠在单聊之上：去对话须先关群，否则选中了也看不见。
+    roomGroups.closeSurface();
     select(agent);
     return "opened";
   },
@@ -416,7 +461,18 @@ const threadRoster = computed((): ThreadRoster => ({
   >
     <!-- 会话侧栏（微信列表面） -->
     <aside class="relative flex min-h-0 min-w-0 flex-col border-r border-rule bg-paper text-foreground">
-      <AgentSidebar :rows="rows" :show-recruit-nudge="showRecruitNudge" @select="select" @start="start" />
+      <AgentSidebar
+        :rows="rows"
+        :groups="roomGroups.groups.value"
+        :selected-group-id="roomGroups.selectedGroupId.value"
+        :group-attention="groupAttention"
+        :creating-group="roomGroups.creating.value"
+        :show-recruit-nudge="showRecruitNudge"
+        @select="selectAgent"
+        @start="start"
+        @select-group="roomGroups.selectGroup"
+        @create-group="roomGroups.beginCreate"
+      />
       <button
         type="button"
         class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-accent/30 focus-visible:bg-accent/40 min-[730px]:block"
@@ -428,8 +484,56 @@ const threadRoster = computed((): ThreadRoster => ({
     <!-- 会话主区：已访问线程叠放常驻，切走 v-show 隐藏以保留 stream -->
     <main class="relative min-h-0 min-w-0 overflow-hidden bg-background">
       <div
+        v-if="groupSurface"
+        class="absolute inset-0 z-10 flex min-h-0 min-w-0 bg-background"
+      >
+        <GroupCreatePanel
+          v-if="roomGroups.creating.value"
+          class="h-full min-h-0 flex-1"
+          :title="roomGroups.title.value"
+          :agents="roomGroups.roster.value"
+          :picked="roomGroups.picked.value"
+          :busy="roomGroups.busy.value"
+          @update:title="roomGroups.title.value = $event"
+          @toggle="roomGroups.toggle"
+          @submit="roomGroups.create"
+        />
+        <GroupThread
+          v-else-if="roomGroups.openRoom.value"
+          :room="roomGroups.openRoom.value"
+          :roster="threadRoster"
+          :member-roles="
+            conversations.map((agent) => ({
+              agentId: agent.agentId,
+              role: agent.role,
+              avatarUrl: agent.avatarUrl,
+            }))
+          "
+          :token="session?.token ?? ''"
+          :user-id="session?.userId ?? ''"
+          :busy="roomGroups.busy.value"
+          :live-message="roomGroups.liveMessage.value"
+          :ask-user="roomGroups.askUser.value"
+          :approval="roomGroups.approval.value"
+          :shell-hang="roomGroups.shellHang.value"
+          :clear-context="roomGroups.clearContext"
+          :delete-group="roomGroups.remove"
+          :clear-workspace="roomGroups.clearWorkspace"
+          :rename-title="roomGroups.rename"
+          :history-has-more="roomGroups.historyHasMore.value"
+          :load-older="roomGroups.loadEarlier"
+          @send="roomGroups.send"
+          @edit="roomGroups.edit"
+          @cancel-queue="roomGroups.cancelQueue"
+          @stop="roomGroups.stop"
+          @answer="roomGroups.answerAsk"
+          @decide="(allow, scope) => roomGroups.decideApproval(allow, scope)"
+          @shell-hang-decide="roomGroups.decideShellHang"
+        />
+      </div>
+      <div
         v-for="thread in threads"
-        v-show="selected?.agentId === thread.agentId"
+        v-show="!groupSurface && selected?.agentId === thread.agentId"
         :key="`${thread.agentId}:${thread.epoch}`"
         class="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
       >
@@ -448,6 +552,10 @@ const threadRoster = computed((): ThreadRoster => ({
           :incoming-delegations="delegationPresence.incoming[thread.agentId] ?? []"
           :abort-turn="() => abortTurn(thread.agentId)"
           :reload-history="() => reloadHistory(thread.agentId)"
+          :history-has-more="chat.historyHasMore.value[thread.agentId] === true"
+          :load-older="() => chat.loadOlder(thread.agentId, session?.token ?? '', session?.userId ?? '')"
+          :reveal-earlier="chat.revealEarlier.value[thread.agentId] ?? 0"
+          :consume-reveal="() => chat.consumeReveal(thread.agentId)"
           :clear-context="() => clearContext(thread.agentId)"
           :clear-history="() => clearHistory(thread.agentId)"
           :set-remark="(remark) => setRemark(thread.agentId, remark)"
@@ -463,7 +571,7 @@ const threadRoster = computed((): ThreadRoster => ({
         />
       </div>
       <div
-        v-if="!selected || !session"
+        v-if="!groupSurface && (!selected || !session)"
         key="empty"
         class="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
       >

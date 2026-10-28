@@ -143,3 +143,31 @@ it("fails leftover background jobs on restart but leaves a live job running", as
   expect(wakes).toHaveLength(2);
   jobs.cancel(live.id, "patient");
 });
+
+it("returns a group-owned background job to that group instead of the one-to-one wake", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-bg-group-"));
+  const cwd = path.join(root, "cwd");
+  fs.mkdirSync(cwd, { recursive: true });
+  const store = new BackgroundJobStore(root);
+  const created = store.create({
+    userId: "u1",
+    agentId: "pm",
+    name: "build",
+    command: "echo hi",
+    cwd,
+    groupId: "g1",
+  });
+  store.update(created.id, { status: "completed", exitCode: 0, outputTail: "ok" });
+  const wakes: string[] = [];
+  const groups: string[] = [];
+  const jobs = new BackgroundJobs({
+    userDataRoot: root,
+    enqueueWake: (item) => wakes.push(item.agentId),
+    deliverGroup: (job) => groups.push(job.groupId ?? ""),
+  });
+  expect(jobs.list("u1").map((job) => job.id)).toEqual([created.id]);
+  jobs.notifyOwner(jobs.get(created.id)!);
+  expect(wakes).toEqual([]);
+  expect(groups).toEqual(["g1"]);
+  expect(jobs.get(created.id)?.notified).toBe(true);
+});

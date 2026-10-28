@@ -1432,6 +1432,21 @@ export async function installRuntime(
     if (request.method() === "POST" && /^\/ask-user\/[^/]+$/.test(path)) {
       return json(route, 200, { answered: true });
     }
+    // 桌面合并脉冲：attention + fleets + 本机群；e2e 默认空快照即可。
+    if (request.method() === "GET" && path === "/desktop-pulse") {
+      return json(route, 200, {
+        attention: {
+          busy_agent_ids: [],
+          busy_turns: [],
+          approvals: [],
+          ask_users: [],
+          shell_hangs: [],
+        },
+        delegations: { running: [], unseen: [] },
+        background_jobs: { running: [], unseen: [] },
+        groups: [],
+      });
+    }
     const workspaceHit = matchWorkspace(path);
     if (workspaceHit) {
       const key = workspaceHit.personal ? "personal" : workspaceHit.agentId;

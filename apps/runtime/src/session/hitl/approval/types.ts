@@ -13,6 +13,7 @@ export interface ApprovalRequest {
   origin?: HitlOrigin;
   taskId?: string;
   parentAgentId?: string;
+  groupId?: string;
 }
 
 export type ProjectMountContext = {
@@ -20,6 +21,8 @@ export type ProjectMountContext = {
   visitRoot: string;
   kind: "personal" | "agent";
   userDataRoot: string;
+  /** 会话已绑定的内部工作区；可直接访问，但绝不作为用户项目挂载落盘。 */
+  trustedRoots?: readonly string[];
 };
 
 export type ApprovalExtensionOptions = {

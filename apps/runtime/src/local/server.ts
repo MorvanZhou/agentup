@@ -9,6 +9,7 @@ import { BackgroundJobs } from "../session/background/index.js";
 import { ApprovalBroker } from "../session/hitl/approval/index.js";
 import { ShellHangBroker } from "../session/hitl/shell-hang/index.js";
 import { DelegationService } from "../session/delegation/index.js";
+import { createHolderTurnDriver, GroupRooms, GroupTurns } from "../session/group/index.js";
 import { resolveVisitModelConfig } from "../session/model/session-model.js";
 import { AskUserBroker } from "../session/tools/index.js";
 import { VisitChats, openPromptSession, type PromptSession } from "../session/turn/index.js";
@@ -65,10 +66,39 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
     shellHang,
     enqueueWake: (item) => chats.enqueueAsyncWake(item),
   });
+  const groups = new GroupRooms(config.userDataRoot, delegation);
   const backgroundJobs = new BackgroundJobs({
     userDataRoot: config.userDataRoot,
     enqueueWake: (item) => chats.enqueueAsyncWake(item),
+    deliverGroup: (job, body) => {
+      if (!job.groupId) return;
+      groups.acceptBackground(job.userId, job.groupId, body);
+    },
   });
+  const groupTurns = new GroupTurns(
+    groups,
+    createHolderTurnDriver({
+      resolveVisit: (userId, agentId) =>
+        resolveWakeVisit(config.userDataRoot, userId, agentId, "recruited") ??
+        resolveWakeVisit(config.userDataRoot, userId, agentId, "local"),
+      resolveModel: (visit) => resolveVisitModelConfig(config.userDataRoot, visit),
+      approvals,
+      askUser,
+      shellHang,
+      open: (visit, model, sessionDir, conversation) =>
+        openPromptSession(
+          visit,
+          model,
+          approvals,
+          askUser,
+          delegation,
+          backgroundJobs,
+          shellHang,
+          { sessionDir, conversation },
+        ),
+    }),
+    config.userDataRoot,
+  );
   const open =
     options.openPrompt ??
     ((visit, model) =>
@@ -95,6 +125,8 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
     askUser,
     shellHang,
     delegation,
+    groups,
+    groupTurns,
     backgroundJobs,
     readModel,
   });

@@ -33,11 +33,14 @@ export type AttentionApproval = {
   originAgentId?: string;
   /** 委托方；异步时与 agentId 不同，供主 Agent 侧栏提醒。 */
   parentAgentId?: string;
+  /** 群执掌 / 群内委托 HITL；有值时不应挂到一对一 Dock。 */
+  groupId?: string;
   toolCallId: string;
   toolName: string;
   args: unknown;
   askedByName?: string;
   taskLabel?: string;
+  taskId?: string;
 };
 
 export type AttentionAskUser = {
@@ -45,10 +48,13 @@ export type AttentionAskUser = {
   agentId: string;
   originAgentId?: string;
   parentAgentId?: string;
+  /** 群执掌 / 群内委托 HITL；有值时不应挂到一对一 Dock。 */
+  groupId?: string;
   toolCallId: string;
   questions: AgentUpAskUserData["questions"];
   askedByName?: string;
   taskLabel?: string;
+  taskId?: string;
 };
 
 export type AttentionShellHang = {
@@ -56,13 +62,20 @@ export type AttentionShellHang = {
   agentId: string;
   originAgentId?: string;
   parentAgentId?: string;
+  /** 群执掌 / 群内委托 HITL；有值时不应挂到一对一 Dock。 */
+  groupId?: string;
   toolCallId: string;
   toolName: string;
   command: string;
   elapsedMs: number;
   askedByName?: string;
   taskLabel?: string;
+  taskId?: string;
 };
+
+function optionalGroupId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
 export type BusyTurnPhase = "prompt" | "wake";
 
@@ -88,16 +101,8 @@ export type AttentionSnapshot = {
   shellHangs: AttentionShellHang[];
 };
 
-/** 侧栏 / Dock：runtime busy + 仍可闭合的 HITL。 */
-export async function attention(
-  http: RuntimeHttp,
-  token: string,
-  userId: string,
-): Promise<AttentionSnapshot> {
-  const payload = await http.request(
-    `/attention?user_id=${encodeURIComponent(userId)}`,
-    token,
-  );
+/** 解析 `/attention` 或 pulse 内嵌的 attention 对象。 */
+export function parseAttentionPayload(payload: Record<string, unknown>): AttentionSnapshot {
   const busyRaw = payload.busy_agent_ids;
   const busyAgentIds = Array.isArray(busyRaw)
     ? busyRaw.filter((id): id is string => typeof id === "string" && id.length > 0)
@@ -151,6 +156,7 @@ export async function attention(
           typeof item.parent_agent_id === "string" && item.parent_agent_id
             ? item.parent_agent_id
             : undefined,
+        groupId: optionalGroupId(item.group_id),
         toolCallId: item.tool_call_id,
         toolName: item.tool_name,
         args: item.args,
@@ -162,6 +168,7 @@ export async function attention(
           typeof item.task_label === "string" && item.task_label.trim()
             ? item.task_label.trim()
             : undefined,
+        taskId: optionalGroupId(item.task_id),
       });
     }
   }
@@ -189,6 +196,7 @@ export async function attention(
           typeof item.parent_agent_id === "string" && item.parent_agent_id
             ? item.parent_agent_id
             : undefined,
+        groupId: optionalGroupId(item.group_id),
         toolCallId: item.tool_call_id,
         questions: item.questions as AgentUpAskUserData["questions"],
         askedByName:
@@ -199,6 +207,7 @@ export async function attention(
           typeof item.task_label === "string" && item.task_label.trim()
             ? item.task_label.trim()
             : undefined,
+        taskId: optionalGroupId(item.task_id),
       });
     }
   }
@@ -228,6 +237,7 @@ export async function attention(
           typeof item.parent_agent_id === "string" && item.parent_agent_id
             ? item.parent_agent_id
             : undefined,
+        groupId: optionalGroupId(item.group_id),
         toolCallId: item.tool_call_id,
         toolName: item.tool_name,
         command: item.command,
@@ -240,10 +250,24 @@ export async function attention(
           typeof item.task_label === "string" && item.task_label.trim()
             ? item.task_label.trim()
             : undefined,
+        taskId: optionalGroupId(item.task_id),
       });
     }
   }
   return { busyAgentIds, busyTurns, approvals, askUsers, shellHangs };
+}
+
+/** 侧栏 / Dock：runtime busy + 仍可闭合的 HITL。 */
+export async function attention(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+): Promise<AttentionSnapshot> {
+  const payload = await http.request(
+    `/attention?user_id=${encodeURIComponent(userId)}`,
+    token,
+  );
+  return parseAttentionPayload(payload);
 }
 
 export async function decideShellHang(
@@ -297,19 +321,25 @@ export async function invocableSkills(
   return payload.skills.map(readInvocableSkill);
 }
 
+export type HistoryPage = { messages: UIMessage[]; hasMore: boolean };
+
 export async function history(
   http: RuntimeHttp,
   token: string,
   agentId: string,
   userId: string,
-): Promise<UIMessage[]> {
+  options: { limit?: number; before?: string } = {},
+): Promise<HistoryPage> {
+  const query = [`user_id=${encodeURIComponent(userId)}`];
+  if (options.limit) query.push(`limit=${options.limit}`);
+  if (options.before) query.push(`before=${encodeURIComponent(options.before)}`);
   const endpoint =
     agentId === PERSONAL_ASSISTANT_ID
-      ? `/personal-assistant/history?user_id=${encodeURIComponent(userId)}`
-      : `/agents/${encodeURIComponent(agentId)}/history?user_id=${encodeURIComponent(userId)}`;
+      ? `/personal-assistant/history?${query.join("&")}`
+      : `/agents/${encodeURIComponent(agentId)}/history?${query.join("&")}`;
   const payload = await http.request(endpoint, token);
   try {
-    return parseHistory(payload.messages);
+    return { messages: parseHistory(payload.messages), hasMore: payload.hasMore === true };
   } catch {
     throw new DesktopApiError("聊天记录无效");
   }
@@ -401,7 +431,30 @@ export type DelegationTaskDto = {
   notified: boolean;
   createdAt: number;
   updatedAt: number;
+  /** 群内委派；有值时桌面勿当一对一异步完成（toast / 私聊未读）。 */
+  groupId?: string;
 };
+
+export function parseDelegationTask(raw: unknown): DelegationTaskDto {
+  const item = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const groupId = optionalGroupId(item.group_id);
+  return {
+    id: String(item.id ?? ""),
+    fromAgentId: String(item.from_agent_id ?? ""),
+    toAgentId: String(item.to_agent_id ?? ""),
+    toAgentName: String(item.to_agent_name ?? item.to_agent_id ?? ""),
+    brief: String(item.brief ?? ""),
+    status: item.status as DelegationTaskDto["status"],
+    wait: item.wait !== false,
+    resultSummary: typeof item.result_summary === "string" ? item.result_summary : null,
+    error: typeof item.error === "string" ? item.error : null,
+    seen: item.seen === true,
+    notified: item.notified === true,
+    createdAt: typeof item.created_at === "number" ? item.created_at : 0,
+    updatedAt: typeof item.updated_at === "number" ? item.updated_at : 0,
+    ...(groupId ? { groupId } : {}),
+  };
+}
 
 /** 私人助理委托任务列表（可选仅未见 / 状态 / 委托方）。 */
 export async function listDelegations(
@@ -423,24 +476,7 @@ export async function listDelegations(
     token,
   );
   if (!Array.isArray(payload.tasks)) throw new DesktopApiError("委托列表无效");
-  return payload.tasks.map((raw) => {
-    const item = raw as Record<string, unknown>;
-    return {
-      id: String(item.id ?? ""),
-      fromAgentId: String(item.from_agent_id ?? ""),
-      toAgentId: String(item.to_agent_id ?? ""),
-      toAgentName: String(item.to_agent_name ?? item.to_agent_id ?? ""),
-      brief: String(item.brief ?? ""),
-      status: item.status as DelegationTaskDto["status"],
-      wait: item.wait !== false,
-      resultSummary: typeof item.result_summary === "string" ? item.result_summary : null,
-      error: typeof item.error === "string" ? item.error : null,
-      seen: item.seen === true,
-      notified: item.notified === true,
-      createdAt: typeof item.created_at === "number" ? item.created_at : 0,
-      updatedAt: typeof item.updated_at === "number" ? item.updated_at : 0,
-    };
-  });
+  return payload.tasks.map(parseDelegationTask);
 }
 
 export async function acknowledgeDelegation(
@@ -489,6 +525,24 @@ export type BackgroundJobDto = {
   updatedAt: number;
 };
 
+export function parseBackgroundJob(raw: unknown): BackgroundJobDto {
+  const item = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  return {
+    id: String(item.id ?? ""),
+    agentId: String(item.agent_id ?? ""),
+    name: String(item.name ?? ""),
+    command: String(item.command ?? ""),
+    status: item.status as BackgroundJobDto["status"],
+    exitCode: typeof item.exit_code === "number" ? item.exit_code : null,
+    outputTail: typeof item.output_tail === "string" ? item.output_tail : null,
+    error: typeof item.error === "string" ? item.error : null,
+    seen: item.seen === true,
+    notified: item.notified === true,
+    createdAt: typeof item.created_at === "number" ? item.created_at : 0,
+    updatedAt: typeof item.updated_at === "number" ? item.updated_at : 0,
+  };
+}
+
 export async function listBackgroundJobs(
   http: RuntimeHttp,
   token: string,
@@ -508,23 +562,7 @@ export async function listBackgroundJobs(
     token,
   );
   if (!Array.isArray(payload.jobs)) throw new DesktopApiError("后台任务列表无效");
-  return payload.jobs.map((raw) => {
-    const item = raw as Record<string, unknown>;
-    return {
-      id: String(item.id ?? ""),
-      agentId: String(item.agent_id ?? ""),
-      name: String(item.name ?? ""),
-      command: String(item.command ?? ""),
-      status: item.status as BackgroundJobDto["status"],
-      exitCode: typeof item.exit_code === "number" ? item.exit_code : null,
-      outputTail: typeof item.output_tail === "string" ? item.output_tail : null,
-      error: typeof item.error === "string" ? item.error : null,
-      seen: item.seen === true,
-      notified: item.notified === true,
-      createdAt: typeof item.created_at === "number" ? item.created_at : 0,
-      updatedAt: typeof item.updated_at === "number" ? item.updated_at : 0,
-    };
-  });
+  return payload.jobs.map(parseBackgroundJob);
 }
 
 export async function acknowledgeBackgroundJob(
@@ -557,6 +595,11 @@ export async function cancelBackgroundJob(
   };
 }
 
+export type DelegationConfirmedArtifactDto = {
+  path: string;
+  size?: number;
+};
+
 export type DelegationHistoryDto = {
   task: {
     id: string;
@@ -566,9 +609,32 @@ export type DelegationHistoryDto = {
     brief: string;
     resultSummary: string | null;
     error: string | null;
+    /** 群内委派：产物在共享工作区，预览须走 `group:<id>`。 */
+    groupId?: string;
+    /**
+     * deliver_artifacts / complete_group_task 确认清单。
+     * 旁路 UI 投影成 agentUpArtifacts；缺省表示尚未确认。
+     */
+    artifacts?: DelegationConfirmedArtifactDto[];
   };
   messages: UIMessage[];
 };
+
+function parseConfirmedArtifacts(raw: unknown): DelegationConfirmedArtifactDto[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const files: DelegationConfirmedArtifactDto[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as { path?: unknown; size?: unknown };
+    if (typeof record.path !== "string" || !record.path.trim()) continue;
+    const entry: DelegationConfirmedArtifactDto = { path: record.path };
+    if (typeof record.size === "number" && Number.isFinite(record.size) && record.size >= 0) {
+      entry.size = record.size;
+    }
+    files.push(entry);
+  }
+  return files;
+}
 
 /** 委托隔离子会话历史（旁路，不进父消息）。 */
 export async function delegationHistory(
@@ -588,6 +654,8 @@ export async function delegationHistory(
   } catch {
     throw new DesktopApiError("委托历史无效");
   }
+  const groupId = optionalGroupId(taskRaw.group_id);
+  const artifacts = parseConfirmedArtifacts(taskRaw.artifacts);
   return {
     task: {
       id: String(taskRaw.id ?? taskId),
@@ -597,6 +665,8 @@ export async function delegationHistory(
       brief: String(taskRaw.brief ?? ""),
       resultSummary: typeof taskRaw.result_summary === "string" ? taskRaw.result_summary : null,
       error: typeof taskRaw.error === "string" ? taskRaw.error : null,
+      ...(groupId ? { groupId } : {}),
+      ...(artifacts ? { artifacts } : {}),
     },
     messages,
   };

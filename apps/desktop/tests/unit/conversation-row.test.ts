@@ -235,7 +235,7 @@ it("shows who assigned a single delegated task, without pinning or stealing unre
     unread: 0,
   });
   expect(pm).toMatchObject({ dispatchedCount: 1, incomingCount: 0, working: false });
-  expect(conversationPreviewLabel(fe)).toBe("在做产品经理派的活");
+  expect(conversationPreviewLabel(fe)).toBe("在做 产品经理 派的活");
   expect(conversationPreviewLabel(pm)).toBe("已派出 1 人");
   expect(attentionBadgeCount(fe)).toBe(0);
   expect(rows.map((row) => row.agent.agentId)).toEqual(["old", "pm", "fe"]);

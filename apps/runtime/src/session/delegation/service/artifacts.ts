@@ -17,6 +17,10 @@ export function deliverTaskArtifacts(
 ): void {
   if (task.artifactsDelivered) return;
   if (task.artifacts === undefined) return;
+  if (task.groupId) {
+    store.update(task.id, { artifactsDelivered: true });
+    return;
+  }
   if (!parentCwd) return;
   if (!fs.existsSync(sourceCwd)) return;
   ensureCwdLayout(parentCwd);

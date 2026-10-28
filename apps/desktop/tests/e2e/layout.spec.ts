@@ -12,10 +12,6 @@ import { installRuntime } from "./runtime";
 test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 720 });
   await installRuntime(page);
-  await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "AgentUp" })).toBeInViewport();
-  await expect(page.getByRole("button", { name: "前往 agentup.me" })).toBeInViewport();
-
   await signIn(page);
   await expect(page.getByRole("button", { name: /^小A/ })).toBeInViewport();
   await expect(page.getByRole("textbox", { name: /^发送消息/ })).toBeInViewport();

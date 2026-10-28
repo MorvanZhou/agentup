@@ -14,11 +14,11 @@ it("uses the account language after sign-in", () => {
 
 it("keeps the Chinese browser sign-in label by default", async () => {
   await applyUiLocale("zh");
-  expect(t("loginCta")).toBe("前往 agentup.me");
+  expect(t("loginCardTitle")).toBe("继续登录");
 });
 
 it("loads English messages on demand", async () => {
   await applyUiLocale("en");
-  expect(t("loginCta")).toBe("Go to agentup.me");
+  expect(t("loginCardTitle")).toBe("Continue");
   await applyUiLocale("zh");
 });

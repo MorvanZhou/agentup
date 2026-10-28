@@ -1,9 +1,6 @@
 import { computed, onScopeDispose, ref, watch, type Ref } from "vue";
 
-import type { DesktopApi } from "../../../shared/api/runtime/client";
 import type { BackgroundJobDto, DelegationTaskDto } from "../../../shared/api/runtime/chat";
-
-const FLEET_POLL_MS = 2500;
 
 export type AsyncFleetKind = "delegation" | "background";
 
@@ -27,103 +24,83 @@ export type AsyncFleetItem = {
 /** @deprecated 用 AsyncFleetItem */
 export type DelegationFleetItem = AsyncFleetItem;
 
+function fromDelegation(task: DelegationTaskDto): AsyncFleetItem {
+  return {
+    kind: "delegation",
+    id: task.id,
+    title: task.toAgentName || task.toAgentId,
+    subtitle: task.brief,
+    status: task.status,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    toAgentId: task.toAgentId,
+    toAgentName: task.toAgentName,
+    brief: task.brief,
+  };
+}
+
+function fromBackground(job: BackgroundJobDto): AsyncFleetItem {
+  return {
+    kind: "background",
+    id: job.id,
+    title: job.name || job.id.slice(0, 8),
+    subtitle: job.command,
+    status: job.status,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    command: job.command,
+  };
+}
+
 /**
  * 当前会话进行中的异步工作：委托 + 后台作业（轻量 Fleet）。
+ * 数据来自页级 pulse running 桶；本地 note* 只做乐观补丁。
  */
 export function useDelegationFleet(options: {
-  api: DesktopApi;
   agentId: Ref<string>;
-  token: Ref<string>;
-  userId: Ref<string>;
   active?: Ref<boolean>;
+  runningDelegations: Ref<readonly DelegationTaskDto[]>;
+  runningJobs: Ref<readonly BackgroundJobDto[]>;
 }) {
-  const items = ref<AsyncFleetItem[]>([]);
-  let timer: ReturnType<typeof setInterval> | undefined;
-  let pollKey = "";
+  /** 流事件乐观插入；pulse 对齐后清掉已出现在权威列表里的项。 */
+  const optimistic = ref<AsyncFleetItem[]>([]);
 
-  function stop(): void {
-    if (timer) clearInterval(timer);
-    timer = undefined;
-    pollKey = "";
-  }
-
-  function fromDelegation(task: DelegationTaskDto): AsyncFleetItem {
-    return {
-      kind: "delegation",
-      id: task.id,
-      title: task.toAgentName || task.toAgentId,
-      subtitle: task.brief,
-      status: task.status,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-      toAgentId: task.toAgentId,
-      toAgentName: task.toAgentName,
-      brief: task.brief,
-    };
-  }
-
-  function fromBackground(job: BackgroundJobDto): AsyncFleetItem {
-    return {
-      kind: "background",
-      id: job.id,
-      title: job.name || job.id.slice(0, 8),
-      subtitle: job.command,
-      status: job.status,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-      command: job.command,
-    };
-  }
-
-  async function tick(): Promise<void> {
+  const items = computed(() => {
     const agentId = options.agentId.value;
-    const token = options.token.value;
-    const userId = options.userId.value;
-    if (!agentId || !token || !userId) {
-      items.value = [];
-      return;
-    }
-    try {
-      const [delegations, jobs] = await Promise.all([
-        options.api.listDelegations(token, userId, {
-          status: "running",
-          fromAgentId: agentId,
-        }),
-        options.api.listBackgroundJobs(token, userId, {
-          status: "running",
-          agentId,
-        }),
-      ]);
-      const next: AsyncFleetItem[] = [
-        ...delegations.filter((task) => !task.wait).map(fromDelegation),
-        ...jobs.map(fromBackground),
-      ];
-      next.sort((a, b) => b.updatedAt - a.updatedAt);
-      items.value = next;
-    } catch {
-      // 轮询失败静默
-    }
-  }
-
-  function start(): void {
-    const agentId = options.agentId.value;
-    const token = options.token.value;
-    const userId = options.userId.value;
     const active = options.active?.value ?? true;
-    const key = `${userId}/${agentId}`;
-    if (!active || !agentId || !token || !userId) {
-      stop();
-      items.value = [];
-      return;
-    }
-    if (timer && pollKey === key) return;
-    stop();
-    pollKey = key;
-    void tick();
-    timer = setInterval(() => {
-      void tick();
-    }, FLEET_POLL_MS);
-  }
+    if (!active || !agentId) return [];
+
+    const fromPulse: AsyncFleetItem[] = [
+      ...options.runningDelegations.value
+        .filter((task) => task.fromAgentId === agentId && !task.wait)
+        .map(fromDelegation),
+      ...options.runningJobs.value
+        .filter((job) => job.agentId === agentId)
+        .map(fromBackground),
+    ];
+    const seen = new Set(fromPulse.map((item) => `${item.kind}:${item.id}`));
+    const extras = optimistic.value.filter((item) => !seen.has(`${item.kind}:${item.id}`));
+    const next = [...fromPulse, ...extras];
+    next.sort((a, b) => b.updatedAt - a.updatedAt);
+    return next;
+  });
+
+  watch(
+    () =>
+      [
+        options.agentId.value,
+        options.runningDelegations.value.map((task) => task.id).join(","),
+        options.runningJobs.value.map((job) => job.id).join(","),
+      ].join("\0"),
+    () => {
+      const seen = new Set([
+        ...options.runningDelegations.value.map((task) => `delegation:${task.id}`),
+        ...options.runningJobs.value.map((job) => `background:${job.id}`),
+      ]);
+      // pulse 已见到的乐观项可以丢掉，避免完成后还挂着。
+      optimistic.value = optimistic.value.filter((item) => !seen.has(`${item.kind}:${item.id}`));
+    },
+  );
 
   function noteStarted(data: {
     taskId: string;
@@ -136,7 +113,10 @@ export function useDelegationFleet(options: {
     if (items.value.some((item) => item.kind === "delegation" && item.id === data.taskId)) {
       return;
     }
-    items.value = [
+    if (optimistic.value.some((item) => item.kind === "delegation" && item.id === data.taskId)) {
+      return;
+    }
+    optimistic.value = [
       {
         kind: "delegation",
         id: data.taskId,
@@ -149,7 +129,7 @@ export function useDelegationFleet(options: {
         toAgentName: data.toAgentName,
         brief: data.brief,
       },
-      ...items.value,
+      ...optimistic.value,
     ];
   }
 
@@ -161,7 +141,10 @@ export function useDelegationFleet(options: {
     if (items.value.some((item) => item.kind === "background" && item.id === data.jobId)) {
       return;
     }
-    items.value = [
+    if (optimistic.value.some((item) => item.kind === "background" && item.id === data.jobId)) {
+      return;
+    }
+    optimistic.value = [
       {
         kind: "background",
         id: data.jobId,
@@ -172,35 +155,30 @@ export function useDelegationFleet(options: {
         updatedAt: Date.now(),
         command: data.command,
       },
-      ...items.value,
+      ...optimistic.value,
     ];
   }
 
   function noteCancelled(id: string): void {
-    items.value = items.value.filter((item) => item.id !== id);
+    optimistic.value = optimistic.value.filter((item) => item.id !== id);
+  }
+
+  function clearOptimistic(): void {
+    optimistic.value = [];
   }
 
   watch(
-    () =>
-      [
-        options.agentId.value,
-        options.token.value,
-        options.userId.value,
-        options.active?.value ?? true,
-      ].join("\0"),
-    () => start(),
-    { immediate: true },
+    () => options.agentId.value,
+    () => clearOptimistic(),
   );
 
-  onScopeDispose(stop);
+  onScopeDispose(clearOptimistic);
 
   return {
-    items: computed(() => items.value),
+    items,
     count: computed(() => items.value.length),
     noteStarted,
     noteBackgroundStarted,
     noteCancelled,
-    refresh: tick,
-    stop,
   };
 }

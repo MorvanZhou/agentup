@@ -4,6 +4,7 @@
  */
 
 import { t } from "../../../../shared/model/ui/ui-locale";
+import type { UIMessage } from "ai";
 import {
   formatArtifactCountBadge,
   readAgentUpArtifacts,
@@ -53,6 +54,8 @@ type PartLike = {
   text?: string;
   id?: string;
   toolName?: string;
+  result?: unknown;
+  output?: unknown;
 };
 
 export type BuildByproductOptions = {
@@ -60,6 +63,26 @@ export type BuildByproductOptions = {
   metadata?: unknown;
   streaming: boolean;
 };
+
+/**
+ * 旁路 history 没有 assistant-ui 的 message scope；取最后一条 assistant，
+ * 让群委派 / 弹窗等只读视图也能沿用主消息的副产物判定。
+ */
+export function buildLatestAssistantByproducts(
+  messages: readonly UIMessage[],
+  streaming: boolean,
+): AssistantByproductState | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") continue;
+    return buildAssistantByproducts({
+      parts: message.parts as readonly PartLike[],
+      metadata: message.metadata,
+      streaming,
+    });
+  }
+  return null;
+}
 
 const TAB_ORDER: Record<ByproductTabId, number> = {
   summary: 1,

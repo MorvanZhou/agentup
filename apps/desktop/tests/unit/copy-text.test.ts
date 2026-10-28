@@ -32,4 +32,14 @@ describe("domToComposerText", () => {
     };
     expect(domToComposerText(root)).toBe("@ATTACHMENTS/a1b2c3d4-note.txt /check-weather 杭州");
   });
+
+  it("serializes mention chips to @name tokens", () => {
+    const root: { childNodes: ComposerDomNode[] } = {
+      childNodes: [
+        { nodeType: 1, tagName: "SPAN", dataset: { mention: "设计师" } },
+        { nodeType: 3, textContent: "做稿" },
+      ],
+    };
+    expect(domToComposerText(root)).toBe("@设计师 做稿");
+  });
 });

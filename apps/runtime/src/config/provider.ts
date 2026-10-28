@@ -82,10 +82,30 @@ interface StoredFile {
   activeModel: ModelRef | null;
 }
 
+/**
+ * 密文已落盘，但本进程还没收到桌面解密后的明文。
+ * 退出重进时 runtime 先起来、密钥稍后才注入；这不是密钥丢了。
+ */
+export class ProviderSecretPendingError extends ConfigError {
+  constructor() {
+    super("模型密钥还在载入，请稍后再试");
+  }
+}
+
 /** 明文 Key 只留在进程内存，key = templateId。 */
 const runtimeSecrets = new Map<string, string>();
+const secretReadyListeners = new Set<() => void>();
+
+/** 桌面把明文注入内存后通知。用于把退出时中断的回合接上，而不是先报缺密钥。 */
+export function onRuntimeProviderSecrets(listener: () => void): () => void {
+  secretReadyListeners.add(listener);
+  return () => {
+    secretReadyListeners.delete(listener);
+  };
+}
 
 export function setRuntimeProviderSecrets(secrets: Record<string, string>): void {
+  let added = false;
   for (const [templateId, apiKey] of Object.entries(secrets)) {
     const key = apiKey.trim();
     if (!templateId.trim()) continue;
@@ -94,11 +114,32 @@ export function setRuntimeProviderSecrets(secrets: Record<string, string>): void
       continue;
     }
     runtimeSecrets.set(templateId, key);
+    added = true;
+  }
+  if (!added) return;
+  for (const listener of secretReadyListeners) {
+    try {
+      listener();
+    } catch {
+      // 某一个等待方失败不挡住其余回合。
+    }
   }
 }
 
 export function clearRuntimeProviderSecrets(): void {
   runtimeSecrets.clear();
+}
+
+/** 要密钥的服务商：内存里有明文才可用。盘上有密文只说明还没注入，不是密钥丢了。 */
+function runtimeApiKey(
+  template: { id: string; requiresApiKey: boolean },
+  connection: ProviderConnection,
+): string {
+  if (!template.requiresApiKey) return runtimeSecrets.get(template.id) || PLACEHOLDER_KEY;
+  const key = runtimeSecrets.get(template.id) ?? "";
+  if (key) return key;
+  if (connection.apiKeyCipher) throw new ProviderSecretPendingError();
+  throw new ConfigError("当前服务商缺少 API Key，请重新保存密钥");
 }
 
 export function readProviderSettings(
@@ -288,11 +329,7 @@ export async function refreshProviderModels(
   }
   const baseUrl = connection.baseUrl || template.defaultBaseUrl;
   if (!baseUrl) throw new ConfigError("请填写服务地址");
-  const apiKey =
-    runtimeSecrets.get(id) || (template.requiresApiKey ? "" : PLACEHOLDER_KEY);
-  if (template.requiresApiKey && !runtimeSecrets.get(id)) {
-    throw new ConfigError("当前服务商缺少 API Key，请重新保存密钥");
-  }
+  const apiKey = runtimeApiKey(template, connection);
 
   const discoveredModelIds = await discoverRemoteModels({
     baseUrl,
@@ -469,11 +506,7 @@ export function loadModelConfigFromRef(
   if (!connection) throw new ConfigError("当前模型所属服务商尚未配置");
   const template = getProviderTemplate(model.templateId);
   if (!template) throw new ConfigError("未知的服务商");
-  const apiKey =
-    runtimeSecrets.get(model.templateId) || (template.requiresApiKey ? "" : PLACEHOLDER_KEY);
-  if (template.requiresApiKey && !apiKey) {
-    throw new ConfigError("当前服务商缺少 API Key，请重新保存密钥");
-  }
+  const apiKey = runtimeApiKey(template, connection);
   const limits = resolveModelLimits(userDataRoot, template.id, model.modelId);
   return {
     providerId: template.piProviderId,

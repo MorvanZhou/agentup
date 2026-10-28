@@ -14,13 +14,13 @@ export type ComposerDomNode = {
   nodeType: number;
   textContent?: string | null;
   tagName?: string;
-  dataset?: DOMStringMap | { skill?: string; file?: string };
+  dataset?: DOMStringMap | { skill?: string; mention?: string; file?: string };
   childNodes?: ArrayLike<ComposerDomNode>;
 };
 
 /**
- * 把 DOM 子树序列化为 Composer 可识别文本（`/skill`、`@ATTACHMENTS/...`）。
- * 依赖芯片根节点带 `data-skill` / `data-file`。
+ * 把 DOM 子树序列化为 Composer 可识别文本（`/skill`、`@成员`、`@ATTACHMENTS/...`）。
+ * 依赖芯片根节点带 `data-skill` / `data-mention` / `data-file`。
  */
 export function domToComposerText(root: { childNodes: ArrayLike<ComposerDomNode> }): string {
   const segments: ComposerSegment[] = [];
@@ -34,6 +34,11 @@ export function domToComposerText(root: { childNodes: ArrayLike<ComposerDomNode>
     const skill = node.dataset?.skill;
     if (skill) {
       segments.push({ type: "skill", name: skill });
+      return;
+    }
+    const mention = node.dataset?.mention;
+    if (mention) {
+      segments.push({ type: "mention", name: mention });
       return;
     }
     const file = node.dataset?.file;

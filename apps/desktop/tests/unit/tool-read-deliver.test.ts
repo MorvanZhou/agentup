@@ -1,12 +1,12 @@
 import { expect, it } from "vitest";
 
-import { deliverArtifactView } from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/delegation/tool-deliver.js";
+import { deliverArtifactView } from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/delegation/tool-deliver.js";
 import {
   imagesFromToolResult,
   isImageReadPath,
   looksLikeBinaryText,
   readImageNote,
-} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/files/tool-read.js";
+} from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/files/tool-read.js";
 
 it("turns an image tool result into a data URL and ignores text results", () => {
   const png = "iVBORw0KGgo=";

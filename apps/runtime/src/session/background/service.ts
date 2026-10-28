@@ -22,6 +22,8 @@ export type BackgroundJobsOptions = {
   userDataRoot: string;
   /** 完成后排队空闲唤醒（不写可见历史气泡）。 */
   enqueueWake?: (item: AsyncWakeItem) => void;
+  /** 群内任务完成后交回原群。 */
+  deliverGroup?: (job: BackgroundJob, body: string) => void;
 };
 
 type RunningSlot = {
@@ -75,6 +77,7 @@ export class BackgroundJobs {
     command: string;
     cwd: string;
     name?: string;
+    groupId?: string;
   }): Promise<BackgroundJob> {
     const command = input.command.trim();
     if (!command) throw new BackgroundJobError("command 不能为空");
@@ -86,6 +89,7 @@ export class BackgroundJobs {
     const job = this.store.create({
       userId: input.userId,
       agentId: input.agentId,
+      ...(input.groupId ? { groupId: input.groupId } : {}),
       name,
       command,
       cwd,
@@ -318,6 +322,12 @@ export class BackgroundJobs {
     ) {
       return;
     }
+    const body = backgroundResultBody(job);
+    if (job.groupId) {
+      this.options.deliverGroup?.(job, body);
+      if (this.options.deliverGroup) this.store.update(job.id, { notified: true });
+      return;
+    }
     if (!this.options.enqueueWake) return;
     const personal = job.agentId === PERSONAL_ASSISTANT_ID;
     const kind: AsyncWakeItem["kind"] = personal
@@ -325,15 +335,6 @@ export class BackgroundJobs {
       : isLocalAgentId(job.agentId)
         ? "local"
         : "recruited";
-    const label = job.name || job.id.slice(0, 8);
-    const body =
-      job.status === "completed"
-        ? `【后台任务完成】${label}\n\n命令：${job.command}\n退出码：${job.exitCode ?? 0}` +
-          (job.outputTail ? `\n\n输出摘要：\n${job.outputTail}` : "")
-        : job.status === "cancelled"
-          ? `【后台任务已取消】${label}\n\n命令：${job.command}`
-          : `【后台任务失败】${label}\n\n命令：${job.command}\n原因：${job.error ?? "未知"}` +
-            (job.outputTail ? `\n\n输出摘要：\n${job.outputTail}` : "");
     this.options.enqueueWake({
       id: `background:${job.id}`,
       userId: job.userId,
@@ -356,6 +357,21 @@ export class BackgroundJobs {
 }
 
 export class BackgroundJobError extends Error {}
+
+function backgroundResultBody(job: BackgroundJob): string {
+  const label = job.name || job.id.slice(0, 8);
+  if (job.status === "completed") {
+    return (
+      `【后台任务完成】${label}\n\n命令：${job.command}\n退出码：${job.exitCode ?? 0}` +
+      (job.outputTail ? `\n\n输出摘要：\n${job.outputTail}` : "")
+    );
+  }
+  if (job.status === "cancelled") return `【后台任务已取消】${label}\n\n命令：${job.command}`;
+  return (
+    `【后台任务失败】${label}\n\n命令：${job.command}\n原因：${job.error ?? "未知"}` +
+    (job.outputTail ? `\n\n输出摘要：\n${job.outputTail}` : "")
+  );
+}
 
 function summarizeCommand(command: string): string {
   const one = command.replace(/\s+/g, " ").trim();

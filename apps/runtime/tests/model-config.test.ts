@@ -9,6 +9,7 @@ import {
   clearRuntimeProviderSecrets,
   deleteProviderConnection,
   loadModelConfig,
+  ProviderSecretPendingError,
   readProviderSettings,
   removeCustomModel,
   setActiveModel,
@@ -52,7 +53,9 @@ it("requires hydrated runtime secrets for cloud providers", () => {
   const modelId = settings.availableModels[0]?.modelId;
   expect(modelId).toBeTruthy();
   setActiveModel(root, { templateId: "deepseek", modelId: modelId! });
-  expect(() => loadModelConfig(root, {})).toThrow(/API Key/);
+  // 密文已在盘上、进程还没收到明文：不是让用户重存密钥。
+  expect(() => loadModelConfig(root, {})).toThrow(ProviderSecretPendingError);
+  expect(() => loadModelConfig(root, {})).not.toThrow(/重新保存/);
   setRuntimeProviderSecrets({ deepseek: "sk-test" });
   expect(loadModelConfig(root, {})).toMatchObject({
     providerId: "deepseek",
@@ -60,6 +63,16 @@ it("requires hydrated runtime secrets for cloud providers", () => {
     apiKey: "sk-test",
     kind: "pi-native",
   });
+});
+
+it("asks to save the key again only when nothing is stored", () => {
+  clearRuntimeProviderSecrets();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-provider-"));
+  const settings = upsertProviderConnection(root, { templateId: "deepseek" });
+  const modelId = settings.availableModels[0]?.modelId;
+  expect(modelId).toBeTruthy();
+  setActiveModel(root, { templateId: "deepseek", modelId: modelId! });
+  expect(() => loadModelConfig(root, {})).toThrow(/重新保存密钥/);
 });
 
 it("toggles enabled models and keeps an active selection", () => {

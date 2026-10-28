@@ -139,12 +139,18 @@ export function stageArtifactPaths(cwd: string, paths: readonly string[]): Stage
 /**
  * 父 ARTIFACT 下只建一层投递目录。
  * 有显示名时为 `from-<name>-<id>`，否则 `from-<id>`。
+ * 一对一投递的 id 是专员 agentId；群内共享目录的 id 是短 taskId（见 groupTaskDirName）。
  */
 export function deliveryDirName(agentId: string, agentName?: string): string {
   const id = sanitizeDeliveryLabel(agentId) || "agent";
   const name = sanitizeDeliveryLabel(agentName ?? "");
   if (!name || name === id) return `from-${id}`;
   return `from-${name}-${id}`;
+}
+
+/** 群共享 WORK/ARTIFACT 下本任务目录：`from-<专员名>-<taskId>`。 */
+export function groupTaskDirName(taskId: string, agentName?: string): string {
+  return deliveryDirName(taskId.trim() || "task", agentName);
 }
 
 /**

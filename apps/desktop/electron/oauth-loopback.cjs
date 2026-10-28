@@ -89,7 +89,7 @@ function createOAuthLoopback(options = {}) {
     }
   }
 
-  /** 对齐 Web 登录页：近黑底、奶油卡、品牌橙。 */
+  /** 对齐 Web 登录页：近黑底、冷骨色卡、极淡顶光。 */
   function pageHtml(kind) {
     const text = copy();
     const title =
@@ -129,14 +129,14 @@ function createOAuthLoopback(options = {}) {
 <title>${title} · AgentUp</title>
 <link rel="icon" href="data:,"/>
 </head>
-<body style="margin:0;padding:0;min-height:100vh;background:#0c0c0c;color:#f5f0e8;font-family:system-ui,-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC',sans-serif;">
-  <div style="pointer-events:none;position:fixed;inset:0;background:radial-gradient(ellipse 55% 40% at 12% 18%,rgb(255 122 26 / 22%),transparent 60%),radial-gradient(ellipse 50% 45% at 88% 88%,rgb(255 122 26 / 10%),transparent 55%);"></div>
+<body style="margin:0;padding:0;min-height:100vh;background:#0c0c0c;color:#f3f2ef;font-family:system-ui,-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC',sans-serif;">
+  <div style="pointer-events:none;position:fixed;inset:0;background:radial-gradient(ellipse 78% 46% at 50% -22%,rgba(243,242,239,0.06),transparent 66%),radial-gradient(ellipse 30% 22% at 82% -10%,rgba(255,122,26,0.035),transparent 74%);"></div>
   <main style="position:relative;box-sizing:border-box;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:40px 16px;">
-    <section style="width:100%;max-width:420px;border-radius:2rem;border:1px solid #efe6da;background:#f7f2ea;padding:2rem 2.25rem 2.25rem;color:#1a1a1a;box-shadow:0 28px 70px rgb(0 0 0 / 50%);text-align:center;">
+    <section style="width:100%;max-width:420px;border-radius:2rem;border:1px solid #dddcd7;background:#f3f2ef;padding:2rem 2.25rem 2.25rem;color:#1a1a1a;box-shadow:0 28px 70px rgb(0 0 0 / 50%);text-align:center;">
       ${logo}
       <p style="margin:1.25rem 0 0;font-size:11px;font-weight:600;letter-spacing:0.22em;color:#ff7a1a;">AgentUp</p>
       <h1 style="margin:0.75rem 0 0;font-size:1.375rem;font-weight:600;letter-spacing:-0.02em;color:#1a1a1a;">${title}</h1>
-      <p style="margin:0.75rem 0 0;font-size:0.875rem;line-height:1.6;color:#6b645c;">${lead}</p>
+      <p style="margin:0.75rem 0 0;font-size:0.875rem;line-height:1.6;color:#6f6d68;">${lead}</p>
       ${openButton}
     </section>
   </main>
@@ -249,7 +249,7 @@ function createOAuthLoopback(options = {}) {
     return { code };
   }
 
-  /** 只读暂存码，不消费（登录页挂载时决定是否自动继续）。 */
+  /** 只读暂存码，不消费。登录用 takePending。 */
   function peekPending() {
     return pendingCode ? { code: pendingCode } : null;
   }

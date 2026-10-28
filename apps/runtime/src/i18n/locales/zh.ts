@@ -80,4 +80,6 @@ export const zh: Record<string, string> = {
     "模型输出陷入重复或控制符刷屏，已自动停止。请重试或换模型。",
 
   "work.interruptedByExit": "应用已退出，这项工作在完成前中断",
+
+  "group.holderUnopenable": "无法打开这位成员的会话",
 };

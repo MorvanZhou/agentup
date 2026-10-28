@@ -6,6 +6,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 import type { ModelConfig } from "../src/config/load.js";
 import type { Visit } from "../src/package/sync.js";
+import { groupConversation } from "../src/session/core/conversation-ref.js";
 import { openSession } from "../src/session/open.js";
 import { buildSessionPlan, SessionRefused } from "../src/session/plan.js";
 
@@ -52,6 +53,16 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
       sessionDir,
       getEntries: () => [],
       getSessionFile: () => undefined,
+    }),
+    create: (_cwd: string, sessionDir: string) => ({
+      getSessionFile: () => path.join(sessionDir, "fresh.jsonl"),
+    }),
+    open: (file: string, sessionDir: string, cwd: string) => ({
+      cwd,
+      sessionDir,
+      file,
+      getEntries: () => [],
+      getSessionFile: () => file,
     }),
   },
   SettingsManager: {
@@ -179,6 +190,17 @@ it("refuses to open Pi before the package is trusted", () => {
   expect(() => buildSessionPlan({ ...visit(), projectTrust: "pending" }, model)).toThrow(SessionRefused);
 });
 
+it("keeps a group holder session out of the one-to-one sessions directory", async () => {
+  const holder = path.join(os.tmpdir(), "agentup-group-holder", "sessions");
+  const plan = buildSessionPlan(visit(), model, { sessionDir: holder });
+  expect(plan.sessionDir).toBe(holder);
+  expect(plan.cwd).toBe(path.join(visit().root, "cwd"));
+  await openSession(visit(), model, undefined, undefined, undefined, undefined, undefined, holder);
+  const options = created.at(-1) as { sessionManager: { sessionDir: string }; cwd: string };
+  expect(options.sessionManager.sessionDir).toBe(holder);
+  expect(options.cwd).toBe(path.join(visit().root, "cwd"));
+});
+
 it("passes the explicit session plan to the Pi SDK", async () => {
   const userSkillDir = path.join(visit().root, "..", "..", "personal-assistant", "skills", "note-taker");
   fs.mkdirSync(userSkillDir, { recursive: true });
@@ -296,6 +318,70 @@ it("appends collaboration policy when delegation is wired", async () => {
   expect(appended?.[3]).toContain("AgentUp Tool Usage");
   expect(appended?.[4]).toContain("AgentUp Collaboration");
   expect(appended?.[4]).toContain("delegate_to_agent");
+  expect(appended?.[4]).toContain("agent_search");
+});
+
+it("injects the group roster into the holder prompt and drops agent search", async () => {
+  const holder = path.join(os.tmpdir(), "agentup-group-roster", "sessions");
+  await openSession(
+    visit(),
+    model,
+    undefined,
+    undefined,
+    {
+      listGroupMembers: () => [
+        { agentId: "tax-advisor", name: "顾问" },
+        { agentId: "dev", name: "开发" },
+        { agentId: "design", name: "设计师" },
+      ],
+      listRecruited: vi.fn(async () => [
+        {
+          agentId: "dev",
+          name: "开发",
+          role: "工程师",
+          background: "写代码",
+          remark: "",
+          systemText: "SECRET-SYSTEM-BODY",
+          agentsText: "SECRET-AGENTS-BODY",
+        },
+      ]),
+    } as never,
+    undefined,
+    undefined,
+    {
+      sessionDir: holder,
+      conversation: groupConversation({
+        userId: "patient",
+        groupId: "g1",
+        holderAgentId: "tax-advisor",
+      }),
+    },
+  );
+  const opened = created.at(-1) as {
+    tools?: string[];
+    resourceLoader: {
+      options: {
+        appendSystemPromptOverride?: (base: string[]) => string[];
+      };
+    };
+  };
+  expect(opened.tools).not.toContain("agent_search");
+  expect(opened.tools).toContain("delegate_to_agent");
+  const appended = opened.resourceLoader.options.appendSystemPromptOverride?.(["base"]);
+  const collaboration = appended?.find((part) => part.includes("AgentUp Group"));
+  const roster = appended?.find((part) => part.includes("agent_id: dev"));
+  expect(collaboration).toBeTruthy();
+  expect(collaboration).not.toContain("agent_search");
+  expect(appended?.some((part) => part.includes("AgentUp Collaboration"))).toBe(false);
+  expect(roster).toContain("工程师");
+  expect(roster).toContain("设计师 (agent_id: design)");
+  expect(roster).not.toContain("agent_id: tax-advisor");
+  expect(roster).not.toContain("SECRET-SYSTEM-BODY");
+  expect(appended?.some((part) => part.includes("private scratch"))).toBe(false);
+  expect(appended?.some((part) => part.includes("Group shared workspace"))).toBe(true);
+  const workspace = appended?.find((part) => part.includes("Group shared workspace")) ?? "";
+  expect(workspace).toContain(`${path.sep}users${path.sep}patient${path.sep}.runtime${path.sep}groups${path.sep}g1${path.sep}workspace`);
+  expect(workspace).not.toContain(`${path.sep}users${path.sep}users${path.sep}`);
 });
 
 it("stamps the visit user onto hospital MCP, defaults exposure to deferred, and keeps explicit exposure", async () => {

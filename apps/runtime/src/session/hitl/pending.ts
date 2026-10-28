@@ -126,5 +126,6 @@ function isOptionalHitlRef(item: Record<string, unknown>): boolean {
   if (item.parentAgentId !== undefined && typeof item.parentAgentId !== "string") {
     return false;
   }
+  if (item.groupId !== undefined && typeof item.groupId !== "string") return false;
   return true;
 }

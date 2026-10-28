@@ -195,21 +195,24 @@ it("steers the running specialist instead of opening a second task", async () =>
   expect(service.listTasks("patient", { status: "running" })).toHaveLength(1);
 });
 
-it("does not open a second task when that specialist cannot take a steer yet", async () => {
+it("revises the same task brief when that specialist cannot take a steer yet", async () => {
   const { service, task, root } = runningTask();
   plantRecruited(root, "weather", "天气");
-  await expect(
-    service.delegate({
-      userId: "patient",
-      fromAgentId: PERSONAL_ASSISTANT_ID,
-      toAgentId: "weather",
-      brief: "追加要求",
-      wait: false,
-    }),
-  ).rejects.toThrow("还没开始");
+  // 专员尚未 bind steer：再派一次只改同一张单的 brief，不开第二张。
+  const result = await service.delegate({
+    userId: "patient",
+    fromAgentId: PERSONAL_ASSISTANT_ID,
+    toAgentId: "weather",
+    brief: "追加要求",
+    wait: false,
+  });
+  expect(result.task.id).toBe(task.id);
+  expect(result.task.brief).toBe("追加要求");
+  expect(result.steered).toBe(true);
   const tasks = service.listTasks("patient");
   expect(tasks).toHaveLength(1);
   expect(tasks[0]?.id).toBe(task.id);
+  expect(tasks[0]?.brief).toBe("追加要求");
 });
 
 function plantRecruited(root: string, agentId: string, name: string): void {

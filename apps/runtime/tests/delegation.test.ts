@@ -30,6 +30,8 @@ it("stores delegation tasks and lists unseen completed ones", () => {
     brief: "查天气",
     wait: false,
   });
+  // 与 user_id / agent_id / group_id 同一套 8 位短 id，不再用 UUID。
+  expect(task.id).toMatch(/^[0-9A-Za-z]{8}$/);
   store.update(task.id, { status: "completed", resultSummary: "晴" });
   const unseen = store.list("patient", { unseenOnly: true, status: "completed" });
   expect(unseen).toHaveLength(1);
@@ -439,6 +441,67 @@ it("registers delegate tools for any visit agent", async () => {
     RESOLVE_DELEGATION_UPDATE_TOOL,
     CHECK_DELEGATION_TOOL,
   ]);
+});
+
+it("registers the group delegate tool as async-only without a wait parameter", () => {
+  type RegisteredTool = {
+    name: string;
+    description: string;
+    parameters?: { properties?: Record<string, unknown> };
+  };
+  const tools: RegisteredTool[] = [];
+  createDelegateExtension(
+    {
+      listRecruited: vi.fn(),
+      delegate: vi.fn(),
+      delegateFanout: vi.fn(),
+      cancel: vi.fn(),
+      getTask: vi.fn(),
+      listTasks: vi.fn(),
+      acknowledge: vi.fn(),
+    } as never,
+    "u1",
+    "pm",
+    { groupId: "g1" },
+  )({
+    on() {
+      return undefined;
+    },
+    registerTool(tool: RegisteredTool) {
+      tools.push(tool);
+    },
+  } as never);
+  // 群里不注册 agent_search，也没有同步汇合用的 wait 参数。
+  expect(tools.map((tool) => tool.name)).not.toContain(AGENT_SEARCH_TOOL);
+  const delegate = tools.find((tool) => tool.name === DELEGATE_TO_AGENT_TOOL);
+  expect(delegate).toBeDefined();
+  expect(delegate?.parameters?.properties).toBeDefined();
+  expect(delegate?.parameters?.properties).not.toHaveProperty("wait");
+  expect(delegate?.description).toContain("async");
+  // 一对一版本仍保留 wait 参数（旧路径不被误伤）。
+  const solo: RegisteredTool[] = [];
+  createDelegateExtension(
+    {
+      listRecruited: vi.fn(),
+      delegate: vi.fn(),
+      delegateFanout: vi.fn(),
+      cancel: vi.fn(),
+      getTask: vi.fn(),
+      listTasks: vi.fn(),
+      acknowledge: vi.fn(),
+    } as never,
+    "u1",
+    "pm",
+  )({
+    on() {
+      return undefined;
+    },
+    registerTool(tool: RegisteredTool) {
+      solo.push(tool);
+    },
+  } as never);
+  const soloDelegate = solo.find((tool) => tool.name === DELEGATE_TO_AGENT_TOOL);
+  expect(soloDelegate?.parameters?.properties).toHaveProperty("wait");
 });
 
 it("cancels a running task via AbortController", () => {

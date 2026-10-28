@@ -17,6 +17,7 @@ export const authPromptReason = ref("");
 export const authPromptBusy = ref(false);
 
 let bindings: AuthGateBindings | null = null;
+let gateReadyWaiters: Array<() => void> = [];
 let pendingResume: ResumeFn | null = null;
 /** 等待用户在叠层上确认或取消。 */
 let waiter: Promise<boolean> | null = null;
@@ -24,13 +25,28 @@ let settleWaiter: ((ok: boolean) => void) | null = null;
 /** 取消时递增，避免进行中的 login 结束后误关叠层或重放意图。 */
 let flightGeneration = 0;
 
+function settleGateReady(): void {
+  const pending = gateReadyWaiters;
+  gateReadyWaiters = [];
+  for (const resolve of pending) resolve();
+}
+
 /** 由 `useDesktopApp` 注入登录实现；路由与 composable 经本模块调用，不依赖 inject。 */
 export function bindAuthGate(next: AuthGateBindings): void {
   bindings = next;
+  settleGateReady();
 }
 
 export function isAuthGateReady(): boolean {
   return bindings !== null;
+}
+
+/** 冷启动的第一次导航可能早于 `App` 挂载；等到闸门 bind 再决定拦不拦。 */
+export function whenAuthGateReady(): Promise<void> {
+  if (bindings) return Promise.resolve();
+  return new Promise((resolve) => {
+    gateReadyWaiters.push(resolve);
+  });
 }
 
 /** 测试用：清掉进行中的闸门状态。 */
@@ -43,6 +59,7 @@ export function resetAuthGate(): void {
   authPromptReason.value = "";
   authPromptBusy.value = false;
   bindings = null;
+  settleGateReady();
 }
 
 function openWaiter(): Promise<boolean> {

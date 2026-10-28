@@ -44,6 +44,7 @@ export function createBackgroundJobsExtension(
   userId: string,
   agentId: string,
   cwd: string,
+  scope: { groupId?: string } = {},
 ): ExtensionFactory {
   const commandTool = detectHostEnvironment().commandTool;
   return (pi) => {
@@ -73,6 +74,7 @@ export function createBackgroundJobsExtension(
               command: String(params.command ?? ""),
               cwd,
               name: typeof params.name === "string" ? params.name : undefined,
+              groupId: scope.groupId,
             });
             return {
               content: [

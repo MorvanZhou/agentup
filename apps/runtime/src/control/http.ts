@@ -69,7 +69,11 @@ export async function readJsonRecord(response: Response): Promise<Record<string,
   }
   const record = payload as Record<string, unknown>;
   if (!response.ok) {
-    const message = typeof record.error === "string" ? record.error : "请求失败";
+    // FastAPI 未走我们 handler 时常见 {"detail":"..."}（如路由 404）
+    const message =
+      (typeof record.error === "string" && record.error) ||
+      (typeof record.detail === "string" && record.detail) ||
+      "请求失败";
     throw new BackendClientError(message, response.status, readDetails(record.details));
   }
   return record;

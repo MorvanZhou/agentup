@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import type { HitlExtensionContext, HitlOrigin } from "../hitl/origin.js";
+import { hitlScopeFields, type HitlExtensionContext, type HitlOrigin } from "../hitl/origin.js";
 import { readHitlPending, writeHitlAskUsers } from "../hitl/pending.js";
 import { hasDanglingToolCall, repairOrphanAskUser } from "../hitl/repair.js";
 
@@ -41,6 +41,7 @@ export type AskUserRequest = {
   origin?: HitlOrigin;
   taskId?: string;
   parentAgentId?: string;
+  groupId?: string;
 };
 
 type AskUserResponse =
@@ -195,7 +196,7 @@ export function createAskUserExtension(
   agentId: string,
   hitl: HitlExtensionContext = {},
 ): ExtensionFactory {
-  const origin: HitlOrigin = hitl.origin === "delegation" ? "delegation" : "visit";
+  const scope = hitlScopeFields(hitl);
   return (pi) => {
     pi.registerTool(
       defineTool<typeof AskUserParams, AskUserDetails>({
@@ -227,9 +228,7 @@ export function createAskUserExtension(
               agentId,
               toolCallId,
               questions: questions.items,
-              origin,
-              ...(hitl.taskId ? { taskId: hitl.taskId } : {}),
-              ...(hitl.parentAgentId ? { parentAgentId: hitl.parentAgentId } : {}),
+              ...scope,
             },
             signal,
           );

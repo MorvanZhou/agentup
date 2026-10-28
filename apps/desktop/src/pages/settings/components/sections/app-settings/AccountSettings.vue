@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ImagePlusIcon } from "@lucide/vue";
 import { ref } from "vue";
-import { RouterLink } from "vue-router";
 
 import { useDesktop } from "../../../../../app/desktop";
 import UserAvatar from "../../../../../shared/components/avatar/UserAvatar.vue";
@@ -11,7 +10,7 @@ import { t } from "../../../../../shared/model/ui/ui-locale";
 import { useAccountSettings } from "../../../composables/useAccountSettings";
 
 const { session, nickname, busy, avatarBusy, commitNickname, chooseAvatar } = useAccountSettings();
-const { logout } = useDesktop();
+const { logout, beginBrowserLogin } = useDesktop();
 const avatarInput = ref<HTMLInputElement>();
 const signingOut = ref(false);
 
@@ -60,12 +59,13 @@ function onAvatar(event: Event): void {
           <UserAvatar :name="sessionDisplayNickname(session)" size="lg" />
           <p class="m-0 text-sm text-foreground">{{ t("accountGuestBody") }}</p>
         </div>
-        <RouterLink
-          :to="{ name: 'login' }"
-          class="inline-flex min-h-8 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-white no-underline transition duration-200 hover:bg-accent-deep"
+        <button
+          type="button"
+          class="inline-flex min-h-8 items-center justify-center rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep"
+          @click="beginBrowserLogin"
         >
           {{ t("menuLogin") }}
-        </RouterLink>
+        </button>
       </section>
 
       <!-- 表单 -->

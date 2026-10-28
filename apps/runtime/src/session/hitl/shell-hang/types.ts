@@ -17,6 +17,7 @@ export type ShellHangRequest = {
   origin?: HitlOrigin;
   taskId?: string;
   parentAgentId?: string;
+  groupId?: string;
 };
 
 /** 空闲后从 blocking shell 拆出、仍存活的进程。 */
@@ -37,4 +38,5 @@ export type ParkedShellHang = {
   origin?: HitlOrigin;
   taskId?: string;
   parentAgentId?: string;
+  groupId?: string;
 };

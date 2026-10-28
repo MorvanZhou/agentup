@@ -1,6 +1,6 @@
 import type { ExtensionFactory, ToolCallEvent } from "@earendil-works/pi-coding-agent";
 
-import type { HitlOrigin } from "../origin.js";
+import { hitlScopeFields } from "../origin.js";
 import type { ApprovalBroker } from "./broker.js";
 import { handleProjectMountGate } from "./project-mount.js";
 import {
@@ -20,7 +20,7 @@ export function createApprovalExtension(
   options: ApprovalExtensionOptions = {},
 ): ExtensionFactory {
   const hitl = options.hitl ?? {};
-  const origin: HitlOrigin = hitl.origin === "delegation" ? "delegation" : "visit";
+  const scope = hitlScopeFields(hitl);
   return (pi) => {
     pi.on("tool_call", async (event: ToolCallEvent, context) => {
       if (isFilePathTool(event.toolName) && options.projectMount) {
@@ -31,7 +31,7 @@ export function createApprovalExtension(
           event,
           context.cwd || options.projectMount.cwd,
           options.projectMount,
-          origin,
+          scope.origin,
           hitl,
           context.signal,
         );
@@ -62,9 +62,7 @@ export function createApprovalExtension(
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args,
-          origin,
-          ...(hitl.taskId ? { taskId: hitl.taskId } : {}),
-          ...(hitl.parentAgentId ? { parentAgentId: hitl.parentAgentId } : {}),
+          ...scope,
         },
         context.signal,
       );

@@ -90,50 +90,10 @@ it("decide clears the approval id from every agent slot", async () => {
   expect(chat.approvals.value["personal-assistant"]).toBeUndefined();
 });
 
-it("watchDelegations silent-acks sync wait tasks without toasting", async () => {
-  vi.useFakeTimers();
+it("ingestUnseenAsync silent-acks sync wait tasks without toasting", async () => {
   const acks: string[] = [];
   const fetchImpl = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
     const path = String(url);
-    if (path.includes("/delegations?") && !path.includes("/ack")) {
-      return Response.json({
-        tasks: [
-          {
-            id: "sync-1",
-            from_agent_id: "personal-assistant",
-            to_agent_id: "weather",
-            to_agent_name: "Weaty",
-            brief: "查天气",
-            status: "completed",
-            wait: true,
-            result_summary: "晴",
-            error: null,
-            seen: false,
-            notified: false,
-            created_at: 1,
-            updated_at: 1,
-          },
-          {
-            id: "async-pending",
-            from_agent_id: "personal-assistant",
-            to_agent_id: "weather",
-            to_agent_name: "Weaty",
-            brief: "再查",
-            status: "completed",
-            wait: false,
-            result_summary: "雨",
-            error: null,
-            seen: false,
-            notified: false,
-            created_at: 2,
-            updated_at: 2,
-          },
-        ],
-      });
-    }
-    if (path.includes("/background-jobs?")) {
-      return Response.json({ jobs: [] });
-    }
     if (path.includes("/ack") && init?.method === "POST") {
       const id = path.match(/delegations\/([^/]+)\/ack/)?.[1] ?? "";
       acks.push(decodeURIComponent(id));
@@ -142,46 +102,96 @@ it("watchDelegations silent-acks sync wait tasks without toasting", async () => 
     return Response.json({ messages: [] });
   });
   const chat = useAgentChat(new DesktopApi("http://runtime", fetchImpl));
-  chat.watchDelegations("personal-assistant", "token", "patient-a");
-  await vi.advanceTimersByTimeAsync(0);
-  await Promise.resolve();
-  await Promise.resolve();
+  await chat.ingestUnseenAsync(
+    "token",
+    "patient-a",
+    [
+      {
+        id: "sync-1",
+        fromAgentId: "personal-assistant",
+        toAgentId: "weather",
+        toAgentName: "Weaty",
+        brief: "查天气",
+        status: "completed",
+        wait: true,
+        resultSummary: "晴",
+        error: null,
+        seen: false,
+        notified: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "async-pending",
+        fromAgentId: "personal-assistant",
+        toAgentId: "weather",
+        toAgentName: "Weaty",
+        brief: "再查",
+        status: "completed",
+        wait: false,
+        resultSummary: "雨",
+        error: null,
+        seen: false,
+        notified: false,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ],
+    [],
+  );
 
   expect(acks).toEqual(["sync-1"]);
   expect(toastState.open).toBe(false);
-
-  chat.stopDelegationWatch();
 });
 
-it("watchDelegations toasts and acks only after async notified", async () => {
-  vi.useFakeTimers();
+it("ingestUnseenAsync silent-acks group tasks without toast or private unread", async () => {
+  const acks: string[] = [];
+  const turnEnds: Array<{ agentId: string; preview: string }> = [];
+  const fetchImpl = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+    const path = String(url);
+    if (path.includes("/ack") && init?.method === "POST") {
+      const id = path.match(/delegations\/([^/]+)\/ack/)?.[1] ?? "";
+      acks.push(decodeURIComponent(id));
+      return Response.json({ id, seen: true, notified: true });
+    }
+    return Response.json({ messages: [] });
+  });
+  const chat = useAgentChat(new DesktopApi("http://runtime", fetchImpl), {
+    onTurnEnd: (agentId, preview) => turnEnds.push({ agentId, preview }),
+  });
+  await chat.ingestUnseenAsync(
+    "token",
+    "patient-a",
+    [
+      {
+        id: "group-cancel-1",
+        fromAgentId: "remy",
+        toAgentId: "cody",
+        toAgentName: "Cody",
+        brief: "任务：做一个『科技感网页背景』",
+        status: "cancelled",
+        wait: false,
+        groupId: "group-dev",
+        resultSummary: "已取消",
+        error: null,
+        seen: false,
+        notified: true,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+    [],
+  );
+
+  expect(acks).toEqual(["group-cancel-1"]);
+  expect(toastState.open).toBe(false);
+  expect(turnEnds).toEqual([]);
+});
+
+it("ingestUnseenAsync toasts and acks only after async notified", async () => {
   const acks: string[] = [];
   const fetchImpl = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
     const path = String(url);
-    if (path.includes("/delegations?") && !path.includes("/ack")) {
-      return Response.json({
-        tasks: [
-          {
-            id: "async-done",
-            from_agent_id: "personal-assistant",
-            to_agent_id: "weather",
-            to_agent_name: "Weaty",
-            brief: "查天气",
-            status: "completed",
-            wait: false,
-            result_summary: "晴",
-            error: null,
-            seen: false,
-            notified: true,
-            created_at: 1,
-            updated_at: 1,
-          },
-        ],
-      });
-    }
-    if (path.includes("/background-jobs?")) {
-      return Response.json({ jobs: [] });
-    }
     if (path.includes("/ack") && init?.method === "POST") {
       const id = path.match(/delegations\/([^/]+)\/ack/)?.[1] ?? "";
       acks.push(decodeURIComponent(id));
@@ -201,17 +211,32 @@ it("watchDelegations toasts and acks only after async notified", async () => {
     return Response.json({});
   });
   const chat = useAgentChat(new DesktopApi("http://runtime", fetchImpl));
-  chat.watchDelegations("personal-assistant", "token", "patient-a");
-  await vi.advanceTimersByTimeAsync(0);
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  await chat.ingestUnseenAsync(
+    "token",
+    "patient-a",
+    [
+      {
+        id: "async-done",
+        fromAgentId: "personal-assistant",
+        toAgentId: "weather",
+        toAgentName: "Weaty",
+        brief: "查天气",
+        status: "completed",
+        wait: false,
+        resultSummary: "晴",
+        error: null,
+        seen: false,
+        notified: true,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+    [],
+  );
 
   expect(acks).toEqual(["async-done"]);
   expect(toastState.open).toBe(true);
   expect(toastState.message).toContain("Weaty");
-
-  chat.stopDelegationWatch();
 });
 
 it("clearContext and clearHistory drop pending askUser and approval", async () => {

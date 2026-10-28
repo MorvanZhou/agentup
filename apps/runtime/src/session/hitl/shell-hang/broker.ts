@@ -20,6 +20,7 @@ export type ParkInput = {
   origin?: ShellHangRequest["origin"];
   taskId?: string;
   parentAgentId?: string;
+  groupId?: string;
 };
 
 export type WaitMoreResult =
@@ -89,6 +90,7 @@ export class ShellHangBroker {
       ...(input.origin ? { origin: input.origin } : {}),
       ...(input.taskId ? { taskId: input.taskId } : {}),
       ...(input.parentAgentId ? { parentAgentId: input.parentAgentId } : {}),
+      ...(input.groupId ? { groupId: input.groupId } : {}),
     };
 
     const slot: ParkedSlot = {
@@ -306,6 +308,7 @@ export class ShellHangBroker {
       ...(hang.origin ? { origin: hang.origin } : {}),
       ...(hang.taskId ? { taskId: hang.taskId } : {}),
       ...(hang.parentAgentId ? { parentAgentId: hang.parentAgentId } : {}),
+      ...(hang.groupId ? { groupId: hang.groupId } : {}),
     };
 
     this.humanPending.set(id, {

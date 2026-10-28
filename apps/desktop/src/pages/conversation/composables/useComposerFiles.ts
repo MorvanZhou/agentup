@@ -15,6 +15,7 @@ export function isImageFile(file: File): boolean {
 /** 非图片附件：选/拖/贴瞬间 staging 落盘，并在光标处插入 `@ATTACHMENTS/...` 芯片。 */
 export function useComposerFiles(options: {
   agentId: Ref<string>;
+  groupId?: Ref<string>;
   token: Ref<string>;
   userId: Ref<string>;
   composerText: Ref<string>;
@@ -43,7 +44,7 @@ export function useComposerFiles(options: {
   );
 
   async function stageAndInsertFiles(files: readonly File[]): Promise<void> {
-    const list = files.filter((file) => !isImageFile(file));
+    const list = options.groupId?.value ? [...files] : files.filter((file) => !isImageFile(file));
     if (list.length === 0) return;
     const token = options.token.value;
     const userId = options.userId.value;
@@ -58,7 +59,13 @@ export function useComposerFiles(options: {
       let cursor = options.cursor.value;
       for (const file of list) {
         const dataBase64 = await fileToBase64(file);
-        const staged = await api.stageAttachment(token, userId, agentId, {
+        const staged = options.groupId?.value
+          ? await api.stageGroupAttachment(token, userId, options.groupId.value, {
+              name: file.name || "file",
+              mediaType: file.type || "application/octet-stream",
+              dataBase64,
+            })
+          : await api.stageAttachment(token, userId, agentId, {
           name: file.name || "file",
           mediaType: file.type || "application/octet-stream",
           dataBase64,
@@ -101,9 +108,13 @@ export function useComposerFiles(options: {
     const token = options.token.value;
     const userId = options.userId.value;
     const agentId = options.agentId.value;
-    if (!token || !userId || !agentId) return;
+    if (!token || !userId || (!agentId && !options.groupId?.value)) return;
     try {
-      await api.deleteStagedAttachment(token, userId, agentId, path);
+      if (options.groupId?.value) {
+        await api.deleteGroupAttachment(token, userId, options.groupId.value, path);
+      } else {
+        await api.deleteStagedAttachment(token, userId, agentId, path);
+      }
     } catch {
       /* 已发送后文件可能仍被历史引用；删除失败静默 */
     }

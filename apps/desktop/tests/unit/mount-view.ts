@@ -1,7 +1,21 @@
 import { afterEach, expect } from "vitest";
 import { createApp, type App, type Component } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 
 import { i18n } from "../../src/shared/i18n/index.js";
+
+const stub = { template: "<div />" };
+
+/** 组件里的 RouterLink 需要注入。不挂整棵应用路由，只留设置页这个名字。 */
+function mountRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/", name: "conversation", component: stub },
+      { path: "/settings", name: "settings", component: stub },
+    ],
+  });
+}
 
 type ProvidePair = readonly [symbol | string, unknown];
 
@@ -57,6 +71,7 @@ export function mountView(
   document.body.appendChild(host);
   const app = createApp(component, options?.props ?? {});
   app.use(i18n);
+  app.use(mountRouter());
   for (const [key, value] of options?.provide ?? []) app.provide(key, value);
   app.config.errorHandler = (error) => {
     faults.push(error instanceof Error ? error.stack || error.message : String(error));

@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld("agentUp", {
   oauthLoopbackStart: (locale) => ipcRenderer.invoke("agentup:oauth-loopback-start", locale),
   oauthLoopbackWait: (timeoutMs) => ipcRenderer.invoke("agentup:oauth-loopback-wait", timeoutMs),
   oauthLoopbackTakePending: () => ipcRenderer.invoke("agentup:oauth-loopback-take-pending"),
-  oauthLoopbackPeekPending: () => ipcRenderer.invoke("agentup:oauth-loopback-peek-pending"),
   oauthLoopbackCancelWait: () => ipcRenderer.invoke("agentup:oauth-loopback-cancel-wait"),
   oauthLoopbackStop: () => ipcRenderer.invoke("agentup:oauth-loopback-stop"),
   webUrl: () => ipcRenderer.invoke("agentup:web-url"),

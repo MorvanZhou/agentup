@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import type { CommandToolName } from "../../environment.js";
-import type { HitlExtensionContext, HitlOrigin } from "../origin.js";
+import { hitlScopeFields, type HitlExtensionContext } from "../origin.js";
 import type { ShellHangBroker } from "./broker.js";
 import {
   createShellHangDecideExtension,
@@ -62,7 +62,7 @@ export function createShellHangExtension(
   const idleMs = options.idleMs ?? SHELL_HANG_IDLE_MS;
   const humanEscalateMs = options.humanEscalateMs ?? SHELL_HANG_PROMPT_MS;
   const hitl = options.hitl ?? {};
-  const origin: HitlOrigin = hitl.origin === "delegation" ? "delegation" : "visit";
+  const scope = hitlScopeFields(hitl);
   const shellTools = options.shellTools?.length
     ? options.shellTools
     : (["bash"] as CommandToolName[]);
@@ -103,9 +103,7 @@ export function createShellHangExtension(
             cwd: execCwd,
             child,
             startedAt,
-            origin,
-            ...(hitl.taskId ? { taskId: hitl.taskId } : {}),
-            ...(hitl.parentAgentId ? { parentAgentId: hitl.parentAgentId } : {}),
+            ...scope,
           });
           return hang.id;
         },

@@ -16,6 +16,7 @@ import {
   projectHistory,
   projectHistoryFromManager,
   readHistory,
+  readHistoryPage,
 } from "../src/session/history/history.js";
 import { ASYNC_WAKE_CUSTOM_TYPE } from "../src/session/wake/index.js";
 
@@ -150,6 +151,50 @@ it("keeps old turns visible after clearContext and marks the reset boundary", as
     ["system", CONTEXT_RESET_TEXT],
     ["user", "北京呢？"],
     ["assistant", "北京多云。"],
+  ]);
+});
+
+it("keeps the current one-to-one session whole and pages older sessions from the newest side", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-history-page-"));
+  const { cwd, sessions } = visitDirs(root, "user-a");
+  writeTurn(cwd, sessions, "上海天气？", "上海晴。");
+  writeTurn(cwd, sessions, "北京呢？", "北京多云。");
+  const current = await readHistoryPage(root, "user-a", "weather", { limit: 1 });
+  expect(current.hasMore).toBe(false);
+  expect(current.messages.map((message) => textOf(message))).toEqual([
+    "上海天气？",
+    "上海晴。",
+    "北京呢？",
+    "北京多云。",
+  ]);
+
+  clearContext(root, "user-a", "weather");
+  writeTurn(cwd, sessions, "广州呢？", "广州有雨。");
+  const first = await readHistoryPage(root, "user-a", "weather", { limit: 1 });
+  expect(first.hasMore).toBe(true);
+  expect(first.messages.map((message) => textOf(message))).toEqual(["广州呢？", "广州有雨。"]);
+  const boundary = await readHistoryPage(root, "user-a", "weather", {
+    limit: 1,
+    beforeId: first.messages[0]?.id,
+  });
+  expect(boundary.messages.map((message) => message.role)).toEqual(["system"]);
+  expect(boundary.hasMore).toBe(true);
+  const older = await readHistoryPage(root, "user-a", "weather", {
+    limit: 10,
+    beforeId: boundary.messages[0]?.id,
+  });
+  expect(older.hasMore).toBe(false);
+  expect(older.messages.map((message) => textOf(message))).toEqual([
+    "上海天气？",
+    "上海晴。",
+    "北京呢？",
+    "北京多云。",
+  ]);
+  const full = await readHistory(root, "user-a", "weather");
+  expect(full.map((message) => textOf(message))).toEqual([
+    ...older.messages.map((message) => textOf(message)),
+    ...boundary.messages.map((message) => textOf(message)),
+    ...first.messages.map((message) => textOf(message)),
   ]);
 });
 

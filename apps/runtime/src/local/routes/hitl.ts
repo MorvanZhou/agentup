@@ -4,7 +4,6 @@ import { stream } from "hono/streaming";
 import { createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessageChunk } from "ai";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 
-import { delegationHitlAttribution, surfaceHitlAgentId } from "../../session/hitl/surface.js";
 import { parseAskUserAnswer } from "../../session/tools/index.js";
 import {
   bearer,
@@ -16,6 +15,7 @@ import {
   type LocalAppDeps,
   type LocalAppEnv,
 } from "../http.js";
+import { buildAttentionPayload } from "./attention-payload.js";
 
 /** 简易 SSE：send(event, data)；返回清理函数。 */
 function streamSse(
@@ -60,100 +60,14 @@ function streamSse(
 }
 
 export function registerHitlRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
-  const { approvals, askUser, shellHang, chats, delegation } = deps;
+  const { approvals, askUser, shellHang, chats } = deps;
 
   /** 侧栏 / Dock：busy + 仍可闭合的 HITL（含重启后孤儿）。 */
   app.get("/attention", (c) => {
     bearer(c);
     const userId = c.req.query("user_id") ?? "";
     if (!userId) throw new LocalError("请求无效", 400);
-    approvals.restoreUser(userId);
-    askUser.restoreUser(userId);
-    const busyTurns = chats.busyTurns(userId);
-    const busyAgentIds = busyTurns.map((item) => item.agentId);
-    const nestingParent = (item: {
-      agentId: string;
-      origin?: "visit" | "delegation";
-      parentAgentId?: string;
-    }) =>
-      item.parentAgentId?.trim() ||
-      (item.origin === "delegation"
-        ? delegation.findNestingParent(userId, item.agentId)
-        : undefined);
-    const surfaceAgent = (item: {
-      agentId: string;
-      origin?: "visit" | "delegation";
-      parentAgentId?: string;
-    }) =>
-      surfaceHitlAgentId(item.agentId, {
-        nestingParentId: nestingParent(item),
-        busyAgentIds,
-        origin: item.origin,
-      });
-    const hitlAttribution = (item: { origin?: "visit" | "delegation"; taskId?: string }) => {
-      if (item.origin !== "delegation" || !item.taskId) return {};
-      const task =
-        "getTask" in delegation && typeof delegation.getTask === "function"
-          ? delegation.getTask(item.taskId)
-          : undefined;
-      return delegationHitlAttribution(task);
-    };
-    return json(c, 200, {
-      busy_agent_ids: busyAgentIds,
-      busy_turns: busyTurns.map((item) => ({
-        agent_id: item.agentId,
-        phase: item.phase,
-        sources: item.sources.map((source) => ({
-          name: source.name,
-          status: source.status,
-          agent_id: source.agentId,
-          kind: source.kind,
-        })),
-      })),
-      // 委托 HITL 的 agent_id 是跟进方；asked_by_name / task_label 标明是谁的哪件任务。
-      approvals: approvals.listPending(userId).map((item) => {
-        const label = hitlAttribution(item);
-        return {
-          id: item.id,
-          agent_id: surfaceAgent(item),
-          origin_agent_id: item.agentId,
-          parent_agent_id: nestingParent(item) ?? null,
-          tool_call_id: item.toolCallId,
-          tool_name: item.toolName,
-          args: item.args,
-          ...(label.askedByName ? { asked_by_name: label.askedByName } : {}),
-          ...(label.taskLabel ? { task_label: label.taskLabel } : {}),
-        };
-      }),
-      ask_users: askUser.listPending(userId).map((item) => {
-        const label = hitlAttribution(item);
-        return {
-          id: item.id,
-          agent_id: surfaceAgent(item),
-          origin_agent_id: item.agentId,
-          parent_agent_id: nestingParent(item) ?? null,
-          tool_call_id: item.toolCallId,
-          questions: item.questions,
-          ...(label.askedByName ? { asked_by_name: label.askedByName } : {}),
-          ...(label.taskLabel ? { task_label: label.taskLabel } : {}),
-        };
-      }),
-      shell_hangs: shellHang.listPending(userId).map((item) => {
-        const label = hitlAttribution(item);
-        return {
-          id: item.id,
-          agent_id: surfaceAgent(item),
-          origin_agent_id: item.agentId,
-          parent_agent_id: nestingParent(item) ?? null,
-          tool_call_id: item.toolCallId,
-          tool_name: item.toolName,
-          command: item.command,
-          elapsed_ms: item.elapsedMs,
-          ...(label.askedByName ? { asked_by_name: label.askedByName } : {}),
-          ...(label.taskLabel ? { task_label: label.taskLabel } : {}),
-        };
-      }),
-    });
+    return json(c, 200, buildAttentionPayload(deps, userId));
   });
 
   /**

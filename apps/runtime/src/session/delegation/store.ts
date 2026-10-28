@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { SHORT_ID_SIZE, shortId } from "../../ids/short-id.js";
 import type { DelegationStatus, DelegationTask } from "./types.js";
 
 const AGENT_ID = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
@@ -19,10 +19,11 @@ export class DelegationStore {
     toAgentName: string;
     brief: string;
     wait: boolean;
+    groupId?: string;
   }): DelegationTask {
     const now = Date.now();
     const task: DelegationTask = {
-      id: randomUUID(),
+      id: this.allocateId(input.userId),
       userId: input.userId,
       fromAgentId: input.fromAgentId,
       toAgentId: input.toAgentId,
@@ -34,6 +35,7 @@ export class DelegationStore {
       wait: input.wait,
       seen: false,
       notified: false,
+      groupId: input.groupId,
     };
     this.tasks.set(task.id, task);
     this.persist(task);
@@ -57,6 +59,8 @@ export class DelegationStore {
         | "toAgentName"
         | "artifacts"
         | "artifactsDelivered"
+        | "groupId"
+        | "brief"
       >
     >,
   ): DelegationTask | undefined {
@@ -78,6 +82,7 @@ export class DelegationStore {
       unseenOnly?: boolean;
       status?: DelegationStatus;
       fromAgentId?: string;
+      groupId?: string;
     } = {},
   ): DelegationTask[] {
     this.loadUser(userId);
@@ -86,6 +91,7 @@ export class DelegationStore {
       if (options.unseenOnly && task.seen) return false;
       if (options.status && task.status !== options.status) return false;
       if (options.fromAgentId && task.fromAgentId !== options.fromAgentId) return false;
+      if (options.groupId && task.groupId !== options.groupId) return false;
       return true;
     });
     items.sort((left, right) => right.updatedAt - left.updatedAt);
@@ -103,6 +109,27 @@ export class DelegationStore {
       ids.push(entry.name);
     }
     return ids;
+  }
+
+  /** 与 backend / 群 id 相同的 8 位短 id；撞上内存或本账号已有委托文件则重试。 */
+  private allocateId(userId: string): string {
+    for (let attempt = 0; attempt < SHORT_ID_SIZE; attempt += 1) {
+      const id = shortId();
+      if (this.tasks.has(id)) continue;
+      if (this.userDataRoot && isLooseUserId(userId)) {
+        const file = path.join(
+          this.userDataRoot,
+          "users",
+          userId,
+          ".runtime",
+          "delegations",
+          `${id}.json`,
+        );
+        if (fs.existsSync(file)) continue;
+      }
+      return id;
+    }
+    throw new Error("无法分配委托任务 ID");
   }
 
   private persist(task: DelegationTask): void {
@@ -181,6 +208,7 @@ function parseTask(raw: unknown): DelegationTask | undefined {
     notified: value.notified === true,
     artifacts: parseArtifacts(value.artifacts),
     artifactsDelivered: value.artifactsDelivered === true,
+    groupId: typeof value.groupId === "string" && value.groupId ? value.groupId : undefined,
   };
 }
 

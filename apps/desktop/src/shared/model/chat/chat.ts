@@ -7,8 +7,11 @@ export type AgentUpApprovalData = {
   args: unknown;
   /** 委托子会话里发起审批的专家名。 */
   askedByName?: string;
+  /** 发起审批的子 Agent，用来对上头像。 */
+  askedByAgentId?: string;
   /** 该委托任务的 brief 摘要。 */
   taskLabel?: string;
+  taskId?: string;
   /** 同一跟进会话里还排着的 HITL 条数。 */
   queueBehind?: number;
 };
@@ -31,8 +34,10 @@ export type AgentUpAskUserData = {
   questions: AgentUpAskUserQuestion[];
   /** 委托子会话里提问的专家名。问题和选项仍是对方原文。 */
   askedByName?: string;
+  askedByAgentId?: string;
   /** 该委托任务的 brief 摘要。 */
   taskLabel?: string;
+  taskId?: string;
   /** 同一跟进会话里还排着的 HITL 条数。 */
   queueBehind?: number;
 };
@@ -45,7 +50,9 @@ export type AgentUpShellHangData = {
   command: string;
   elapsedMs: number;
   askedByName?: string;
+  askedByAgentId?: string;
   taskLabel?: string;
+  taskId?: string;
   queueBehind?: number;
 };
 
@@ -118,7 +125,12 @@ function parsePart(value: unknown): UIMessagePart<UIDataTypes, UITools> {
   if (typeof value !== "object" || value === null) throw new Error("聊天记录无效");
   const part = value as Record<string, unknown>;
   if (part.type === "text" && typeof part.text === "string") {
-    return { type: "text", text: part.text, ...(part.state === "streaming" || part.state === "done" ? { state: part.state } : {}) };
+    return {
+      type: "text",
+      text: part.text,
+      ...(typeof part.id === "string" && part.id ? { id: part.id } : {}),
+      ...(part.state === "streaming" || part.state === "done" ? { state: part.state } : {}),
+    };
   }
   if (part.type === "reasoning" && typeof part.text === "string") {
     return { type: "reasoning", text: part.text, ...(part.state === "streaming" || part.state === "done" ? { state: part.state } : {}) };
@@ -249,16 +261,68 @@ export function agentUpEntryId(message: UIMessage | undefined): string | undefin
   return undefined;
 }
 
-/** 侧栏预览：从末条有正文的消息取 trim 后的单行文本。 */
+/** 读 metadata.custom.agentUpSummary（与气泡总结 tab 同源）。 */
+function readAgentUpSummaryRef(
+  metadata: unknown,
+): { textPartIndex: number; textPartId?: string } | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const custom = (metadata as { custom?: unknown }).custom;
+  const raw =
+    custom && typeof custom === "object"
+      ? (custom as { agentUpSummary?: unknown }).agentUpSummary
+      : (metadata as { agentUpSummary?: unknown }).agentUpSummary;
+  if (!raw || typeof raw !== "object") return null;
+  const index = (raw as { textPartIndex?: unknown }).textPartIndex;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) return null;
+  const textPartId = (raw as { textPartId?: unknown }).textPartId;
+  return {
+    textPartIndex: index,
+    ...(typeof textPartId === "string" && textPartId ? { textPartId } : {}),
+  };
+}
+
+function normalizePreviewLine(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/** 单条消息预览：有 agentUpSummary 时只用总结段，否则拼全部正文。 */
+function messagePreviewText(message: UIMessage): string {
+  const summary = readAgentUpSummaryRef(message.metadata);
+  if (summary) {
+    const parts = message.parts;
+    if (summary.textPartId) {
+      const byId = parts.find(
+        (part) => part.type === "text" && "id" in part && part.id === summary.textPartId,
+      );
+      if (byId && byId.type === "text") {
+        const line = normalizePreviewLine(byId.text);
+        if (line) return line;
+      }
+    }
+    const textIndices: number[] = [];
+    parts.forEach((part, index) => {
+      if (part.type === "text" && part.text) textIndices.push(index);
+    });
+    const absolute = textIndices[summary.textPartIndex];
+    if (absolute !== undefined) {
+      const part = parts[absolute];
+      if (part?.type === "text") {
+        const line = normalizePreviewLine(part.text);
+        if (line) return line;
+      }
+    }
+  }
+  return normalizePreviewLine(
+    message.parts.map((part) => (part.type === "text" ? part.text : "")).join(""),
+  );
+}
+
+/** 侧栏预览：末条有正文的消息；优先用总结 tab 对应段落。 */
 export function lastMessagePreview(messages: UIMessage[]): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!message || isContextResetMessage(message)) continue;
-    const text = message.parts
-      .map((part) => (part.type === "text" ? part.text : ""))
-      .join("")
-      .trim()
-      .replace(/\s+/g, " ");
+    const text = messagePreviewText(message);
     if (text) return text;
   }
   return "";

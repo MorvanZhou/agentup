@@ -17,24 +17,11 @@ import {
   RELEVANT_AGENTS_CUSTOM_TYPE,
   type DelegationService,
 } from "../delegation/index.js";
-import { PiUIMessageProjector } from "../history/frames.js";
 import type { ApprovalBroker } from "../hitl/approval/index.js";
 import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import { isVisitOwnHitl, shouldBubbleNestedHitl } from "../hitl/origin.js";
 import { delegationHitlAttribution } from "../hitl/surface.js";
-import {
-  assistantFailureNotice,
-  isModelServiceUnavailable,
-  isUserCancelError,
-  modelUnavailableNotice,
-} from "../model/unavailable.js";
-import { resolveEmptyAssistantError } from "../output-length.js";
 import { expandSkillReferences } from "../skills/expand.js";
-import {
-  consumeStreamDegeneration,
-  sanitizeStreamText,
-  streamDegenerationAbortedMessage,
-} from "../stream-guard.js";
 import type { AskUserBroker } from "../tools/index.js";
 import {
   AsyncWakeBroker,
@@ -48,13 +35,8 @@ import {
   type BusyTurnPhase,
   type BusyTurnSource,
 } from "./busy-turn.js";
-import {
-  rewindSession,
-  slotModelKey,
-  trackModelFailure,
-  visitKey,
-  visitKind,
-} from "./helpers.js";
+import { rewindSession, slotModelKey, visitKey, visitKind } from "./helpers.js";
+import { runObservedTurn } from "./turn-runner.js";
 import { openPromptSession } from "./open.js";
 import { TurnStreamHub } from "./turn-stream-hub.js";
 import {
@@ -271,52 +253,15 @@ export class VisitChats {
     });
     return createUIMessageStream({
       execute: async ({ writer }) => {
-        const projector = new PiUIMessageProjector();
         const write = (chunks: UIMessageChunk[]) => {
           for (const chunk of chunks) writer.write(chunk);
         };
-        let lastModelError = "";
-        /** 限流等可展示原因；最终若被 abort 覆盖，收尾仍用这条，避免空气泡。 */
-        let lastFailureError = "";
-        let sawAssistantText = false;
-        let lastDirtyAt = 0;
-        const unsubscribe = slot.session.subscribe((event) => {
-          trackModelFailure(event, (error) => {
-            lastModelError = error;
-            if (!isUserCancelError(error)) lastFailureError = error;
-          });
-          if (
-            event.type === "message_update" &&
-            event.assistantMessageEvent.type === "text_delta" &&
-            typeof event.assistantMessageEvent.delta === "string" &&
-            event.assistantMessageEvent.delta.length > 0
-          ) {
-            // 仅统计剥离 special 后的可见正文，避免刷 placeholder 被当成「已有输出」。
-            const { text } = sanitizeStreamText(event.assistantMessageEvent.delta);
-            if (text.length > 0) sawAssistantText = true;
-          }
-          // 节流 dirty：编排条 / 旁路刷新不必每个 delta 都打。
-          const now = Date.now();
-          if (
-            event.type === "entry_appended" ||
-            event.type === "tool_execution_start" ||
-            event.type === "tool_execution_end" ||
-            now - lastDirtyAt > 800
-          ) {
-            lastDirtyAt = now;
-            this.emitTurnProgress(visit.userId, {
-              type: "dirty",
-              agentId: visit.agentId,
-              phase: "prompt",
-            });
-          }
-          write(projector.project(event));
-        });
         const acceptsHitl = (request: {
           userId: string;
           agentId: string;
           origin?: "visit" | "delegation";
           parentAgentId?: string;
+          groupId?: string;
         }): boolean => {
           if (request.userId !== visit.userId) return false;
           if (isVisitOwnHitl(request, visit.agentId)) return true;
@@ -329,134 +274,84 @@ export class VisitChats {
           if (request.origin !== "delegation" || !request.taskId || !this.delegation) return {};
           return delegationHitlAttribution(this.delegation.getTask(request.taskId));
         };
-        const unsubscribeApproval = this.approvals?.subscribe((request) => {
-          if (!acceptsHitl(request)) return;
-          write(
-            projector.approval({
-              id: request.id,
-              toolCallId: request.toolCallId,
-              toolName: request.toolName,
-              args: request.args,
-              ...delegationLabel(request),
-            }),
-          );
-        });
-        const unsubscribeAskUser = this.askUser?.subscribe((request) => {
-          if (!acceptsHitl(request)) return;
-          write(
-            projector.askUser({
-              id: request.id,
-              toolCallId: request.toolCallId,
-              questions: request.questions,
-              ...delegationLabel(request),
-            }),
-          );
-        });
-        const unsubscribeShellHang = this.shellHang?.subscribe((request) => {
-          if (!acceptsHitl(request)) return;
-          write(
-            projector.shellHang({
-              id: request.id,
-              toolCallId: request.toolCallId,
-              toolName: request.toolName,
-              command: request.command,
-              elapsedMs: request.elapsedMs,
-              ...delegationLabel(request),
-            }),
-          );
-        });
-        // 委托 started：只写 transient 元数据，过程走 /delegations/:id/stream 旁路。
-        const unsubscribeDelegationStarted = this.delegation?.subscribeStarted((event) => {
-          if (event.userId !== visit.userId || event.fromAgentId !== visit.agentId) return;
-          write(
-            projector.delegationStarted({
-              taskId: event.taskId,
-              toolCallId: event.toolCallId,
-              toAgentId: event.toAgentId,
-              toAgentName: event.toAgentName,
-              brief: event.brief,
-              wait: event.wait,
-            }),
-          );
-        });
-        const onAbort = () => {
-          void slot.session.abort().catch(() => undefined);
-        };
-        if (signal?.aborted) onAbort();
-        else signal?.addEventListener("abort", onAbort, { once: true });
         try {
-          await rewindSession(slot.session, rewind);
-          const cwd = path.join(visit.root, "cwd");
-          // 非图片已在 Composer 插入时落盘，正文含 @ATTACHMENTS/...；此处只处理图片 vision。
-          const images = materializePromptImages(cwd, attachments);
-          const promptText = text.trim();
-          if (!promptText && images.length === 0) throw new Error("消息为空");
-          // 任意位置的 `/name`|/skill:name` 由 harness 展开，避免依赖 Pi 仅识别行首 `/skill:`。
-          const skills = slot.session.resourceLoader?.getSkills().skills ?? [];
-          const expanded = expandSkillReferences(promptText || "(图片附件)", skills);
-          // 若异步结果已在排队且用户先发言：并进本轮，避免 turn 结束后再抢一次 wake。
-          await this.injectPendingAsyncWake(slot.session, visit);
-          // 进行中委托摘要 → nextTurn，减轻重复委托。
-          await this.injectActiveDelegations(slot.session, visit);
-          // 每轮按用户话术检索已招募专家；有命中才经 nextTurn 注入（不污染用户落盘原文）。
-          if (this.delegation && slot.session.sendCustomMessage && promptText) {
-            try {
-              const roster = await this.delegation.listRecruited(visit.userId);
-              const others = roster.filter((agent) => agent.agentId !== visit.agentId);
-              const discovered = discoverRecruitedAgents(others, promptText);
-              const block =
-                formatDiscoveredAgentsContext(discovered) ||
-                (visit.agentId === PERSONAL_ASSISTANT_ID && others.length > 0
-                  ? formatAgentSearchRequired()
-                  : "");
-              if (block) {
-                await slot.session.sendCustomMessage(
-                  {
-                    customType: RELEVANT_AGENTS_CUSTOM_TYPE,
-                    content: block,
-                    display: false,
-                  },
-                  { deliverAs: "nextTurn" },
-                );
+          await runObservedTurn({
+            session: slot.session,
+            signal,
+            write,
+            locale,
+            errorPolicy: "prompt",
+            dirty: "prompt",
+            onDirty: () => {
+              this.emitTurnProgress(visit.userId, {
+                type: "dirty",
+                agentId: visit.agentId,
+                phase: "prompt",
+              });
+            },
+            hitl: {
+              accept: acceptsHitl,
+              label: delegationLabel,
+              approvals: this.approvals,
+              askUser: this.askUser,
+              shellHang: this.shellHang,
+            },
+            delegationStarted: this.delegation
+              ? {
+                  subscribe: (listener) => this.delegation!.subscribeStarted(listener),
+                  accept: (event) => event.userId === visit.userId && event.fromAgentId === visit.agentId,
+                }
+              : undefined,
+            run: async () => {
+              await rewindSession(slot.session, rewind);
+              const cwd = path.join(visit.root, "cwd");
+              // 非图片已在 Composer 插入时落盘，正文含 @ATTACHMENTS/...；此处只处理图片 vision。
+              const images = materializePromptImages(cwd, attachments);
+              const promptText = text.trim();
+              if (!promptText && images.length === 0) throw new Error("消息为空");
+              // 任意位置的 `/name`|/skill:name` 由 harness 展开，避免依赖 Pi 仅识别行首 `/skill:`。
+              const skills = slot.session.resourceLoader?.getSkills().skills ?? [];
+              const expanded = expandSkillReferences(promptText || "(图片附件)", skills);
+              // 若异步结果已在排队且用户先发言：并进本轮，避免 turn 结束后再抢一次 wake。
+              await this.injectPendingAsyncWake(slot.session, visit);
+              // 进行中委托摘要 → nextTurn，减轻重复委托。
+              await this.injectActiveDelegations(slot.session, visit);
+              // 每轮按用户话术检索已招募专家；有命中才经 nextTurn 注入（不污染用户落盘原文）。
+              if (this.delegation && slot.session.sendCustomMessage && promptText) {
+                try {
+                  const roster = await this.delegation.listRecruited(visit.userId);
+                  const others = roster.filter((agent) => agent.agentId !== visit.agentId);
+                  const discovered = discoverRecruitedAgents(others, promptText);
+                  const block =
+                    formatDiscoveredAgentsContext(discovered) ||
+                    (visit.agentId === PERSONAL_ASSISTANT_ID && others.length > 0
+                      ? formatAgentSearchRequired()
+                      : "");
+                  if (block) {
+                    await slot.session.sendCustomMessage(
+                      {
+                        customType: RELEVANT_AGENTS_CUSTOM_TYPE,
+                        content: block,
+                        display: false,
+                      },
+                      { deliverAs: "nextTurn" },
+                    );
+                  }
+                } catch {
+                  // 发现失败不阻断对话；模型仍可主动 agent_search。
+                }
               }
-            } catch {
-              // 发现失败不阻断对话；模型仍可主动 agent_search。
-            }
-          }
-          this.delegation?.armDelegationDisposition(visit.userId, visit.agentId);
-          await slot.session.prompt(expanded, {
-            expandPromptTemplates: false,
-            ...(images.length > 0 ? { images } : {}),
+              this.delegation?.armDelegationDisposition(visit.userId, visit.agentId);
+              await slot.session.prompt(expanded, {
+                expandPromptTemplates: false,
+                ...(images.length > 0 ? { images } : {}),
+              });
+            },
           });
-          write(
-            finishEmptyAssistantTurn({
-              projector,
-              sawAssistantText,
-              lastModelError: lastFailureError || lastModelError,
-              sessionManager: slot.session.sessionManager,
-              locale,
-            }),
-          );
-        } catch (error) {
-          const raw = error instanceof Error && error.message ? error.message : "对话失败";
-          if (isModelServiceUnavailable(raw) && !isUserCancelError(raw)) {
-            const notice = modelUnavailableNotice(locale);
-            if (!sawAssistantText) write(projector.modelUnavailable(notice));
-            write(projector.finish(notice));
-          } else {
-            const notice = assistantFailureNotice(raw, locale);
-            write(projector.finish(notice ?? raw));
-          }
         } finally {
           this.delegation?.clearDelegationDisposition(visit.userId, visit.agentId);
           // busy 跟 Pi prompt 对齐，不跟 HTTP 消费者断开（onEnd/cancel）对齐；
           // 停止时由 signal / VisitChats.abort 调用 session.abort()，再在这里清 busy。
-          signal?.removeEventListener("abort", onAbort);
-          unsubscribeDelegationStarted?.();
-          unsubscribeShellHang?.();
-          unsubscribeAskUser?.();
-          unsubscribeApproval?.();
-          unsubscribe();
           slot.busy = false;
           slot.turnPhase = undefined;
           slot.wakeSources = undefined;
@@ -580,50 +475,15 @@ export class VisitChats {
       agentId: input.agentId,
       phase: "wake",
     });
-    const projector = new PiUIMessageProjector();
     const write = (chunks: UIMessageChunk[]) => {
       this.turnStreams.write(streamKey, chunks);
     };
-    let lastDirtyAt = 0;
-    let lastModelError = "";
-    let lastFailureError = "";
-    let sawAssistantText = false;
-    const unsubscribe = slot.session.subscribe((event) => {
-      trackModelFailure(event, (error) => {
-        lastModelError = error;
-        if (!isUserCancelError(error)) lastFailureError = error;
-      });
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta" &&
-        typeof event.assistantMessageEvent.delta === "string" &&
-        event.assistantMessageEvent.delta.length > 0
-      ) {
-        const { text } = sanitizeStreamText(event.assistantMessageEvent.delta);
-        if (text.length > 0) sawAssistantText = true;
-      }
-      const now = Date.now();
-      if (
-        event.type === "entry_appended" ||
-        event.type === "tool_execution_start" ||
-        event.type === "tool_execution_end" ||
-        event.type === "message_start" ||
-        now - lastDirtyAt > 800
-      ) {
-        lastDirtyAt = now;
-        this.emitTurnProgress(input.userId, {
-          type: "dirty",
-          agentId: input.agentId,
-          phase: "wake",
-        });
-      }
-      write(projector.project(event));
-    });
     const acceptsHitl = (request: {
       userId: string;
       agentId: string;
       origin?: "visit" | "delegation";
       parentAgentId?: string;
+      groupId?: string;
     }): boolean => {
       if (request.userId !== input.userId) return false;
       if (isVisitOwnHitl(request, input.agentId)) return true;
@@ -638,103 +498,51 @@ export class VisitChats {
       if (request.origin !== "delegation" || !request.taskId || !this.delegation) return {};
       return delegationHitlAttribution(this.delegation.getTask(request.taskId));
     };
-    const unsubscribeApproval = this.approvals?.subscribe((request) => {
-      if (!acceptsHitl(request)) return;
-      write(
-        projector.approval({
-          id: request.id,
-          toolCallId: request.toolCallId,
-          toolName: request.toolName,
-          args: request.args,
-          ...delegationLabel(request),
-        }),
-      );
-    });
-    const unsubscribeAskUser = this.askUser?.subscribe((request) => {
-      if (!acceptsHitl(request)) return;
-      write(
-        projector.askUser({
-          id: request.id,
-          toolCallId: request.toolCallId,
-          questions: request.questions,
-          ...delegationLabel(request),
-        }),
-      );
-    });
-    const unsubscribeShellHang = this.shellHang?.subscribe((request) => {
-      if (!acceptsHitl(request)) return;
-      write(
-        projector.shellHang({
-          id: request.id,
-          toolCallId: request.toolCallId,
-          toolName: request.toolName,
-          command: request.command,
-          elapsedMs: request.elapsedMs,
-          ...delegationLabel(request),
-        }),
-      );
-    });
-    const unsubscribeDelegationStarted = this.delegation?.subscribeStarted((event) => {
-      if (event.userId !== input.userId || event.fromAgentId !== input.agentId) return;
-      write(
-        projector.delegationStarted({
-          taskId: event.taskId,
-          toolCallId: event.toolCallId,
-          toAgentId: event.toAgentId,
-          toAgentName: event.toAgentName,
-          brief: event.brief,
-          wait: event.wait,
-        }),
-      );
-    });
     /** 用户 abort / 409 重试打断时勿 onParentIdle，否则 broker 会马上再开 wake 抢 busy。 */
-    let aborted = false;
+    const outcome = { aborted: false };
     try {
-      this.delegation?.clearDelegationDisposition(input.userId, input.agentId);
-      // wake 回合也可能再委托；先注入进行中摘要。
-      await this.injectActiveDelegations(slot.session, visit);
-      await slot.session.sendCustomMessage(
-        {
-          customType: ASYNC_WAKE_CUSTOM_TYPE,
-          content: input.content,
-          display: false,
-          details: input.details,
+      await runObservedTurn({
+        session: slot.session,
+        write,
+        errorPolicy: "wake",
+        outcome,
+        dirty: "wake",
+        onDirty: () => {
+          this.emitTurnProgress(input.userId, {
+            type: "dirty",
+            agentId: input.agentId,
+            phase: "wake",
+          });
         },
-        { triggerTurn: true },
-      );
-      write(
-        finishEmptyAssistantTurn({
-          projector,
-          sawAssistantText,
-          lastModelError: lastFailureError || lastModelError,
-          sessionManager: slot.session.sessionManager,
-          locale: undefined,
-        }),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "");
-      aborted =
-        isUserCancelError(message) ||
-        (error instanceof Error && /abort/i.test(error.name));
-      if (!aborted) {
-        if (isModelServiceUnavailable(message) && !isUserCancelError(message)) {
-          const notice = modelUnavailableNotice(undefined);
-          if (!sawAssistantText) write(projector.modelUnavailable(notice));
-          write(projector.finish(notice));
-        } else {
-          const notice = assistantFailureNotice(message, undefined);
-          write(projector.finish(notice ?? (message || "对话失败")));
-        }
-      } else {
-        write(projector.finish(message || "已停止"));
-      }
-      throw error;
+        hitl: {
+          accept: acceptsHitl,
+          label: delegationLabel,
+          approvals: this.approvals,
+          askUser: this.askUser,
+          shellHang: this.shellHang,
+        },
+        delegationStarted: this.delegation
+          ? {
+              subscribe: (listener) => this.delegation!.subscribeStarted(listener),
+              accept: (event) => event.userId === input.userId && event.fromAgentId === input.agentId,
+            }
+          : undefined,
+        run: async () => {
+          this.delegation?.clearDelegationDisposition(input.userId, input.agentId);
+          // wake 回合也可能再委托；先注入进行中摘要。
+          await this.injectActiveDelegations(slot.session, visit);
+          await slot.session.sendCustomMessage!(
+            {
+              customType: ASYNC_WAKE_CUSTOM_TYPE,
+              content: input.content,
+              display: false,
+              details: input.details,
+            },
+            { triggerTurn: true },
+          );
+        },
+      });
     } finally {
-      unsubscribeDelegationStarted?.();
-      unsubscribeShellHang?.();
-      unsubscribeAskUser?.();
-      unsubscribeApproval?.();
-      unsubscribe();
       this.turnStreams.finish(streamKey);
       slot.busy = false;
       slot.turnPhase = undefined;
@@ -744,7 +552,7 @@ export class VisitChats {
       slot.turnDone = undefined;
       this.emitTurnProgress(input.userId, { type: "done", agentId: input.agentId });
       if (slot.stale) this.disposeKey(key);
-      if (!aborted) {
+      if (!outcome.aborted) {
         this.wake.onParentIdle(input.userId, input.agentId, input.kind);
       }
     }
@@ -758,36 +566,4 @@ export class VisitChats {
     // session 级审批授权留在 state.json：同一次对话跨重启 / 会话重建仍有效；
     // 仅「新对话 / 清上下文 / 清历史」等路由显式 clearSessionAllow。
   }
-}
-
-/**
- * prompt/wake 正常返回但无可见正文时：把限流、连不上、空结果等原因写进流，避免空气泡。
- * 用户取消（abort）不注入正文，交给桌面 cancelled 态。
- */
-function finishEmptyAssistantTurn(input: {
-  projector: PiUIMessageProjector;
-  sawAssistantText: boolean;
-  lastModelError: string;
-  sessionManager: { getBranch: () => unknown } | undefined;
-  locale: UiLocale | string | null | undefined;
-}): UIMessageChunk[] {
-  const { projector, sawAssistantText, lastModelError, sessionManager, locale } = input;
-  if (sawAssistantText) return projector.finish();
-
-  if (lastModelError) {
-    const notice = assistantFailureNotice(lastModelError, locale);
-    if (notice && isModelServiceUnavailable(lastModelError)) {
-      return [...projector.modelUnavailable(notice), ...projector.finish()];
-    }
-    if (notice) return projector.finish(notice);
-    return projector.finish();
-  }
-
-  if (sessionManager && consumeStreamDegeneration(sessionManager as never)) {
-    return projector.finish(streamDegenerationAbortedMessage(locale));
-  }
-  if (sessionManager) {
-    return projector.finish(resolveEmptyAssistantError(sessionManager as never, locale));
-  }
-  return projector.finish();
 }

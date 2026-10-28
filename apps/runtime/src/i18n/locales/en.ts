@@ -81,4 +81,6 @@ export const en: Record<string, string> = {
     "The model started repeating itself or flooding control tokens, so generation was stopped. Retry or switch models.",
 
   "work.interruptedByExit": "The app exited before this work finished.",
+
+  "group.holderUnopenable": "This member's session could not be opened",
 };

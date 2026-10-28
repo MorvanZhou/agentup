@@ -24,7 +24,8 @@ import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
 import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
-import { clearContext, clearHistory, readHistory } from "../../session/history/history.js";
+import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
+import { clearContext, clearHistory, readHistory, readHistoryPage } from "../../session/history/history.js";
 import { setVisitSessionModel } from "../../session/model/session-model.js";
 import { listVisitSkills } from "../../session/skills/skills.js";
 import {
@@ -409,7 +410,16 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     bearer(c);
     const agentId = requireAgentId(c.req.param("agentId"));
     const userId = requirePathUserId(c.req.query("user_id") ?? "");
-    return json(c, 200, { messages: await readHistory(config.userDataRoot, userId, agentId) });
+    const query = parseTranscriptPageQuery(c.req.query("limit"), c.req.query("before"));
+    if (!query) throw new LocalError("请求无效", 400);
+    if (query.full) {
+      return json(c, 200, { messages: await readHistory(config.userDataRoot, userId, agentId) });
+    }
+    const page = await readHistoryPage(config.userDataRoot, userId, agentId, {
+      limit: query.limit,
+      beforeId: query.beforeId,
+    });
+    return json(c, 200, { messages: page.messages, hasMore: page.hasMore });
   });
 
   app.get("/agents/:agentId/session/model", (c) => {

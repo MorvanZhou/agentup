@@ -12,7 +12,7 @@ import {
   resolveAllowedRoots,
   validateCandidateRoot,
 } from "../../workspace/project-roots.js";
-import type { HitlExtensionContext, HitlOrigin } from "../origin.js";
+import { hitlScopeFields, type HitlExtensionContext, type HitlOrigin } from "../origin.js";
 import type { ApprovalBroker } from "./broker.js";
 import type { MountGateResult, ProjectMountContext } from "./types.js";
 
@@ -33,7 +33,7 @@ export async function handleProjectMountGate(
   const absolute = path.resolve(cwd, rawPath);
   const allowedRoots = resolveAllowedRoots(
     projectMount.cwd,
-    readProjectRoots(projectMount.visitRoot, projectMount.kind),
+    [...readProjectRoots(projectMount.visitRoot, projectMount.kind), ...(projectMount.trustedRoots ?? [])],
   );
   let real = absolute;
   try {
@@ -42,12 +42,17 @@ export async function handleProjectMountGate(
     // 文件尚不存在时用 resolve 路径判断
   }
   if (isInsideAnyRoot(real, allowedRoots)) return "continue";
-  // 新建文件：父目录在根内也算合法
-  try {
-    const parentReal = fs.realpathSync(path.dirname(absolute));
-    if (isInsideAnyRoot(parentReal, allowedRoots)) return "continue";
-  } catch {
-    // ignore
+  // 新建文件：向上找到首个已存在祖先，只要仍在允许根内就可继续。
+  let cursor = path.dirname(absolute);
+  for (let i = 0; i < 64; i += 1) {
+    try {
+      if (isInsideAnyRoot(fs.realpathSync(cursor), allowedRoots)) return "continue";
+    } catch {
+      // keep walking
+    }
+    const next = path.dirname(cursor);
+    if (next === cursor) break;
+    cursor = next;
   }
 
   const proposed = proposeMountDirectory(absolute);
@@ -88,9 +93,7 @@ export async function handleProjectMountGate(
       toolCallId: event.toolCallId,
       toolName: event.toolName,
       args,
-      origin,
-      ...(hitl.taskId ? { taskId: hitl.taskId } : {}),
-      ...(hitl.parentAgentId ? { parentAgentId: hitl.parentAgentId } : {}),
+      ...hitlScopeFields({ ...hitl, origin }),
     },
     signal,
   );

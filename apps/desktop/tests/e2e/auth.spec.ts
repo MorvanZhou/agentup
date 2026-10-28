@@ -88,39 +88,79 @@ test("游客招募市场 Agent 会叠层引导登录，成功后继续招募", a
   await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
 });
 
-test("浏览器登录：loopback mock 后进入私人助理会话", async ({ page }) => {
-  await mockAgentUp(page);
+test("游客冷启动打开发布页会回到会话并叠层", async ({ page }) => {
   await installRuntime(page);
-  await page.goto("/login");
-  const exchange = page.waitForRequest(
-    (request) => request.method() === "POST" && request.url().endsWith("/runtime/auth/oauth/exchange"),
-  );
-  await page.getByRole("button", { name: "前往 agentup.me" }).click();
-  const body = (await exchange).postDataJSON() as { code?: string };
-  expect(body.code).toBe("mock-oauth-code");
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: /^发送消息/ })).toBeEnabled();
+  await page.goto("/agents/owned/new");
+  await expect(page).toHaveURL((url) => url.pathname === "/");
+  const dialog = page.getByRole("dialog", { name: "需要登录" });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("button", { name: "账号：游客" })).toBeVisible();
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL((url) => url.pathname === "/");
 });
 
-test("等待浏览器登录时可重新打开或取消", async ({ page }) => {
+test("账号菜单点登录直接打开 Web 登录页，留在当前页", async ({ page }) => {
   await mockAgentUp(page);
   await page.addInitScript(() => {
     const bridge = window.agentUp;
     if (!bridge) return;
-    let release: ((value: { code: string }) => void) | undefined;
+    const opened: string[] = [];
+    (window as Window & { openedExternals?: string[] }).openedExternals = opened;
+    bridge.openExternal = async (url: string) => {
+      opened.push(url);
+    };
+  });
+  await installRuntime(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "账号：游客" }).click();
+  await page.getByRole("menuitem", { name: "登录 / 注册" }).click();
+  await expect(page).toHaveURL((url) => url.pathname === "/");
+  await expect
+    .poll(async () =>
+      page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
+    )
+    .toMatch(/\/zh\/login\?/);
+  await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
+});
+
+test("账号设置点登录直接打开 Web 登录页，留在账号页", async ({ page }) => {
+  await mockAgentUp(page);
+  await page.addInitScript(() => {
+    const bridge = window.agentUp;
+    if (!bridge) return;
+    const opened: string[] = [];
+    (window as Window & { openedExternals?: string[] }).openedExternals = opened;
+    bridge.openExternal = async (url: string) => {
+      opened.push(url);
+    };
+  });
+  await installRuntime(page);
+  await page.goto("/settings?section=account");
+  await expect(page.getByRole("heading", { name: "账号设置" })).toBeVisible();
+  await page.getByRole("button", { name: "登录 / 注册" }).click();
+  await expect(page).toHaveURL(/\/settings\?section=account/);
+  await expect
+    .poll(async () =>
+      page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
+    )
+    .toMatch(/\/zh\/login\?/);
+  await expect(page.getByLabel("邮箱")).toBeVisible();
+});
+
+test("从菜单打开 Web 登录后可重新打开或取消等待", async ({ page }) => {
+  await mockAgentUp(page);
+  await page.addInitScript(() => {
+    const bridge = window.agentUp;
+    if (!bridge) return;
     let rejectWait: ((reason: Error) => void) | undefined;
     const opened: string[] = [];
-    (window as Window & { releaseOAuth?: () => void; openedExternals?: string[] }).releaseOAuth = () => {
-      release?.({ code: "mock-oauth-code" });
-    };
     (window as Window & { openedExternals?: string[] }).openedExternals = opened;
-    bridge.openExternal = async (url) => {
+    bridge.openExternal = async (url: string) => {
       opened.push(url);
     };
     bridge.oauthLoopbackWait = () =>
-      new Promise<{ code: string }>((resolve, reject) => {
-        release = resolve;
+      new Promise<{ code: string }>((_resolve, reject) => {
         rejectWait = reject;
       });
     bridge.oauthLoopbackStop = async () => {
@@ -128,24 +168,43 @@ test("等待浏览器登录时可重新打开或取消", async ({ page }) => {
     };
   });
   await installRuntime(page);
-  await page.goto("/login");
-  await page.getByRole("button", { name: "前往 agentup.me" }).click();
-  await expect(page.getByRole("button", { name: "重新打开浏览器" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "取消" })).toBeVisible();
+  await page.goto("/");
+  await page.getByRole("button", { name: "账号：游客" }).click();
+  await page.getByRole("menuitem", { name: "登录 / 注册" }).click();
+  const dialog = page.getByRole("dialog", { name: "继续登录" });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL((url) => url.pathname === "/");
   await expect
     .poll(async () =>
       page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
     )
     .toMatch(/\/zh\/login\?/);
-  await page.getByRole("button", { name: "重新打开浏览器" }).click();
+  await dialog.getByRole("button", { name: "重新打开浏览器" }).click();
   await expect
     .poll(async () =>
       page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.length ?? 0),
     )
     .toBeGreaterThanOrEqual(2);
-  await page.getByRole("button", { name: "取消" }).click();
-  await expect(page.getByRole("button", { name: "前往 agentup.me" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "重新打开浏览器" })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "账号：游客" })).toBeVisible();
+  await expect(page).not.toHaveURL(/\/login/);
+});
+
+test("浏览器登录：菜单换票后进入私人助理会话", async ({ page }) => {
+  await mockAgentUp(page);
+  await installRuntime(page);
+  await page.goto("/");
+  const exchange = page.waitForRequest(
+    (request) => request.method() === "POST" && request.url().endsWith("/runtime/auth/oauth/exchange"),
+  );
+  await page.getByRole("button", { name: "账号：游客" }).click();
+  await page.getByRole("menuitem", { name: "登录 / 注册" }).click();
+  const body = (await exchange).postDataJSON() as { code?: string };
+  expect(body.code).toBe("mock-oauth-code");
+  await expect(page).toHaveURL((url) => url.pathname === "/");
+  await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /^发送消息/ })).toBeEnabled();
 });
 
 test("登录后刷新仍自动进入会话", async ({ page }) => {

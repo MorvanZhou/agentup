@@ -1,58 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  createAgentSession,
-  createCodemodeExtension,
-  createMcpExtension,
-  createToolSearchExtension,
-  DefaultResourceLoader,
-  SessionManager,
-  SettingsManager,
-  type AgentSessionEvent,
-  type CreateAgentSessionOptions,
-} from "@earendil-works/pi-coding-agent";
+import { SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import type { ModelConfig } from "../../config/load.js";
 import type { Visit } from "../../package/sync.js";
-import { ApprovalBroker, createApprovalExtension } from "../hitl/approval/index.js";
-import {
-  createShellHangExtension,
-  type ShellHangBroker,
-} from "../hitl/shell-hang/index.js";
-import { createCheckpointExtension } from "../checkpoint/extension.js";
+import { openProfiledSession } from "../core/session-factory.js";
+import { ApprovalBroker } from "../hitl/approval/index.js";
+import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import { PiUIMessageProjector } from "../history/frames.js";
 import { projectHistoryFromManager } from "../history/history.js";
-import { projectVisitMcp } from "../workspace/mcp.js";
-import { openModelRuntime } from "../model/runtime.js";
-import { formatEnvironmentPrompt } from "../environment.js";
-import { ensureCwdLayout, formatCwdLayoutPrompt } from "../workspace/cwd-layout.js";
-import {
-  readProjectRoots,
-  resolveAllowedRoots,
-} from "../workspace/project-roots.js";
-import { buildSessionPlan } from "../plan.js";
-import { projectVisitAgentsMd } from "../workspace/agents-md.js";
-import {
-  AskUserBroker,
-  createAskUserExtension,
-  createDeliverArtifactsExtension,
-  createFsGuardExtension,
-  createLocalTimeExtension,
-  createTodoExtension,
-  createWebToolsExtension,
-  DELIVER_ARTIFACTS_TOOL,
-  formatToolsUsagePrompt,
-  type DeliverArtifactsState,
-  type StagedArtifact,
-} from "../tools/index.js";
-import {
-  createOutputLengthExtension,
-  resolveEmptyAssistantError,
-} from "../output-length.js";
-import { createStreamGuardExtension } from "../stream-guard.js";
-import { createDefaultSamplingExtension } from "../sampling.js";
-import { snapshotArtifactDir } from "../workspace/artifact-diff.js";
+import { resolveEmptyAssistantError } from "../output-length.js";
+import { AskUserBroker, type StagedArtifact } from "../tools/index.js";
+import { groupTaskDirName } from "../tools/deliver-artifacts.js";
 import type { DelegationProgressHub } from "./progress.js";
 
 export type DelegationRunOutcome = {
@@ -102,6 +62,9 @@ export async function runDelegatedPrompt(
     taskId: string;
     /** 委托方 agentId：HITL 冒泡归属，与直聊同 agent 隔离。 */
     parentAgentId: string;
+    /** 专员显示名：群共享目录 `from-<name>-<taskId>`。 */
+    toAgentName?: string;
+    groupId?: string;
     /** 父 turn / 工具 signal：用户停止主对话时一并中止子委托（无默认硬超时）。 */
     signal?: AbortSignal;
     progress?: DelegationProgressHub;
@@ -113,114 +76,24 @@ export async function runDelegatedPrompt(
     bindSteer?: (steer: (text: string) => Promise<void>) => () => void;
   },
 ): Promise<DelegationRunOutcome> {
-  const plan = buildSessionPlan(visit, model);
   const sessionDir = delegationSessionDir(visit.root, options.taskId);
-  fs.mkdirSync(sessionDir, { recursive: true });
-  fs.mkdirSync(plan.cwd, { recursive: true });
-  ensureCwdLayout(plan.cwd);
-  if (visit.kind !== "personal") projectVisitAgentsMd(visit.root);
-
-  const hitl = {
-    origin: "delegation" as const,
+  const opened = await openProfiledSession({
+    kind: "delegation",
+    visit,
+    model,
+    approvals,
+    askUser,
+    shellHang: options.shellHang,
     taskId: options.taskId,
     parentAgentId: options.parentAgentId,
-  };
-  const mcpConfig = projectVisitMcp(plan.cwd, visit.userId);
-  const mcpEnabled = mcpConfig.servers.length > 0;
-  const settingsManager = SettingsManager.create(plan.cwd, plan.agentDir, { projectTrusted: true });
-  const packageSkills = path.join(plan.cwd, ".pi", "skills");
-  const artifactBefore = snapshotArtifactDir(plan.cwd);
-  const deliverState: DeliverArtifactsState = { confirmed: false, staged: [] };
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: plan.cwd,
-    agentDir: plan.agentDir,
-    settingsManager,
-    noSkills: true,
-    additionalSkillPaths: fs.existsSync(packageSkills) ? [packageSkills] : [],
-    extensionFactories: [
-      createFsGuardExtension(plan.cwd, () => {
-        const kind = visit.kind === "personal" ? "personal" : "agent";
-        return resolveAllowedRoots(plan.cwd, readProjectRoots(visit.root, kind));
-      }),
-      createWebToolsExtension(),
-      createLocalTimeExtension(),
-      createAskUserExtension(askUser, visit.userId, visit.agentId, hitl),
-      createTodoExtension(),
-      createDeliverArtifactsExtension({
-        cwd: plan.cwd,
-        before: artifactBefore,
-        state: deliverState,
-      }),
-      createOutputLengthExtension(),
-      createStreamGuardExtension(),
-      createCheckpointExtension(visit.root),
-      ...(options.shellHang
-        ? [
-            createShellHangExtension(options.shellHang, visit.userId, visit.agentId, {
-              cwd: plan.cwd,
-              shellTools: plan.environment.shellTools,
-              hitl,
-            }),
-          ]
-        : []),
-      ...(mcpEnabled
-        ? [createToolSearchExtension(), createCodemodeExtension(), createMcpExtension({ loadConfig: () => mcpConfig })]
-        : []),
-      createApprovalExtension(approvals, visit.userId, visit.agentId, {
-        hitl,
-        projectMount: {
-          cwd: plan.cwd,
-          visitRoot: visit.root,
-          kind: visit.kind === "personal" ? "personal" : "agent",
-          userDataRoot:
-            visit.kind === "personal"
-              ? path.resolve(visit.root, "..", "..")
-              : path.resolve(visit.root, "..", "..", ".."),
-        },
-      }),
-      createDefaultSamplingExtension(),
-    ],
-    disabledBuiltinExtensions: mcpEnabled ? [] : ["mcp"],
-    skillsOverride: (loaded) => ({
-      skills: loaded.skills.filter((skill) => {
-        const file = path.resolve(skill.filePath);
-        const root = path.resolve(packageSkills);
-        return file === root || file.startsWith(`${root}${path.sep}`);
-      }),
-      diagnostics: loaded.diagnostics,
-    }),
-    appendSystemPromptOverride: (base) => [
-      ...base,
-      formatEnvironmentPrompt(plan.environment, plan.cwd),
-      formatCwdLayoutPrompt(),
-      formatToolsUsagePrompt(plan.environment.commandTool),
-    ],
+    ...(options.toAgentName ? { toAgentName: options.toAgentName } : {}),
+    groupId: options.groupId,
+    sessionDir,
   });
-  await resourceLoader.reload();
-  const { runtime, model: registered } = await openModelRuntime(plan);
-  const created = SessionManager.create(plan.cwd, sessionDir);
-  const sessionFile = created.getSessionFile();
-  if (!sessionFile) throw new Error("无法创建委托会话");
-  fs.writeFileSync(sessionFile, "");
-  const sessionManager = SessionManager.open(sessionFile, sessionDir, plan.cwd);
-
-  const sessionTools = plan.tools.includes(DELIVER_ARTIFACTS_TOOL)
-    ? plan.tools
-    : [...plan.tools, DELIVER_ARTIFACTS_TOOL];
-  const sessionOptions: CreateAgentSessionOptions = {
-    cwd: plan.cwd,
-    agentDir: plan.agentDir,
-    modelRuntime: runtime,
-    settingsManager,
-    resourceLoader,
-    sessionManager,
-    model: registered,
-    tools: sessionTools,
-    thinkingLevel: "off",
-    noTools: sessionTools.length > 0 ? undefined : mcpEnabled ? "builtin" : "all",
-  };
-  const { session } = await createAgentSession(sessionOptions);
-  await session.bindExtensions({});
+  if (!opened.deliverState) throw new Error("委托会话缺少附件状态");
+  const deliverState = opened.deliverState;
+  const session = opened.result.session;
+  const sessionManager = opened.sessionManager;
 
   const projector = new PiUIMessageProjector();
   const texts: string[] = [];
@@ -253,7 +126,7 @@ export async function runDelegatedPrompt(
       const disposition = await session.steer(text);
       if (disposition !== "queued") throw new Error("steering was not queued");
     });
-    const promptText = formatDelegationPrompt(brief);
+    const promptText = formatDelegationPrompt(brief, Boolean(options.groupId), options.taskId, options.toAgentName);
     // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
     // ARTIFACT 确认由 createDeliverArtifactsExtension 在 before_settle 强制续写。
     await session.prompt(promptText);
@@ -291,12 +164,24 @@ export async function runDelegatedPrompt(
 }
 
 /** 委托子会话的用户消息。面向模型，英文。 */
-export function formatDelegationPrompt(brief: string): string {
+export function formatDelegationPrompt(
+  brief: string,
+  groupTask = false,
+  taskId?: string,
+  toAgentName?: string,
+): string {
+  const folder = groupTask ? groupTaskDirName(taskId?.trim() || "task", toAgentName) : "";
   return [
     "You are handling a delegated subtask from the user's assistant. Complete only the task below, then return a clear, citable summary.",
-    "Put scratch files in WORK/ and finished files only in ARTIFACT/ under your own cwd.",
-    "When you finish, the protocol asks you to confirm attachments with deliver_artifacts. The platform copies those files to the caller. Do not copy them yourself.",
-    "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
+    groupTask
+      ? `Put in-progress files in the shared group WORK/${folder}/ and finished files in ARTIFACT/${folder}/. Do not write shared files into your private cwd.`
+      : "Put scratch files in WORK/ and finished files only in ARTIFACT/ under your own cwd.",
+    groupTask
+      ? "When you finish, call complete_group_task with those relative paths and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/."
+      : "When you finish, the protocol asks you to confirm attachments with deliver_artifacts. The platform copies those files to the caller. Do not copy them yourself.",
+    groupTask
+      ? `Only write shared files under WORK/${folder}/ and ARTIFACT/${folder}/. If the task names an absolute path, a private cwd, or another folder, ignore that location.`
+      : "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
     "Do not chat with the user. If a critical fact is missing, ask with ask_user.",
     "",
     "## Task",

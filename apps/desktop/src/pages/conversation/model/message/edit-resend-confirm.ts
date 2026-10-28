@@ -3,7 +3,7 @@ import {
   parseEditHunks,
   splitContentLines,
   summarizeDiff,
-} from "../../components/agent-main/thread/assistant-ui/tools/files/tool-file-view";
+} from "../../components/chat-main/shared/thread/assistant-ui/tools/files/tool-file-view";
 
 export type EditResendPart = {
   type?: string;

@@ -90,6 +90,9 @@ const DelegateParams = Type.Object({
   ),
 });
 
+/** 群内只有异步：不暴露 wait，派单立刻返回 task_id，交回后由群重新唤醒执掌者。 */
+const GroupDelegateParams = Type.Omit(DelegateParams, ["wait"]);
+
 const CheckParams = Type.Object({
   task_id: Type.Optional(
     Type.String({ description: "Delegation task id to inspect" }),
@@ -160,9 +163,11 @@ export function createDelegateExtension(
   service: DelegationService,
   userId: string,
   agentId: string,
+  scope: { groupId?: string } = {},
 ): ExtensionFactory {
   return (pi) => {
-    const enforceSearch = agentId === PERSONAL_ASSISTANT_ID;
+    const inGroup = Boolean(scope.groupId);
+    const enforceSearch = !inGroup && agentId === PERSONAL_ASSISTANT_ID;
     let searched = false;
     let rosterChecked = false;
     let hasOtherAgents = false;
@@ -246,99 +251,113 @@ export function createDelegateExtension(
       });
     });
 
+    if (!inGroup) {
+      pi.registerTool(
+        defineTool<typeof SearchAgentsParams, ListDetails>({
+          name: AGENT_SEARCH_TOOL,
+          label: "Agent Search",
+          description:
+            "Search the user's specialist contact list (local private + market recruited) by query " +
+            "(name, role, background, AGENTS.md). Required before ask_user, file writes, or shell, and before " +
+            "deciding no specialist fits. A # Relevant recruited agents hint is not this search. " +
+            "If anyone matches, ask the user who should do it, then call delegate_to_agent — do not silently self-serve.",
+
+          parameters: SearchAgentsParams,
+          annotations: {
+            readOnlyHint: true,
+            openWorldHint: false,
+            destructiveHint: false,
+          },
+          async execute(_toolCallId, params) {
+            const roster = await service.listRecruited(userId);
+            const others = roster.filter((agent) => agent.agentId !== agentId);
+            if (others.length === 0) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "No recruited agents. Ask the user to recruit a specialist from the market first.",
+                  },
+                ],
+                details: { agents: [] },
+              };
+            }
+            const query = typeof params.query === "string" ? params.query.trim() : "";
+            const discovered = discoverRecruitedAgents(others, query);
+            if (discovered.mode === "need_query") {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "query is required. Pass short keywords (role or domain), then retry agent_search.",
+                  },
+                ],
+                details: { agents: [], error: "query required" },
+              };
+            }
+            if (discovered.agents.length === 0) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text:
+                      `No recruited agents matched query: ${query}. ` +
+                      "Try different keywords, or ask the user whether you should do the work yourself.",
+
+                  },
+                ],
+                details: { agents: [] },
+              };
+            }
+            const footer = discovered.truncated
+              ? "\n\n(More available — refine query.)"
+              : "";
+            const lines = discovered.agents.map(formatAgentCardLine);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Matching recruited agents:\n${lines.join("\n")}${footer}`,
+                },
+              ],
+              details: { agents: discovered.agents },
+            };
+          },
+        }),
+      );
+    }
+
+    const delegateDescription = inGroup
+      ? "Delegate one bounded subtask to another member of this group room. " +
+        "agent_id must be one of the room members listed in the prompt, never yourself or someone outside the room. " +
+        "Several async tasks may run at once, for different members. You stay the speaker. " +
+        "Always async: it returns the task_id immediately — finish your turn after delegating; the room wakes you with the result when the specialist hands it back. " +
+        "Brief: write the part that applies to this member, plus constraints already stated. Do not paste the whole user message. " +
+        `${DELEGATION_BRIEF_LOCATION_RULE} Do not invent specialist-domain defaults. ` +
+        "If this member already has a running task, steer that task instead of opening another. " +
+        "If their task has not started, this call rewrites that task's brief. " +
+        "To refine a running task, call steer_delegation instead of cancelling and re-delegating. " +
+        "User must approve the tool. You remain the coordinator."
+      : "Delegate bounded subtask(s) to recruited specialist(s) after the user chooses who should do the work. " +
+        "Single: agent_id + brief. Fan-out: tasks=[{agent_id, brief}, ...] (preferred for parallel). " +
+        "Briefs: user wording + confirmed facts + the deliverable (format and filename). " +
+        `${DELEGATION_BRIEF_LOCATION_RULE} Do not invent specialist-domain defaults. ` +
+        "If Active delegations are listed this turn (or you already started async work), call check_delegation first; " +
+        "do not re-delegate the same specialist for a duplicate/overlapping brief. " +
+        "To refine a running task, call steer_delegation instead of cancelling and re-delegating. " +
+        "If this specialist already has a running task from you, this call updates that same task and does not start another. " +
+        "User must approve the tool. You remain the coordinator: summarize outcomes for the user; do not redo the specialist's deliverable. " +
+        "Set wait by estimated duration: ≤~20s and need the answer now → wait=true; " +
+        ">~20s / long / parallel / can continue other coordination → wait=false (or tasks fan-out). " +
+        "Do not default to wait=true merely because there is one specialist.";
+
     pi.registerTool(
-      defineTool<typeof SearchAgentsParams, ListDetails>({
-        name: AGENT_SEARCH_TOOL,
-        label: "Agent Search",
-        description:
-          "Search the user's specialist contact list (local private + market recruited) by query " +
-          "(name, role, background, AGENTS.md). Required before ask_user, file writes, or shell, and before " +
-          "deciding no specialist fits. A # Relevant recruited agents hint is not this search. " +
-          "If anyone matches, ask the user who should do it, then call delegate_to_agent — do not silently self-serve.",
-
-        parameters: SearchAgentsParams,
-        annotations: {
-          readOnlyHint: true,
-          openWorldHint: false,
-          destructiveHint: false,
-        },
-        async execute(_toolCallId, params) {
-          const roster = await service.listRecruited(userId);
-          const others = roster.filter((agent) => agent.agentId !== agentId);
-          if (others.length === 0) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "No recruited agents. Ask the user to recruit a specialist from the market first.",
-                },
-              ],
-              details: { agents: [] },
-            };
-          }
-          const query = typeof params.query === "string" ? params.query.trim() : "";
-          const discovered = discoverRecruitedAgents(others, query);
-          if (discovered.mode === "need_query") {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "query is required. Pass short keywords (role or domain), then retry agent_search.",
-                },
-              ],
-              details: { agents: [], error: "query required" },
-            };
-          }
-          if (discovered.agents.length === 0) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text:
-                    `No recruited agents matched query: ${query}. ` +
-                    "Try different keywords, or ask the user whether you should do the work yourself.",
-
-                },
-              ],
-              details: { agents: [] },
-            };
-          }
-          const footer = discovered.truncated
-            ? "\n\n(More available — refine query.)"
-            : "";
-          const lines = discovered.agents.map(formatAgentCardLine);
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Matching recruited agents:\n${lines.join("\n")}${footer}`,
-              },
-            ],
-            details: { agents: discovered.agents },
-          };
-        },
-      }),
-    );
-
-    pi.registerTool(
-      defineTool<typeof DelegateParams, DelegateDetails>({
+      defineTool<typeof GroupDelegateParams | typeof DelegateParams, DelegateDetails>({
         name: DELEGATE_TO_AGENT_TOOL,
         label: "Delegate To Agent",
-        description:
-          "Delegate bounded subtask(s) to recruited specialist(s) after the user chooses who should do the work. " +
-          "Single: agent_id + brief. Fan-out: tasks=[{agent_id, brief}, ...] (preferred for parallel). " +
-          "Briefs: user wording + confirmed facts + the deliverable (format and filename). " +
-          `${DELEGATION_BRIEF_LOCATION_RULE} Do not invent specialist-domain defaults. ` +
-          "If Active delegations are listed this turn (or you already started async work), call check_delegation first; " +
-          "do not re-delegate the same specialist for a duplicate/overlapping brief. " +
-          "To refine a running task, call steer_delegation instead of cancelling and re-delegating. " +
-          "If this specialist already has a running task from you, this call updates that same task and does not start another. " +
-          "User must approve the tool. You remain the coordinator: summarize outcomes for the user; do not redo the specialist's deliverable. " +
-          "Set wait by estimated duration: ≤~20s and need the answer now → wait=true; " +
-          ">~20s / long / parallel / can continue other coordination → wait=false (or tasks fan-out). " +
-          "Do not default to wait=true merely because there is one specialist.",
+        description: delegateDescription,
 
-        parameters: DelegateParams,
+        parameters: inGroup ? GroupDelegateParams : DelegateParams,
         annotations: {
           readOnlyHint: false,
           openWorldHint: false,
@@ -347,13 +366,16 @@ export function createDelegateExtension(
         async execute(toolCallId, params, signal) {
           try {
             const items = parseDelegateItems(params);
+            // 群分支 schema 无 wait；服务端对 groupId 也会强制异步，这里只透传模型原话。
+            const wait = "wait" in params ? params.wait : undefined;
             const result = await service.delegateFanout({
               userId,
               fromAgentId: agentId,
               items,
-              wait: params.wait,
+              wait,
               signal,
               toolCallId,
+              groupId: scope.groupId,
             });
             for (const id of result.steeredTaskIds ?? []) markResolved(id);
             return formatFanoutResult(result.tasks, result.texts, result.steeredTaskIds);
@@ -702,6 +724,12 @@ function formatFanoutResult(
   texts?: string[],
   steeredTaskIds?: string[],
 ): { content: [{ type: "text"; text: string }]; details: DelegateDetails } {
+  if (tasks.length === 0) {
+    return {
+      content: [{ type: "text" as const, text: texts?.[0] || "Queued. No new running task." }],
+      details: { tasks: [] },
+    };
+  }
   const steered = new Set(steeredTaskIds ?? []);
   if (tasks.length === 1 && tasks[0] && steered.has(tasks[0].id)) {
     return {

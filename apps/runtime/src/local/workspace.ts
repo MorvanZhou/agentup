@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/workspace/cwd-layout.js";
+import { ATTACHMENTS_DIR, ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/workspace/cwd-layout.js";
 import { isInside as isPathInside, readProjectRoots } from "../session/workspace/project-roots.js";
 import { ensurePersonalAssistant } from "./assistant/personal-assistant.js";
 import { isLocalAgentId, localAgentRoot } from "./agents/local-agent.js";
+import { ensureGroupWorkspace } from "../session/group/workspace.js";
 
 /** 文本预览与保存上限。超出只返回元数据。 */
 export const TEXT_PREVIEW_LIMIT = 512 * 1024;
@@ -68,13 +69,16 @@ export type WorkspaceFile =
   | { path: string; kind: "too-large"; size: number; media: "text" | "image" };
 
 /** 空字符串表示 cwd 根。拒绝绝对路径、`..`、顶层 `.pi` 与 `WORK`。 */
-export function normalizeRelative(input: string): string {
+export function normalizeRelative(
+  input: string,
+  hiddenTopLevel: ReadonlySet<string> = HIDDEN_WORKSPACE_TOP_LEVEL,
+): string {
   if (input.includes("\0") || input.includes("\\") || input.startsWith("/")) {
     throw new WorkspaceError("路径无效", 400);
   }
   const parts = input.split("/").filter((part) => part.length > 0);
   if (parts.some((part) => part === "." || part === "..")) throw new WorkspaceError("路径无效", 400);
-  if (parts[0] && HIDDEN_WORKSPACE_TOP_LEVEL.has(parts[0])) throw new WorkspaceError("路径无效", 400);
+  if (parts[0] && hiddenTopLevel.has(parts[0])) throw new WorkspaceError("路径无效", 400);
   return parts.join("/");
 }
 
@@ -95,7 +99,11 @@ export function personalWorkspaceCwd(userDataRoot: string, userId: string): stri
   return cwd;
 }
 
-type WorkspaceRootOptions = { ensureLayout?: boolean };
+type WorkspaceRootOptions = {
+  ensureLayout?: boolean;
+  hiddenTopLevel?: ReadonlySet<string>;
+  readOnlyTopLevel?: ReadonlySet<string>;
+};
 
 export function listWorkspace(
   cwd: string,
@@ -109,7 +117,7 @@ export function listWorkspace(
   const names = fs.readdirSync(located.real);
   const entries: WorkspaceEntry[] = [];
   for (const name of names) {
-    if (located.relative === "" && HIDDEN_WORKSPACE_TOP_LEVEL.has(name)) continue;
+    if (located.relative === "" && (options?.hiddenTopLevel ?? HIDDEN_WORKSPACE_TOP_LEVEL).has(name)) continue;
     const child = path.join(located.real, name);
     const stat = lstat(child);
     if (!stat) continue;
@@ -168,6 +176,7 @@ export function writeWorkspaceText(
 ): { path: string; size: number } {
   if (Buffer.byteLength(text, "utf8") > TEXT_PREVIEW_LIMIT) throw new WorkspaceError("文件过大，无法保存", 413);
   const located = locate(cwd, relative, options);
+  assertWritable(located.relative, options);
   if (!located.relative || !located.exists) throw new WorkspaceError("找不到文件", 404);
   if (!fs.statSync(located.real).isFile()) throw new WorkspaceError("不是文件", 400);
   fs.writeFileSync(located.real, text, "utf8");
@@ -180,10 +189,11 @@ export function createWorkspaceEntry(
   kind: "file" | "dir",
   options?: WorkspaceRootOptions,
 ): { path: string } {
-  const rel = normalizeRelative(relative);
+  const rel = normalizeRelative(relative, options?.hiddenTopLevel ?? HIDDEN_WORKSPACE_TOP_LEVEL);
+  assertWritable(rel, options);
   if (!rel) throw new WorkspaceError("名称无效", 400);
   const parent = parentRelative(rel);
-  assertEntryName(path.basename(rel), parent);
+  assertEntryName(path.basename(rel), parent, options);
   const located = locate(cwd, rel, { allowMissing: true, ...options });
   if (located.exists) throw new WorkspaceError("已经存在", 409);
   if (kind === "dir") fs.mkdirSync(located.lexical);
@@ -198,9 +208,10 @@ export function renameWorkspaceEntry(
   options?: WorkspaceRootOptions,
 ): { path: string } {
   const located = locate(cwd, relative, options);
+  assertWritable(located.relative, options);
   if (!located.relative || !located.exists) throw new WorkspaceError("找不到文件", 404);
   const parent = parentRelative(located.relative);
-  const nextName = assertEntryName(name, parent);
+  const nextName = assertEntryName(name, parent, options);
   const nextRelative = parent ? `${parent}/${nextName}` : nextName;
   if (nextRelative === located.relative) return { path: located.relative };
   const destination = locate(cwd, nextRelative, { allowMissing: true, ...options });
@@ -215,6 +226,7 @@ export function deleteWorkspaceEntry(
   options?: WorkspaceRootOptions,
 ): void {
   const located = locate(cwd, relative, options);
+  assertWritable(located.relative, options);
   if (!located.relative) throw new WorkspaceError("不能删除工作目录", 400);
   if (!located.exists) throw new WorkspaceError("找不到文件", 404);
   const stat = lstat(located.lexical);
@@ -246,9 +258,9 @@ interface Located {
 function locate(
   cwd: string,
   relative: string,
-  options?: { allowMissing?: boolean; ensureLayout?: boolean },
+  options?: WorkspaceRootOptions & { allowMissing?: boolean },
 ): Located {
-  const rel = normalizeRelative(relative);
+  const rel = normalizeRelative(relative, options?.hiddenTopLevel ?? HIDDEN_WORKSPACE_TOP_LEVEL);
   const root = cwdReal(cwd, { ensureLayout: options?.ensureLayout });
   const lexical = rel ? path.resolve(root, rel) : root;
   if (!isInside(root, lexical)) throw new WorkspaceError("路径无效", 400);
@@ -269,15 +281,20 @@ function locate(
   return { relative: rel, lexical, real, exists: true };
 }
 
-function assertEntryName(name: string, parentRelative: string): string {
+function assertEntryName(name: string, parentRelative: string, options?: WorkspaceRootOptions): string {
   const value = name.trim();
   if (!value || value === "." || value === ".." || /[/\\\u0000]/.test(value) || value.length > 255) {
     throw new WorkspaceError("名称无效", 400);
   }
-  if (parentRelative === "" && HIDDEN_WORKSPACE_TOP_LEVEL.has(value)) {
+  if (parentRelative === "" && (options?.hiddenTopLevel ?? HIDDEN_WORKSPACE_TOP_LEVEL).has(value)) {
     throw new WorkspaceError("名称无效", 400);
   }
   return value;
+}
+
+function assertWritable(relative: string, options?: WorkspaceRootOptions): void {
+  const top = relative.split("/", 1)[0] ?? "";
+  if (top && options?.readOnlyTopLevel?.has(top)) throw new WorkspaceError("该目录只读", 403);
 }
 
 function parentRelative(relative: string): string {
@@ -330,9 +347,10 @@ function sniffText(filePath: string, size: number): boolean {
 
 const PERSONAL_WORKSPACE = /^\/personal-assistant\/workspace(?:\/(file|rename|absolute))?$/;
 const AGENT_WORKSPACE = /^\/agents\/([^/]+)\/workspace(?:\/(file|rename|absolute))?$/;
+const GROUP_WORKSPACE = /^\/groups\/([^/]+)\/workspace(?:\/(file|rename|absolute))?$/;
 
 export function isWorkspacePath(pathname: string): boolean {
-  return PERSONAL_WORKSPACE.test(pathname) || AGENT_WORKSPACE.test(pathname);
+  return PERSONAL_WORKSPACE.test(pathname) || AGENT_WORKSPACE.test(pathname) || GROUP_WORKSPACE.test(pathname);
 }
 
 /** 读写某次出诊的 cwd（或已挂载的项目根）。调用方须已完成登录校验。 */
@@ -345,9 +363,20 @@ export function serveWorkspace(
 ): { status: number; payload: unknown } {
   const personal = pathname.match(PERSONAL_WORKSPACE);
   const agent = pathname.match(AGENT_WORKSPACE);
-  const action = personal ? personal[1] : agent ? agent[2] : undefined;
-  if (!personal && !agent) throw new WorkspaceError("没有这个接口", 404);
+  const group = pathname.match(GROUP_WORKSPACE);
+  const action = personal ? personal[1] : agent ? agent[2] : group ? group[2] : undefined;
+  if (!personal && !agent && !group) throw new WorkspaceError("没有这个接口", 404);
   const userId = method === "GET" || method === "DELETE" ? searchParams.get("user_id") ?? "" : stringField(body, "user_id");
+  if (group) {
+    const groupId = decodeURIComponent(group[1] ?? "");
+    const workspace = ensureGroupWorkspace(userDataRoot, userId, groupId);
+    const options: WorkspaceRootOptions = {
+      ensureLayout: false,
+      hiddenTopLevel: HIDDEN_WORKSPACE_TOP_LEVEL,
+      readOnlyTopLevel: new Set([ATTACHMENTS_DIR]),
+    };
+    return serveWorkspaceAt(workspace.root, options, method, action, searchParams, body);
+  }
   const agentId = personal ? undefined : decodeURIComponent(agent?.[1] ?? "");
   const visitCwd = personal
     ? personalWorkspaceCwd(userDataRoot, userId)
@@ -373,6 +402,17 @@ export function serveWorkspace(
     scope,
     rootParam,
   );
+  return serveWorkspaceAt(cwd, options, method, action, searchParams, body);
+}
+
+function serveWorkspaceAt(
+  cwd: string,
+  options: WorkspaceRootOptions | undefined,
+  method: string,
+  action: string | undefined,
+  searchParams: URLSearchParams,
+  body: Record<string, unknown>,
+): { status: number; payload: unknown } {
   const relative = method === "GET" || method === "DELETE" ? (searchParams.get("path") ?? "") : stringField(body, "path", true);
   if (!action && method === "GET") {
     const listed = listWorkspace(cwd, relative, options);

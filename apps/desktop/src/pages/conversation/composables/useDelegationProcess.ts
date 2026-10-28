@@ -14,6 +14,7 @@ import {
   type DelegationHistoryDto,
 } from "../../../shared/api/runtime/chat";
 import { RuntimeHttp } from "../../../shared/api/runtime/http";
+import { attachConfirmedArtifactsToMessages } from "../model/message/message-artifacts";
 import {
   assistantPartCount,
   shouldApplyStreamMessage,
@@ -30,6 +31,7 @@ export type DelegationProcessState = {
 /**
  * 旁路消费委托过程：优先 SSE 流式；流空/已结束则拉 history。
  * 不写入父线程 messages。
+ * 任务确认清单统一投影成 agentUpArtifacts，群/单聊产物 tab 共用。
  */
 export function useDelegationProcess() {
   const loading = ref(false);
@@ -38,6 +40,26 @@ export function useDelegationProcess() {
   const messages = shallowRef<UIMessage[]>([]);
   const task = shallowRef<DelegationHistoryDto["task"] | null>(null);
   let abort: AbortController | undefined;
+
+  /** 清空视图；单独函数避免 TS 把同作用域的 `task.value = null` 窄化成 never。 */
+  function resetView(): void {
+    messages.value = [];
+    task.value = null;
+  }
+
+  /** history / 流收口：task 与 messages 对齐后再挂确认产物。 */
+  function applySnapshot(snap: DelegationHistoryDto, preferHistoryMessages: boolean): void {
+    task.value = snap.task;
+    if (preferHistoryMessages && snap.messages.length > 0) {
+      messages.value = attachConfirmedArtifactsToMessages(snap.messages, snap.task.artifacts);
+      return;
+    }
+    if (messages.value.length > 0) {
+      messages.value = attachConfirmedArtifactsToMessages(messages.value, snap.task.artifacts);
+    } else if (snap.messages.length > 0) {
+      messages.value = attachConfirmedArtifactsToMessages(snap.messages, snap.task.artifacts);
+    }
+  }
 
   async function open(options: {
     token: string;
@@ -49,8 +71,7 @@ export function useDelegationProcess() {
     loading.value = true;
     streaming.value = false;
     error.value = "";
-    messages.value = [];
-    task.value = null;
+    resetView();
     abort = new AbortController();
     const signal = abort.signal;
     const base = options.baseUrl ?? runtimeBaseUrl();
@@ -61,16 +82,13 @@ export function useDelegationProcess() {
       try {
         const snap = await delegationHistory(http, options.token, options.userId, options.taskId);
         if (signal.aborted) return;
-        task.value = snap.task;
-        if (snap.messages.length > 0) messages.value = snap.messages;
+        applySnapshot(snap, true);
       } catch {
         // history 暂不可用时继续尝试 stream
       }
 
-      const done =
-        task.value?.status === "completed" ||
-        task.value?.status === "failed" ||
-        task.value?.status === "cancelled";
+      const status = task.value?.status;
+      const done = status === "completed" || status === "failed" || status === "cancelled";
 
       if (done && messages.value.length > 0) {
         loading.value = false;
@@ -90,14 +108,11 @@ export function useDelegationProcess() {
         historyFloor,
       });
 
-      // 流结束后对齐 task 终态；已接上流则保留流式 messages，避免再盖一次
+      // 流结束后对齐 task 终态；已接上流则保留流式 messages，再挂确认产物
       if (!signal.aborted) {
         try {
           const snap = await delegationHistory(http, options.token, options.userId, options.taskId);
-          task.value = snap.task;
-          if (snap.messages.length > 0 && !appliedStream) {
-            messages.value = snap.messages;
-          }
+          applySnapshot(snap, !appliedStream);
         } catch {
           // 保留流式结果
         }
@@ -114,8 +129,7 @@ export function useDelegationProcess() {
       if (messages.value.length === 0) {
         try {
           const snap = await delegationHistory(http, options.token, options.userId, options.taskId);
-          task.value = snap.task;
-          messages.value = snap.messages;
+          applySnapshot(snap, true);
           error.value = "";
         } catch {
           // keep error

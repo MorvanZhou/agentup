@@ -5,6 +5,7 @@
  */
 
 import { findAttachmentRefs } from "./attachment-ref";
+import { findMentionRefs } from "./mention-text";
 
 const SKILL_NAME = "[a-z0-9]+(?:-[a-z0-9]+)*";
 /** 完整引用：前界 + /name|/skill:name + 后界（空白/标点/行尾）。插入时默认补空格。 */
@@ -16,6 +17,7 @@ const SKILL_REF_RE = new RegExp(
 export type ComposerSegment =
   | { type: "text"; value: string }
   | { type: "skill"; name: string }
+  | { type: "mention"; name: string }
   | { type: "file"; path: string; name: string };
 
 /** 光标处正在输入的 `/` 查询（尚未变成完整引用）。 */
@@ -57,16 +59,19 @@ export function insertSkillReference(
 }
 
 /**
- * 将正文拆成 text / skill / file 段（用于内联芯片）。
+ * 将正文拆成 text / skill / mention / file 段（用于内联芯片）。
  * `knownNames` 有值时只高亮集合内 skill 名称；省略则高亮任意合法 `/skill-name` 形态（历史气泡）。
+ * `knownMentions` 有值时把完整 `@成员名` 收成 mention 芯片（须带空格/标点边界）。
  */
 export function segmentComposerText(
   text: string,
   knownNames?: ReadonlySet<string>,
+  knownMentions?: ReadonlySet<string>,
 ): ComposerSegment[] {
   if (!text) return [];
   type Hit =
     | { kind: "skill"; start: number; end: number; name: string }
+    | { kind: "mention"; start: number; end: number; name: string }
     | { kind: "file"; start: number; end: number; path: string; name: string };
   const hits: Hit[] = [];
   const re = new RegExp(SKILL_REF_RE.source, "gi");
@@ -88,6 +93,14 @@ export function segmentComposerText(
       name: file.name,
     });
   }
+  for (const mention of findMentionRefs(text, knownMentions ?? new Set())) {
+    hits.push({
+      kind: "mention",
+      start: mention.start,
+      end: mention.end,
+      name: mention.name,
+    });
+  }
   hits.sort((a, b) => a.start - b.start || a.end - b.end);
   // 重叠时优先先出现的；跳过与已占用区间相交的后续 hit
   const kept: Hit[] = [];
@@ -103,6 +116,7 @@ export function segmentComposerText(
   for (const hit of kept) {
     if (hit.start > last) segments.push({ type: "text", value: text.slice(last, hit.start) });
     if (hit.kind === "skill") segments.push({ type: "skill", name: hit.name });
+    else if (hit.kind === "mention") segments.push({ type: "mention", name: hit.name });
     else segments.push({ type: "file", path: hit.path, name: hit.name });
     last = hit.end;
   }
@@ -165,7 +179,11 @@ function tidyDisplayBody(segments: readonly ComposerSegment[]): ComposerSegment[
   const last = merged[merged.length - 1];
   if (last?.type === "text") last.value = last.value.replace(/\s+$/, "");
   return merged.filter(
-    (segment) => segment.type === "skill" || segment.type === "file" || segment.value.length > 0,
+    (segment) =>
+      segment.type === "skill" ||
+      segment.type === "mention" ||
+      segment.type === "file" ||
+      segment.value.length > 0,
   );
 }
 
@@ -180,11 +198,21 @@ function mergeTextSegments(segments: ComposerSegment[]): ComposerSegment[] {
     }
   }
   return out.filter(
-    (segment) => segment.type === "skill" || segment.type === "file" || segment.value.length > 0,
+    (segment) =>
+      segment.type === "skill" ||
+      segment.type === "mention" ||
+      segment.type === "file" ||
+      segment.value.length > 0,
   );
 }
 
-/** 段序列化回 `/name` 与 `@ATTACHMENTS/...`；标记两侧补空格，保证可用空格边界识别。 */
+function chipToken(segment: Exclude<ComposerSegment, { type: "text" }>): string {
+  if (segment.type === "skill") return `/${segment.name}`;
+  if (segment.type === "mention") return `@${segment.name}`;
+  return `@${segment.path}`;
+}
+
+/** 段序列化回 `/name`、`@成员` 与 `@ATTACHMENTS/...`；标记两侧补空格，保证可用空格边界识别。 */
 export function serializeComposerSegments(segments: ComposerSegment[]): string {
   let out = "";
   for (let index = 0; index < segments.length; index += 1) {
@@ -194,13 +222,13 @@ export function serializeComposerSegments(segments: ComposerSegment[]): string {
       continue;
     }
     if (out.length > 0 && !/\s$/.test(out)) out += " ";
-    out += segment.type === "skill" ? `/${segment.name}` : `@${segment.path}`;
+    out += chipToken(segment);
     const next = segments[index + 1];
     if (!next) {
       out += " ";
       continue;
     }
-    if (next.type === "skill" || next.type === "file") {
+    if (next.type === "skill" || next.type === "mention" || next.type === "file") {
       out += " ";
       continue;
     }

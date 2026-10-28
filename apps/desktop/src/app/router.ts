@@ -6,10 +6,9 @@ import LocalAgentEditPage from "../pages/agents/LocalAgentEditPage.vue";
 import MarketPage from "../pages/agents/MarketPage.vue";
 import PublishEditorPage from "../pages/agents/PublishEditorPage.vue";
 import ConversationPage from "../pages/conversation/ConversationPage.vue";
-import LoginPage from "../pages/login/LoginPage.vue";
 import SettingsPage from "../pages/settings/SettingsPage.vue";
 import { isAccountSession } from "../shared/model/session/session";
-import { isAuthGateReady, runWithAccount } from "./auth/auth-gate";
+import { isAuthGateReady, runWithAccount, whenAuthGateReady } from "./auth/auth-gate";
 import { ensureGuestSession, readSession } from "./session/session-store";
 import AppLayout from "./shell/AppLayout.vue";
 
@@ -17,12 +16,13 @@ import AppLayout from "./shell/AppLayout.vue";
 export const router = createRouter({
   history: import.meta.env.PROD ? createWebHashHistory() : createWebHistory(),
   routes: [
-    { path: "/login", name: "login", component: LoginPage },
+    { path: "/login", redirect: { name: "conversation" } },
     {
       path: "/",
       component: AppLayout,
       children: [
         { path: "", name: "conversation", component: ConversationPage },
+        { path: "groups", redirect: { name: "conversation" } },
         { path: "market", name: "market", component: MarketPage },
         { path: "agents", redirect: { name: "agents-local" } },
         {
@@ -73,29 +73,20 @@ export const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   const current = readSession();
-  if (to.name === "login") {
-    if (isAccountSession(current)) {
-      const redirect = to.query.redirect;
-      if (typeof redirect === "string" && redirect.startsWith("/") && !redirect.startsWith("/login")) {
-        return redirect;
-      }
-      return { name: "conversation" };
-    }
-    return true;
-  }
   if (!current) await ensureGuestSession();
   if (to.matched.some((record) => record.meta.requiresAccount) && !isAccountSession(readSession())) {
     const target = to.fullPath;
-    // App 挂载前闸门尚未 bind：退回登录页；挂载后留页叠层并打开浏览器。
-    if (!isAuthGateReady()) {
-      return { name: "login", query: { redirect: target } };
+    if (!isAuthGateReady()) await whenAuthGateReady();
+    if (isAuthGateReady() && !isAccountSession(readSession())) {
+      void runWithAccount("agent.publish", async () => {
+        if (!isAccountSession(readSession())) return;
+        await router.push(target);
+      });
     }
-    void runWithAccount("agent.publish", async () => {
-      if (!isAccountSession(readSession())) return;
-      await router.push(target);
-    });
+    // 冷启动没有上一页：回到会话，叠层盖在主界面上。已在应用内则留在当前页。
+    if (from.matched.length === 0) return { name: "conversation" };
     return false;
   }
   return true;

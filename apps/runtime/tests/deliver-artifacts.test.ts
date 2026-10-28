@@ -11,6 +11,7 @@ import {
   buildArtifactConfirmPrompt,
   copyStagedArtifactsToParent,
   deliveryDirName,
+  groupTaskDirName,
   normalizeArtifactPaths,
   shouldForceArtifactConfirm,
   stageArtifactPaths,
@@ -72,6 +73,11 @@ it("deliveryDirName uses from-<name>-<id> and falls back to from-<id>", () => {
   expect(deliveryDirName("6HhyiCvG")).toBe("from-6HhyiCvG");
   expect(deliveryDirName("6HhyiCvG", "  ")).toBe("from-6HhyiCvG");
   expect(deliveryDirName("../evil", "../../")).toBe("from-evil");
+});
+
+it("groupTaskDirName reuses from-<name>-<taskId> with the short task id", () => {
+  expect(groupTaskDirName("Ab12Cd34", "质检员")).toBe("from-质检员-Ab12Cd34");
+  expect(groupTaskDirName("Ab12Cd34")).toBe("from-Ab12Cd34");
 });
 
 it("copyStagedArtifactsToParent only copies staged files under from-<agentId>", () => {

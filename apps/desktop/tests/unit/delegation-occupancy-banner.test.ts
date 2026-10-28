@@ -2,7 +2,7 @@
 import { expect, it } from "vitest";
 import { ref } from "vue";
 
-import DelegationOccupancyBanner from "../../src/pages/conversation/components/agent-main/DelegationOccupancyBanner.vue";
+import DelegationOccupancyBanner from "../../src/pages/conversation/components/chat-main/single/DelegationOccupancyBanner.vue";
 import type { IncomingDelegation } from "../../src/pages/conversation/model/sidebar/delegation-presence.js";
 import { threadAgentIdKey } from "../../src/pages/conversation/model/thread/thread-agent-id.js";
 import {

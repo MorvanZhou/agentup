@@ -1,33 +1,66 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { SearchIcon } from "@lucide/vue";
+import { PlusIcon, SearchIcon } from "@lucide/vue";
 
+import { useDesktop } from "../../../../app/desktop";
+import type { GroupRoom } from "../../../../shared/api/runtime/groups";
 import type { AgentCard } from "../../../../shared/model/runtime/runtime";
 import { t } from "../../../../shared/model/ui/ui-locale";
+import type { ConversationRow } from "../../model/sidebar/conversation-row";
 import {
-  filterConversationRows,
-  type ConversationRow,
-} from "../../model/sidebar/conversation-row";
+  mergeSidebarSlots,
+  type GroupSidebarAttention,
+} from "../../model/sidebar/group-sidebar";
 import AgentSidebarItem from "./AgentSidebarItem.vue";
+import GroupSidebarItem from "./GroupSidebarItem.vue";
 
 const props = defineProps<{
   rows: ConversationRow[];
+  groups?: GroupRoom[];
+  selectedGroupId?: string | null;
+  /** 群 HITL：有 groupId 的审批 / 提问，点亮群侧栏角标。 */
+  groupAttention?: GroupSidebarAttention;
+  /** 正在主区建群时，单聊不再显示选中。 */
+  creatingGroup?: boolean;
   /** 尚无第三方已招募 Agent 时为 true。 */
   showRecruitNudge?: boolean;
 }>();
 
-const emit = defineEmits<{ select: [agent: AgentCard]; start: [agent: AgentCard] }>();
+const { unread } = useDesktop();
+
+const emit = defineEmits<{
+  select: [agent: AgentCard];
+  start: [agent: AgentCard];
+  selectGroup: [groupId: string];
+  createGroup: [];
+}>();
 
 const router = useRouter();
 const query = ref("");
 
-const visible = computed(() => filterConversationRows(props.rows, query.value));
+const slots = computed(() =>
+  mergeSidebarSlots(props.rows, props.groups ?? [], query.value, {
+    selectedGroupId: props.selectedGroupId,
+    attention: props.groupAttention,
+    unread: unread.value,
+  }),
+);
+const avatarByAgent = computed(() => {
+  const map: Record<string, string> = {};
+  for (const row of props.rows) {
+    const url = row.agent.avatarUrl;
+    if (url) map[row.agent.agentId] = url;
+  }
+  return map;
+});
 const searching = computed(() => Boolean(query.value.trim()));
+const listEmpty = computed(() => props.rows.length === 0 && (props.groups ?? []).length === 0);
 /** 有搜索词时不抢 sideNoMatch；仅在空列表+无搜索时展示引导。 */
 const recruitNudgeVisible = computed(
   () => Boolean(props.showRecruitNudge) && !searching.value,
 );
+const groupSurface = computed(() => Boolean(props.selectedGroupId) || Boolean(props.creatingGroup));
 
 function goMarket(): void {
   void router.push({ name: "market" });
@@ -53,19 +86,39 @@ function goLocalCreate(): void {
           class="min-h-8 w-full rounded-md border-0 bg-background py-1.5 pr-2 pl-7 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:bg-muted focus:ring-2 focus:ring-accent/30"
         />
       </label>
+      <button
+        type="button"
+        class="app-no-drag grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg border border-rule bg-paper text-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+        :class="{ 'border-accent/40 bg-accent/10 text-accent': creatingGroup }"
+        :aria-label="t('groupNew')"
+        :aria-pressed="creatingGroup"
+        @click="emit('createGroup')"
+      >
+        <PlusIcon class="size-4" />
+      </button>
     </div>
 
-    <!-- 消息列表 -->
+    <!-- 消息列表：单聊和群混在一列 -->
     <nav class="flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-auto min-[730px]:overflow-x-hidden">
-      <p v-if="rows.length === 0" class="px-3 py-4 text-sm text-muted-foreground">{{ t("sideEmpty") }}</p>
-      <p v-else-if="visible.length === 0" class="px-3 py-4 text-sm text-muted-foreground">{{ t("sideNoMatch") }}</p>
-      <AgentSidebarItem
-        v-for="row in visible"
-        :key="row.agent.agentId"
-        :row="row"
-        @select="emit('select', row.agent)"
-        @start="emit('start', row.agent)"
-      />
+      <p v-if="listEmpty" class="px-3 py-4 text-sm text-muted-foreground">{{ t("sideEmpty") }}</p>
+      <p v-else-if="slots.length === 0" class="px-3 py-4 text-sm text-muted-foreground">{{ t("sideNoMatch") }}</p>
+      <template
+        v-for="slot in slots"
+        :key="slot.kind === 'agent' ? slot.row.agent.agentId : `group:${slot.row.room.id}`"
+      >
+        <AgentSidebarItem
+          v-if="slot.kind === 'agent'"
+          :row="groupSurface ? { ...slot.row, selected: false } : slot.row"
+          @select="emit('select', slot.row.agent)"
+          @start="emit('start', slot.row.agent)"
+        />
+        <GroupSidebarItem
+          v-else
+          :row="creatingGroup ? { ...slot.row, selected: false } : slot.row"
+          :avatars="avatarByAgent"
+          @select="emit('selectGroup', slot.row.room.id)"
+        />
+      </template>
       <!-- 无第三方招募：居中空态，与会话列表行区分 -->
       <div
         v-if="recruitNudgeVisible"

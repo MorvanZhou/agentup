@@ -6,8 +6,13 @@ import {
   totalBlocked,
   totalUnread,
 } from "../pages/conversation/model/sidebar/conversation-row";
+import {
+  groupAttentionBlockedCount,
+  groupAttentionFromSnapshot,
+} from "../pages/conversation/model/sidebar/group-sidebar";
 import { DesktopApi, DesktopApiError } from "../shared/api/runtime";
-import type { AttentionSnapshot } from "../shared/api/runtime/chat";
+import type { AttentionSnapshot, BackgroundJobDto, DelegationTaskDto } from "../shared/api/runtime/chat";
+import type { GroupRoom } from "../shared/api/runtime/groups";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/avatar/personal-assistant-default";
 import {
   PERSONAL_ASSISTANT_ID,
@@ -16,7 +21,12 @@ import {
   type Session,
   type ThemeMode,
 } from "../shared/model/runtime/runtime";
-import { GUEST_USER_ID, isAccountSession, isGuestSession } from "../shared/model/session/session";
+import {
+  GUEST_SESSION,
+  GUEST_USER_ID,
+  isAccountSession,
+  isGuestSession,
+} from "../shared/model/session/session";
 import {
   applyUiLocale,
   readDeviceLocale,
@@ -28,6 +38,10 @@ import {
 } from "../shared/model/ui/ui-locale";
 import { showToast } from "../shared/model/ui/toast";
 import { bindAuthGate, runWithAccount } from "./auth/auth-gate";
+import {
+  desktopPulseIntervalMs,
+  desktopPulseIsActive,
+} from "./desktop-pulse-interval";
 import { syncAppBadge, syncMenuBarUnread } from "./native/app-badge";
 import {
   isMenuBarPrefAvailable,
@@ -35,10 +49,8 @@ import {
   syncMenuBarVisible,
   writeMenuBarVisible,
 } from "./native/menu-bar-pref";
-import { clearSession, ensureGuestSession, readSession, saveSession } from "./session/session-store";
+import { clearSession, readSession, saveSession } from "./session/session-store";
 import { applyTheme, clearThemeMirror, readThemeMirror, writeThemeMirror } from "./theme/theme";
-
-const ATTENTION_POLL_MS = 2_500;
 
 const emptyAttention = (): AttentionSnapshot => ({
   busyAgentIds: [],
@@ -47,6 +59,14 @@ const emptyAttention = (): AttentionSnapshot => ({
   askUsers: [],
   shellHangs: [],
 });
+
+const emptyPulseFleets = () => ({
+  runningDelegations: [] as DelegationTaskDto[],
+  unseenDelegations: [] as DelegationTaskDto[],
+  runningJobs: [] as BackgroundJobDto[],
+  unseenJobs: [] as BackgroundJobDto[],
+});
+
 
 export function useDesktopApp(api = new DesktopApi()) {
   const session = ref<Session | null>(readSession());
@@ -62,10 +82,18 @@ export function useDesktopApp(api = new DesktopApi()) {
   const menuBarVisible = ref(readMenuBarVisible());
   const menuBarAvailable = computed(() => isMenuBarPrefAvailable());
   const busy = ref(false);
+  /** 正在等系统浏览器里的 Web 登录回跳。能力叠层自带取消，菜单 / 账号设置用等待叠层。 */
+  const browserLoginActive = ref(false);
   const busyAgent = ref("");
   /** runtime 汇总：busy + 可闭合 HITL（侧栏 / Dock 真相源之一）。 */
   const attention = ref<AttentionSnapshot>(emptyAttention());
-  let attentionPoll: ReturnType<typeof setInterval> | undefined;
+  /** pulse 附带：running / unseen 委托与后台作业（会话页 Fleet / toast 共用）。 */
+  const pulseFleets = ref(emptyPulseFleets());
+  /** pulse 附带：本机群列表（无云 backfill；显式 load 仍走 GET /groups）。 */
+  const pulseGroups = ref<GroupRoom[]>([]);
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+  let pulseInFlight = false;
+  let pulseActive = false;
 
   /** 侧栏会话：私人助理 + 本机私有 + 已招募；不依赖控制面是否在线。 */
   const conversations = computed(() => [
@@ -83,6 +111,7 @@ export function useDesktopApp(api = new DesktopApi()) {
   const blockedAgentIds = computed(() => {
     const ids = new Set<string>();
     for (const item of attention.value.approvals) {
+      if (item.groupId) continue;
       ids.add(item.agentId);
       // 异步委托：HITL 挂在子会话，父会话也算「待处理」以便 Dock / 导航角标。
       if (item.parentAgentId && item.parentAgentId !== item.agentId) {
@@ -90,12 +119,14 @@ export function useDesktopApp(api = new DesktopApi()) {
       }
     }
     for (const item of attention.value.askUsers) {
+      if (item.groupId) continue;
       ids.add(item.agentId);
       if (item.parentAgentId && item.parentAgentId !== item.agentId) {
         ids.add(item.parentAgentId);
       }
     }
     for (const item of attention.value.shellHangs) {
+      if (item.groupId) continue;
       ids.add(item.agentId);
       if (item.parentAgentId && item.parentAgentId !== item.agentId) {
         ids.add(item.parentAgentId);
@@ -104,31 +135,37 @@ export function useDesktopApp(api = new DesktopApi()) {
     return ids;
   });
   const blockedCount = computed(() => {
+    const visitApprovals = attention.value.approvals.filter((item) => !item.groupId);
+    const visitAskUsers = attention.value.askUsers.filter((item) => !item.groupId);
     const parents: string[] = [];
-    for (const item of attention.value.approvals) {
+    for (const item of visitApprovals) {
       if (item.parentAgentId && item.parentAgentId !== item.agentId) {
         parents.push(item.parentAgentId);
       }
     }
-    for (const item of attention.value.askUsers) {
+    for (const item of visitAskUsers) {
       if (item.parentAgentId && item.parentAgentId !== item.agentId) {
         parents.push(item.parentAgentId);
       }
     }
-    return totalBlocked(
-      attention.value.approvals.map((item) => item.agentId),
-      attention.value.askUsers.map((item) => item.agentId),
-      parents,
+    return (
+      totalBlocked(
+        visitApprovals.map((item) => item.agentId),
+        visitAskUsers.map((item) => item.agentId),
+        parents,
+      ) + groupAttentionBlockedCount(groupAttentionFromSnapshot(attention.value))
     );
   });
-  /** 与侧栏会话行角标之和一致，供主导航「消息」角标使用。 */
-  const conversationAttentionCount = computed(() =>
-    totalAttentionBadge(
-      unread.value,
-      attention.value.approvals.map((item) => item.agentId),
-      attention.value.askUsers.map((item) => item.agentId),
-    ),
-  );
+  /** 与侧栏会话行角标之和一致（单聊未读/HITL + 群 HITL），供主导航「消息」角标使用。 */
+  const conversationAttentionCount = computed(() => {
+    const visit =
+      totalAttentionBadge(
+        unread.value,
+        attention.value.approvals.filter((item) => !item.groupId).map((item) => item.agentId),
+        attention.value.askUsers.filter((item) => !item.groupId).map((item) => item.agentId),
+      ) + groupAttentionBlockedCount(groupAttentionFromSnapshot(attention.value));
+    return visit;
+  });
 
   onMounted(() => {
     if (session.value) void refresh();
@@ -167,21 +204,36 @@ export function useDesktopApp(api = new DesktopApi()) {
   watch(
     () => (session.value ? `${session.value.userId}:${session.value.token}` : ""),
     (key) => {
-      stopAttentionPoll();
+      stopPulsePoll();
       if (!key) {
         attention.value = emptyAttention();
+        pulseFleets.value = emptyPulseFleets();
+        pulseGroups.value = [];
+        pulseActive = false;
         return;
       }
-      void pullAttention();
-      attentionPoll = setInterval(() => {
-        void pullAttention();
-      }, ATTENTION_POLL_MS);
+      void pullPulse();
+      schedulePulse();
     },
     { immediate: true },
   );
 
+  function onVisibilityChange(): void {
+    if (typeof document === "undefined") return;
+    if (!document.hidden && session.value) {
+      void pullPulse();
+      schedulePulse();
+    }
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+
   onScopeDispose(() => {
-    stopAttentionPoll();
+    stopPulsePoll();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
   });
 
   async function establishAccount(next: Session): Promise<void> {
@@ -317,6 +369,7 @@ export function useDesktopApp(api = new DesktopApi()) {
   async function cancelBrowserLogin(): Promise<void> {
     browserLoginFlight += 1;
     busy.value = false;
+    browserLoginActive.value = false;
     try {
       // 优先只取消 wait；旧桥没有 cancel 时再 stop
       if (window.agentUp?.oauthLoopbackCancelWait) {
@@ -365,6 +418,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       url.searchParams.set("client", "desktop");
       url.searchParams.set("loopback_uri", loopbackUri);
       browserLoginUrl = url.toString();
+      browserLoginActive.value = true;
       await bridge.openExternal(browserLoginUrl);
       const { code } = await bridge.oauthLoopbackWait();
       if (flight !== browserLoginFlight) return false;
@@ -379,6 +433,7 @@ export function useDesktopApp(api = new DesktopApi()) {
     } finally {
       if (flight === browserLoginFlight) {
         browserLoginUrl = "";
+        browserLoginActive.value = false;
         busy.value = false;
         // 延迟关 loopback：成功页「打开 AgentUp」走同端口 /open；立刻 stop 会 Connection refused
         window.setTimeout(() => {
@@ -392,6 +447,16 @@ export function useDesktopApp(api = new DesktopApi()) {
   async function loginWithOAuth(provider: "github" | "google"): Promise<boolean> {
     void provider;
     return loginWithBrowser();
+  }
+
+  /** 菜单 / 账号设置：直接打开 Web 登录。进行中则只重新打开同一页。 */
+  function beginBrowserLogin(): void {
+    if (browserLoginActive.value) {
+      void reopenBrowserLogin();
+      return;
+    }
+    if (busy.value) return;
+    void loginWithBrowser();
   }
 
   async function refresh(): Promise<void> {
@@ -587,28 +652,81 @@ export function useDesktopApp(api = new DesktopApi()) {
     await persistState(nextUnread, nextPreviews, nextLastActiveAt);
   }
 
-  async function clearUnread(agentId: string): Promise<void> {
-    if (!session.value || !unread.value[agentId]) return;
+  /** 调用方已判定「该记一条未读」（如群回合结束且你不在该群）。 */
+  async function bumpUnread(id: string): Promise<void> {
+    if (!session.value || !id) return;
+    const nextUnread = { ...unread.value, [id]: (unread.value[id] ?? 0) + 1 };
+    await persistState(nextUnread, previews.value, lastActiveAt.value);
+  }
+
+  async function clearUnread(id: string): Promise<void> {
+    if (!session.value || !id || !unread.value[id]) return;
     const next = { ...unread.value };
-    delete next[agentId];
+    delete next[id];
     await persistState(next, previews.value, lastActiveAt.value);
   }
 
-  async function pullAttention(): Promise<void> {
+  async function pullPulse(): Promise<void> {
     if (!session.value) {
       attention.value = emptyAttention();
+      pulseFleets.value = emptyPulseFleets();
+      pulseGroups.value = [];
+      pulseActive = false;
       return;
     }
+    if (pulseInFlight) return;
+    pulseInFlight = true;
+    const wasActive = pulseActive;
     try {
-      attention.value = await api.attention(session.value.token, session.value.userId);
+      const snap = await api.desktopPulse(session.value.token, session.value.userId);
+      attention.value = snap.attention;
+      pulseFleets.value = {
+        runningDelegations: snap.runningDelegations,
+        unseenDelegations: snap.unseenDelegations,
+        runningJobs: snap.runningJobs,
+        unseenJobs: snap.unseenJobs,
+      };
+      pulseGroups.value = snap.groups;
+      pulseActive = desktopPulseIsActive({
+        busyAgentIds: snap.attention.busyAgentIds,
+        approvals: snap.attention.approvals,
+        askUsers: snap.attention.askUsers,
+        shellHangs: snap.attention.shellHangs,
+        runningDelegations: snap.runningDelegations,
+        runningJobs: snap.runningJobs,
+        unseenDelegations: snap.unseenDelegations,
+        unseenJobs: snap.unseenJobs,
+        groups: snap.groups,
+      });
+      // 空闲→活跃时立刻按短间隔重排，避免卡在 12s 空闲拍上。
+      if (wasActive !== pulseActive) schedulePulse();
     } catch {
       /* 保持上一帧；下次轮询再对齐 */
+    } finally {
+      pulseInFlight = false;
     }
   }
 
-  function stopAttentionPoll(): void {
-    if (attentionPoll) clearInterval(attentionPoll);
-    attentionPoll = undefined;
+  /** 兼容旧调用点：HITL 后仍只关心 attention，但走合并脉冲。 */
+  async function pullAttention(): Promise<void> {
+    await pullPulse();
+  }
+
+  function schedulePulse(): void {
+    stopPulsePoll();
+    if (!session.value) return;
+    const hidden = typeof document !== "undefined" && document.hidden;
+    const delay = desktopPulseIntervalMs({ hidden, active: pulseActive });
+    pulseTimer = setTimeout(() => {
+      void pullPulse().finally(() => {
+        schedulePulse();
+      });
+    }, delay);
+  }
+
+  function stopPulsePoll(): void {
+    if (pulseTimer) clearTimeout(pulseTimer);
+    pulseTimer = undefined;
   }
 
   /** 设置账号级备注名（backend 招募关系）；空字符串表示清除。 */
@@ -650,8 +768,14 @@ export function useDesktopApp(api = new DesktopApi()) {
     return updateProfile(nickname);
   }
 
-  /** 登出后落回游客，可继续用自备模型；账号目录数据保留，不自动进登录页。 */
+  /** 登出后落回游客，可继续用自备模型；账号目录数据保留。 */
   async function logout(): Promise<void> {
+    // 先落游客身份：偏好 / refresh 失败时也不要卡在账号昵称。
+    await clearSession();
+    const guest = { ...GUEST_SESSION };
+    await saveSession(guest);
+    session.value = guest;
+
     agents.value = [];
     personalAssistant.value = null;
     selectedId.value = "";
@@ -660,15 +784,24 @@ export function useDesktopApp(api = new DesktopApi()) {
     previews.value = {};
     lastActiveAt.value = {};
     attention.value = emptyAttention();
-    stopAttentionPoll();
+    pulseFleets.value = emptyPulseFleets();
+    pulseGroups.value = [];
+    pulseActive = false;
+    stopPulsePoll();
     themeMode.value = "system";
     skipEditResendConfirm.value = false;
     clearThemeMirror();
     applyTheme("system");
-    await applyUiLocale(readDeviceLocale());
-    await clearSession();
-    session.value = await ensureGuestSession();
-    await refresh();
+    try {
+      await applyUiLocale(readDeviceLocale());
+    } catch {
+      /* 游客已落盘；语言下次进页再对齐 */
+    }
+    try {
+      await refresh();
+    } catch {
+      /* 游客已落盘；列表下次进页再对齐 */
+    }
   }
 
   bindAuthGate({
@@ -690,6 +823,8 @@ export function useDesktopApp(api = new DesktopApi()) {
     previews,
     lastActiveAt,
     attention,
+    pulseFleets,
+    pulseGroups,
     blockedAgentIds,
     blockedCount,
     conversationAttentionCount,
@@ -701,8 +836,10 @@ export function useDesktopApp(api = new DesktopApi()) {
     menuBarVisible,
     setMenuBarVisible,
     busy,
+    browserLoginActive,
     busyAgent,
     pullAttention,
+    pullPulse,
     authenticate,
     completeSession,
     resendVerification,
@@ -710,6 +847,7 @@ export function useDesktopApp(api = new DesktopApi()) {
     requestPasswordReset,
     confirmPasswordReset,
     loginWithBrowser,
+    beginBrowserLogin,
     reopenBrowserLogin,
     cancelBrowserLogin,
     loginWithOAuth,
@@ -717,6 +855,8 @@ export function useDesktopApp(api = new DesktopApi()) {
     select,
     start,
     recordTurnEnd,
+    bumpUnread,
+    clearUnread,
     setRemark,
     setSkipEditResendConfirm,
     updateNickname,

@@ -1,14 +1,16 @@
 import { expect, type Page } from "@playwright/test";
 
-/** 用浏览器登录闭环（Electron 桥接桩）进入会话页。 */
+/** 用浏览器登录闭环（菜单「登录 / 注册」）进入会话页。 */
 export async function signIn(
   page: Page,
   bridge: Parameters<typeof mockAgentUp>[1] = {},
 ): Promise<void> {
   await mockAgentUp(page, bridge);
-  await page.goto("/login");
-  await page.getByRole("button", { name: "前往 agentup.me" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/");
+  await openUserMenu(page);
+  await page.getByRole("menuitem", { name: "登录 / 注册" }).click();
+  await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "继续登录" })).toHaveCount(0);
 }
 
 export async function openUserMenu(page: Page): Promise<void> {
@@ -20,12 +22,13 @@ export function messagesNav(page: Page) {
   return page.getByRole("link", { name: /^消息/ });
 }
 
-/** 账号菜单 → 设置 → 账号页登出（菜单内不再放登出项）。 */
+/** 账号菜单 → 设置 → 账号页登出（菜单内不再放登出项）；等到轨栏回到游客再返回。 */
 export async function signOut(page: Page): Promise<void> {
   await openUserMenu(page);
   await page.getByRole("menuitem", { name: "设置" }).click();
   await expect(page.getByRole("heading", { name: "账号设置" })).toBeVisible();
   await page.getByRole("button", { name: "登出" }).click();
+  await expect(page.getByRole("button", { name: "账号：游客" })).toBeVisible();
 }
 
 /**
@@ -128,7 +131,6 @@ export async function mockAgentUp(
         oauthLoopbackStart: async () => ({ loopbackUri: "http://127.0.0.1:9/callback", port: 9 }),
         oauthLoopbackWait: async () => ({ code: "mock-oauth-code" }),
         oauthLoopbackTakePending: async () => null,
-        oauthLoopbackPeekPending: async () => null,
         oauthLoopbackStop: async () => undefined,
         webUrl: async () => "http://127.0.0.1:3000",
       };

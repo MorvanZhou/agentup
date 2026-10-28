@@ -15,6 +15,7 @@ async function bindHandler(
     visitRoot: string;
     kind: "personal" | "agent";
     userDataRoot: string;
+    trustedRoots?: readonly string[];
   },
 ) {
   let handler:
@@ -182,4 +183,50 @@ it("does not ask for relative paths inside cwd", async () => {
     ),
   ).resolves.toBeUndefined();
   expect(seen).not.toHaveBeenCalled();
+});
+
+it("allows group shared workspace paths without trying to mount the data directory", async () => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mount-group-"));
+  const { visitRoot, cwd } = seedVisit(dataRoot);
+  const workspace = path.join(dataRoot, "users", "patient-a", ".runtime", "groups", "dev-team", "workspace");
+  const artifact = path.join(workspace, "ARTIFACT", "handoff.md");
+  fs.mkdirSync(path.dirname(artifact), { recursive: true });
+  fs.writeFileSync(artifact, "done\n");
+  const broker = new ApprovalBroker(dataRoot);
+  const handler = await bindHandler(broker, {
+    cwd,
+    visitRoot,
+    kind: "agent",
+    userDataRoot: dataRoot,
+    trustedRoots: [workspace],
+  });
+  const seen = vi.fn();
+  broker.subscribe(seen);
+
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "read-group-artifact",
+        toolName: "read",
+        input: { path: artifact },
+      },
+      { cwd },
+    ),
+  ).resolves.toBeUndefined();
+
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "write-group-work",
+        toolName: "write",
+        input: { path: path.join(workspace, "WORK", "task-1", "draft.md") },
+      },
+      { cwd },
+    ),
+  ).resolves.toBeUndefined();
+
+  expect(seen).not.toHaveBeenCalled();
+  expect(readProjectRoots(visitRoot, "agent")).toEqual([]);
 });

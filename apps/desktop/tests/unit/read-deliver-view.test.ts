@@ -1,8 +1,8 @@
 /** @vitest-environment happy-dom */
 import { expect, it } from "vitest";
 
-import DeliverArtifactList from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/delegation/DeliverArtifactList.vue";
-import ReadImages from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/files/ReadImages.vue";
+import DeliverArtifactList from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/delegation/DeliverArtifactList.vue";
+import ReadImages from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/files/ReadImages.vue";
 import { mountView } from "./mount-view.js";
 
 const PNG =

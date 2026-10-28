@@ -7,7 +7,8 @@ import path from "node:path";
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
 import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
-import { clearPersonalContext, clearPersonalHistory, readPersonalHistory } from "../../session/history/history.js";
+import { clearPersonalContext, clearPersonalHistory, readPersonalHistory, readPersonalHistoryPage } from "../../session/history/history.js";
+import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
 import { setVisitSessionModel } from "../../session/model/session-model.js";
 import { listVisitSkills } from "../../session/skills/skills.js";
 import {
@@ -91,7 +92,16 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
   app.get("/personal-assistant/history", async (c) => {
     bearer(c);
     const userId = requireUserId(c.req.query("user_id") ?? null);
-    return json(c, 200, { messages: await readPersonalHistory(config.userDataRoot, userId) });
+    const query = parseTranscriptPageQuery(c.req.query("limit"), c.req.query("before"));
+    if (!query) throw new LocalError("请求无效", 400);
+    if (query.full) {
+      return json(c, 200, { messages: await readPersonalHistory(config.userDataRoot, userId) });
+    }
+    const page = await readPersonalHistoryPage(config.userDataRoot, userId, {
+      limit: query.limit,
+      beforeId: query.beforeId,
+    });
+    return json(c, 200, { messages: page.messages, hasMore: page.hasMore });
   });
 
   app.get("/personal-assistant/session/model", (c) => {
@@ -261,6 +271,7 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
         notified: task.notified,
         created_at: task.createdAt,
         updated_at: task.updatedAt,
+        ...(task.groupId ? { group_id: task.groupId } : {}),
       })),
     });
   });
@@ -323,6 +334,9 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
         brief: task.brief,
         result_summary: task.resultSummary ?? null,
         error: task.error ?? null,
+        // 群共享工作区预览与产物 tab 投影：桌面挂到 agentUpArtifacts。
+        group_id: task.groupId ?? null,
+        artifacts: task.artifacts ?? null,
       },
       messages,
     });

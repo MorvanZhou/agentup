@@ -39,6 +39,7 @@ import {
 import {
   afterTerminal,
   notifyParent as enqueueParentNotify,
+  settleGroupIfNotified,
   settleIfSync,
 } from "./notify.js";
 import { DelegationSlots } from "./slots.js";
@@ -60,6 +61,23 @@ export class DelegationService {
   private readonly owned = new Set<string>();
   /** 用户发言回合需要处置进行中的委托；wake 不置位。 */
   private readonly dispositionArmed = new Set<string>();
+  /** 群内任务终态回到群记录，不进一对一唤醒。 */
+  private groupTerminal?: (task: DelegationTask) => void;
+  /** 群内工作单刚创建，还没开子会话。让群记下 taskId，交回才找得到执掌者。 */
+  private groupStarted?: (input: { userId: string; groupId: string; taskId: string }) => void;
+  /** 子会话拿到执行槽。之前群里这条消息显示为排队。 */
+  private groupRunning?: (input: { userId: string; groupId: string; taskId: string }) => void;
+  private groupQueue?: (input: {
+    userId: string;
+    groupId: string;
+    toAgentId: string;
+    brief: string;
+  }) => void;
+  /** 群不存在时返回 undefined，避免把群外已招募的人当成可派对象。 */
+  private groupMembers?: (input: {
+    userId: string;
+    groupId: string;
+  }) => { agentId: string; name: string }[] | undefined;
   readonly progress = new DelegationProgressHub();
 
   constructor(private readonly options: DelegationServiceOptions) {
@@ -81,6 +99,52 @@ export class DelegationService {
 
   delegationDispositionArmed(userId: string, fromAgentId: string): boolean {
     return this.dispositionArmed.has(parentKey(userId, fromAgentId));
+  }
+
+  setGroupTerminal(handler: (task: DelegationTask) => void): void {
+    this.groupTerminal = handler;
+  }
+
+  /** 群内工作单的 visit 已装好、子会话还没开跑时调用。 */
+  setGroupTaskStarted(
+    handler: (input: { userId: string; groupId: string; taskId: string }) => void,
+  ): void {
+    this.groupStarted = handler;
+  }
+
+  setGroupTaskRunning(
+    handler: (input: { userId: string; groupId: string; taskId: string }) => void,
+  ): void {
+    this.groupRunning = handler;
+  }
+
+  /** 旧的接班队列。群里现在同时跑多张单，不再把下一位写进这个队列。 */
+  setGroupQueue(
+    handler: (input: { userId: string; groupId: string; toAgentId: string; brief: string }) => void,
+  ): void {
+    this.groupQueue = handler;
+  }
+
+  /** 群成员。群不存在时返回 undefined。 */
+  setGroupMembers(
+    handler: (input: { userId: string; groupId: string }) => { agentId: string; name: string }[] | undefined,
+  ): void {
+    this.groupMembers = handler;
+  }
+
+  listGroupMembers(
+    userId: string,
+    groupId: string,
+  ): { agentId: string; name: string }[] | undefined {
+    return this.groupMembers?.({ userId, groupId });
+  }
+
+  private requireGroupMember(userId: string, groupId: string, toAgentId: string): void {
+    const members = this.groupMembers?.({ userId, groupId });
+    if (!members) throw new DelegationError("群不存在");
+    if (!members.some((member) => member.agentId === toAgentId)) {
+      throw new DelegationError("不是群成员");
+    }
   }
 
   bindAuth(userId: string, token: string): void {
@@ -133,9 +197,10 @@ export class DelegationService {
       fromAgentId?: string;
     } = {},
   ): DelegationTask[] {
-    // 愈合历史：旧版 sync（wait）终态未标 seen/notified，会反复进桌面 toast。
+    // 愈合历史：旧版 sync / 群终态未标 seen，会反复进桌面 toast / 私聊未读。
     for (const task of this.store.list(userId)) {
       settleIfSync(this.store, task);
+      settleGroupIfNotified(this.store, task);
     }
     return this.store.list(userId, options);
   }
@@ -164,7 +229,7 @@ export class DelegationService {
           error: t("work.interruptedByExit"),
         });
         if (!next) continue;
-        afterTerminal(this.store, this.options.enqueueWake, next);
+        afterTerminal(this.store, this.options.enqueueWake, next, this.groupTerminal);
         settled.push(this.store.get(task.id) ?? next);
       }
     }
@@ -196,7 +261,7 @@ export class DelegationService {
         status: "cancelled",
         error: "用户已取消",
       }) ?? task;
-    afterTerminal(this.store, this.options.enqueueWake, updated);
+    afterTerminal(this.store, this.options.enqueueWake, updated, this.groupTerminal);
     return this.store.get(taskId) ?? updated;
   }
 
@@ -312,6 +377,7 @@ export class DelegationService {
     wait?: boolean;
     signal?: AbortSignal;
     toolCallId?: string;
+    groupId?: string;
   }): Promise<DelegateRunResult> {
     const batch = await this.delegateFanout({
       userId: input.userId,
@@ -320,6 +386,7 @@ export class DelegationService {
       wait: input.wait,
       signal: input.signal,
       toolCallId: input.toolCallId,
+      groupId: input.groupId,
     });
     const task = batch.tasks[0];
     if (!task) throw new DelegationError("委托失败");
@@ -341,9 +408,14 @@ export class DelegationService {
     wait?: boolean;
     signal?: AbortSignal;
     toolCallId?: string;
+    groupId?: string;
   }): Promise<DelegateFanoutResult> {
     if (input.items.length === 0) {
       throw new DelegationError("tasks 不能为空");
+    }
+    const groupId = input.groupId;
+    if (groupId) {
+      for (const item of input.items) this.requireGroupMember(input.userId, groupId, item.toAgentId);
     }
     if (input.items.length > MAX_DELEGATION_FANOUT) {
       throw new DelegationError(`一次最多委托 ${MAX_DELEGATION_FANOUT} 个专家`);
@@ -374,8 +446,9 @@ export class DelegationService {
       });
     }
 
-    // 扇出：仅显式 wait=true 才同步汇合。单项：模型应按耗时设 wait；省略时回落同步（避免漏参整轮空等）。
-    const wait = input.items.length > 1 ? input.wait === true : input.wait !== false;
+    // 群里只有异步：执掌者拿 task_id 结束回合，工作单交回后由群重新唤醒；模型传什么都压成 false。
+    // 一对一：扇出仅显式 wait=true 才同步汇合；单项省略 wait 回落同步（避免漏参整轮空等）。
+    const wait = groupId ? false : input.items.length > 1 ? input.wait === true : input.wait !== false;
 
     const planned: Array<{
       item: (typeof resolved)[number];
@@ -404,6 +477,11 @@ export class DelegationService {
         fromAgentId: input.fromAgentId,
         note: item.brief,
       });
+      if (!outcome.queued && outcome.reason === "not_started") {
+        const revised = this.store.update(current.id, { brief: item.brief }) ?? outcome.task;
+        planned.push({ item, existing: revised });
+        continue;
+      }
       if (!outcome.queued) {
         throw new DelegationError(reuseBlockedMessage(outcome.reason, outcome.task.id));
       }
@@ -430,6 +508,7 @@ export class DelegationService {
         toAgentName: item.toAgentName,
         brief: item.brief,
         wait,
+        groupId,
       });
       this.store.update(task.id, { status: "running" });
       this.owned.add(task.id);
@@ -444,7 +523,11 @@ export class DelegationService {
         wait,
       });
       // 异步也要先在令牌仍绑定时装好 visit，避免 turn 结束后 sync 失败。
+      // 子会话没装上时不要记进群，否则执掌者会空等一张永远不会交回的单。
       visits.push(await this.syncVisit(task.userId, task.toAgentId));
+      if (groupId) {
+        this.groupStarted?.({ userId: input.userId, groupId, taskId: task.id });
+      }
       created.push(this.store.get(task.id)!);
     }
 
@@ -487,6 +570,11 @@ export class DelegationService {
         markNested: (userId, parentAgentId, childAgentId) =>
           this.markNested(userId, parentAgentId, childAgentId),
         bindSteer: (taskIdInner, steer) => this.bindDelegationSteer(taskIdInner, steer),
+        onGroup: (task) => this.groupTerminal?.(task),
+        onGroupRunning: (task) => {
+          if (!task.groupId) return;
+          this.groupRunning?.({ userId: task.userId, groupId: task.groupId, taskId: task.id });
+        },
       },
       taskId,
       visit,

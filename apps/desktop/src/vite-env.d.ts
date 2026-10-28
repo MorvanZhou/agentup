@@ -39,7 +39,6 @@ interface Window {
     oauthLoopbackStart?(locale?: "zh" | "en"): Promise<{ loopbackUri: string; port: number }>;
     oauthLoopbackWait?(timeoutMs?: number): Promise<{ code: string }>;
     oauthLoopbackTakePending?(): Promise<{ code: string } | null>;
-    oauthLoopbackPeekPending?(): Promise<{ code: string } | null>;
     oauthLoopbackCancelWait?(): Promise<void>;
     oauthLoopbackStop?(): Promise<void>;
     /** 对外 Web 登录门面根地址（无尾斜杠）。 */

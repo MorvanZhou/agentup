@@ -18,12 +18,14 @@ export class BackgroundJobStore {
     name: string;
     command: string;
     cwd: string;
+    groupId?: string;
   }): BackgroundJob {
     const now = Date.now();
     const job: BackgroundJob = {
       id: randomUUID(),
       userId: input.userId,
       agentId: input.agentId,
+      ...(input.groupId ? { groupId: input.groupId } : {}),
       name: input.name,
       command: input.command,
       cwd: input.cwd,

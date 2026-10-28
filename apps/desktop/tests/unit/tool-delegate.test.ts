@@ -7,7 +7,7 @@ import {
   fanoutTaskCount,
   resolveActionFromArgs,
   steerNoteFromArgs,
-} from "../../src/pages/conversation/components/agent-main/thread/assistant-ui/tools/delegation/tool-delegate.js";
+} from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/delegation/tool-delegate.js";
 
 it("clips long tool details and reads common delegation args", () => {
   expect(clipToolDetail("short")).toBe("short");

@@ -9,6 +9,7 @@ import type { AsyncWakeItem } from "../../wake/index.js";
 import type { DelegationProgressHub } from "../progress.js";
 import { runDelegatedPrompt } from "../run.js";
 import type { DelegationStore } from "../store.js";
+import type { DelegationTask } from "../types.js";
 import { deliverTaskArtifacts } from "./artifacts.js";
 import { linkAbortSignals } from "./helpers.js";
 import { afterTerminal } from "./notify.js";
@@ -27,6 +28,8 @@ export type ExecuteTaskContext = {
   progress: DelegationProgressHub;
   markNested: (userId: string, parentAgentId: string, childAgentId: string) => () => void;
   bindSteer: (taskId: string, steer: (note: string) => Promise<void>) => () => void;
+  onGroup?: (task: DelegationTask) => void;
+  onGroupRunning?: (task: DelegationTask) => void;
 };
 
 export async function executeDelegationTask(
@@ -44,13 +47,14 @@ export async function executeDelegationTask(
 
   try {
     await ctx.slots.acquire(task.userId, linked);
+    if (task.groupId) ctx.onGroupRunning?.(task);
     // 排队期间被取消：acquire 抛错或状态已 cancelled
     if (ctx.store.get(taskId)?.status === "cancelled" || linked.aborted) {
       const cancelled = ctx.store.update(taskId, {
         status: "cancelled",
         error: "用户已取消",
       });
-      afterTerminal(ctx.store, ctx.enqueueWake, cancelled);
+      afterTerminal(ctx.store, ctx.enqueueWake, cancelled, ctx.onGroup);
       return;
     }
 
@@ -65,6 +69,8 @@ export async function executeDelegationTask(
         {
           taskId: task.id,
           parentAgentId: task.fromAgentId,
+          toAgentName: task.toAgentName,
+          groupId: task.groupId,
           signal: linked,
           progress: ctx.progress,
           shellHang: ctx.shellHang,
@@ -73,7 +79,7 @@ export async function executeDelegationTask(
       );
       const latest = ctx.store.get(task.id);
       if (latest?.status === "cancelled") {
-        afterTerminal(ctx.store, ctx.enqueueWake, latest);
+        afterTerminal(ctx.store, ctx.enqueueWake, latest, ctx.onGroup);
         return;
       }
       const artifactPatch = outcome.artifactsConfirmed
@@ -120,11 +126,11 @@ export async function executeDelegationTask(
           path.join(visit.root, "cwd"),
         );
       }
-      afterTerminal(ctx.store, ctx.enqueueWake, ctx.store.get(task.id));
+      afterTerminal(ctx.store, ctx.enqueueWake, ctx.store.get(task.id), ctx.onGroup);
     } catch (error) {
       const latest = ctx.store.get(task.id);
       if (latest?.status === "cancelled") {
-        afterTerminal(ctx.store, ctx.enqueueWake, latest);
+        afterTerminal(ctx.store, ctx.enqueueWake, latest, ctx.onGroup);
         return;
       }
       const aborted = linked.aborted;
@@ -137,7 +143,7 @@ export async function executeDelegationTask(
         status: aborted ? "cancelled" : "failed",
         error: message,
       });
-      afterTerminal(ctx.store, ctx.enqueueWake, ctx.store.get(task.id));
+      afterTerminal(ctx.store, ctx.enqueueWake, ctx.store.get(task.id), ctx.onGroup);
     } finally {
       unmark();
       ctx.slots.release(task.userId);
@@ -146,7 +152,7 @@ export async function executeDelegationTask(
     // acquireSlot 因 abort 拒绝
     const latest = ctx.store.get(taskId);
     if (latest?.status === "cancelled") {
-      afterTerminal(ctx.store, ctx.enqueueWake, latest);
+      afterTerminal(ctx.store, ctx.enqueueWake, latest, ctx.onGroup);
       return;
     }
     const aborted = linked.aborted;
@@ -159,7 +165,7 @@ export async function executeDelegationTask(
       status: aborted ? "cancelled" : "failed",
       error: message,
     });
-    afterTerminal(ctx.store, ctx.enqueueWake, finished);
+    afterTerminal(ctx.store, ctx.enqueueWake, finished, ctx.onGroup);
   } finally {
     ctx.controllers.delete(taskId);
   }

@@ -264,6 +264,9 @@ importers:
       hono:
         specifier: ^4.13.13
         version: 4.13.13
+      nanoid:
+        specifier: ^6.0.2
+        version: 6.0.2
       pi-provider-volcengine-ark:
         specifier: 0.2.1
         version: 0.2.1(@earendil-works/pi-coding-agent@1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(supports-color@7.2.0)(ws@8.22.0)(zod@4.6.5))

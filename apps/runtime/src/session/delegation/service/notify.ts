@@ -15,8 +15,15 @@ export function notifyParent(
   store: DelegationStore,
   enqueueWake: ((item: AsyncWakeItem) => void) | undefined,
   task: DelegationTask,
+  onGroup?: (task: DelegationTask) => void,
 ): void {
   if (task.wait || task.notified) return;
+  if (task.groupId) {
+    onGroup?.(task);
+    // 群活回群执掌会话，不进一对一 wake；同时标 seen，避免桌面 unseen 轮询当成私聊完成。
+    store.update(task.id, { notified: true, seen: true });
+    return;
+  }
   if (
     task.status !== "completed" &&
     task.status !== "failed" &&
@@ -79,17 +86,31 @@ export function settleIfSync(store: DelegationStore, task: DelegationTask): Dele
 }
 
 /**
+ * 旧盘：群终态曾只标 notified、未标 seen，会反复进桌面一对一 unseen。
+ * 已回群（notified）的才愈合；未 notified 的仍走 notifyParent → onGroup。
+ */
+export function settleGroupIfNotified(
+  store: DelegationStore,
+  task: DelegationTask,
+): DelegationTask {
+  if (!task.groupId || !isTerminalStatus(task.status)) return task;
+  if (!task.notified || task.seen) return task;
+  return store.update(task.id, { seen: true }) ?? task;
+}
+
+/**
  * 终态收尾：async → wake；sync → 直接标 seen/notified（结果已在 tool result）。
  */
 export function afterTerminal(
   store: DelegationStore,
   enqueueWake: ((item: AsyncWakeItem) => void) | undefined,
   task: DelegationTask | undefined,
+  onGroup?: (task: DelegationTask) => void,
 ): void {
   if (!task || !isTerminalStatus(task.status)) return;
   if (task.wait) {
     settleIfSync(store, task);
     return;
   }
-  notifyParent(store, enqueueWake, task);
+  notifyParent(store, enqueueWake, task, onGroup);
 }

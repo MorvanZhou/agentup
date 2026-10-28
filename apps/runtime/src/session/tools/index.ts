@@ -63,12 +63,21 @@ export {
   copyStagedArtifactsToParent,
   createDelegationInboxExtension,
   createDeliverArtifactsExtension,
+  deliveryDirName,
+  groupTaskDirName,
   normalizeArtifactPaths,
   shouldForceArtifactConfirm,
   stageArtifactPaths,
   type DeliverArtifactsState,
   type StagedArtifact,
 } from "./deliver-artifacts.js";
+
+export {
+  COMPLETE_GROUP_TASK_TOOL,
+  createCompleteGroupTaskExtension,
+  normalizeGroupWorkspacePaths,
+  stageGroupWorkspacePaths,
+} from "./complete-group-task.js";
 
 export {
   BG_KILL_TOOL,

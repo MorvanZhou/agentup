@@ -1,5 +1,7 @@
 /** 与 runtime `agentUpArtifacts` 对齐：本回合 ARTIFACT/ 差分。 */
 
+import type { UIMessage } from "ai";
+
 export type ArtifactChangeKind = "added" | "modified" | "deleted";
 
 export type ArtifactChange = {
@@ -11,6 +13,12 @@ export type ArtifactChange = {
 export type AgentUpArtifacts = {
   files: ArtifactChange[];
   truncated?: boolean;
+};
+
+/** deliver_artifacts / complete_group_task 确认后的路径清单（可含 WORK/）。 */
+export type ConfirmedArtifactPath = {
+  path: string;
+  size?: number;
 };
 
 /** 产物卡片分页大小。 */
@@ -48,6 +56,79 @@ export function parseAgentUpArtifacts(raw: unknown): AgentUpArtifacts | null {
   if (files.length === 0) return null;
   const truncated = (raw as { truncated?: unknown }).truncated === true;
   return truncated ? { files, truncated: true } : { files };
+}
+
+/**
+ * 把任务确认清单投影成面板用的 agentUpArtifacts。
+ * 只保留 ARTIFACT/：WORK/ 是过程草稿，不进产物 tab。
+ * 新确认源（群 complete_group_task、单聊 deliver_artifacts、以后别的）都接到这里。
+ */
+export function confirmedArtifactsPanel(
+  confirmed: readonly ConfirmedArtifactPath[] | null | undefined,
+): AgentUpArtifacts | null {
+  if (!confirmed || confirmed.length === 0) return null;
+  const files: ArtifactChange[] = [];
+  for (const item of confirmed) {
+    if (!item || typeof item.path !== "string" || !item.path.startsWith("ARTIFACT/")) continue;
+    const entry: ArtifactChange = { path: item.path, kind: "added" };
+    if (typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0) {
+      entry.size = item.size;
+    }
+    files.push(entry);
+  }
+  return files.length > 0 ? { files } : null;
+}
+
+/**
+ * 旁路 history / SSE 收口后：把确认产物挂到最近一条 assistant，
+ * 让气泡 tab 与 ArtifactsPanel 继续只读 metadata.custom.agentUpArtifacts。
+ * 已有差分（artifactPanel）时不覆盖。
+ */
+export function attachConfirmedArtifactsToMessages(
+  messages: readonly UIMessage[],
+  confirmed: readonly ConfirmedArtifactPath[] | null | undefined,
+): UIMessage[] {
+  const panel = confirmedArtifactsPanel(confirmed);
+  if (!panel) return [...messages];
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.role !== "assistant") continue;
+    if (readAgentUpArtifacts(message.metadata)) return [...messages];
+
+    const prevMeta =
+      message.metadata && typeof message.metadata === "object"
+        ? (message.metadata as Record<string, unknown>)
+        : {};
+    const prevCustom =
+      prevMeta.custom && typeof prevMeta.custom === "object"
+        ? (prevMeta.custom as Record<string, unknown>)
+        : {};
+    const next = [...messages];
+    next[index] = {
+      ...message,
+      metadata: {
+        ...prevMeta,
+        custom: {
+          ...prevCustom,
+          agentUpArtifacts: panel,
+        },
+      },
+    };
+    return next;
+  }
+  return [...messages];
+}
+
+/** 群任务产物在共享工作区；一对一仍在专员 cwd。 */
+export function delegationWorkspaceAgentId(input: {
+  groupId?: string | null;
+  toAgentId?: string | null;
+  fallback?: string;
+}): string {
+  const groupId = input.groupId?.trim();
+  if (groupId) return `group:${groupId}`;
+  return input.toAgentId?.trim() || input.fallback?.trim() || "delegation";
 }
 
 /** Tab 角标：1–9 原样，超过写 9+；0 为空。 */

@@ -16,6 +16,7 @@ const {
   resolveAgentDataRoot,
   writeDataRootMarker,
 } = require("./erase-local-data.cjs");
+const { resolveUserWorkspacePath } = require("./user-workspace-path.cjs");
 const { applicationMenuTemplate } = require("./menu.cjs");
 const { initLogger, logError, logInfo, logPath } = require("./logger.cjs");
 const {
@@ -229,7 +230,6 @@ app.whenReady().then(async () => {
     oauthLoopback.waitForCode(typeof timeoutMs === "number" ? timeoutMs : undefined),
   );
   ipcMain.handle("agentup:oauth-loopback-take-pending", () => oauthLoopback.takePending());
-  ipcMain.handle("agentup:oauth-loopback-peek-pending", () => oauthLoopback.peekPending());
   ipcMain.handle("agentup:oauth-loopback-cancel-wait", () => oauthLoopback.cancelWait());
   ipcMain.handle("agentup:oauth-loopback-stop", () => oauthLoopback.stop());
   ipcMain.handle("agentup:web-url", () => {
@@ -284,11 +284,11 @@ app.whenReady().then(async () => {
     if (failure) throw new Error(failure);
   });
   ipcMain.handle("agentup:reveal-in-folder", async (_event, targetPath) => {
-    const target = await resolveUserCwdPath(targetPath, "只能显示本机工作文件");
+    const target = await resolveUserWorkspacePath(targetPath, dataRoot(), "只能显示本机工作文件");
     shell.showItemInFolder(target);
   });
   ipcMain.handle("agentup:open-path", async (_event, targetPath) => {
-    const target = await resolveUserCwdPath(targetPath, "只能打开本机工作文件");
+    const target = await resolveUserWorkspacePath(targetPath, dataRoot(), "只能打开本机工作文件");
     const failure = await shell.openPath(target);
     if (failure) throw new Error(failure);
   });
@@ -306,7 +306,9 @@ app.whenReady().then(async () => {
     });
   });
   ipcMain.handle("agentup:set-menu-bar-unread", (_event, count) => menuBar.setUnread(count));
-  ipcMain.handle("agentup:set-menu-bar-visible", (_event, visible) => menuBar.setVisible(visible));
+  ipcMain.handle("agentup:set-menu-bar-visible", (_event, visible) => {
+    menuBar.setVisible(visible);
+  });
   // themeSource 非 system 时 matchMedia 不再反映真实系统外观，故走本机 API
   ipcMain.on("agentup:system-prefers-dark", (event) => {
     event.returnValue = systemPrefersDark();
@@ -460,83 +462,6 @@ function runtimeCliPath(packagedRuntimeRoot) {
 
 function dataRoot() {
   return resolveAgentDataRoot({ env: process.env, homedir: os.homedir() });
-}
-
-/**
- * 允许打开/显示：
- * - users 下各账号 cwd 内的工作文件
- * - 任意 agent instance / personal profile 中已挂载的 project_roots
- */
-async function resolveUserCwdPath(targetPath, deniedMessage) {
-  if (typeof targetPath !== "string" || !targetPath.trim()) throw new Error("路径无效");
-  const root = await fsp.realpath(dataRoot());
-  const target = await fsp.realpath(targetPath);
-  const relative = path.relative(root, target);
-  const parts = relative.split(path.sep);
-  if (!relative.startsWith("..") && !path.isAbsolute(relative) && parts[0] === "users") {
-    const underAgent = parts[2] === "agents" && parts.length >= 5 && parts[4] === "cwd";
-    const underPersonal =
-      parts[2] === "personal-assistant" && parts.length >= 4 && parts[3] === "cwd";
-    if (underAgent || underPersonal) return target;
-  }
-  if (await isUnderMountedProjectRoot(root, target)) return target;
-  throw new Error(deniedMessage);
-}
-
-async function isUnderMountedProjectRoot(dataRootReal, targetReal) {
-  const usersDir = path.join(dataRootReal, "users");
-  let userNames;
-  try {
-    userNames = await fsp.readdir(usersDir);
-  } catch {
-    return false;
-  }
-  for (const userId of userNames) {
-    if (userId === "." || userId === "..") continue;
-    const personalProfile = path.join(usersDir, userId, "personal-assistant", "profile.json");
-    if (await pathInsideAnyProjectRoot(personalProfile, targetReal)) return true;
-    const agentsDir = path.join(usersDir, userId, "agents");
-    let agentIds;
-    try {
-      agentIds = await fsp.readdir(agentsDir);
-    } catch {
-      continue;
-    }
-    for (const agentId of agentIds) {
-      const instancePath = path.join(agentsDir, agentId, "instance.json");
-      if (await pathInsideAnyProjectRoot(instancePath, targetReal)) return true;
-    }
-  }
-  return false;
-}
-
-async function pathInsideAnyProjectRoot(jsonPath, targetReal) {
-  let raw;
-  try {
-    raw = await fsp.readFile(jsonPath, "utf8");
-  } catch {
-    return false;
-  }
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    return false;
-  }
-  if (!data || typeof data !== "object" || !Array.isArray(data.project_roots)) return false;
-  for (const item of data.project_roots) {
-    if (typeof item !== "string" || !item.trim()) continue;
-    let rootReal;
-    try {
-      rootReal = await fsp.realpath(item);
-    } catch {
-      continue;
-    }
-    if (targetReal === rootReal || targetReal.startsWith(rootReal.endsWith(path.sep) ? rootReal : `${rootReal}${path.sep}`)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

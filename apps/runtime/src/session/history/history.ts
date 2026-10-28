@@ -5,6 +5,7 @@ import { buildSessionContext, SessionManager } from "@earendil-works/pi-coding-a
 import type { DynamicToolUIPart, UIDataTypes, UIMessage, UIMessagePart, UITools } from "ai";
 
 import { ensurePersonalAssistant } from "../../local/assistant/personal-assistant.js";
+import { TRANSCRIPT_PAGE_SIZE } from "../transcript-page.js";
 import { clearCheckpoints } from "../checkpoint/checkpoint.js";
 import { DELEGATION_RESULT_CUSTOM_TYPE } from "../delegation/types.js";
 import { assistantFailureNotice } from "../model/unavailable.js";
@@ -36,7 +37,7 @@ export function clearPersonalContext(userDataRoot: string, userId: string): void
   clearContextAt(userDataRoot, path.join(root, "cwd"), path.join(root, "sessions"));
 }
 
-function clearContextAt(userDataRoot: string, cwd: string, sessionDir: string): void {
+export function clearContextAt(userDataRoot: string, cwd: string, sessionDir: string): void {
   fs.mkdirSync(cwd, { recursive: true });
   fs.mkdirSync(sessionDir, { recursive: true });
   const created = SessionManager.create(cwd, sessionDir);
@@ -80,24 +81,54 @@ export async function readPersonalHistory(userDataRoot: string, userId: string):
   return readHistoryAt(path.join(root, "cwd"), path.join(root, "sessions"));
 }
 
+export type HistoryPage = { messages: UIMessage[]; hasMore: boolean };
+
+/**
+ * 打开一对一时只投影最新一段 Pi 会话（当前上下文，编辑重发的序号按它算）。
+ * `beforeId` 再往更早的会话翻，`limit` 只限制那些旧会话。
+ */
+export async function readHistoryPage(
+  userDataRoot: string,
+  userId: string,
+  agentId: string,
+  options: { limit?: number; beforeId?: string } = {},
+): Promise<HistoryPage> {
+  const { cwd, sessionDir } = visitSession(userDataRoot, userId, agentId);
+  return readHistoryPageAt(cwd, sessionDir, options);
+}
+
+export async function readPersonalHistoryPage(
+  userDataRoot: string,
+  userId: string,
+  options: { limit?: number; beforeId?: string } = {},
+): Promise<HistoryPage> {
+  const root = ensurePersonalAssistant(userDataRoot, userId);
+  return readHistoryPageAt(path.join(root, "cwd"), path.join(root, "sessions"), options);
+}
+
+/**
+ * 读某会话目录里时间线上最后一条 assistant（含 summary / artifacts metadata）。
+ * 群执掌者回合结束后用来把 byproducts 挂到 GroupLine。
+ */
+export async function readLastAssistantAt(
+  cwd: string,
+  sessionDir: string,
+): Promise<UIMessage | null> {
+  const messages = await readHistoryAt(cwd, sessionDir);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "assistant") return message;
+  }
+  return null;
+}
+
 async function readHistoryAt(cwd: string, sessionDir: string): Promise<UIMessage[]> {
-  if (!fs.existsSync(sessionDir)) return [];
-
-  const sessions = await SessionManager.list(cwd, sessionDir);
-  sessions.sort((left, right) => {
-    const delta = left.created.getTime() - right.created.getTime();
-    return delta !== 0 ? delta : left.path.localeCompare(right.path);
-  });
-
+  const sessions = await listSessionFiles(cwd, sessionDir);
   const result: UIMessage[] = [];
   let pendingReset = false;
 
   for (const info of sessions) {
-    if (!fs.existsSync(info.path)) continue;
-    const manager = SessionManager.open(info.path, sessionDir, cwd);
-    // 退出时可能留下无结果的 toolCall（ask_user / 审批中命令等）；先写入中断结果再投影。
-    healInterruptedSessionTools(manager);
-    const messages = projectHistoryFromManager(manager, info.id);
+    const messages = await projectSession(cwd, sessionDir, info);
     if (messages.length === 0) {
       if (result.length > 0) pendingReset = true;
       continue;
@@ -114,6 +145,88 @@ async function readHistoryAt(cwd: string, sessionDir: string): Promise<UIMessage
   }
 
   return result;
+}
+
+async function readHistoryPageAt(
+  cwd: string,
+  sessionDir: string,
+  options: { limit?: number; beforeId?: string },
+): Promise<HistoryPage> {
+  const sessions = await listSessionFiles(cwd, sessionDir);
+  if (sessions.length === 0) return { messages: [], hasMore: false };
+  const limit = options.limit && options.limit > 0 ? options.limit : TRANSCRIPT_PAGE_SIZE;
+
+  if (!options.beforeId) {
+    const newest = sessions[sessions.length - 1]!;
+    const messages = await projectSession(cwd, sessionDir, newest);
+    if (messages.length === 0 && sessions.length > 1) {
+      return { messages: [contextResetMessage("pending")], hasMore: true };
+    }
+    return { messages, hasMore: sessions.length > 1 };
+  }
+
+  if (options.beforeId === contextResetMessage("pending").id) {
+    return collectHistoryBefore(cwd, sessionDir, sessions.slice(0, -1), null, limit);
+  }
+  return collectHistoryBefore(cwd, sessionDir, sessions, options.beforeId, limit);
+}
+
+/** 从新往旧收集 `beforeId` 之前的一页。凑够 limit+1 后不再打开更早的会话文件。 */
+async function collectHistoryBefore(
+  cwd: string,
+  sessionDir: string,
+  sessions: readonly SessionInfo[],
+  beforeId: string | null,
+  limit: number,
+): Promise<HistoryPage> {
+  const wanted = limit + 1;
+  const newestFirst: UIMessage[] = [];
+  let seen = beforeId == null;
+
+  const consider = (message: UIMessage): boolean => {
+    if (!seen) {
+      if (message.id === beforeId) seen = true;
+      return false;
+    }
+    newestFirst.push(message);
+    return newestFirst.length >= wanted;
+  };
+
+  for (let index = sessions.length - 1; index >= 0 && newestFirst.length < wanted; index -= 1) {
+    const info = sessions[index]!;
+    const messages = await projectSession(cwd, sessionDir, info);
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      if (consider(messages[messageIndex]!)) break;
+    }
+    if (newestFirst.length >= wanted) break;
+    if (index > 0 && consider(contextResetMessage(info.id))) break;
+  }
+
+  if (beforeId && !seen) return { messages: [], hasMore: false };
+  return {
+    messages: newestFirst.slice(0, limit).reverse(),
+    hasMore: newestFirst.length > limit,
+  };
+}
+
+type SessionInfo = { id: string; path: string; created: Date };
+
+async function listSessionFiles(cwd: string, sessionDir: string): Promise<SessionInfo[]> {
+  if (!fs.existsSync(sessionDir)) return [];
+  const sessions = await SessionManager.list(cwd, sessionDir);
+  sessions.sort((left, right) => {
+    const delta = left.created.getTime() - right.created.getTime();
+    return delta !== 0 ? delta : left.path.localeCompare(right.path);
+  });
+  return sessions;
+}
+
+async function projectSession(cwd: string, sessionDir: string, info: SessionInfo): Promise<UIMessage[]> {
+  if (!fs.existsSync(info.path)) return [];
+  const manager = SessionManager.open(info.path, sessionDir, cwd);
+  // 退出时可能留下无结果的 toolCall（ask_user / 审批中命令等）；先写入中断结果再投影。
+  healInterruptedSessionTools(manager);
+  return projectHistoryFromManager(manager, info.id);
 }
 
 /** 从 SessionManager 投影，user 消息 id 使用 Pi entry id，便于编辑重发时 rewind。 */

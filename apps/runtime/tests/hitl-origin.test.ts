@@ -18,6 +18,7 @@ it("visit own HITL only matches same agent and visit origin", () => {
   expect(isVisitOwnHitl({ agentId: "draw" }, "draw")).toBe(true);
   expect(isVisitOwnHitl({ agentId: "draw", origin: "delegation" }, "draw")).toBe(false);
   expect(isVisitOwnHitl({ agentId: "draw", origin: "visit" }, "ace")).toBe(false);
+  expect(isVisitOwnHitl({ agentId: "draw", origin: "visit", groupId: "g1" }, "draw")).toBe(false);
 });
 
 it("bubbles only delegation-origin nested HITL to parent", () => {
@@ -43,6 +44,13 @@ it("bubbles only delegation-origin nested HITL to parent", () => {
   expect(
     shouldBubbleNestedHitl(
       { agentId: "draw", origin: "delegation", parentAgentId: "other-parent" },
+      visit,
+      isNestedUnder,
+    ),
+  ).toBe(false);
+  expect(
+    shouldBubbleNestedHitl(
+      { agentId: "draw", origin: "delegation", parentAgentId: "personal-assistant", groupId: "g1" },
       visit,
       isNestedUnder,
     ),

@@ -198,6 +198,34 @@ it("exposes state through the loopback API", async () => {
       body: JSON.stringify({ user_id: "patient-a", unread: { weather: 2 } }),
     });
     expect(missingPreviews.status).toBe(400);
+
+    // 群未读与单聊共用 unread 表，键为 group-<id>（须过 AGENT_ID）。
+    const groupUnread = await fetch(`${local.url}/state`, {
+      method: "POST",
+      headers: { authorization: "Bearer token", "content-type": "application/json" },
+      body: JSON.stringify({
+        user_id: "patient-a",
+        unread: { "group-gUnread01": 1, weather: 1 },
+        previews: { weather: "晴" },
+        last_active_at: { weather: 42 },
+      }),
+    });
+    expect(groupUnread.status).toBe(200);
+    expect(await groupUnread.json()).toMatchObject({
+      unread: { "group-gUnread01": 1, weather: 1 },
+    });
+
+    const colonRejected = await fetch(`${local.url}/state`, {
+      method: "POST",
+      headers: { authorization: "Bearer token", "content-type": "application/json" },
+      body: JSON.stringify({
+        user_id: "patient-a",
+        unread: { "group:gUnread01": 1 },
+        previews: {},
+        last_active_at: {},
+      }),
+    });
+    expect(colonRejected.status).toBe(400);
   } finally {
     await local.close();
   }
