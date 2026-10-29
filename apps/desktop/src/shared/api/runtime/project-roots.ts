@@ -48,6 +48,10 @@ export async function removeProjectRoot(
 }
 
 function base(personal: boolean, agentId: string): string {
+  // 群工作区传 `group:<groupId>`：与 workspace.ts 同一套前缀约定
+  if (agentId.startsWith("group:")) {
+    return `/groups/${encodeURIComponent(agentId.slice("group:".length))}/project-roots`;
+  }
   return personal
     ? "/personal-assistant/project-roots"
     : `/agents/${encodeURIComponent(agentId)}/project-roots`;

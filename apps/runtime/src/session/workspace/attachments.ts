@@ -5,12 +5,72 @@ import path from "node:path";
 import type { ImageContent } from "@earendil-works/pi-ai";
 
 import { ATTACHMENTS_DIR } from "./cwd-layout.js";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_SOURCE_BYTES,
+  MAX_ATTACHMENTS,
+  WORKSPACE_IMAGE_MEDIA_TYPES,
+  defaultImageExtension,
+} from "./media.js";
+import { isBlockedPath } from "./project-roots.js";
 
 export { ATTACHMENTS_DIR };
-export const MAX_ATTACHMENTS = 10;
-export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+export {
+  MAX_ATTACHMENT_BODY_BYTES,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_SOURCE_BYTES,
+  MAX_ATTACHMENTS,
+} from "./media.js";
+/** 目录 staging：树内常规文件数上限（与运行包文件数闸门同量级）。 */
+export const MAX_ATTACHMENT_TREE_FILES = 200;
 
-const IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+/** 每轮注入的附件绝对路径注记（Pi nextTurn custom message）。 */
+export const ATTACHMENT_PATHS_CUSTOM_TYPE = "agentup.attachment_paths";
+
+/**
+ * 正文里的 `@ATTACHMENTS/...` 引用（无 @，目录带尾 `/`），按首次出现去重。
+ * 与 Desktop `attachment-ref.ts` 的芯片解析同构：扁平 / 旧嵌套 / 目录尾斜杠都认。
+ */
+const ATTACHMENT_REF_RE =
+  /(^|[\s([{（【])@(ATTACHMENTS\/(?:[A-Za-z0-9._-]+\/)?[^\s@/]+\/?)(?=$|[\s,.;:!?，。；：！？)\]}）】])/g;
+
+export function attachmentRefsInText(text: string): string[] {
+  if (!text) return [];
+  const refs: string[] = [];
+  for (const match of text.matchAll(ATTACHMENT_REF_RE)) {
+    const ref = match[2] ?? "";
+    if (ref && !refs.includes(ref)) refs.push(ref);
+  }
+  return refs;
+}
+
+/**
+ * 芯片 → 绝对路径注记：正文里的 `@ATTACHMENTS/...` 只是 cwd 相对 token，
+ * 这里把每个仍存在于磁盘的引用映射成绝对路径，供 nextTurn 注入（display:false，
+ * 不改用户落盘原文）。只注路径，不展开目录内容摘要。
+ */
+export function formatAttachmentLocations(cwd: string, refs: readonly string[]): string {
+  const lines: string[] = [];
+  for (const ref of refs) {
+    const absolute = path.resolve(cwd, ref.replace(/\/+$/, ""));
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(absolute);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile() && !stat.isDirectory()) continue;
+    const kind = stat.isDirectory() ? " (directory)" : "";
+    lines.push(`- \`${ref}\`${kind} → ${absolute}`);
+  }
+  if (lines.length === 0) return "";
+  return [
+    "# Attachment paths",
+    "",
+    "`@ATTACHMENTS/...` references in the user message are staged in this workspace:",
+    ...lines,
+  ].join("\n");
+}
 
 export type PromptAttachment = {
   name: string;
@@ -88,13 +148,13 @@ export function parsePromptAttachments(body: Record<string, unknown>): PromptAtt
 }
 
 /**
- * Composer 选文件瞬间落盘：扁平写入 `cwd/ATTACHMENTS/<id>-<name>`，
+ * Composer 选文件瞬间落盘：扁平写入 `cwd/ATTACHMENTS/<stem>_<id>.<ext>`，
  * 避免每个文件一个子文件夹。
  */
 export function stageAttachment(cwd: string, attachment: PromptAttachment): StagedAttachment {
   const id = newAttachmentId();
   const fileName = sanitizeAttachmentFileName(attachment.name);
-  const storedName = `${id}-${fileName}`;
+  const storedName = withIdSuffix(fileName, id);
   const dir = path.join(cwd, ATTACHMENTS_DIR);
   fs.mkdirSync(dir, { recursive: true });
   const absolute = uniqueAbsolute(path.join(dir, storedName));
@@ -109,7 +169,115 @@ export function stageAttachment(cwd: string, attachment: PromptAttachment): Stag
   };
 }
 
-/** 删除 staging 文件；允许扁平或旧版嵌套路径。 */
+/**
+ * 按本地磁盘路径直接复制 staging（免 base64 转码，支持大文件 / 目录）。
+ * 源必须是与 runtime 同机的常规文件或目录；拒符号链接，与
+ * `security` 的「读源拒符号链接」一致。空文件拒绝；空目录允许。
+ * 目录落盘为 `ATTACHMENTS/<name>_<id>/`（path 带尾 `/`，供 FileChip 识别）。
+ * `maxBytes` 供测试注入小上限。
+ */
+export function stageAttachmentFromPath(
+  cwd: string,
+  source: { path: string; name?: string; mediaType?: string },
+  options: { maxBytes?: number } = {},
+): StagedAttachment {
+  const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_SOURCE_BYTES;
+  const resolved = path.resolve(source.path);
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(resolved);
+  } catch {
+    throw new AttachmentError("路径无效", 400);
+  }
+  if (stat.isSymbolicLink()) throw new AttachmentError("路径无效", 400);
+  // 敏感根（~/.ssh、/etc 等）与 project_roots 挂载共用同一套拒绝判定
+  if (isBlockedPath(resolved)) throw new AttachmentError("路径无效", 400);
+
+  if (stat.isDirectory()) {
+    return stageDirectoryFromPath(cwd, resolved, source, maxBytes);
+  }
+  if (!stat.isFile()) throw new AttachmentError("路径无效", 400);
+  if (stat.size === 0) throw new AttachmentError("附件内容为空");
+  if (stat.size > maxBytes) {
+    throw new AttachmentError(`附件过大（上限 ${Math.floor(maxBytes / (1024 * 1024))}MB）`);
+  }
+  const fileName = sanitizeAttachmentFileName(source.name || path.basename(resolved));
+  const id = newAttachmentId();
+  const storedName = withIdSuffix(fileName, id);
+  const dir = path.join(cwd, ATTACHMENTS_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  const absolute = uniqueAbsolute(path.join(dir, storedName));
+  // 直接复制：字节不经 JSON / base64，内存占用与文件大小无关
+  fs.copyFileSync(resolved, absolute);
+  const relative = `${ATTACHMENTS_DIR}/${path.basename(absolute)}`;
+  return {
+    id,
+    path: relative,
+    ref: `@${relative}`,
+    name: fileName,
+    mediaType: normalizeMediaType(source.mediaType || "") || "application/octet-stream",
+  };
+}
+
+function stageDirectoryFromPath(
+  cwd: string,
+  resolved: string,
+  source: { name?: string; mediaType?: string },
+  maxBytes: number,
+): StagedAttachment {
+  assertCopyableTree(resolved, maxBytes);
+  const dirName = sanitizeAttachmentFileName(source.name || path.basename(resolved));
+  const id = newAttachmentId();
+  // 目录无扩展名：withIdSuffix → `name_<id>`
+  const storedName = withIdSuffix(dirName, id);
+  const dir = path.join(cwd, ATTACHMENTS_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  const absolute = uniqueAbsolute(path.join(dir, storedName));
+  fs.cpSync(resolved, absolute, { recursive: true, errorOnExist: true });
+  // 尾 `/` 标记目录，Composer FileChip / 引用解析据此显示文件夹图标
+  const relative = `${ATTACHMENTS_DIR}/${path.basename(absolute)}/`;
+  return {
+    id,
+    path: relative,
+    ref: `@${relative}`,
+    name: dirName,
+    mediaType: "inode/directory",
+  };
+}
+
+/** 预检目录树：拒符号链接 / 非常规节点，合计体积与文件数封顶。 */
+function assertCopyableTree(root: string, maxBytes: number): void {
+  let total = 0;
+  let files = 0;
+  const walk = (current: string): void => {
+    for (const name of fs.readdirSync(current)) {
+      const next = path.join(current, name);
+      let st: fs.Stats;
+      try {
+        st = fs.lstatSync(next);
+      } catch {
+        throw new AttachmentError("路径无效", 400);
+      }
+      if (st.isSymbolicLink()) throw new AttachmentError("路径无效", 400);
+      if (st.isDirectory()) {
+        walk(next);
+        continue;
+      }
+      if (!st.isFile()) throw new AttachmentError("路径无效", 400);
+      files += 1;
+      if (files > MAX_ATTACHMENT_TREE_FILES) {
+        throw new AttachmentError(`目录文件过多（上限 ${MAX_ATTACHMENT_TREE_FILES} 个）`);
+      }
+      total += st.size;
+      if (total > maxBytes) {
+        throw new AttachmentError(`附件过大（上限 ${Math.floor(maxBytes / (1024 * 1024))}MB）`);
+      }
+    }
+  };
+  walk(root);
+}
+
+/** 删除 staging 文件或目录；允许扁平或旧版嵌套路径。 */
 export function removeStagedAttachment(cwd: string, relativePath: string): void {
   const relative = normalizeAttachmentRelative(relativePath);
   const absolute = path.resolve(cwd, relative);
@@ -119,7 +287,12 @@ export function removeStagedAttachment(cwd: string, relativePath: string): void 
   }
   if (!fs.existsSync(absolute)) return;
   const stat = fs.lstatSync(absolute);
-  if (stat.isSymbolicLink() || !stat.isFile()) throw new AttachmentError("路径无效", 400);
+  if (stat.isSymbolicLink()) throw new AttachmentError("路径无效", 400);
+  if (stat.isDirectory()) {
+    fs.rmSync(absolute, { recursive: true, force: true });
+    return;
+  }
+  if (!stat.isFile()) throw new AttachmentError("路径无效", 400);
   fs.unlinkSync(absolute);
   // 旧版嵌套目录：删空后收掉
   const dir = path.dirname(absolute);
@@ -142,7 +315,7 @@ export function materializePromptImages(
 ): ImageContent[] {
   const images: ImageContent[] = [];
   for (const attachment of attachments) {
-    if (!IMAGE_MIME.has(attachment.mediaType)) continue;
+    if (!WORKSPACE_IMAGE_MEDIA_TYPES.has(attachment.mediaType)) continue;
     stageAttachment(cwd, attachment);
     images.push({
       type: "image",
@@ -158,12 +331,23 @@ export function newAttachmentId(): string {
   return randomBytes(4).toString("hex");
 }
 
+/**
+ * 存名加 id 后缀：`note.txt` → `note_<id>.txt`。扩展名保持在尾部，
+ * Finder / 列表按类型排序与预览不受影响；`<id>-<name>` 为历史前缀格式。
+ */
+function withIdSuffix(fileName: string, id: string): string {
+  const ext = path.extname(fileName);
+  const stem = path.basename(fileName, ext);
+  return `${stem || "file"}_${id}${ext}`;
+}
+
 function normalizeAttachmentRelative(value: string): string {
-  const trimmed = value.trim().replace(/^@/, "");
+  // 目录芯片 path 带尾 `/`；校验时剥掉再拼回无尾斜杠的磁盘相对路径
+  const trimmed = value.trim().replace(/^@/, "").replace(/\/+$/, "");
   if (!trimmed.startsWith(`${ATTACHMENTS_DIR}/`)) throw new AttachmentError("路径无效", 400);
   if (trimmed.includes("\0") || trimmed.includes("..")) throw new AttachmentError("路径无效", 400);
   const parts = trimmed.split("/");
-  // 扁平 ATTACHMENTS/file 或旧版 ATTACHMENTS/id/file
+  // 扁平 ATTACHMENTS/file|dir 或旧版 ATTACHMENTS/id/file
   if (parts.length === 2 && parts[1]) return trimmed;
   if (parts.length === 3 && parts[1] && parts[2]) return trimmed;
   throw new AttachmentError("路径无效", 400);
@@ -200,19 +384,8 @@ function uniqueAbsolute(target: string): string {
 
 function defaultName(mediaType: string, index: number): string {
   const ext =
-    mediaType === "image/png"
-      ? ".png"
-      : mediaType === "image/jpeg"
-        ? ".jpg"
-        : mediaType === "image/gif"
-          ? ".gif"
-          : mediaType === "image/webp"
-            ? ".webp"
-            : mediaType === "application/json"
-              ? ".json"
-              : mediaType.startsWith("text/")
-                ? ".txt"
-                : ".bin";
+    defaultImageExtension(mediaType) ??
+    (mediaType === "application/json" ? ".json" : mediaType.startsWith("text/") ? ".txt" : ".bin");
   return `attachment-${index + 1}${ext}`;
 }
 

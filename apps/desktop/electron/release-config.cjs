@@ -24,4 +24,5 @@ module.exports = {
   env,
   backendUrl: profile.backendUrl,
   webUrl: profile.webUrl,
+  downloadsUrl: profile.downloadsUrl || "https://downloads.agentup.me",
 };

@@ -2,50 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ATTACHMENTS_DIR, ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/workspace/cwd-layout.js";
+import {
+  IMAGE_PREVIEW_LIMIT,
+  TEXT_EXTENSIONS,
+  TEXT_PREVIEW_LIMIT,
+  TEXT_SNIFF_BYTES,
+  imageMediaTypeForExtension,
+} from "../session/workspace/media.js";
 import { isInside as isPathInside, readProjectRoots } from "../session/workspace/project-roots.js";
 import { ensurePersonalAssistant } from "./assistant/personal-assistant.js";
 import { isLocalAgentId, localAgentRoot } from "./agents/local-agent.js";
-import { ensureGroupWorkspace } from "../session/group/workspace.js";
+import { ensureGroupWorkspace, groupDirPath } from "../session/group/workspace.js";
 
-/** 文本预览与保存上限。超出只返回元数据。 */
-export const TEXT_PREVIEW_LIMIT = 512 * 1024;
-/** 图片预览上限。 */
-export const IMAGE_PREVIEW_LIMIT = 2 * 1024 * 1024;
+export { IMAGE_PREVIEW_LIMIT, TEXT_PREVIEW_LIMIT };
 
 const AGENT_ID = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
-const IMAGE_EXT = new Map<string, string>([
-  [".png", "image/png"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".gif", "image/gif"],
-  [".webp", "image/webp"],
-]);
-const TEXT_EXT = new Set([
-  ".md",
-  ".txt",
-  ".json",
-  ".jsonl",
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".vue",
-  ".py",
-  ".css",
-  ".html",
-  ".yml",
-  ".yaml",
-  ".toml",
-  ".xml",
-  ".csv",
-  ".sh",
-  ".log",
-  ".svg",
-  ".mdc",
-  ".gitignore",
-]);
 
 export class WorkspaceError extends Error {
   constructor(
@@ -151,7 +122,7 @@ export function readWorkspaceFile(
   const size = fs.statSync(located.real).size;
   const name = path.basename(located.relative);
   const ext = path.extname(name).toLowerCase();
-  const mediaType = IMAGE_EXT.get(ext);
+  const mediaType = imageMediaTypeForExtension(ext);
   if (mediaType) {
     if (size > IMAGE_PREVIEW_LIMIT) return { path: located.relative, kind: "too-large", size, media: "image" };
     return {
@@ -162,7 +133,7 @@ export function readWorkspaceFile(
       data_base64: fs.readFileSync(located.real).toString("base64"),
     };
   }
-  const textLike = TEXT_EXT.has(ext) || ext === "" || sniffText(located.real, size);
+  const textLike = TEXT_EXTENSIONS.has(ext) || ext === "" || sniffText(located.real, size);
   if (!textLike) return { path: located.relative, kind: "binary", size };
   if (size > TEXT_PREVIEW_LIMIT) return { path: located.relative, kind: "too-large", size, media: "text" };
   return { path: located.relative, kind: "text", size, text: fs.readFileSync(located.real, "utf8") };
@@ -339,7 +310,7 @@ function realOrUndefined(target: string): string | undefined {
 }
 
 function sniffText(filePath: string, size: number): boolean {
-  if (size > 8192) return false;
+  if (size > TEXT_SNIFF_BYTES) return false;
   const sample = fs.readFileSync(filePath);
   if (sample.includes(0)) return false;
   return Buffer.from(sample.toString("utf8"), "utf8").equals(sample);
@@ -367,20 +338,6 @@ export function serveWorkspace(
   const action = personal ? personal[1] : agent ? agent[2] : group ? group[2] : undefined;
   if (!personal && !agent && !group) throw new WorkspaceError("没有这个接口", 404);
   const userId = method === "GET" || method === "DELETE" ? searchParams.get("user_id") ?? "" : stringField(body, "user_id");
-  if (group) {
-    const groupId = decodeURIComponent(group[1] ?? "");
-    const workspace = ensureGroupWorkspace(userDataRoot, userId, groupId);
-    const options: WorkspaceRootOptions = {
-      ensureLayout: false,
-      hiddenTopLevel: HIDDEN_WORKSPACE_TOP_LEVEL,
-      readOnlyTopLevel: new Set([ATTACHMENTS_DIR]),
-    };
-    return serveWorkspaceAt(workspace.root, options, method, action, searchParams, body);
-  }
-  const agentId = personal ? undefined : decodeURIComponent(agent?.[1] ?? "");
-  const visitCwd = personal
-    ? personalWorkspaceCwd(userDataRoot, userId)
-    : agentWorkspaceCwd(userDataRoot, userId, agentId ?? "");
   const scope =
     method === "GET" || method === "DELETE"
       ? (searchParams.get("scope") ?? "cwd")
@@ -393,6 +350,35 @@ export function serveWorkspace(
       : typeof body.root === "string"
         ? body.root
         : "";
+  if (group) {
+    const groupId = decodeURIComponent(group[1] ?? "");
+    // 群内浏览已挂载的项目根：只允许群 settings.json 里登记过的目录
+    if (scope === "project") {
+      if (!rootParam.trim()) throw new WorkspaceError("缺少项目根路径", 400);
+      const granted = readProjectRoots(groupDirPath(userDataRoot, userId, groupId), "group");
+      let requested: string;
+      try {
+        requested = fs.realpathSync(path.resolve(rootParam.trim()));
+      } catch {
+        throw new WorkspaceError("项目根无效", 400);
+      }
+      if (!granted.includes(requested)) {
+        throw new WorkspaceError("未挂载该项目目录", 403);
+      }
+      return serveWorkspaceAt(requested, { ensureLayout: false }, method, action, searchParams, body);
+    }
+    const workspace = ensureGroupWorkspace(userDataRoot, userId, groupId);
+    const options: WorkspaceRootOptions = {
+      ensureLayout: false,
+      hiddenTopLevel: HIDDEN_WORKSPACE_TOP_LEVEL,
+      readOnlyTopLevel: new Set([ATTACHMENTS_DIR]),
+    };
+    return serveWorkspaceAt(workspace.root, options, method, action, searchParams, body);
+  }
+  const agentId = personal ? undefined : decodeURIComponent(agent?.[1] ?? "");
+  const visitCwd = personal
+    ? personalWorkspaceCwd(userDataRoot, userId)
+    : agentWorkspaceCwd(userDataRoot, userId, agentId ?? "");
   const { cwd, options } = resolveWorkspaceRoot(
     userDataRoot,
     userId,

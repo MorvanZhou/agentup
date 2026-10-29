@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { AISDKChat } from "@assistant-ui/ai-sdk";
-import { SimpleImageAttachmentAdapter } from "@assistant-ui/core";
+import { createInlineImageAttachmentAdapter } from "../../../model/composer/inline-image-attachment";
 import { AuiConfig, AuiProvider } from "@assistant-ui/vue";
 import type { UIMessage } from "ai";
-import { computed, onBeforeUnmount, provide, ref, toRef, watch } from "vue";
+import { computed, onBeforeUnmount, provide, ref, shallowRef, toRef, watch } from "vue";
 
 import ChatSettingsPanel from "./ChatSettingsPanel.vue";
 import WorkspacePanel from "../shared/workspace/WorkspacePanel.vue";
@@ -33,6 +33,10 @@ import { useWakeTurnStream } from "../../../composables/useWakeTurnStream";
 import { useWorkspacePaneWidth } from "../../../composables/usePaneWidth";
 import { clampWorkspaceWidth } from "../../../model/layout/pane-width";
 import { clearProcessFoldState } from "../../../model/message/process-fold-state";
+import {
+  composerAttachKey,
+  type ComposerAttachApi,
+} from "../../../model/composer/composer-attach";
 import { threadActionsKey, type ThreadActions } from "../../../model/thread/thread-actions";
 import { threadActiveKey } from "../../../model/thread/thread-active";
 import { threadAgentIdKey } from "../../../model/thread/thread-agent-id";
@@ -142,6 +146,8 @@ provide(
 provide(threadAskUserKey, toRef(props, "askUser"));
 provide(threadApprovalKey, toRef(props, "approval"));
 provide(threadBusyTurnKey, toRef(props, "busyTurn"));
+// Composer 挂载后写入；工作区侧栏据此把文件插成 @ATTACHMENTS 芯片
+provide(composerAttachKey, shallowRef<ComposerAttachApi | null>(null));
 
 /** toolCallId → taskId（transient started）；过程弹窗旁路打开。 */
 const taskIdByToolCall = ref(new Map<string, string>());
@@ -353,7 +359,7 @@ const config = AuiConfig({
     joinStrategy: "none",
     // 附件条只收图片；非图片在 Composer 插 @ATTACHMENTS 芯片并即时落盘。
     adapters: {
-      attachments: new SimpleImageAttachmentAdapter(),
+      attachments: createInlineImageAttachmentAdapter(),
     },
     transport: createAgentUpTransport({
       baseUrl: props.runtimeBaseUrl ?? defaultRuntimeBaseUrl(),

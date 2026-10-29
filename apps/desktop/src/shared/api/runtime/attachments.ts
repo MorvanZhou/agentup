@@ -27,6 +27,34 @@ export async function stageAttachment(
     media_type: file.mediaType,
     data_base64: file.dataBase64,
   });
+  return readStagedPayload(payload, file);
+}
+
+export async function stageAttachmentFromPath(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  agentId: string,
+  file: { name: string; mediaType: string; path: string },
+): Promise<StagedAttachment> {
+  const path =
+    agentId === PERSONAL_ASSISTANT_ID
+      ? "/personal-assistant/attachments/from-path"
+      : `/agents/${encodeURIComponent(agentId)}/attachments/from-path`;
+  const payload = await http.request(path, token, {
+    user_id: userId,
+    name: file.name,
+    media_type: file.mediaType,
+    path: file.path,
+  });
+  return readStagedPayload(payload, file);
+}
+
+/** staging 响应解析：base64 与 from-path 两条链路共用。 */
+export function readStagedPayload(
+  payload: Record<string, unknown>,
+  file: { name: string; mediaType: string },
+): StagedAttachment {
   if (
     typeof payload.id !== "string" ||
     typeof payload.path !== "string" ||

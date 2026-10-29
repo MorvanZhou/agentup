@@ -476,6 +476,16 @@ export class DesktopApi {
     return attachmentsApi.stageAttachment(this.http, token, userId, agentId, file);
   }
 
+  /** 大文件直连：传本机路径让 runtime 复制，渲染进程不读内容。 */
+  stageAttachmentFromPath(
+    token: string,
+    userId: string,
+    agentId: string,
+    file: { name: string; mediaType: string; path: string },
+  ): Promise<StagedAttachment> {
+    return attachmentsApi.stageAttachmentFromPath(this.http, token, userId, agentId, file);
+  }
+
   deleteStagedAttachment(
     token: string,
     userId: string,
@@ -592,6 +602,16 @@ export class DesktopApi {
     file: { name: string; mediaType: string; dataBase64: string },
   ): Promise<StagedAttachment> {
     return groupsApi.stageGroupAttachment(this.http, token, userId, groupId, file);
+  }
+
+  /** 群聊大文件直连：传本机路径让 runtime 复制。 */
+  stageGroupAttachmentFromPath(
+    token: string,
+    userId: string,
+    groupId: string,
+    file: { name: string; mediaType: string; path: string },
+  ): Promise<StagedAttachment> {
+    return groupsApi.stageGroupAttachmentFromPath(this.http, token, userId, groupId, file);
   }
 
   deleteGroupAttachment(token: string, userId: string, groupId: string, path: string): Promise<void> {

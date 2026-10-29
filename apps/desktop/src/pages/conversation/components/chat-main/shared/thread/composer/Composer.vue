@@ -16,6 +16,11 @@ import { useDesktop } from "../../../../../../../app/desktop";
 import { t } from "../../../../../../../shared/model/ui/ui-locale";
 import { useComposerFiles, isImageFile } from "../../../../../composables/useComposerFiles";
 import { useComposerInputHeight } from "../../../../../composables/useComposerHeight";
+import { addComposerImage } from "../../../../../model/composer/add-composer-image";
+import {
+  injectComposerAttach,
+  type ComposerAttachApi,
+} from "../../../../../model/composer/composer-attach";
 import { useComposerMentions } from "../../../../../composables/useComposerMentions";
 import { useComposerSkills } from "../../../../../composables/useComposerSkills";
 import { useSessionModel } from "../../../../../composables/useSessionModel";
@@ -36,6 +41,7 @@ import {
   sessionModelAgentId,
 } from "../../../../../model/thread/chat-surface";
 import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
+import { showToast } from "../../../../../../../shared/model/ui/toast";
 import ImageAttachmentPreview from "./chips/ImageAttachmentPreview.vue";
 import MentionPicker from "./chips/MentionPicker.vue";
 import SkillPicker from "./chips/SkillPicker.vue";
@@ -142,7 +148,7 @@ const {
   setText: setComposerText,
 });
 
-const { stageAndInsertFiles, removeFileRef } = useComposerFiles({
+const { stageAndInsertFiles, attachWorkspaceFile, removeFileRef } = useComposerFiles({
   agentId: resourceAgentId,
   groupId: computed(() => surface.value.groupId ?? ""),
   token,
@@ -151,6 +157,23 @@ const { stageAndInsertFiles, removeFileRef } = useComposerFiles({
   cursor,
   setText: setComposerText,
 });
+
+function canTakeFiles(): boolean {
+  return surface.value.attachments && Boolean(resourceAgentId.value || surface.value.groupId);
+}
+
+/** 侧栏工作区与 Composer 是兄弟节点，经父级 provide 的挂接位注册插入能力。 */
+const composerAttachSlot = injectComposerAttach();
+const composerAttachApi: ComposerAttachApi = {
+  attachWorkspaceFile: async (input) => {
+    if (!canTakeFiles()) {
+      showToast(t("wsAddToChatUnavailable"), "error");
+      return;
+    }
+    await attachWorkspaceFile(input);
+    skillInputRef.value?.focus();
+  },
+};
 
 function onComposerResize(event: PointerEvent, host: HTMLElement): void {
   startResize(event, host);
@@ -194,10 +217,12 @@ const showInterruptSend = computed(() => runActions.value.interrupt);
 const interrupting = ref(false);
 
 onMounted(() => {
+  if (composerAttachSlot) composerAttachSlot.value = composerAttachApi;
   const draft = takeComposerDraft(agentId);
   if (draft) aui.composer.setText(draft);
 });
 onBeforeUnmount(() => {
+  if (composerAttachSlot?.value === composerAttachApi) composerAttachSlot.value = null;
   rememberComposerDraft(agentId, aui.composer.getState().text);
 });
 
@@ -334,58 +359,39 @@ async function onStopTurn() {
   await actions?.value.stopTurn();
 }
 
-/** 非图片走芯片；图片仍交给附件条。捕获阶段拦截以免 adapter 拒收非图。 */
-function onAttachmentDropCapture(event: DragEvent): void {
-  if (!surface.value.attachments || (!resourceAgentId.value && !surface.value.groupId)) return;
-  const list = event.dataTransfer?.files;
-  if (!list?.length) return;
-  const files = Array.from(list);
-  if (surface.value.attachmentMode === "reference") {
-    event.preventDefault();
-    event.stopPropagation();
-    void stageAndInsertFiles(files);
-    return;
-  }
+/** 图片进附件条，其余落盘成芯片。一对一 / 群聊走同一个入口，差别在线程的附件适配器。 */
+function takeComposerFiles(files: readonly File[]): void {
   const images = files.filter(isImageFile);
   const others = files.filter((file) => !isImageFile(file));
-  if (others.length === 0) return;
+  for (const image of images) addComposerImage((file) => aui.composer.addAttachment(file), image);
+  void stageAndInsertFiles(others);
+}
+
+/** 拖拽落进输入区：捕获阶段自己接手，避免附件条拒收非图片，也避免图片被加两次。 */
+function onAttachmentDropCapture(event: DragEvent): void {
+  if (!canTakeFiles()) return;
+  const list = event.dataTransfer?.files;
+  if (!list?.length) return;
   event.preventDefault();
   event.stopPropagation();
-  for (const image of images) void aui.composer.addAttachment(image);
-  void stageAndInsertFiles(others);
+  takeComposerFiles(Array.from(list));
 }
 
 function onComposerPaste(event: ClipboardEvent): void {
-  if (!surface.value.attachments || (!resourceAgentId.value && !surface.value.groupId)) return;
+  if (!canTakeFiles()) return;
   const list = event.clipboardData?.files;
   if (!list?.length) return;
   const files = Array.from(list);
-  if (surface.value.attachmentMode === "reference") {
-    event.preventDefault();
-    void stageAndInsertFiles(files);
-    return;
-  }
-  const images = files.filter(isImageFile);
-  const others = files.filter((file) => !isImageFile(file));
-  if (others.length === 0 && images.length === 0) return;
-  if (others.length > 0) {
-    event.preventDefault();
-    for (const image of images) void aui.composer.addAttachment(image);
-    void stageAndInsertFiles(others);
-  }
+  if (!files.some((file) => file.size > 0 || file.name)) return;
+  // 拦下默认粘贴，避免 contenteditable 写入 [Image: ...] 说明或原尺寸 img。
+  event.preventDefault();
+  takeComposerFiles(files);
 }
 
-/** 工具栏回形针：可选任意文件，图片进附件条，其它插芯片。 */
+/** 工具栏回形针：图片进附件条，其它插芯片。 */
 function onToolbarPickFiles(files: File[]): void {
-  if (!surface.value.attachments || (!resourceAgentId.value && !surface.value.groupId)) return;
-  if (surface.value.attachmentMode === "reference") {
-    void stageAndInsertFiles(files);
-    return;
-  }
-  const images = files.filter(isImageFile);
-  const others = files.filter((file) => !isImageFile(file));
-  for (const image of images) void aui.composer.addAttachment(image);
-  void stageAndInsertFiles(others);
+  if (!canTakeFiles()) return;
+  takeComposerFiles(files);
 }
 </script>
 

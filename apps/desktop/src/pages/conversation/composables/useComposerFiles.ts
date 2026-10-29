@@ -1,9 +1,14 @@
 import { ref, watch, type Ref } from "vue";
 
-import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
+import { DesktopApi } from "../../../shared/api/runtime";
 import { showToast } from "../../../shared/model/ui/toast";
-import { insertAttachmentReference } from "../model/composer/attachment-ref";
+import {
+  attachmentFolderPath,
+  insertAttachmentReference,
+} from "../model/composer/attachment-ref";
+import { isAttachmentsWorkspacePath } from "../model/composer/composer-attach";
 import { stagedPathsToRemove } from "../model/composer/composer-staged-files";
+import { stageComposerFile } from "../model/composer/stage-composer-file";
 
 const IMAGE_MIME = /^(image\/(png|jpeg|gif|webp))$/i;
 
@@ -44,12 +49,15 @@ export function useComposerFiles(options: {
   );
 
   async function stageAndInsertFiles(files: readonly File[]): Promise<void> {
-    const list = options.groupId?.value ? [...files] : files.filter((file) => !isImageFile(file));
+    // 图片不进芯片：一对一和群聊都走 Composer 附件条（ImageAttachmentPreview）。
+    const list = files.filter((file) => !isImageFile(file));
     if (list.length === 0) return;
     const token = options.token.value;
     const userId = options.userId.value;
     const agentId = options.agentId.value;
-    if (!token || !userId || !agentId) {
+    // 群聊附件落群共享工作区（按 groupId 归属），不需要 agentId；
+    // 单聊 / 私人助理必须有归属 agent，缺了视为未登录。
+    if (!token || !userId || (!agentId && !options.groupId?.value)) {
       showToast("尚未登录", "error");
       return;
     }
@@ -58,17 +66,13 @@ export function useComposerFiles(options: {
       let text = options.composerText.value;
       let cursor = options.cursor.value;
       for (const file of list) {
-        const dataBase64 = await fileToBase64(file);
-        const staged = options.groupId?.value
-          ? await api.stageGroupAttachment(token, userId, options.groupId.value, {
-              name: file.name || "file",
-              mediaType: file.type || "application/octet-stream",
-              dataBase64,
-            })
-          : await api.stageAttachment(token, userId, agentId, {
-          name: file.name || "file",
-          mediaType: file.type || "application/octet-stream",
-          dataBase64,
+        const staged = await stageComposerFile({
+          api,
+          token,
+          userId,
+          agentId,
+          groupId: options.groupId?.value,
+          file,
         });
         stagedPaths.value.add(staged.path);
         const next = insertAttachmentReference(text, cursor, cursor, staged.path);
@@ -77,7 +81,66 @@ export function useComposerFiles(options: {
       }
       options.setText(text, cursor);
     } catch (error) {
-      showToast(error instanceof DesktopApiError ? error.message : "附件上传失败", "error");
+      showToast(
+        error instanceof Error && error.message ? error.message : "附件上传失败",
+        "error",
+      );
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /**
+   * 工作区文件 / 文件夹一键进 Composer：已在 ATTACHMENTS 下直接插 `@` 芯片；
+   * 产物 / 挂载目录则 from-path 复制进 ATTACHMENTS 再插芯片。
+   * 目录 path 带尾 `/`，FileChip 显示文件夹图标。
+   */
+  async function attachWorkspaceFile(input: {
+    relativePath: string;
+    absolutePath: string;
+    name: string;
+    kind: "file" | "dir";
+  }): Promise<void> {
+    const token = options.token.value;
+    const userId = options.userId.value;
+    const agentId = options.agentId.value;
+    if (!token || !userId || (!agentId && !options.groupId?.value)) {
+      showToast("尚未登录", "error");
+      return;
+    }
+    busy.value = true;
+    try {
+      let path: string;
+      const relative = input.relativePath.replace(/^@/, "").trim().replace(/\/+$/, "");
+      if (isAttachmentsWorkspacePath(relative)) {
+        // 已是上传区：直接引用，勿再 staging，也勿在摘芯片时删原件
+        path = input.kind === "dir" ? attachmentFolderPath(relative) : relative;
+      } else {
+        const payload = {
+          name: input.name || (input.kind === "dir" ? "folder" : "file"),
+          mediaType: input.kind === "dir" ? "inode/directory" : "application/octet-stream",
+          path: input.absolutePath,
+        };
+        const staged = options.groupId?.value
+          ? await api.stageGroupAttachmentFromPath(
+              token,
+              userId,
+              options.groupId.value,
+              payload,
+            )
+          : await api.stageAttachmentFromPath(token, userId, agentId, payload);
+        path = staged.path;
+        stagedPaths.value.add(path);
+      }
+      const text = options.composerText.value;
+      const cursor = options.cursor.value;
+      const next = insertAttachmentReference(text, cursor, cursor, path);
+      options.setText(next.text, next.cursor);
+    } catch (error) {
+      showToast(
+        error instanceof Error && error.message ? error.message : "附件上传失败",
+        "error",
+      );
     } finally {
       busy.value = false;
     }
@@ -87,9 +150,11 @@ export function useComposerFiles(options: {
     const text = options.composerText.value;
     const token = `@${path}`;
     const index = text.indexOf(token);
+    // 仅本会话 staging 的副本可删盘；工作区原有 ATTACHMENTS 引用只摘芯片
+    const wasStaged = stagedPaths.value.has(path);
     if (index < 0) {
       stagedPaths.value.delete(path);
-      void deleteRemote(path);
+      if (wasStaged) void deleteRemote(path);
       return;
     }
     const before = text.slice(0, index);
@@ -101,7 +166,7 @@ export function useComposerFiles(options: {
     const nextCursor = leadTrim ? before.length - 1 : before.length;
     options.setText(nextText, Math.max(0, nextCursor));
     stagedPaths.value.delete(path);
-    void deleteRemote(path);
+    if (wasStaged) void deleteRemote(path);
   }
 
   async function deleteRemote(path: string): Promise<void> {
@@ -120,16 +185,5 @@ export function useComposerFiles(options: {
     }
   }
 
-  return { busy, stageAndInsertFiles, removeFileRef, isImageFile };
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
+  return { busy, stageAndInsertFiles, attachWorkspaceFile, removeFileRef, isImageFile };
 }

@@ -6,8 +6,6 @@ export type ChatSurfaceCapabilities = {
   modelPicker: boolean;
   skills: boolean;
   attachments: boolean;
-  /** reference：上传落盘并插入 @ATTACHMENTS，适用于群聊。 */
-  attachmentMode: "inline" | "reference";
   editResend: boolean;
   suggestions: boolean;
   /** 群成员可作为 @ 提及；附件落到被提及成员或当前执掌者的目录。 */
@@ -16,7 +14,7 @@ export type ChatSurfaceCapabilities = {
   defaultResourceAgentId: string;
   /** 空字符串时 Composer 用单聊占位文案。 */
   placeholder: string;
-  /** 群附件写入共享工作区；单聊为空。 */
+  /** 群附件写入共享工作区；单聊为空。图片怎么进附件条由线程的附件适配器决定，输入框不再分叉。 */
   groupId?: string;
 };
 
@@ -24,7 +22,6 @@ const full: ChatSurfaceCapabilities = {
   modelPicker: true,
   skills: false,
   attachments: true,
-  attachmentMode: "inline",
   editResend: true,
   suggestions: true,
   mentions: [],
@@ -54,7 +51,6 @@ export function groupChatCapabilities(input: {
     modelPicker: true,
     skills: false,
     attachments: true,
-    attachmentMode: "reference",
     editResend: true,
     suggestions: false,
     mentions: input.members,

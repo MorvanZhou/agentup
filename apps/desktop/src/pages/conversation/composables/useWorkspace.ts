@@ -4,6 +4,7 @@ import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type { WorkspaceEntry, WorkspaceFile, WorkspaceScope } from "../../../shared/api/runtime/workspace";
 import { showToast } from "../../../shared/model/ui/toast";
 import { t } from "../../../shared/model/ui/ui-locale";
+import { injectComposerAttach } from "../model/composer/composer-attach";
 import { joinWorkspacePath, parentWorkspacePath, workspaceBaseName } from "../model/workspace/workspace-path";
 import {
   type WorkspaceTab,
@@ -23,6 +24,7 @@ export function useWorkspace(options: {
   api?: DesktopApi;
 }) {
   const api = options.api ?? new DesktopApi();
+  const composerAttach = injectComposerAttach();
   const tab = ref<WorkspaceTab>("artifact");
   const directory = ref(workspaceTabRoot("artifact"));
   const entries = ref<WorkspaceEntry[]>([]);
@@ -196,6 +198,7 @@ export function useWorkspace(options: {
         target,
         workspaceScope.value,
       );
+      // 产物 / 我上传的 / 挂载目录共用这一条：文本和图片进面板，二进制或超限才交系统。
       if (result.kind === "binary" || result.kind === "too-large") {
         await openWithSystem(result.path || target);
         return;
@@ -467,6 +470,38 @@ export function useWorkspace(options: {
     await revealByPath(previewPath.value);
   }
 
+  /** 文件 / 文件夹一键插进 Composer（@ATTACHMENTS 芯片）；挂载列表根忽略。 */
+  async function attachToChat(entry: WorkspaceEntry): Promise<void> {
+    if (atProjectList.value) return;
+    const attach = composerAttach?.value;
+    if (!attach) {
+      showToast(t("wsAddToChatUnavailable"), "error");
+      return;
+    }
+    const relativePath = joinWorkspacePath(directory.value, entry.name);
+    busy.value = true;
+    try {
+      const absolutePath = await api.resolveWorkspaceAbsolute(
+        options.token.value,
+        options.userId.value,
+        options.agentId.value,
+        options.personal.value,
+        relativePath,
+        workspaceScope.value,
+      );
+      await attach.attachWorkspaceFile({
+        relativePath,
+        absolutePath,
+        name: entry.name,
+        kind: entry.kind,
+      });
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      busy.value = false;
+    }
+  }
+
   watch(
     [options.agentId, options.userId, options.token],
     () => {
@@ -516,6 +551,7 @@ export function useWorkspace(options: {
     removeMany,
     reveal,
     revealPreview,
+    attachToChat,
     addProject,
   };
 }

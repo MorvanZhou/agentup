@@ -45,15 +45,15 @@ import { projectVisitAgentsMd } from "../workspace/agents-md.js";
 import { snapshotArtifactDir } from "../workspace/artifact-diff.js";
 import { ensureCwdLayout } from "../workspace/cwd-layout.js";
 import { mergeVisitMcp, projectVisitMcp } from "../workspace/mcp.js";
-import { readProjectRoots, resolveAllowedRoots } from "../workspace/project-roots.js";
+import { resolveAllowedRoots } from "../workspace/project-roots.js";
 import { compileSystemPrompt } from "../context/prompt-policy.js";
 import { executionModeOf } from "../context/mode.js";
 import { resolveExecutionTools } from "../context/tool-policy.js";
 import { userDataRootFromVisit } from "../context/user-data-root.js";
-import { WORKSPACE_POLICY } from "../context/workspace-policy.js";
+import { sessionProjectRoots, WORKSPACE_POLICY } from "../context/workspace-policy.js";
 import { hitlContextFor, type ConversationRef } from "./conversation-ref.js";
 import { profileForMode, type SessionProfileServices } from "./session-profile.js";
-import { ensureGroupWorkspace, isGroupWorkspaceReadOnly } from "../group/workspace.js";
+import { ensureGroupWorkspace, groupDirPath, isGroupWorkspaceReadOnly } from "../group/workspace.js";
 import { createCompleteGroupTaskExtension } from "../tools/complete-group-task.js";
 
 export type ParentSessionExtensions = {
@@ -132,6 +132,11 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
     workspacePolicy.includeGroupWorkspace && groupId
       ? ensureGroupWorkspace(userDataRootFromVisit(visit), visit.userId, groupId)
       : undefined;
+  /** 群级挂载目录：群会话的 HITL 挂载提议写进群 settings.json，而不是成员自己的 instance.json。 */
+  const groupProjectDir =
+    workspacePolicy.includeGroupProjectRoots && groupId
+      ? groupDirPath(userDataRootFromVisit(visit), visit.userId, groupId)
+      : undefined;
   if (!personal) projectVisitAgentsMd(visit.root);
 
   const hitl: HitlExtensionContext =
@@ -177,8 +182,8 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
     ],
     extensionFactories: [
       createFsGuardExtension(plan.cwd, () => {
-        const kind = visit.kind === "personal" ? "personal" : "agent";
-        const projectRoots = workspacePolicy.includeProjectRoots ? readProjectRoots(visit.root, kind) : [];
+        // 每次工具调用现读盘（一对一=visit 挂载；群=群挂载），UI 挂载后无需重开会话。
+        const projectRoots = sessionProjectRoots({ policy: workspacePolicy, visit, groupId });
         const roots = workspacePolicy.includePrivateCwd ? resolveAllowedRoots(plan.cwd, projectRoots) : projectRoots;
         return groupWorkspace ? [...roots, groupWorkspace.root] : roots;
       }, {
@@ -219,8 +224,8 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
         hitl,
         projectMount: {
           cwd: plan.cwd,
-          visitRoot: visit.root,
-          kind: personal ? "personal" : "agent",
+          visitRoot: groupProjectDir ?? visit.root,
+          kind: groupProjectDir ? "group" : personal ? "personal" : "agent",
           userDataRoot: userDataRootFromVisit(visit),
           ...(groupWorkspace ? { trustedRoots: [groupWorkspace.root] } : {}),
         },
@@ -241,13 +246,12 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
       };
     },
     appendSystemPromptOverride: (base) => {
-      const kind = visit.kind === "personal" ? "personal" : "agent";
       return compileSystemPrompt(base, {
         mode,
         environment: formatEnvironmentPrompt(plan.environment, plan.cwd),
         commandTool: plan.environment.commandTool,
         collaborationEnabled: profile.collaborationPrompt,
-        projectRoots: workspacePolicy.includeProjectRoots ? readProjectRoots(visit.root, kind) : [],
+        projectRoots: sessionProjectRoots({ policy: workspacePolicy, visit, groupId }),
         ...(groupWorkspace ? { groupWorkspace } : {}),
         ...(groupRosterPrompt ? { groupRoster: groupRosterPrompt } : {}),
         ...(input.kind === "delegation"

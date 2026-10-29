@@ -16,6 +16,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import { t } from "../../../../../../../shared/model/ui/ui-locale";
+import { selectionToPlainText } from "../../../../../model/composer/copy-text";
 import {
   buildAssistantByproducts,
   type ByproductTabId,
@@ -26,6 +27,16 @@ import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
 import AssistantByproductContent from "./byproducts/AssistantByproductContent.vue";
 import ChatBubble from "../../ChatBubble.vue";
+
+/** 选区复制：跳过 tab/操作栏等 chrome，压掉块级壳带来的尾部空行。 */
+function onBubbleCopy(event: ClipboardEvent): void {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+  const cleaned = selectionToPlainText(selection.getRangeAt(0));
+  if (!cleaned) return;
+  event.clipboardData?.setData("text/plain", cleaned);
+  event.preventDefault();
+}
 
 const extras = injectThreadExtras();
 const pendingAskUserToolCallId = injectPendingAskUserToolCallId();
@@ -212,7 +223,7 @@ const hasArtifactsTab = computed(
 </script>
 
 <template>
-  <ChatBubble ref="bubble" side="agent" :padded="false">
+  <ChatBubble ref="bubble" side="agent" :padded="false" @copy="onBubbleCopy">
     <template #avatar>
       <div
         class="flex shrink-0 flex-col items-end"
@@ -226,7 +237,11 @@ const hasArtifactsTab = computed(
       </div>
     </template>
     <template v-if="showAuthorByline" #header>
-      <div class="flex min-w-0 items-baseline gap-1.5 px-0.5">
+      <!-- 署名不进拖选复制 -->
+      <div
+        class="flex min-w-0 items-baseline gap-1.5 px-0.5 select-none"
+        data-copy-ignore
+      >
         <span class="truncate text-xs font-medium text-foreground">{{ agentName }}</span>
         <span
           v-if="agentRole"
@@ -239,10 +254,11 @@ const hasArtifactsTab = computed(
           class="flex w-full min-w-0 flex-col"
           @update:model-value="onActiveTabChange"
         >
-          <!-- 顶栏：Chrome 式标签条 -->
+          <!-- 顶栏：Chrome 式标签条（不进拖选） -->
           <TabsList
             v-if="byproducts.showTabBar"
-            class="flex min-w-0 flex-wrap items-end gap-0.5 border-b border-rule/70 bg-paper/70 px-2 pt-1.5"
+            class="flex min-w-0 flex-wrap items-end gap-0.5 border-b border-rule/70 bg-paper/70 px-2 pt-1.5 select-none"
+            data-copy-ignore
             :aria-label="t('msgProducts')"
           >
             <template v-for="tab in byproducts.tabs" :key="tab.id">
@@ -323,18 +339,25 @@ const hasArtifactsTab = computed(
           <template v-if="!hasProcessTab">
             <p
               v-if="terminated"
-              class="text-muted-foreground mb-0 mt-2 text-xs"
+              class="text-muted-foreground mb-0 mt-2 text-xs select-none"
+              data-copy-ignore
               role="status"
             >
               {{ t("msgCancelled") }}
             </p>
-            <span v-if="error" class="text-destructive text-sm">{{ error }}</span>
+            <span
+              v-if="error"
+              class="text-destructive text-sm select-none"
+              data-copy-ignore
+              >{{ error }}</span
+            >
           </template>
 
           <!-- 左下角：流式中提示仍在工作（步骤折叠/正文静止时也看得见） -->
           <div
             v-if="showWorking"
-            class="mt-2 flex items-center gap-1.5"
+            class="mt-2 flex items-center gap-1.5 select-none"
+            data-copy-ignore
             role="status"
             aria-live="polite"
           >
@@ -347,8 +370,10 @@ const hasArtifactsTab = computed(
           </div>
         </TabsRoot>
     <template #footer>
+      <!-- 操作栏不进拖选复制 -->
       <div
-        class="text-muted-foreground flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+        class="text-muted-foreground flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 select-none"
+        data-copy-ignore
       >
         <ActionBarPrimitiveCopy class="hover:text-foreground rounded p-1" :aria-label="t('msgCopy')">
           <CheckIcon v-if="copied" class="size-3.5" />

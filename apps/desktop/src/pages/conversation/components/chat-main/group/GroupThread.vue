@@ -3,9 +3,13 @@ import { AuiConfig, AuiProvider } from "@assistant-ui/vue";
 import { ExternalThread, type ExternalThreadMessage } from "@assistant-ui/core/store";
 import type { AppendMessage } from "@assistant-ui/core";
 import type { UIMessage } from "ai";
-import { computed, onBeforeUnmount, provide, ref, toRef, watch } from "vue";
+import { computed, onBeforeUnmount, provide, ref, shallowRef, toRef, watch } from "vue";
 
-import { runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../../shared/api/runtime";
+import { DesktopApi, runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../../shared/api/runtime";
+import {
+  createGroupImageAttachmentAdapter,
+  groupOutgoingText,
+} from "../../../model/composer/group-image-attachment";
 import type {
   AgentUpApprovalData,
   AgentUpAskUserData,
@@ -39,6 +43,10 @@ import {
   chatWaveBusyKey,
   groupChatCapabilities,
 } from "../../../model/thread/chat-surface";
+import {
+  composerAttachKey,
+  type ComposerAttachApi,
+} from "../../../model/composer/composer-attach";
 import { threadActionsKey, type ThreadActions } from "../../../model/thread/thread-actions";
 import { threadAgentIdKey } from "../../../model/thread/thread-agent-id";
 import { threadApprovalKey } from "../../../model/thread/thread-approval";
@@ -291,18 +299,34 @@ function appendText(message: AppendMessage): string {
     .trim();
 }
 
+/** 附件条里的图片 id 就是 staged 路径；发出去时拼进正文，输入框本身不放芯片。 */
+function outgoingText(message: AppendMessage): string {
+  const ids = message.role === "user" ? message.attachments.map((item) => item.id) : [];
+  return groupOutgoingText(appendText(message), ids);
+}
+
+const groupImageAttachments = createGroupImageAttachmentAdapter({
+  api: new DesktopApi(),
+  auth: () => ({
+    token: props.token,
+    userId: props.userId,
+    groupId: props.room.id ?? "",
+  }),
+});
+
 const config = computed(() =>
   AuiConfig({
     thread: ExternalThread({
       messages: threadMessages.value,
       isRunning: speaking.value,
       isSendDisabled: Boolean(props.busy),
+      attachmentAdapter: groupImageAttachments,
       onNew: (message) => {
-        const text = appendText(message);
+        const text = outgoingText(message);
         if (text) emit("send", text);
       },
       onEdit: (message) => {
-        const text = appendText(message);
+        const text = outgoingText(message);
         const messageId = message.sourceId?.trim() ?? "";
         if (text && messageId) emit("edit", messageId, text);
       },
@@ -332,6 +356,8 @@ provide(
 );
 provide(threadAskUserKey, toRef(props, "askUser"));
 provide(threadApprovalKey, toRef(props, "approval"));
+// Composer 挂载后写入；工作区侧栏据此把文件插成 @ATTACHMENTS 芯片
+provide(composerAttachKey, shallowRef<ComposerAttachApi | null>(null));
 
 /** toolCallId → taskId；过程弹窗旁路打开（与单聊同一套注入）。 */
 const taskIdByToolCall = ref(new Map<string, string>());

@@ -16,8 +16,22 @@ const { createSessionVault } = createRequire(import.meta.url)("../../electron/se
     fs: typeof import("node:fs/promises");
     path: typeof import("node:path");
   }) => {
-    read(): Promise<{ userId: string; email: string; nickname: string; token: string } | null>;
-    write(session: { userId: string; email: string; nickname: string; token: string }): Promise<void>;
+    read(): Promise<{
+      userId: string;
+      email: string;
+      nickname: string;
+      token: string;
+      hasAvatar?: boolean;
+      avatarUrl?: string;
+    } | null>;
+    write(session: {
+      userId: string;
+      email: string;
+      nickname: string;
+      token: string;
+      hasAvatar?: boolean;
+      avatarUrl?: string;
+    }): Promise<void>;
     clear(): Promise<void>;
     encryptionReady(): boolean;
   };
@@ -54,6 +68,47 @@ it("把登录态加密写入 userData，并能读回", async () => {
   expect(encoded).not.toContain("tok");
   expect(encoded).not.toContain("alice");
   await expect(store.read()).resolves.toEqual({ kind: "account", userId: "u1", email: "alice@example.com", nickname: "alice", token: "tok" });
+});
+
+it("读写保留账号头像字段", async () => {
+  const store = await vault();
+  const avatarUrl = "http://127.0.0.1:8787/statics/users/u1/avatar.webp?v=1";
+  await store.write({
+    userId: "u1",
+    email: "alice@example.com",
+    nickname: "alice",
+    token: "tok",
+    hasAvatar: true,
+    avatarUrl,
+  });
+  await expect(store.read()).resolves.toEqual({
+    kind: "account",
+    userId: "u1",
+    email: "alice@example.com",
+    nickname: "alice",
+    token: "tok",
+    hasAvatar: true,
+    avatarUrl,
+  });
+});
+
+it("有 hasAvatar 但无 URL 时不写入伪头像", async () => {
+  const store = await vault();
+  await store.write({
+    userId: "u1",
+    email: "alice@example.com",
+    nickname: "alice",
+    token: "tok",
+    hasAvatar: true,
+  });
+  await expect(store.read()).resolves.toEqual({
+    kind: "account",
+    userId: "u1",
+    email: "alice@example.com",
+    nickname: "alice",
+    token: "tok",
+    hasAvatar: true,
+  });
 });
 
 it("basic_text 后端拒绝保存", async () => {

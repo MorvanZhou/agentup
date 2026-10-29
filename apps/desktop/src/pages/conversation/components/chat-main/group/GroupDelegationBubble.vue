@@ -30,10 +30,21 @@ import {
   type GroupDelegationPhase,
 } from "../../../model/group/group-delegation";
 import { t } from "../../../../../shared/model/ui/ui-locale";
+import { selectionToPlainText } from "../../../model/composer/copy-text";
 import DelegationProcessProducts from "../shared/thread/assistant-ui/byproducts/DelegationProcessProducts.vue";
 import ChatBubble from "../shared/ChatBubble.vue";
 
 const props = defineProps<{ card: GroupDelegationCard }>();
+
+/** 选区复制：与主 Agent 气泡同一套清洗，去掉 chrome / 尾部空行。 */
+function onBubbleCopy(event: ClipboardEvent): void {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+  const cleaned = selectionToPlainText(selection.getRangeAt(0));
+  if (!cleaned) return;
+  event.clipboardData?.setData("text/plain", cleaned);
+  event.preventDefault();
+}
 
 // 群委派气泡：waiting 只看当前 HITL 是否还挂着这张卡的 taskId。
 const waitingIds = inject(groupWaitingTaskIdsKey, null);
@@ -188,21 +199,28 @@ const taskError = computed(() =>
 
 <template>
   <!-- 群委派气泡 -->
-  <ChatBubble ref="bubble" side="agent" tag="li" :padded="false">
+  <ChatBubble ref="bubble" side="agent" tag="li" :padded="false" @copy="onBubbleCopy">
     <template #avatar>
       <!-- 子 Agent 头像 -->
       <AgentAvatar :name="card.authorName || 'A'" :avatar-url="card.avatarUrl" size="lg" />
     </template>
     <template #header>
-      <!-- 子 Agent 名称与角色 -->
-      <div class="flex min-w-0 items-baseline gap-1.5 px-0.5">
+      <!-- 子 Agent 名称与角色（不进拖选） -->
+      <div
+        class="flex min-w-0 items-baseline gap-1.5 px-0.5 select-none"
+        data-copy-ignore
+      >
         <span class="truncate text-xs font-medium text-foreground">{{ card.authorName }}</span>
         <span v-if="card.role" class="min-w-0 truncate text-xs text-muted-foreground">{{ card.role }}</span>
       </div>
     </template>
     <div class="flex min-w-0 flex-col">
-      <!-- 无 tab 时：阶段图标单独一行靠右 -->
-      <div v-if="!activeTab" class="flex justify-end px-3 py-3">
+      <!-- 无 tab 时：阶段图标单独一行靠右（不进拖选） -->
+      <div
+        v-if="!activeTab"
+        class="flex justify-end px-3 py-3 select-none"
+        data-copy-ignore
+      >
         <!-- 委派阶段：点图标展开文案 -->
         <button
           type="button"
@@ -227,8 +245,10 @@ const taskError = computed(() =>
         @update:model-value="onActiveTabChange"
       >
         <!-- 外层顶栏：左侧 tab，右侧委派阶段图标垂直居中 -->
+        <!-- 顶栏 chrome 不进拖选 -->
         <div
-          class="flex min-w-0 gap-2"
+          class="flex min-w-0 gap-2 select-none"
+          data-copy-ignore
           :class="
             outer.showTabBar
               ? 'items-stretch border-b border-rule/70 bg-paper/70 px-2 pt-1.5'

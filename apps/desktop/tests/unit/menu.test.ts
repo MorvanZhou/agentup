@@ -5,6 +5,7 @@ const { applicationMenuTemplate } = createRequire(import.meta.url)("../../electr
   applicationMenuTemplate(options?: {
     platform?: string;
     onEraseLocalData?: () => void | Promise<void>;
+    onCheckForUpdates?: () => void | Promise<void>;
   }): Array<{
     label?: string;
     role?: string;
@@ -40,8 +41,27 @@ it("点击全清菜单项会调用回调", () => {
   expect(onEraseLocalData).toHaveBeenCalledOnce();
 });
 
-it("macOS 应用菜单只保留关于与退出", () => {
+it("macOS 应用菜单在关于与退出之间放检查更新", () => {
   const [appMenu] = applicationMenuTemplate({ platform: "darwin" });
   expect(appMenu.label).toBe("AgentUp");
-  expect(appMenu.submenu).toEqual([{ role: "about" }, { type: "separator" }, { role: "quit" }]);
+  expect(appMenu.submenu?.map((item) => ({ label: item.label, role: item.role, type: item.type }))).toEqual([
+    { label: undefined, role: "about", type: undefined },
+    { label: undefined, role: undefined, type: "separator" },
+    { label: "Check for Updates…", role: undefined, type: undefined },
+    { label: undefined, role: undefined, type: "separator" },
+    { label: undefined, role: "quit", type: undefined },
+  ]);
+});
+
+it("Windows 帮助菜单含检查更新", () => {
+  const help = applicationMenuTemplate({ platform: "win32" }).find((item) => item.label === "Help");
+  expect(help?.submenu?.map((item) => item.label)).toEqual(["Check for Updates…"]);
+});
+
+it("点击检查更新会调用回调", () => {
+  const onCheckForUpdates = vi.fn();
+  const [appMenu] = applicationMenuTemplate({ platform: "darwin", onCheckForUpdates });
+  const item = appMenu.submenu?.find((entry) => entry.label === "Check for Updates…");
+  item?.click?.();
+  expect(onCheckForUpdates).toHaveBeenCalledOnce();
 });

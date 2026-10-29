@@ -23,7 +23,7 @@ import { BackendClientError } from "../../control/client.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
-import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
+import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
 import { clearContext, clearHistory, readHistory, readHistoryPage } from "../../session/history/history.js";
 import { setVisitSessionModel } from "../../session/model/session-model.js";
@@ -499,13 +499,36 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
   app.post("/agents/:agentId/attachments", async (c) => {
     bearer(c);
     const agentId = requireAgentId(c.req.param("agentId"));
-    const body = await readJson(c);
+    // base64 附件 body：放宽到 15MB 附件 + base64 膨胀 + 余量（22MB）
+    const body = await readJson(c, { maxBytes: MAX_ATTACHMENT_BODY_BYTES });
     const userId = requireUserId(text(body, "user_id"));
     const [attachment] = parsePromptAttachments({ attachments: [body] });
     if (!attachment) throw new LocalError("请求无效", 400);
     const cwd = path.join(config.userDataRoot, "users", userId, "agents", agentId, "cwd");
     fs.mkdirSync(cwd, { recursive: true });
     const staged = stageAttachment(cwd, attachment);
+    return json(c, 200, {
+      id: staged.id,
+      path: staged.path,
+      ref: staged.ref,
+      name: staged.name,
+      media_type: staged.mediaType,
+    });
+  });
+
+  /** 大文件直连：按本机路径复制 staging，字节不经 JSON/base64，桌面渲染进程不转码。 */
+  app.post("/agents/:agentId/attachments/from-path", async (c) => {
+    bearer(c);
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    const cwd = path.join(config.userDataRoot, "users", userId, "agents", agentId, "cwd");
+    fs.mkdirSync(cwd, { recursive: true });
+    const staged = stageAttachmentFromPath(cwd, {
+      path: text(body, "path"),
+      name: optionalText(body, "name"),
+      mediaType: optionalText(body, "media_type"),
+    });
     return json(c, 200, {
       id: staged.id,
       path: staged.path,
@@ -573,7 +596,8 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
   app.post("/agents/:agentId/prompt", async (c) => {
     const agentId = requireAgentId(c.req.param("agentId"));
     const token = bearer(c);
-    const body = await readJson(c);
+    // inline 图片走 base64 进 body：放宽到附件级上限（15MB×1.37+余量），默认 1MB 闸只防其他端点
+    const body = await readJson(c, { maxBytes: MAX_ATTACHMENT_BODY_BYTES });
     const userId = requirePathUserId(text(body, "user_id"));
     const locale = uiLocaleFromRequest(c);
     const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);

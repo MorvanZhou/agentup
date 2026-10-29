@@ -6,9 +6,12 @@ module.exports = {
   dev: {
     backendUrl: "http://127.0.0.1:8787",
     webUrl: "http://127.0.0.1:45280",
+    // 开发态也打正式下载源，便于菜单「检查更新」联调；本地未发版时会显示已是最新或网络错误
+    downloadsUrl: "https://downloads.agentup.me",
   },
   prod: {
     backendUrl: "https://api.agentup.me",
     webUrl: "https://agentup.me",
+    downloadsUrl: "https://downloads.agentup.me",
   },
 };

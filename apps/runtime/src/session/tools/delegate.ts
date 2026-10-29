@@ -1,7 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionFactory, type ToolCallEvent } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
 import { DELEGATION_BRIEF_LOCATION_RULE } from "../delegation/collaboration-prompt.js";
 import {
   AGENTUP_DELEGATION_DISPOSITION_TYPE,
@@ -22,7 +21,6 @@ import {
   type DelegationService,
   type DelegationSteerOutcome,
 } from "../delegation/service/index.js";
-import { agentSearchGate, TOOLS_REQUIRING_AGENT_SEARCH } from "../delegation/search-gate.js";
 import { STEER_NOTE_MAX } from "../delegation/steer.js";
 import {
   MAX_DELEGATION_FANOUT,
@@ -167,10 +165,6 @@ export function createDelegateExtension(
 ): ExtensionFactory {
   return (pi) => {
     const inGroup = Boolean(scope.groupId);
-    const enforceSearch = !inGroup && agentId === PERSONAL_ASSISTANT_ID;
-    let searched = false;
-    let rosterChecked = false;
-    let hasOtherAgents = false;
 
     const resolvedTaskIds = new Set<string>();
     let openTaskIds: string[] = [];
@@ -181,9 +175,6 @@ export function createDelegateExtension(
     };
 
     pi.on("agent_start", () => {
-      searched = false;
-      rosterChecked = false;
-      hasOtherAgents = false;
       resolvedTaskIds.clear();
       dispositionForces = 0;
       openTaskIds = [];
@@ -226,30 +217,7 @@ export function createDelegateExtension(
       };
     });
 
-    pi.on("tool_call", async (event: ToolCallEvent) => {
-      if (event.toolName === AGENT_SEARCH_TOOL) {
-        searched = true;
-        return undefined;
-      }
-      if (!enforceSearch || searched || !TOOLS_REQUIRING_AGENT_SEARCH.has(event.toolName)) {
-        return undefined;
-      }
-      if (!rosterChecked) {
-        rosterChecked = true;
-        try {
-          const roster = await service.listRecruited(userId);
-          hasOtherAgents = roster.some((agent) => agent.agentId !== agentId);
-        } catch {
-          hasOtherAgents = false;
-        }
-      }
-      return agentSearchGate({
-        toolName: event.toolName,
-        enforce: enforceSearch,
-        hasOtherAgents,
-        searched,
-      });
-    });
+    // agent_search 只做提示词约束（协作契约 + 每轮注入），不做工具级硬拦截。
 
     if (!inGroup) {
       pi.registerTool(

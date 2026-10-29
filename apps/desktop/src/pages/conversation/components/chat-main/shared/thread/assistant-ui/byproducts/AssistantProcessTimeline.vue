@@ -123,17 +123,28 @@ const timeline = computed(() =>
         </PartByIndexProvider>
       </template>
       <template v-if="showStatus">
-        <div v-if="awaitingNextStep && !terminated" class="mt-1">
+        <!-- 状态提示不进拖选复制 -->
+        <div
+          v-if="awaitingNextStep && !terminated"
+          class="mt-1 select-none"
+          data-copy-ignore
+        >
           <ShimmerTitle :active="true" :title="t('msgPlanning')" />
         </div>
         <p
           v-if="terminated"
-          class="text-muted-foreground mb-0 mt-2 text-xs"
+          class="text-muted-foreground mb-0 mt-2 text-xs select-none"
+          data-copy-ignore
           role="status"
         >
           {{ t("msgCancelled") }}
         </p>
-        <span v-if="error" class="text-destructive text-sm">{{ error }}</span>
+        <span
+          v-if="error"
+          class="text-destructive text-sm select-none"
+          data-copy-ignore
+          >{{ error }}</span
+        >
       </template>
     </div>
   </div>

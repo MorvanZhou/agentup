@@ -8,7 +8,7 @@ import { GroupError, type GroupMember } from "../../session/group/index.js";
 import { clearGroupWorkspace, ensureGroupWorkspace } from "../../session/group/workspace.js";
 import { pageItems, parseTranscriptPageQuery, TRANSCRIPT_PAGE_SIZE } from "../../session/transcript-page.js";
 import type { GroupRoom } from "../../session/group/types.js";
-import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
+import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import {
   backfillMissingGroups,
   pushGroupDelete,
@@ -19,6 +19,7 @@ import {
   bearer,
   json,
   LocalError,
+  optionalText,
   readJson,
   requireUserId,
   sendNodeJson,
@@ -282,7 +283,8 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
 
   app.post("/groups/:groupId/attachments", async (c) => {
     bearer(c);
-    const body = await readJson(c);
+    // base64 附件 body：放宽到 15MB 附件 + base64 膨胀 + 余量（22MB）
+    const body = await readJson(c, { maxBytes: MAX_ATTACHMENT_BODY_BYTES });
     const userId = requireUserId(text(body, "user_id"));
     const groupId = c.req.param("groupId");
     try {
@@ -291,6 +293,32 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
       if (!attachment) throw new LocalError("请求无效", 400);
       const workspace = ensureGroupWorkspace(deps.config.userDataRoot, userId, groupId);
       const staged = stageAttachment(workspace.root, attachment);
+      return json(c, 200, {
+        id: staged.id,
+        path: staged.path,
+        ref: staged.ref,
+        name: staged.name,
+        media_type: staged.mediaType,
+      });
+    } catch (error) {
+      rethrow(error);
+    }
+  });
+
+  /** 大文件直连：按本机路径复制 staging，字节不经 JSON/base64，桌面渲染进程不转码。 */
+  app.post("/groups/:groupId/attachments/from-path", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    const groupId = c.req.param("groupId");
+    try {
+      deps.groupTurns.touch(userId, groupId);
+      const workspace = ensureGroupWorkspace(deps.config.userDataRoot, userId, groupId);
+      const staged = stageAttachmentFromPath(workspace.root, {
+        path: text(body, "path"),
+        name: optionalText(body, "name"),
+        mediaType: optionalText(body, "media_type"),
+      });
       return json(c, 200, {
         id: staged.id,
         path: staged.path,

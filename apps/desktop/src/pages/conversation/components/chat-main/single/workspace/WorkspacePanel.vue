@@ -61,6 +61,7 @@ const {
   removeMany,
   reveal,
   revealPreview,
+  attachToChat,
   addProject,
 } = useWorkspace({
   token: toRef(props, "token"),
@@ -97,9 +98,8 @@ const deleteDescription = computed(() => {
   return tf("wsDeleteMany", { n: targets.length });
 });
 const batchSelected = computed(() => selected.value.length > 0);
-const workspaceTabs = computed(() =>
-  WORKSPACE_TABS.filter((item) => (props.group ? item.id !== "projects" : true)),
-);
+// 群聊与一对一共用全部 Tab：群的项目挂载由 runtime 群接口提供
+const workspaceTabs = computed(() => WORKSPACE_TABS);
 
 watch(directory, () => {
   selected.value = [];
@@ -279,11 +279,13 @@ async function confirmRemove(): Promise<void> {
       :loading="loading"
       :error="error"
       :selected="selected"
+      :allow-attach="!atProjectList"
       @update:selected="selected = $event"
       @open="openEntry"
       @rename="openRename"
       @remove="askRemove"
       @reveal="reveal"
+      @attach="attachToChat"
       @retry="refresh"
     />
     <WorkspacePreview

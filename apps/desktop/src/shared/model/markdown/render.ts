@@ -93,7 +93,7 @@ md.renderer.rules.fence = (tokens, idx, options) => {
     `<div class="aui-code-block">`,
     `<div class="aui-code-header">`,
     `<span class="aui-code-lang">${label}</span>`,
-    `<button type="button" class="aui-code-copy" aria-label="Copy code">`,
+    `<button type="button" class="aui-code-copy" data-copy-ignore aria-label="Copy code">`,
     `<span class="aui-code-copy-idle">${COPY_SVG}</span>`,
     `<span class="aui-code-copy-done">${CHECK_SVG}</span>`,
     `<span class="aui-code-copy-label">Copy</span>`,

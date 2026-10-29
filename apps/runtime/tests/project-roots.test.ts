@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 
 import { startLocalServer } from "../src/local/server.js";
+import { GroupStore } from "../src/session/group/index.js";
 import {
   addProjectRoot,
   assertInsideAnyRoot,
@@ -168,6 +169,125 @@ it("serves project-roots HTTP CRUD", async () => {
     );
     expect(removed.status).toBe(200);
     expect(await removed.json()).toEqual({ roots: [] });
+  } finally {
+    await local.close();
+  }
+});
+
+it("adds and removes group project roots in the group settings.json", () => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grp-"));
+  const groupDir = path.join(dataRoot, "users", "u1", ".runtime", "groups", "g-1");
+  fs.mkdirSync(groupDir, { recursive: true });
+
+  // 群目录还没有 settings.json：读为空，首挂时自动创建
+  expect(readProjectRoots(groupDir, "group")).toEqual([]);
+
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grp-code-"));
+  const roots = addProjectRoot(dataRoot, groupDir, "group", project);
+  expect(roots).toEqual([fs.realpathSync(project)]);
+
+  const stored = JSON.parse(
+    fs.readFileSync(path.join(groupDir, "settings.json"), "utf8"),
+  ) as { project_roots?: string[] };
+  expect(stored.project_roots).toEqual(roots);
+  expect(readProjectRoots(groupDir, "group")).toEqual(roots);
+
+  expect(removeProjectRoot(groupDir, "group", roots[0]!)).toEqual([]);
+  expect(readProjectRoots(groupDir, "group")).toEqual([]);
+});
+
+it("serves group workspace scope=project only for mounted roots", () => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grpws-"));
+  const groupDir = path.join(dataRoot, "users", "u1", ".runtime", "groups", "g-1");
+  fs.mkdirSync(groupDir, { recursive: true });
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grpws-code-"));
+  fs.writeFileSync(path.join(project, "main.ts"), "export {}\n");
+  addProjectRoot(dataRoot, groupDir, "group", project);
+  const projectReal = fs.realpathSync(project);
+
+  const listed = serveWorkspace(
+    dataRoot,
+    "GET",
+    "/groups/g-1/workspace",
+    new URLSearchParams({
+      user_id: "u1",
+      scope: "project",
+      root: projectReal,
+      path: "",
+    }),
+    {},
+  );
+  expect(listed.status).toBe(200);
+  expect(
+    (listed.payload as { entries: Array<{ name: string }> }).entries.map((e) => e.name),
+  ).toContain("main.ts");
+  // 项目根里不落 ARTIFACT/WORK 布局
+  expect(fs.existsSync(path.join(project, "ARTIFACT"))).toBe(false);
+
+  expect(() =>
+    serveWorkspace(
+      dataRoot,
+      "GET",
+      "/groups/g-1/workspace",
+      new URLSearchParams({
+        user_id: "u1",
+        scope: "project",
+        root: fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grpws-other-")),
+        path: "",
+      }),
+      {},
+    ),
+  ).toThrow(/未挂载/);
+});
+
+it("serves group project-roots HTTP CRUD", async () => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grphttp-"));
+  const store = new GroupStore(dataRoot);
+  const room = store.create({
+    userId: "u1",
+    title: "dev",
+    members: [
+      { agentId: "a-1", name: "A" },
+      { agentId: "b-2", name: "B" },
+    ],
+  });
+  const local = await startLocalServer({
+    host: "127.0.0.1",
+    port: 0,
+    userDataRoot: dataRoot,
+    backendUrl: "http://127.0.0.1:9",
+  });
+  try {
+    const headers = { authorization: "Bearer token", "content-type": "application/json" };
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pr-grphttp-proj-"));
+    const base = `${local.url}/groups/${room.id}/project-roots`;
+
+    const listed = await fetch(`${base}?user_id=u1`, { headers });
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ roots: [] });
+
+    const added = await fetch(base, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ user_id: "u1", path: project }),
+    });
+    expect(added.status).toBe(200);
+    const addedBody = (await added.json()) as { roots: string[] };
+    expect(addedBody.roots).toEqual([fs.realpathSync(project)]);
+
+    const groupDir = path.join(dataRoot, "users", "u1", ".runtime", "groups", room.id);
+    expect(readProjectRoots(groupDir, "group")).toEqual([fs.realpathSync(project)]);
+
+    const removed = await fetch(
+      `${base}?user_id=u1&path=${encodeURIComponent(addedBody.roots[0]!)}`,
+      { method: "DELETE", headers },
+    );
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ roots: [] });
+
+    // 群不存在 → 404
+    const missing = await fetch(`${local.url}/groups/nope1/project-roots?user_id=u1`, { headers });
+    expect(missing.status).toBe(404);
   } finally {
     await local.close();
   }

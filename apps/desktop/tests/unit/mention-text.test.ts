@@ -26,6 +26,20 @@ describe("composer group mentions", () => {
     });
   });
 
+  it("does not treat a file ref at the caret as a member query", () => {
+    // 发送会 trim 掉尾部空格，群图片/文件引用常停在文末；编辑时光标落在这里不应弹出成员选择器
+    const text = "看这个 @ATTACHMENTS/a1b2c3d4-a.txt";
+    expect(mentionQueryAtCursor(text, text.length, knownMentions)).toBeNull();
+    const mid = text.indexOf("a1b2c3d4");
+    expect(mentionQueryAtCursor(text, mid, knownMentions)).toBeNull();
+    // 附件前面的真 @ 查询仍要弹出
+    expect(mentionQueryAtCursor("请 @设 @ATTACHMENTS/a1b2c3d4-a.txt", 4, knownMentions)).toEqual({
+      query: "设",
+      start: 2,
+      end: 4,
+    });
+  });
+
   it("does not treat a finished @member as an open query", () => {
     // 选完后光标常落在名字后、空格前；有 knownNames 时应关闭选择器
     expect(mentionQueryAtCursor("请 @设计师 做稿", 6, knownMentions)).toBeNull();
@@ -64,8 +78,9 @@ describe("composer group mentions", () => {
       { type: "text", value: " 做稿" },
     ]);
     expect(findMentionRefs("@设计师杭州", knownMentions)).toEqual([]);
-    expect(segmentComposerText("@ATTACHMENTS/a1b2c3d4-a.txt", undefined, knownMentions)).toEqual([
-      { type: "file", path: "ATTACHMENTS/a1b2c3d4-a.txt", name: "a.txt" },
+  // 旧扁平格式不再剥 id 前缀，name 原样显示
+  expect(segmentComposerText("@ATTACHMENTS/a1b2c3d4-a.txt", undefined, knownMentions)).toEqual([
+    { type: "file", path: "ATTACHMENTS/a1b2c3d4-a.txt", name: "a1b2c3d4-a.txt" },
     ]);
     expect(segmentComposerText("@路人 你好", undefined, knownMentions)).toEqual([
       { type: "text", value: "@路人 你好" },

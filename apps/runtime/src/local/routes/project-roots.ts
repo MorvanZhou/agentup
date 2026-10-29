@@ -3,12 +3,14 @@ import path from "node:path";
 
 import type { Hono } from "hono";
 
+import { GroupError } from "../../session/group/index.js";
 import {
   addProjectRoot,
   ProjectRootsError,
   readProjectRoots,
   removeProjectRoot,
 } from "../../session/workspace/project-roots.js";
+import { groupDirPath } from "../../session/group/workspace.js";
 import { ensureLocalAgent, isLocalAgentId } from "../agents/local-agent.js";
 import { ensurePersonalAssistant } from "../assistant/personal-assistant.js";
 import {
@@ -99,6 +101,50 @@ export function registerProjectRootsRoutes(app: Hono<LocalAppEnv>, deps: LocalAp
       throw mapError(error);
     }
   });
+
+  // 群级挂载：落盘群目录 settings.json，群内所有成员共享；群不存在时 404。
+  app.get("/groups/:groupId/project-roots", (c) => {
+    bearer(c);
+    const userId = requireUserId(c.req.query("user_id") ?? "");
+    try {
+      const groupDir = resolveGroupRootsDir(deps, userId, c.req.param("groupId") ?? "");
+      return json(c, 200, { roots: readProjectRoots(groupDir, "group") });
+    } catch (error) {
+      throw mapError(error);
+    }
+  });
+
+  app.post("/groups/:groupId/project-roots", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = requireUserId(typeof body.user_id === "string" ? body.user_id : "");
+    const rawPath = typeof body.path === "string" ? body.path : "";
+    try {
+      const groupDir = resolveGroupRootsDir(deps, userId, c.req.param("groupId") ?? "");
+      const roots = addProjectRoot(config.userDataRoot, groupDir, "group", rawPath);
+      return json(c, 200, { roots });
+    } catch (error) {
+      throw mapError(error);
+    }
+  });
+
+  app.delete("/groups/:groupId/project-roots", (c) => {
+    bearer(c);
+    const userId = requireUserId(c.req.query("user_id") ?? "");
+    const rawPath = c.req.query("path") ?? "";
+    try {
+      const groupDir = resolveGroupRootsDir(deps, userId, c.req.param("groupId") ?? "");
+      const roots = removeProjectRoot(groupDir, "group", rawPath);
+      return json(c, 200, { roots });
+    } catch (error) {
+      throw mapError(error);
+    }
+  });
+}
+
+function resolveGroupRootsDir(deps: LocalAppDeps, userId: string, groupId: string): string {
+  deps.groups.store.peek(userId, groupId); // 群不存在时抛 GroupError
+  return groupDirPath(deps.config.userDataRoot, userId, groupId);
 }
 
 function resolveAgentVisitRoot(userDataRoot: string, userId: string, agentId: string): string {
@@ -115,6 +161,7 @@ function mapError(error: unknown): Error {
   if (error instanceof ProjectRootsError) {
     return new LocalError(error.message, error.status);
   }
+  if (error instanceof GroupError) return new LocalError(error.message, 404);
   if (error instanceof LocalError) return error;
   return error instanceof Error ? error : new LocalError("请求无效", 400);
 }

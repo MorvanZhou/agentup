@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 
 import { startLocalServer } from "../src/local/server.js";
 import {
+  IMAGE_PREVIEW_LIMIT,
   TEXT_PREVIEW_LIMIT,
   agentWorkspaceCwd,
   createWorkspaceEntry,
@@ -71,6 +72,25 @@ it("lists and edits cwd files while hiding .pi/WORK and refusing escapes", () =>
   expect(readWorkspaceFile(cwd, "shot.png")).toMatchObject({ kind: "image", media_type: "image/png" });
   fs.writeFileSync(path.join(cwd, "blob.bin"), Buffer.from([0, 1, 2, 3]));
   expect(readWorkspaceFile(cwd, "blob.bin")).toMatchObject({ kind: "binary" });
+
+  // 截图 / 封面常超过旧的 2MB：应用内能显示的图仍应是 image，而不是交给系统。
+  fs.writeFileSync(path.join(cwd, "cover.png"), Buffer.alloc(3 * 1024 * 1024, 1));
+  expect(readWorkspaceFile(cwd, "cover.png")).toMatchObject({ kind: "image", media_type: "image/png" });
+  fs.writeFileSync(path.join(cwd, "huge.png"), Buffer.alloc(IMAGE_PREVIEW_LIMIT + 1, 1));
+  expect(readWorkspaceFile(cwd, "huge.png")).toMatchObject({ kind: "too-large", media: "image" });
+
+  // 面板已按这些扩展名做 HTML / Markdown 预览；大于嗅探窗口也不能当成二进制。
+  const longText = "x".repeat(9000);
+  fs.writeFileSync(path.join(cwd, "page.htm"), longText);
+  fs.writeFileSync(path.join(cwd, "notes.mdx"), longText);
+  fs.writeFileSync(path.join(cwd, "doc.markdown"), longText);
+  expect(readWorkspaceFile(cwd, "page.htm")).toMatchObject({ kind: "text", text: longText });
+  expect(readWorkspaceFile(cwd, "notes.mdx")).toMatchObject({ kind: "text", text: longText });
+  expect(readWorkspaceFile(cwd, "doc.markdown")).toMatchObject({ kind: "text", text: longText });
+
+  // xlsx 等办公文件应用内没有预览器，保持二进制，由桌面交给系统打开。
+  fs.writeFileSync(path.join(cwd, "sheet.xlsx"), Buffer.concat([Buffer.from("PK\x03\x04"), Buffer.alloc(16, 0)]));
+  expect(readWorkspaceFile(cwd, "sheet.xlsx")).toMatchObject({ kind: "binary" });
 });
 
 it("serves workspace routes for a recruited cwd and the personal assistant", async () => {

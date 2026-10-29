@@ -7,7 +7,12 @@ import type { UiLocale } from "../../i18n/locale.js";
 import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
 import type { Visit } from "../../package/sync.js";
 import type { PromptAttachment } from "../workspace/attachments.js";
-import { materializePromptImages } from "../workspace/attachments.js";
+import {
+  ATTACHMENT_PATHS_CUSTOM_TYPE,
+  attachmentRefsInText,
+  formatAttachmentLocations,
+  materializePromptImages,
+} from "../workspace/attachments.js";
 import {
   ACTIVE_DELEGATIONS_CUSTOM_TYPE,
   discoverRecruitedAgents,
@@ -312,6 +317,8 @@ export class VisitChats {
               // 任意位置的 `/name`|/skill:name` 由 harness 展开，避免依赖 Pi 仅识别行首 `/skill:`。
               const skills = slot.session.resourceLoader?.getSkills().skills ?? [];
               const expanded = expandSkillReferences(promptText || "(图片附件)", skills);
+              // 正文里的 @ATTACHMENTS/... 芯片 → 绝对路径注记（display:false，不改用户原文）。
+              await this.injectAttachmentPaths(slot.session, cwd, promptText);
               // 若异步结果已在排队且用户先发言：并进本轮，避免 turn 结束后再抢一次 wake。
               await this.injectPendingAsyncWake(slot.session, visit);
               // 进行中委托摘要 → nextTurn，减轻重复委托。
@@ -364,6 +371,33 @@ export class VisitChats {
         }
       },
     });
+  }
+
+  /**
+   * 正文里的 `@ATTACHMENTS/...` 芯片只给 cwd 相对 token；把仍存在于磁盘的引用
+   * 映射成绝对路径经 nextTurn 注入（display:false）。只注路径，不展开目录内容。
+   * 失败不阻断对话。
+   */
+  private async injectAttachmentPaths(
+    session: PromptSession,
+    cwd: string,
+    text: string,
+  ): Promise<void> {
+    if (!session.sendCustomMessage || !text) return;
+    try {
+      const content = formatAttachmentLocations(cwd, attachmentRefsInText(text));
+      if (!content) return;
+      await session.sendCustomMessage(
+        {
+          customType: ATTACHMENT_PATHS_CUSTOM_TYPE,
+          content,
+          display: false,
+        },
+        { deliverAs: "nextTurn" },
+      );
+    } catch {
+      // 注入失败不阻断对话
+    }
   }
 
   /**

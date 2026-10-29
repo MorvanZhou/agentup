@@ -18,7 +18,7 @@ export type ComposerSegment =
   | { type: "text"; value: string }
   | { type: "skill"; name: string }
   | { type: "mention"; name: string }
-  | { type: "file"; path: string; name: string };
+  | { type: "file"; path: string; name: string; folder?: boolean };
 
 /** 光标处正在输入的 `/` 查询（尚未变成完整引用）。 */
 export function slashQueryAtCursor(
@@ -72,7 +72,7 @@ export function segmentComposerText(
   type Hit =
     | { kind: "skill"; start: number; end: number; name: string }
     | { kind: "mention"; start: number; end: number; name: string }
-    | { kind: "file"; start: number; end: number; path: string; name: string };
+    | { kind: "file"; start: number; end: number; path: string; name: string; folder: boolean };
   const hits: Hit[] = [];
   const re = new RegExp(SKILL_REF_RE.source, "gi");
   for (const match of text.matchAll(re)) {
@@ -91,6 +91,7 @@ export function segmentComposerText(
       end: file.end,
       path: file.path,
       name: file.name,
+      folder: file.folder,
     });
   }
   for (const mention of findMentionRefs(text, knownMentions ?? new Set())) {
@@ -117,7 +118,14 @@ export function segmentComposerText(
     if (hit.start > last) segments.push({ type: "text", value: text.slice(last, hit.start) });
     if (hit.kind === "skill") segments.push({ type: "skill", name: hit.name });
     else if (hit.kind === "mention") segments.push({ type: "mention", name: hit.name });
-    else segments.push({ type: "file", path: hit.path, name: hit.name });
+    else {
+      segments.push({
+        type: "file",
+        path: hit.path,
+        name: hit.name,
+        folder: hit.folder || undefined,
+      });
+    }
     last = hit.end;
   }
   if (last < text.length) segments.push({ type: "text", value: text.slice(last) });

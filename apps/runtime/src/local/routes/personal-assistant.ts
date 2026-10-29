@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { ConfigError } from "../../config/load.js";
 import { requireEnabledModelRef } from "../../config/provider.js";
-import { parsePromptAttachments, removeStagedAttachment, stageAttachment } from "../../session/workspace/attachments.js";
+import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import { clearPersonalContext, clearPersonalHistory, readPersonalHistory, readPersonalHistoryPage } from "../../session/history/history.js";
 import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
 import { setVisitSessionModel } from "../../session/model/session-model.js";
@@ -15,6 +15,7 @@ import {
   bearer,
   json,
   LocalError,
+  optionalText,
   readJson,
   requireUserId,
   sendNodeJson,
@@ -172,7 +173,8 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
 
   app.post("/personal-assistant/attachments", async (c) => {
     bearer(c);
-    const body = await readJson(c);
+    // base64 附件 body：放宽到 15MB 附件 + base64 膨胀 + 余量（22MB）
+    const body = await readJson(c, { maxBytes: MAX_ATTACHMENT_BODY_BYTES });
     const userId = requireUserId(text(body, "user_id"));
     const [attachment] = parsePromptAttachments({ attachments: [body] });
     if (!attachment) throw new LocalError("请求无效", 400);
@@ -194,6 +196,24 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     return json(c, 200, { deleted: true });
   });
 
+  /** 大文件直连：按本机路径复制 staging，字节不经 JSON/base64，桌面渲染进程不转码。 */
+  app.post("/personal-assistant/attachments/from-path", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    const staged = stageAttachmentFromPath(personalWorkspaceCwd(config.userDataRoot, userId), {
+      path: text(body, "path"),
+      name: optionalText(body, "name"),
+      mediaType: optionalText(body, "media_type"),
+    });
+    return json(c, 200, {
+      id: staged.id,
+      path: staged.path,
+      ref: staged.ref,
+      name: staged.name,
+      media_type: staged.mediaType,
+    });
+  });
   /** 停止当前 turn，并等到 busy 解开（桌面点停止后应先调此接口再重发）。 */
   app.post("/personal-assistant/abort", async (c) => {
     bearer(c);
@@ -205,7 +225,8 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
 
   app.post("/personal-assistant/prompt", async (c) => {
     const token = bearer(c);
-    const body = await readJson(c);
+    // inline 图片走 base64 进 body：放宽到附件级上限，默认 1MB 闸只防其他端点
+    const body = await readJson(c, { maxBytes: MAX_ATTACHMENT_BODY_BYTES });
     const userId = requireUserId(text(body, "user_id"));
     const locale = uiLocaleFromRequest(c);
     delegation.bindAuth(userId, token);

@@ -12,6 +12,11 @@ withDefaults(
   { tag: "div", surface: true, padded: true },
 );
 
+/** 挂在正文列（含 footer）：拖选越出色块仍能拦截 copy。 */
+const emit = defineEmits<{
+  copy: [event: ClipboardEvent];
+}>();
+
 defineOptions({ inheritAttrs: false });
 
 const surfaceEl = ref<HTMLElement | null>(null);
@@ -25,7 +30,10 @@ defineExpose({ surfaceEl });
     class="group flex min-w-0 gap-2.5"
     :class="side === 'user' ? 'flex-row-reverse' : 'max-w-[90%]'"
   >
-    <slot name="avatar" />
+    <!-- 头像不进选区 -->
+    <div class="select-none" data-copy-ignore>
+      <slot name="avatar" />
+    </div>
     <div
       class="flex min-w-0 flex-col gap-1"
       :class="
@@ -35,6 +43,7 @@ defineExpose({ surfaceEl });
             : 'w-full max-w-full items-end'
           : 'max-w-full flex-1 items-start'
       "
+      @copy="emit('copy', $event)"
     >
       <slot name="header" />
       <div

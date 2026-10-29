@@ -122,8 +122,10 @@ async function confirmResend(): Promise<void> {
     </template>
     <template #footer>
       <component :is="messageFooter" v-if="messageFooter && !editing" />
+      <!-- 操作栏不进拖选复制 -->
       <div
-        class="flex flex-row-reverse items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+        class="flex flex-row-reverse items-center gap-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 select-none"
+        data-copy-ignore
       >
         <ActionBarPrimitiveEdit
           v-if="surface.editResend"

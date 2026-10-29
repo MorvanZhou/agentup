@@ -28,12 +28,20 @@ function createSessionVault({ safeStorage, userDataPath, fs, path }) {
     }
     const kind = parsed.kind === "guest" || parsed.userId === "guest" ? "guest" : "account";
     if (kind === "account" && !parsed.email) return null;
+    // 与 renderer session-store 对齐：头像字段一并落盘，避免重启丢 URL。
+    const hasAvatar = parsed.hasAvatar === true;
+    const avatarUrl =
+      typeof parsed.avatarUrl === "string" && parsed.avatarUrl.trim()
+        ? parsed.avatarUrl.trim()
+        : undefined;
     return {
       kind,
       userId: parsed.userId,
       email: parsed.email,
       nickname: parsed.nickname,
       token: parsed.token,
+      ...(hasAvatar ? { hasAvatar: true } : {}),
+      ...(hasAvatar && avatarUrl ? { avatarUrl } : {}),
     };
   }
 

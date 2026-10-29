@@ -1,3 +1,5 @@
+import { findAttachmentRefs } from "./attachment-ref";
+
 export type ComposerMention = { id: string; name: string };
 
 export type MentionRefHit = {
@@ -18,6 +20,7 @@ const MENTION_DONE_NEXT = /^[\s,.;:!?，。；：！？)\]\}）】]/;
 /**
  * 光标处正在输入的 `@` 查询。
  * 若 `@token` 已是完整成员名，且光标落在其后的空格/标点/文末上，视为已选完，不再弹出选择器。
+ * `@ATTACHMENTS/...` 是文件引用，不是成员；发送会 trim 掉尾部空格，编辑时光标常落在引用末尾。
  */
 export function mentionQueryAtCursor(
   text: string,
@@ -30,11 +33,16 @@ export function mentionQueryAtCursor(
   if (!match) return null;
   const query = match[2] ?? "";
   const token = match[0].slice(match[1]?.length ?? 0);
+  const start = before.length - token.length;
+  // 光标在文件引用内部（含贴在文末、没有尾随空格）时，不要当成成员查询。
+  if (findAttachmentRefs(text).some((hit) => safeCursor > hit.start && safeCursor <= hit.end)) {
+    return null;
+  }
   if (knownNames?.has(query)) {
     const next = text.slice(safeCursor, safeCursor + 1);
     if (safeCursor >= text.length || MENTION_DONE_NEXT.test(next)) return null;
   }
-  return { query, start: before.length - token.length, end: safeCursor };
+  return { query, start, end: safeCursor };
 }
 
 /**

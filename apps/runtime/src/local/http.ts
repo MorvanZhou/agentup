@@ -85,11 +85,16 @@ export function uiLocaleFromRequest(c: Context<LocalAppEnv>): UiLocale {
   return localeFromRequest(c.req.query("lang"), c.req.header("x-ui-locale"));
 }
 
-export async function readJson(c: Context<LocalAppEnv>): Promise<Record<string, unknown>> {
+/** JSON 请求体默认防滥用闸；附件相关端点（staging / prompt inline 图片）另传更大 maxBytes。 */
+export async function readJson(
+  c: Context<LocalAppEnv>,
+  options: { maxBytes?: number } = {},
+): Promise<Record<string, unknown>> {
+  const maxBytes = options.maxBytes ?? 1_000_000;
   const contentLength = c.req.header("content-length");
-  if (contentLength && Number(contentLength) > 1_000_000) throw new LocalError("请求过大", 413);
+  if (contentLength && Number(contentLength) > maxBytes) throw new LocalError("请求过大", 413);
   const buffer = Buffer.from(await c.req.arrayBuffer());
-  if (buffer.length > 1_000_000) throw new LocalError("请求过大", 413);
+  if (buffer.length > maxBytes) throw new LocalError("请求过大", 413);
   if (buffer.length === 0) return {};
   try {
     const parsed = JSON.parse(buffer.toString("utf8")) as unknown;

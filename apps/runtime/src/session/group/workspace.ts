@@ -24,6 +24,11 @@ export function groupWorkspaceRoot(userDataRoot: string, userId: string, groupId
   return root;
 }
 
+/** 群数据目录（会话 / 工作区 / settings.json 所在）：`users/<uid>/.runtime/groups/<gid>/`。 */
+export function groupDirPath(userDataRoot: string, userId: string, groupId: string): string {
+  return path.dirname(groupWorkspaceRoot(userDataRoot, userId, groupId));
+}
+
 /**
  * 清空群共享目录里的成品。includeWork 为真时连同过程目录一起清。
  * 上传目录保留。目录若被换成链接，只拆掉链接，不跟着删到外面。

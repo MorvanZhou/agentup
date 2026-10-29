@@ -14,7 +14,16 @@ export class ProjectRootsError extends Error {
   }
 }
 
-/** 从 instance / profile JSON 解析 `project_roots`；非法项丢弃。 */
+/** 挂载归属：personal=`profile.json`，agent=`instance.json`，group=群目录 `settings.json`。 */
+export type ProjectRootsKind = "personal" | "agent" | "group";
+
+function storedRootsFile(visitRoot: string, kind: ProjectRootsKind): string {
+  if (kind === "personal") return path.join(visitRoot, "profile.json");
+  if (kind === "group") return path.join(visitRoot, "settings.json");
+  return path.join(visitRoot, "instance.json");
+}
+
+/** 从 instance / profile / 群 settings JSON 解析 `project_roots`；非法项丢弃。 */
 export function parseStoredProjectRoots(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const out: string[] = [];
@@ -30,9 +39,9 @@ export function parseStoredProjectRoots(value: unknown): string[] {
   return out;
 }
 
-/** 读 visit 根下已保存的挂载（agent=`instance.json`，personal=`profile.json`）。 */
-export function readProjectRoots(visitRoot: string, kind: "personal" | "agent"): string[] {
-  const file = kind === "personal" ? path.join(visitRoot, "profile.json") : path.join(visitRoot, "instance.json");
+/** 读已保存的挂载（agent=`instance.json`，personal=`profile.json`，group=群 `settings.json`）。 */
+export function readProjectRoots(visitRoot: string, kind: ProjectRootsKind): string[] {
+  const file = storedRootsFile(visitRoot, kind);
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
@@ -42,20 +51,29 @@ export function readProjectRoots(visitRoot: string, kind: "personal" | "agent"):
   }
 }
 
-/** 写回 `project_roots`，保留文件其余字段。 */
-export function writeProjectRoots(visitRoot: string, kind: "personal" | "agent", roots: string[]): void {
-  const file = kind === "personal" ? path.join(visitRoot, "profile.json") : path.join(visitRoot, "instance.json");
-  if (!fs.existsSync(file)) throw new ProjectRootsError("配置不存在", 404);
+/** 写回 `project_roots`，保留文件其余字段。群挂载首次写入时自动建 `settings.json`。 */
+export function writeProjectRoots(
+  visitRoot: string,
+  kind: ProjectRootsKind,
+  roots: string[],
+): void {
+  const file = storedRootsFile(visitRoot, kind);
   let data: Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (fs.existsSync(file)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new ProjectRootsError("配置损坏", 500);
+      }
+      data = parsed as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof ProjectRootsError) throw error;
       throw new ProjectRootsError("配置损坏", 500);
     }
-    data = parsed as Record<string, unknown>;
-  } catch (error) {
-    if (error instanceof ProjectRootsError) throw error;
-    throw new ProjectRootsError("配置损坏", 500);
+  } else {
+    if (kind !== "group") throw new ProjectRootsError("配置不存在", 404);
+    // 群目录由建群保证存在；settings.json 惰性创建。
+    data = {};
   }
   const cleaned = parseStoredProjectRoots(roots);
   if (cleaned.length > 0) data.project_roots = cleaned;
@@ -109,7 +127,7 @@ export function validateCandidateRoot(userDataRoot: string, rawPath: string): st
 export function addProjectRoot(
   userDataRoot: string,
   visitRoot: string,
-  kind: "personal" | "agent",
+  kind: ProjectRootsKind,
   rawPath: string,
 ): string[] {
   const candidate = validateCandidateRoot(userDataRoot, rawPath);
@@ -125,7 +143,7 @@ export function addProjectRoot(
 
 export function removeProjectRoot(
   visitRoot: string,
-  kind: "personal" | "agent",
+  kind: ProjectRootsKind,
   rawPath: string,
 ): string[] {
   if (typeof rawPath !== "string" || !rawPath.trim()) {
@@ -276,6 +294,15 @@ function blockedRoots(): string[] {
     list.push("C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)");
   }
   return list.map((item) => safeRealpath(item) ?? path.resolve(item));
+}
+
+/**
+ * 路径是否落在禁读的系统 / 凭据敏感根内（`~/.ssh`、`/etc` 等）。
+ * 供 project_roots 挂载与附件按路径复制等入口共用同一套判定。
+ */
+export function isBlockedPath(absolute: string): boolean {
+  const real = safeRealpath(absolute) ?? path.resolve(absolute);
+  return blockedRoots().some((root) => real === root || real.startsWith(`${root}${path.sep}`));
 }
 
 function safeRealpath(target: string): string | undefined {

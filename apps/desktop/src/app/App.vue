@@ -6,8 +6,12 @@ import { setToastOpen, toastState } from "../shared/model/ui/toast";
 import AuthPromptOverlay from "./auth/AuthPromptOverlay.vue";
 import BrowserLoginWait from "./auth/BrowserLoginWait.vue";
 import { provideDesktop } from "./desktop";
+import AppUpdateBanner from "./native/AppUpdateBanner.vue";
+import { bindAppUpdateListener } from "./native/app-update";
 
 provideDesktop();
+// 系统菜单「检查更新」与 4 小时静默轮询共用
+bindAppUpdateListener();
 </script>
 
 <template>
@@ -17,6 +21,8 @@ provideDesktop();
   <AuthPromptOverlay />
   <!-- 菜单 / 账号设置直接打开 Web 登录后的等待 -->
   <BrowserLoginWait />
+  <!-- 有新版本时左下角提示下载安装包 -->
+  <AppUpdateBanner />
   <!-- 全局提示 -->
   <AppToast
     :open="toastState.open"

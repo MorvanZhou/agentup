@@ -66,6 +66,18 @@ describe("useComposerMentions", () => {
     expect(mentions.open.value).toBe(false);
   });
 
+  it("stays closed when the caret sits on a trailing attachment ref", async () => {
+    const text = "看这个 @ATTACHMENTS/a1b2c3d4-a.txt";
+    const mentions = useComposerMentions({
+      members: ref(members),
+      composerText: ref(text),
+      cursor: ref(text.length),
+      setText: () => undefined,
+    });
+    await nextTick();
+    expect(mentions.open.value).toBe(false);
+  });
+
   it("stays closed when there are no members", () => {
     const mentions = useComposerMentions({
       members: ref([]),

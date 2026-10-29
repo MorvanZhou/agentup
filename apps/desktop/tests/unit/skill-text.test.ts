@@ -101,9 +101,10 @@ describe("partitionDisplayAttachments", () => {
         "@ATTACHMENTS/a1b2c3d4-a.xlsx @ATTACHMENTS/b2c3d4e5-b.zip 这几个文件名的名字是什么",
       ),
     );
+    // 旧扁平格式不再剥 id 前缀，name 原样显示
     expect(parts.files).toEqual([
-      { path: "ATTACHMENTS/a1b2c3d4-a.xlsx", name: "a.xlsx" },
-      { path: "ATTACHMENTS/b2c3d4e5-b.zip", name: "b.zip" },
+      { path: "ATTACHMENTS/a1b2c3d4-a.xlsx", name: "a1b2c3d4-a.xlsx" },
+      { path: "ATTACHMENTS/b2c3d4e5-b.zip", name: "b2c3d4e5-b.zip" },
     ]);
     expect(parts.body).toEqual([{ type: "text", value: "这几个文件名的名字是什么" }]);
   });

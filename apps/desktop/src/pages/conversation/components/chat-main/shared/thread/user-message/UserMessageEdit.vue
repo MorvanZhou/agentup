@@ -1,21 +1,30 @@
 <script setup lang="ts">
-import { ComposerPrimitiveCancel, useAui, useAuiState } from "@assistant-ui/vue";
+import {
+  AttachmentPrimitiveRemove,
+  ComposerPrimitiveAttachments,
+  ComposerPrimitiveCancel,
+  useAui,
+  useAuiState,
+} from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
-import { SendIcon } from "@lucide/vue";
-import { computed, nextTick, ref } from "vue";
+import { SendIcon, XIcon } from "@lucide/vue";
+import { computed, nextTick, ref, watch } from "vue";
 
 import { useDesktop } from "../../../../../../../app/desktop";
 import { t } from "../../../../../../../shared/model/ui/ui-locale";
 import { isImageFile, useComposerFiles } from "../../../../../composables/useComposerFiles";
+import { addComposerImage } from "../../../../../model/composer/add-composer-image";
 import { useComposerMentions } from "../../../../../composables/useComposerMentions";
 import { useComposerSkills } from "../../../../../composables/useComposerSkills";
 import { insertEmojiAt } from "../../../../../model/composer/emoji-data";
+import { stripSyntheticImageCaption } from "../../../../../model/composer/image-caption";
 import { firstMentionedMemberId } from "../../../../../model/composer/mention-text";
 import {
   composerResourceAgentId,
   injectChatSurface,
 } from "../../../../../model/thread/chat-surface";
 import { injectThreadAgentId } from "../../../../../model/thread/thread-agent-id";
+import ImageAttachmentPreview from "../composer/chips/ImageAttachmentPreview.vue";
 import MentionPicker from "../composer/chips/MentionPicker.vue";
 import SkillPicker from "../composer/chips/SkillPicker.vue";
 import ComposerSkillInput, {
@@ -105,6 +114,7 @@ const {
 
 const { stageAndInsertFiles, removeFileRef } = useComposerFiles({
   agentId: editFileAgentId,
+  groupId: computed(() => surface.value.groupId ?? ""),
   token,
   userId,
   composerText,
@@ -172,23 +182,51 @@ function onInsertEmoji(emoji: string): void {
   setComposerText(next.text, next.cursor);
 }
 
-function onEditPickFiles(files: File[]): void {
+/** 与主 Composer 同一套：图片进附件条，其它文件落盘成芯片。 */
+function routeIncomingFiles(files: File[]): void {
+  if (!surface.value.attachments) return;
   const images = files.filter(isImageFile);
   const others = files.filter((file) => !isImageFile(file));
-  for (const image of images) void aui.composer.addAttachment(image);
+  for (const image of images) addComposerImage((file) => aui.composer.addAttachment(file), image);
   void stageAndInsertFiles(others);
+}
+
+function onEditPickFiles(files: File[]): void {
+  routeIncomingFiles(files);
 }
 
 function onEditPaste(event: ClipboardEvent): void {
   const list = event.clipboardData?.files;
   if (!list?.length) return;
   const files = Array.from(list);
-  const others = files.filter((file) => !isImageFile(file));
-  if (others.length === 0) return;
+  if (!files.some((file) => file.size > 0 || file.name)) return;
+  // 含图片时必须拦下默认粘贴，否则 contenteditable 会写入 [Image: ...] 说明或原尺寸 img。
   event.preventDefault();
-  for (const image of files.filter(isImageFile)) void aui.composer.addAttachment(image);
-  void stageAndInsertFiles(others);
+  routeIncomingFiles(files);
 }
+
+function onEditDragOver(event: DragEvent): void {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault();
+}
+
+function onEditDrop(event: DragEvent): void {
+  const list = event.dataTransfer?.files;
+  if (!list?.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  routeIncomingFiles(Array.from(list));
+}
+
+// 进入编辑时原文可能带识图尺寸说明；图在附件里，说明从草稿里拿掉。
+watch(
+  composerText,
+  (text) => {
+    const stripped = stripSyntheticImageCaption(text);
+    if (stripped !== text) aui.composer.setText(stripped);
+  },
+  { immediate: true },
+);
 
 /** Enter 提交前拦截：先处理 @ / Skill 选择器。 */
 function onEditKeydown(event: KeyboardEvent): void {
@@ -213,6 +251,8 @@ defineExpose({ prepareResend });
 <template>
   <div
     class="relative flex w-full flex-col gap-2 rounded-lg border border-border bg-background p-2 shadow-sm"
+    @dragover="onEditDragOver"
+    @drop="onEditDrop"
   >
     <SkillPicker
       v-if="surface.skills && skillPickerOpen"
@@ -241,6 +281,20 @@ defineExpose({ prepareResend });
       @insert-emoji="onInsertEmoji"
       @pick-files="onEditPickFiles"
     />
+    <!-- 图片缩略，与主 Composer 附件条同一套（一对一和群聊） -->
+    <div class="flex flex-wrap gap-1.5 empty:hidden px-0.5">
+      <ComposerPrimitiveAttachments>
+        <div class="relative">
+          <ImageAttachmentPreview />
+          <AttachmentPrimitiveRemove
+            class="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+            :aria-label="t('composerRemoveImage')"
+          >
+            <XIcon class="size-2.5" />
+          </AttachmentPrimitiveRemove>
+        </div>
+      </ComposerPrimitiveAttachments>
+    </div>
     <ComposerSkillInput
       ref="skillInputRef"
       :model-value="composerText"

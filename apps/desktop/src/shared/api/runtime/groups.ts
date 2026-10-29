@@ -1,6 +1,6 @@
 import { DesktopApiError } from "./error";
 import type { RuntimeHttp } from "./http";
-import type { StagedAttachment } from "./attachments";
+import { readStagedPayload, type StagedAttachment } from "./attachments";
 
 export type GroupMember = { agentId: string; name: string };
 
@@ -246,21 +246,28 @@ export async function stageGroupAttachment(
     media_type: file.mediaType,
     data_base64: file.dataBase64,
   });
-  if (
-    typeof payload.id !== "string" ||
-    typeof payload.path !== "string" ||
-    typeof payload.ref !== "string" ||
-    typeof payload.name !== "string"
-  ) {
-    throw new DesktopApiError("附件上传失败");
-  }
-  return {
-    id: payload.id,
-    path: payload.path,
-    ref: payload.ref,
-    name: payload.name,
-    mediaType: typeof payload.media_type === "string" ? payload.media_type : file.mediaType,
-  };
+  return readStagedPayload(payload, file);
+}
+
+/** 群聊大文件直连：按本机路径让 runtime 复制，免 base64 转码。 */
+export async function stageGroupAttachmentFromPath(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  groupId: string,
+  file: { name: string; mediaType: string; path: string },
+): Promise<StagedAttachment> {
+  const payload = await http.request(
+    `/groups/${encodeURIComponent(groupId)}/attachments/from-path`,
+    token,
+    {
+      user_id: userId,
+      name: file.name,
+      media_type: file.mediaType,
+      path: file.path,
+    },
+  );
+  return readStagedPayload(payload, file);
 }
 
 export async function deleteGroupAttachment(

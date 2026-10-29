@@ -5,6 +5,7 @@ import {
   FileIcon,
   FolderIcon,
   FolderOpenIcon,
+  MessageSquarePlusIcon,
   PencilIcon,
   Trash2Icon,
 } from "@lucide/vue";
@@ -17,18 +18,24 @@ import {
   revealInFolderLabel,
 } from "../../../../../../shared/model/ui/reveal-in-folder";
 
-const props = defineProps<{
-  entries: WorkspaceEntry[];
-  loading: boolean;
-  error: string;
-  selected: string[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    entries: WorkspaceEntry[];
+    loading: boolean;
+    error: string;
+    selected: string[];
+    /** 挂载列表根不提供「添加到对话」。 */
+    allowAttach?: boolean;
+  }>(),
+  { allowAttach: true },
+);
 
 const emit = defineEmits<{
   open: [entry: WorkspaceEntry];
   rename: [entry: WorkspaceEntry];
   remove: [entry: WorkspaceEntry];
   reveal: [entry: WorkspaceEntry];
+  attach: [entry: WorkspaceEntry];
   "update:selected": [names: string[]];
   retry: [];
 }>();
@@ -39,11 +46,19 @@ const allSelected = computed(
 );
 const someSelected = computed(() => props.selected.length > 0);
 
-const itemMenu = computed<AppDropdownItem[]>(() => [
-  { id: "reveal", label: revealInFolderLabel(detectDesktopPlatform()), icon: FolderOpenIcon },
-  { id: "rename", label: t("wsRename"), icon: PencilIcon },
-  { id: "remove", label: t("wsDelete"), icon: Trash2Icon, danger: true },
-]);
+/** 文件与文件夹都可「添加到对话」（挂载列表根由 allowAttach 关掉）。 */
+function itemMenu(_entry: WorkspaceEntry): AppDropdownItem[] {
+  const items: AppDropdownItem[] = [];
+  if (props.allowAttach) {
+    items.push({ id: "attach", label: t("wsAddToChat"), icon: MessageSquarePlusIcon });
+  }
+  items.push(
+    { id: "reveal", label: revealInFolderLabel(detectDesktopPlatform()), icon: FolderOpenIcon },
+    { id: "rename", label: t("wsRename"), icon: PencilIcon },
+    { id: "remove", label: t("wsDelete"), icon: Trash2Icon, danger: true },
+  );
+  return items;
+}
 
 function isSelected(name: string): boolean {
   return selectedSet.value.has(name);
@@ -61,6 +76,7 @@ function toggleAll(checked: boolean): void {
 }
 
 function onItemMenu(entry: WorkspaceEntry, id: string): void {
+  if (id === "attach") emit("attach", entry);
   if (id === "reveal") emit("reveal", entry);
   if (id === "rename") emit("rename", entry);
   if (id === "remove") emit("remove", entry);
@@ -133,7 +149,7 @@ function onItemMenu(entry: WorkspaceEntry, id: string): void {
             <FileIcon v-else class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span class="truncate">{{ entry.name }}</span>
           </button>
-          <AppDropdownMenu :items="itemMenu" @select="onItemMenu(entry, $event)">
+          <AppDropdownMenu :items="itemMenu(entry)" @select="onItemMenu(entry, $event)">
             <template #trigger>
               <button
                 type="button"

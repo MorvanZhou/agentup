@@ -1,22 +1,33 @@
 <script setup lang="ts">
-import { FileIcon, XIcon } from "@lucide/vue";
+import { FileIcon, FolderIcon, XIcon } from "@lucide/vue";
 import { computed } from "vue";
 
-import { middleEllipsisFileName } from "../../../../../../model/composer/attachment-ref";
+import {
+  isAttachmentFolderPath,
+  middleEllipsisFileName,
+} from "../../../../../../model/composer/attachment-ref";
 
 const props = withDefaults(
   defineProps<{
     name: string;
     path?: string;
+    /** 图片附件的缩略 dataURL；有则显示缩略图代替文件图标（reference 模式附件条）。 */
+    image?: string;
     removable?: boolean;
     /** 点击用系统默认应用打开（历史附件行）。 */
     openable?: boolean;
+    /** 显式文件夹；未传时看 path 是否以 `/` 结尾。 */
+    folder?: boolean;
     /** Composer 用 accent；用户气泡用 on-primary。 */
     variant?: "accent" | "on-primary";
     /** chip：内联；row：历史气泡附件条（单行、不换行）。 */
     layout?: "chip" | "row";
   }>(),
   { variant: "accent", layout: "chip", openable: false },
+);
+
+const isFolder = computed(
+  () => props.folder === true || (props.path ? isAttachmentFolderPath(props.path) : false),
 );
 
 const emit = defineEmits<{
@@ -78,7 +89,10 @@ function onKeydown(event: KeyboardEvent): void {
     @click="onActivate"
     @keydown="onKeydown"
   >
-    <FileIcon class="size-3.5 shrink-0 opacity-90" aria-hidden="true" />
+    <!-- 目录用文件夹图标；图片缩略优先；其余文件图标 -->
+    <FolderIcon v-if="!image && isFolder" class="size-3.5 shrink-0 opacity-90" aria-hidden="true" />
+    <FileIcon v-else-if="!image" class="size-3.5 shrink-0 opacity-90" aria-hidden="true" />
+    <img v-else :src="image" :alt="name" class="shrink-0 rounded-md object-cover" :class="layout === 'row' ? 'size-8' : 'size-5'" />
     <span class="min-w-0 flex-1 truncate whitespace-nowrap font-mono">{{ displayName }}</span>
     <button
       v-if="removable"

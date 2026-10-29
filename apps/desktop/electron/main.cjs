@@ -18,16 +18,58 @@ const {
 } = require("./erase-local-data.cjs");
 const { resolveUserWorkspacePath } = require("./user-workspace-path.cjs");
 const { applicationMenuTemplate } = require("./menu.cjs");
+const {
+  CHECK_INTERVAL_MS,
+  checkForAppUpdate,
+} = require("./app-update.cjs");
 const { initLogger, logError, logInfo, logPath } = require("./logger.cjs");
 const {
   env: releaseEnv,
   backendUrl: releaseBackendUrl,
   webUrl: releaseWebUrl,
+  downloadsUrl: releaseDownloadsUrl,
 } = require("./release-config.cjs");
 const { createSecretCrypto } = require("./secret-crypto.cjs");
 const { createSessionVault } = require("./session-vault.cjs");
 const { mergeShellEnv, resolveUserShellEnv } = require("./shell-env.cjs");
 const { childAlive, stopChildProcess } = require("./stop-child.cjs");
+
+const { randomBytes } = require("node:crypto");
+
+/** 粘贴内存文件的临时目录与上限：与 from-path staging 的 512MB 磁盘上限一致。 */
+const STAGED_IN_MEMORY_PREFIX = "agentup-paste-";
+const STAGED_IN_MEMORY_MAX_BYTES = 512 * 1024 * 1024;
+const STAGED_IN_MEMORY_TTL_MS = 60 * 60 * 1000;
+
+function stagedInMemoryTempDir() {
+  return path.join(os.tmpdir(), "agentup-paste");
+}
+
+/** 贴入文件名净化：basename + 去控制字符/空白，防路径注入。 */
+function sanitizeStagedInMemoryName(raw) {
+  const base = String(raw || "file")
+    .split(/[\\/]/)
+    .pop() // basename
+    .replace(/[\u0000-\u001f<>:"|?*]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 180);
+  return base || "file";
+}
+
+/** 顺手清理超过 TTL 的历史粘贴临时文件；失败不阻塞本次上传。 */
+async function cleanupStaleStagedInMemoryFiles(dir) {
+  const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const now = Date.now();
+  for (const entry of entries) {
+    try {
+      const full = path.join(dir, entry.name);
+      const st = await fsp.stat(full);
+      if (now - st.mtimeMs > STAGED_IN_MEMORY_TTL_MS) await fsp.rm(full, { force: true });
+    } catch {
+      /* 已消失则忽略 */
+    }
+  }
+}
 
 const runtimeHost = "127.0.0.1";
 const runtimePort = process.env.AGENTUP_RUNTIME_PORT || "47391";
@@ -53,8 +95,69 @@ app.setName(appProductName);
 
 initLogger();
 logInfo(
-  `start packaged=${app.isPackaged} env=${releaseEnv} backend=${releaseBackendUrl} web=${releaseWebUrl} platform=${process.platform} version=${appProductVersion} electron=${app.getVersion()}`,
+  `start packaged=${app.isPackaged} env=${releaseEnv} backend=${releaseBackendUrl} web=${releaseWebUrl} downloads=${releaseDownloadsUrl} platform=${process.platform} version=${appProductVersion} electron=${app.getVersion()}`,
 );
+
+/** 应用更新检查进行中时忽略重复点击 / 轮询。 */
+let appUpdateCheckInFlight = false;
+/** @type {ReturnType<typeof setInterval> | null} */
+let appUpdateTimer = null;
+
+function sendToAllRenderers(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(channel, payload);
+    }
+  }
+}
+
+/**
+ * @param {{ interactive: boolean }} opts
+ * interactive=true：菜单手动检查，始终回报结果；false：静默轮询，仅有新版本时通知。
+ */
+async function runAppUpdateCheck(opts) {
+  if (appUpdateCheckInFlight) return;
+  if (process.platform !== "darwin" && process.platform !== "win32") return;
+  if (!releaseDownloadsUrl) return;
+  appUpdateCheckInFlight = true;
+  if (opts.interactive) {
+    sendToAllRenderers("agentup:update-check-result", { status: "checking" });
+  }
+  try {
+    const result = await checkForAppUpdate({
+      downloadsBase: releaseDownloadsUrl,
+      platform: process.platform,
+      currentVersion: appProductVersion,
+    });
+    if (result.updateAvailable) {
+      sendToAllRenderers("agentup:update-check-result", {
+        status: "available",
+        latestVersion: result.latestVersion,
+        currentVersion: result.currentVersion,
+        downloadUrl: result.downloadUrl,
+        sha512: result.sha512,
+        fileName: result.fileName,
+      });
+    } else if (opts.interactive) {
+      sendToAllRenderers("agentup:update-check-result", {
+        status: "up-to-date",
+        latestVersion: result.latestVersion,
+        currentVersion: result.currentVersion,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logError(`检查更新失败：${message}`);
+    if (opts.interactive) {
+      sendToAllRenderers("agentup:update-check-result", {
+        status: "error",
+        message,
+      });
+    }
+  } finally {
+    appUpdateCheckInFlight = false;
+  }
+}
 
 /** 登录回调页「打开 AgentUp」按钮：agentup://open */
 const DEEP_LINK_SCHEME = "agentup";
@@ -236,6 +339,28 @@ app.whenReady().then(async () => {
     const fromEnv = process.env.AGENTUP_WEB_URL?.trim();
     return (fromEnv || releaseWebUrl || "http://127.0.0.1:3000").replace(/\/$/, "");
   });
+  // 粘贴的内存文件（截图等）拿不到磁盘路径：主进程写临时文件返回路径，
+  // 渲染层继续走 from-path 复制 staging，字节不经 base64 / JSON。
+  ipcMain.handle("agentup:stage-in-memory-file", async (_event, name, bytes) => {
+    if (!(bytes instanceof ArrayBuffer) && !ArrayBuffer.isView(bytes)) return null;
+    const size = bytes.byteLength;
+    if (size === 0 || size > STAGED_IN_MEMORY_MAX_BYTES) return null;
+    const dir = stagedInMemoryTempDir();
+    await fsp.mkdir(dir, { recursive: true });
+    await cleanupStaleStagedInMemoryFiles(dir).catch(() => {});
+    const fileName = `${STAGED_IN_MEMORY_PREFIX}${randomBytes(4).toString("hex")}-${sanitizeStagedInMemoryName(name)}`;
+    const filePath = path.join(dir, fileName);
+    await fsp.writeFile(filePath, Buffer.from(bytes));
+    return filePath;
+  });
+  ipcMain.handle("agentup:discard-staged-temp-file", async (_event, filePath) => {
+    if (typeof filePath !== "string") return;
+    const resolved = path.resolve(filePath);
+    const dir = stagedInMemoryTempDir();
+    // 只删自己管理的粘贴临时目录内文件，拒绝任意路径
+    if (!resolved.startsWith(`${path.resolve(dir)}${path.sep}`)) return;
+    await fsp.rm(resolved, { force: true }).catch(() => {});
+  });
   ipcMain.handle("agentup:select-skill-package", async (_event, kind) => {
     const window = BrowserWindow.getFocusedWindow();
     if (kind !== "directory" && kind !== "zip") throw new Error("选择类型无效");
@@ -306,6 +431,32 @@ app.whenReady().then(async () => {
     });
   });
   ipcMain.handle("agentup:set-menu-bar-unread", (_event, count) => menuBar.setUnread(count));
+  ipcMain.handle("agentup:check-for-updates", async () => {
+    await runAppUpdateCheck({ interactive: true });
+  });
+  ipcMain.handle("agentup:open-update-download", async (_event, rawUrl) => {
+    if (typeof rawUrl !== "string" || !rawUrl.trim()) throw new Error("链接无效");
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      throw new Error("链接无效");
+    }
+    if (parsed.protocol !== "https:") {
+      throw new Error("更新下载只允许 https");
+    }
+    const allowedHost = (() => {
+      try {
+        return new URL(releaseDownloadsUrl).host;
+      } catch {
+        return "";
+      }
+    })();
+    if (!allowedHost || parsed.host !== allowedHost) {
+      throw new Error("更新下载域名不匹配");
+    }
+    await shell.openExternal(parsed.toString());
+  });
   ipcMain.handle("agentup:set-menu-bar-visible", (_event, visible) => {
     menuBar.setVisible(visible);
   });
@@ -341,6 +492,9 @@ app.whenReady().then(async () => {
         onEraseLocalData: () => {
           void confirmAndEraseLocalData();
         },
+        onCheckForUpdates: () => {
+          void runAppUpdateCheck({ interactive: true });
+        },
       }),
     ),
   );
@@ -353,6 +507,15 @@ app.whenReady().then(async () => {
     logInfo(`runtime 就绪：${runtimeUrl}`);
   }
   createWindow();
+  // 启动后稍晚静默查一次，再每 4 小时；有新版本才推提示条
+  setTimeout(() => {
+    void runAppUpdateCheck({ interactive: false });
+  }, 15_000);
+  if (appUpdateTimer) clearInterval(appUpdateTimer);
+  appUpdateTimer = setInterval(() => {
+    void runAppUpdateCheck({ interactive: false });
+  }, CHECK_INTERVAL_MS);
+  if (typeof appUpdateTimer.unref === "function") appUpdateTimer.unref();
 });
 
 /** 退出时先 SIGTERM，超时再 SIGKILL，避免关窗/Cmd+Q 后 runtime 孤儿占端口。 */

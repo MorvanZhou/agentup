@@ -76,6 +76,8 @@ export async function installRuntime(
     /** 委托旁路过程 history：taskId → UIMessage[] */
     delegationHistories?: Record<string, unknown[]>;
     modelConfigured?: boolean;
+    /** 群聊房间 mock（id / title / members 必填，其余字段有默认）。 */
+    groups?: Array<Record<string, unknown>>;
   },
 ): Promise<void> {
   const histories: Record<string, unknown[]> = Object.fromEntries(
@@ -328,6 +330,19 @@ export async function installRuntime(
   let themeMode = "system";
   let skipEditResendConfirm = false;
   let uiLocale = "zh";
+  /** 群聊列表 mock：e2e 群聊（附件预览等）场景的最小房间数据。 */
+  const groupRooms: Array<Record<string, unknown>> = (options?.groups ?? []).map((room) => ({
+    lines: [],
+    phase: "idle",
+    holderId: null,
+    holderSpeaking: false,
+    taskIds: [],
+    pendingDelegations: [],
+    queue: [],
+    updatedAt: 0,
+    linesHasMore: false,
+    ...room,
+  }));
   let uiUnread: Record<string, number> = { ...(options?.unread ?? {}) };
   let uiPreviews: Record<string, string> = { ...(options?.previews ?? {}) };
   let uiLastActiveAt: Record<string, number> = { ...(options?.lastActiveAt ?? {}) };
@@ -356,6 +371,56 @@ export async function installRuntime(
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/runtime/, "");
+    // ── 群聊 mock（e2e：群附件 / 芯片缩略预览） ──
+    if (request.method() === "GET" && path === "/groups") {
+      return json(route, 200, { groups: groupRooms });
+    }
+    if (request.method() === "GET" && /^\/groups\/[^/]+$/.test(path)) {
+      const groupId = path.split("/")[2]!;
+      const room = groupRooms.find((item) => item.id === groupId);
+      if (!room) return json(route, 404, { error: "找不到群" });
+      return json(route, 200, { group: room, liveTurnId: "" });
+    }
+    if (request.method() === "POST" && /^\/groups\/[^/]+\/messages$/.test(path)) {
+      const groupId = path.split("/")[2] ?? "";
+      const room = groupRooms.find((item) => item.id === groupId);
+      if (!room) return json(route, 404, { error: "找不到群" });
+      const body = request.postDataJSON() as { text?: string };
+      const lines = Array.isArray(room.lines) ? [...room.lines] : [];
+      lines.push({
+        id: `line-${lines.length + 1}`,
+        role: "user",
+        authorId: "patient-a",
+        text: typeof body.text === "string" ? body.text : "",
+        at: Date.now(),
+      });
+      room.lines = lines;
+      return json(route, 200, { room, liveTurnId: "" });
+    }
+    if (request.method() === "POST" && /^\/groups\/[^/]+\/attachments$/.test(path)) {
+      // staging 成功：固定返回带 id 后缀的图片附件（`<stem>_<id>.<ext>` 格式）
+      const body = request.postDataJSON() as { name?: string };
+      return json(route, 200, {
+        id: "94319ddb",
+        path: "ATTACHMENTS/cover_94319ddb.png",
+        ref: "@ATTACHMENTS/cover_94319ddb.png",
+        name: body.name ?? "cover.png",
+        media_type: "image/png",
+      });
+    }
+    if (request.method() === "GET" && /^\/groups\/[^/]+\/workspace\/file$/.test(path)) {
+      const filePath = url.searchParams.get("path") ?? "";
+      if (!filePath.endsWith(".png")) return json(route, 200, { path: filePath, kind: "binary", size: 1 });
+      // 1x1 PNG：供芯片缩略经 dataURL 渲染
+      return json(route, 200, {
+        path: filePath,
+        kind: "image",
+        size: 70,
+        media_type: "image/png",
+        data_base64:
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKsMIQAAAABJRU5ErkJggg==",
+      });
+    }
     if (request.method() === "GET" && path === "/personal-assistant/profile") {
       return json(route, 200, personalProfile);
     }
@@ -1444,7 +1509,8 @@ export async function installRuntime(
         },
         delegations: { running: [], unseen: [] },
         background_jobs: { running: [], unseen: [] },
-        groups: [],
+        // 侧栏群列表真正吃的是桌面 pulse（显式 GET /groups 的结果会被 pulse 覆盖）
+        groups: groupRooms,
       });
     }
     const workspaceHit = matchWorkspace(path);

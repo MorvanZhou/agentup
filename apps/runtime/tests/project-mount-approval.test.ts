@@ -13,7 +13,7 @@ async function bindHandler(
   projectMount: {
     cwd: string;
     visitRoot: string;
-    kind: "personal" | "agent";
+    kind: "personal" | "agent" | "group";
     userDataRoot: string;
     trustedRoots?: readonly string[];
   },
@@ -229,4 +229,46 @@ it("allows group shared workspace paths without trying to mount the data directo
 
   expect(seen).not.toHaveBeenCalled();
   expect(readProjectRoots(visitRoot, "agent")).toEqual([]);
+});
+
+it("group mount proposals persist into the group settings.json", async () => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mount-group-roots-"));
+  const { cwd } = seedVisit(dataRoot);
+  // 群挂载：visitRoot 指向群目录，kind=group
+  const groupDir = path.join(dataRoot, "users", "patient-a", ".runtime", "groups", "dev-1");
+  fs.mkdirSync(groupDir, { recursive: true });
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mount-grp-proj-"));
+  fs.writeFileSync(path.join(project, "app.py"), "print('hi')\n");
+
+  const broker = new ApprovalBroker(dataRoot);
+  const handler = await bindHandler(broker, {
+    cwd,
+    visitRoot: groupDir,
+    kind: "group",
+    userDataRoot: dataRoot,
+  });
+
+  const seen = vi.fn();
+  broker.subscribe((request) => {
+    seen(request);
+    expect(request.args.project_mount).toBe(true);
+    expect(request.args.visit_kind).toBe("group");
+    broker.decide(request.id, true, "once");
+  });
+
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "read-group-mount",
+        toolName: "read",
+        input: { path: path.join(project, "app.py") },
+      },
+      { cwd },
+    ),
+  ).resolves.toBeUndefined();
+
+  expect(seen).toHaveBeenCalledTimes(1);
+  // 批准后落盘到群的 settings.json，而不是成员自己的 instance.json
+  expect(readProjectRoots(groupDir, "group")).toEqual([fs.realpathSync(project)]);
 });

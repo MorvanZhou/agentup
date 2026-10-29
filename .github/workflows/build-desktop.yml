@@ -2,7 +2,7 @@
 #
 # - workflow_dispatch / tag：产物进 Actions Artifacts
 # - 仅 push tag（v*）：挂到 GitHub Release Assets，再把 Artifact 同步到 Cloudflare R2
-#   （desktop/mac|win/{version,latest}/…），并 purge downloads.agentup.me 边缘缓存
+#   （desktop/mac|win/{version,latest}/… + latest.yml / latest-mac.yml），并 purge CDN
 # - Secrets：CLOUDFLARE_API_TOKEN（R2 写 + Zone Cache Purge）、CLOUDFLARE_ACCOUNT_ID、
 #   CLOUDFLARE_ZONE_ID（downloads.agentup.me 所在 Zone）
 name: Build Desktop
@@ -199,6 +199,9 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -233,7 +236,12 @@ jobs:
           DMG_NAME="${PRODUCT_NAME}-${VERSION}-${MAC_ARCH}.dmg"
           ZIP_NAME="${PRODUCT_NAME}-${VERSION}-${MAC_ARCH}-mac.zip"
           EXE_NAME="${PRODUCT_NAME}-${VERSION}-setup.exe"
+          # latest/ 稳定名（官网与未来 electron-updater generic feed 同目录）
+          LATEST_DMG_NAME="${PRODUCT_NAME}-${MAC_ARCH}.dmg"
+          LATEST_ZIP_NAME="${PRODUCT_NAME}-${MAC_ARCH}-mac.zip"
+          LATEST_EXE_NAME="${PRODUCT_NAME}-x64-setup.exe"
           MAX_BYTES=$((300 * 1024 * 1024))
+          WRITE_YML="${GITHUB_WORKSPACE}/apps/desktop/electron/write-update-yml.cjs"
 
           ls -lh .
           for f in "$DMG_NAME" "$EXE_NAME"; do
@@ -250,7 +258,8 @@ jobs:
           done
 
           WRANGLER_TMP="$(mktemp -d)"
-          trap 'rm -rf "$WRANGLER_TMP"' EXIT
+          META_TMP="$(mktemp -d)"
+          trap 'rm -rf "$WRANGLER_TMP" "$META_TMP"' EXIT
           ASSETS_ABS="$(pwd)"
 
           put() {
@@ -265,24 +274,58 @@ jobs:
             )
           }
 
-          put "desktop/mac/${VERSION}/${DMG_NAME}" "$DMG_NAME"
-          put "desktop/mac/latest/${PRODUCT_NAME}-${MAC_ARCH}.dmg" "$DMG_NAME"
-          put "desktop/win/${VERSION}/${EXE_NAME}" "$EXE_NAME"
-          put "desktop/win/latest/${PRODUCT_NAME}-x64-setup.exe" "$EXE_NAME"
+          put_abs() {
+            key="$1"
+            abs="$2"
+            echo "→ put ${CF_R2_BUCKET}/${key}"
+            (
+              cd "$WRANGLER_TMP"
+              npx --yes wrangler@4 r2 object put "${CF_R2_BUCKET}/${key}" \
+                --file="${abs}" \
+                --remote
+            )
+          }
 
+          put "desktop/mac/${VERSION}/${DMG_NAME}" "$DMG_NAME"
+          put "desktop/mac/latest/${LATEST_DMG_NAME}" "$DMG_NAME"
+          put "desktop/win/${VERSION}/${EXE_NAME}" "$EXE_NAME"
+          put "desktop/win/latest/${LATEST_EXE_NAME}" "$EXE_NAME"
+
+          HAVE_ZIP=0
           if [ -f "$ZIP_NAME" ]; then
             zip_bytes=$(wc -c <"$ZIP_NAME" | tr -d ' ')
             if [ "$zip_bytes" -gt "$MAX_BYTES" ]; then
               echo "⚠ 跳过 zip（${zip_bytes} bytes > 300 MiB）" >&2
             else
               put "desktop/mac/${VERSION}/${ZIP_NAME}" "$ZIP_NAME"
-              put "desktop/mac/latest/${PRODUCT_NAME}-${MAC_ARCH}-mac.zip" "$ZIP_NAME"
+              put "desktop/mac/latest/${LATEST_ZIP_NAME}" "$ZIP_NAME"
+              HAVE_ZIP=1
             fi
           else
             echo "⚠ 跳过 zip（无 ${ZIP_NAME}）"
           fi
 
-          echo "✅ R2 ${VERSION} 已上传"
+          # electron-updater 兼容元数据：sha512 + 稳定 url，接公证后可直接复用 feed
+          WIN_YML="${META_TMP}/latest.yml"
+          MAC_YML="${META_TMP}/latest-mac.yml"
+          node "$WRITE_YML" --version "$VERSION" --out "$WIN_YML" \
+            --file "${LATEST_EXE_NAME}=${ASSETS_ABS}/${EXE_NAME}"
+          MAC_FILE_ARGS=(--file "${LATEST_DMG_NAME}=${ASSETS_ABS}/${DMG_NAME}")
+          if [ "$HAVE_ZIP" = "1" ]; then
+            # zip 必须排在 files[0]：未来 autoUpdater 用 zip，dmg 供手动安装
+            MAC_FILE_ARGS=(
+              --file "${LATEST_ZIP_NAME}=${ASSETS_ABS}/${ZIP_NAME}"
+              --file "${LATEST_DMG_NAME}=${ASSETS_ABS}/${DMG_NAME}"
+            )
+          fi
+          node "$WRITE_YML" --version "$VERSION" --out "$MAC_YML" "${MAC_FILE_ARGS[@]}"
+
+          put_abs "desktop/win/${VERSION}/latest.yml" "$WIN_YML"
+          put_abs "desktop/win/latest/latest.yml" "$WIN_YML"
+          put_abs "desktop/mac/${VERSION}/latest-mac.yml" "$MAC_YML"
+          put_abs "desktop/mac/latest/latest-mac.yml" "$MAC_YML"
+
+          echo "✅ R2 ${VERSION} 已上传（含 latest.yml / latest-mac.yml）"
 
       # latest 同路径覆盖；刷边缘缓存，避免 downloads.agentup.me 仍吐旧包
       - name: Purge downloads CDN cache
@@ -297,7 +340,9 @@ jobs:
             '{files:[
               ($base + "/desktop/mac/latest/AgentUp-arm64.dmg"),
               ($base + "/desktop/mac/latest/AgentUp-arm64-mac.zip"),
-              ($base + "/desktop/win/latest/AgentUp-x64-setup.exe")
+              ($base + "/desktop/mac/latest/latest-mac.yml"),
+              ($base + "/desktop/win/latest/AgentUp-x64-setup.exe"),
+              ($base + "/desktop/win/latest/latest.yml")
             ]}')"
           echo "→ purge: $files"
           resp="$(curl -sS -X POST \

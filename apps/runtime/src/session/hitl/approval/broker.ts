@@ -234,7 +234,12 @@ export class ApprovalBroker {
     if (!this.userDataRoot || !isProjectMountArgs(request.args)) return;
     const mountPath = request.args.mount_path;
     const visitRoot = request.args.visit_root;
-    const kind = request.args.visit_kind === "personal" ? "personal" : "agent";
+    const kind =
+      request.args.visit_kind === "personal"
+        ? "personal"
+        : request.args.visit_kind === "group"
+          ? "group"
+          : "agent";
     if (typeof mountPath !== "string" || typeof visitRoot !== "string") return;
     try {
       addProjectRoot(this.userDataRoot, visitRoot, kind, mountPath);

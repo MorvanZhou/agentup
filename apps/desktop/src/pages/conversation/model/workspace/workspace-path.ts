@@ -18,14 +18,4 @@ export function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** 工作区文本是否应按 HTML 双模式（渲染 / 源码）预览。 */
-export function isHtmlWorkspacePath(path: string): boolean {
-  const base = workspaceBaseName(path).toLowerCase();
-  return base.endsWith(".html") || base.endsWith(".htm");
-}
-
-/** 工作区文本是否应按 Markdown 双模式（渲染 / 原文）预览。 */
-export function isMarkdownWorkspacePath(path: string): boolean {
-  const base = workspaceBaseName(path).toLowerCase();
-  return base.endsWith(".md") || base.endsWith(".mdx") || base.endsWith(".markdown");
-}
+export { isHtmlWorkspacePath, isMarkdownWorkspacePath } from "../../../../shared/workspace-media";

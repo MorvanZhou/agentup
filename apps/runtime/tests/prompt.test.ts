@@ -137,7 +137,7 @@ it("passes images to Pi prompt without appending path suffix text", async () => 
   expect(seen[0]?.images).toEqual([{ type: "image", data: png, mimeType: "image/png" }]);
   const files = fs.readdirSync(path.join(cwd, "ATTACHMENTS"));
   expect(files).toHaveLength(1);
-  expect(files[0]).toMatch(/^[a-f0-9]{8}-shot\.png$/i);
+  expect(files[0]).toMatch(/^shot_[a-f0-9]{8}\.png$/i);
 });
 
 it("reopens the private assistant session after its resources are invalidated", async () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import { middleEllipsisFileName } from "../../../../../../model/composer/attachment-ref";
+import { createFileChipDom } from "../../../../../../model/composer/file-chip-dom";
 import {
   segmentComposerText,
   serializeComposerSegments,
@@ -50,7 +50,9 @@ const knownMentionsKey = computed(() => [...props.knownMentions].sort().join("\0
 
 onMounted(() => {
   renderFromText(props.modelValue);
-  emitCaret();
+  // 刚进入编辑时焦点还在铅笔按钮上，选区不在输入框里。
+  // 不要把这时的文末当成光标，否则文末的 @ 会被当成正在输入的成员。
+  if (editorHasCaret()) emitCaret();
 });
 
 watch(
@@ -105,7 +107,12 @@ function renderFromText(text: string): void {
     } else if (segment.type === "mention") {
       el.appendChild(createMentionChip(segment.name));
     } else {
-      el.appendChild(createFileChip(segment.path, segment.name));
+      el.appendChild(
+        createFileChipDom(segment.path, segment.name, {
+          folder: segment.folder,
+          onRemove: (path) => emit("remove-file", path),
+        }),
+      );
     }
   }
 }
@@ -141,30 +148,6 @@ function createMentionChip(name: string): HTMLSpanElement {
   chip.className =
     "mx-0.5 inline-flex max-w-full items-center gap-0.5 rounded-md border border-accent/30 bg-accent/10 px-1.5 py-0 align-baseline text-xs font-medium text-accent";
   chip.textContent = `@${name}`;
-  return chip;
-}
-
-function createFileChip(path: string, name: string): HTMLSpanElement {
-  const chip = document.createElement("span");
-  chip.contentEditable = "false";
-  chip.dataset.file = path;
-  chip.className =
-    "mx-0.5 inline-flex max-w-full items-center gap-0.5 rounded-md border border-accent/30 bg-accent/10 px-1.5 py-0 align-baseline text-xs font-medium text-accent";
-  chip.title = `@${path}`;
-  const label = document.createElement("span");
-  label.textContent = middleEllipsisFileName(name, 28);
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className =
-    "grid size-3.5 shrink-0 place-items-center rounded-sm border-0 bg-transparent p-0 text-accent/70 hover:bg-accent/15 hover:text-accent";
-  remove.setAttribute("aria-label", `移除 ${name}`);
-  remove.textContent = "×";
-  remove.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    emit("remove-file", path);
-  });
-  chip.append(label, remove);
   return chip;
 }
 
@@ -205,6 +188,13 @@ function serializeEditor(): string {
   };
   for (const child of el.childNodes) walk(child);
   return serializeComposerSegments(segments);
+}
+
+function editorHasCaret(): boolean {
+  const el = editorRef.value;
+  const selection = window.getSelection();
+  if (!el || !selection || selection.rangeCount === 0) return false;
+  return el.contains(selection.getRangeAt(0).startContainer);
 }
 
 function getCaretOffset(): number {
@@ -366,6 +356,8 @@ function getCaretClientRect(): CaretClientRect | null {
 }
 
 function emitCaret(): void {
+  // 选区在输入框外时 getCaretOffset 会退回文末，不能拿去驱动 @ / Skill 选择器。
+  if (!editorHasCaret()) return;
   emit("update:cursor", getCaretOffset());
   emit("update:caret-rect", getCaretClientRect());
 }

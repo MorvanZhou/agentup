@@ -25,9 +25,9 @@ export type PromptSectionId =
 /** 每种场景的系统提示段落顺序。空段落在编译时丢掉。 */
 export const PROMPT_SECTIONS: Record<ExecutionMode, readonly PromptSectionId[]> = {
   single: ["environment", "private-cwd", "tool-usage", "project-roots", "single-collaboration"],
-  "group-holder": ["environment", "group-workspace", "tool-usage", "group-collaboration", "group-roster"],
+  "group-holder": ["environment", "group-workspace", "project-roots", "tool-usage", "group-collaboration", "group-roster"],
   "single-delegation": ["environment", "private-cwd", "tool-usage"],
-  "group-delegation": ["environment", "group-workspace", "tool-usage", "group-task"],
+  "group-delegation": ["environment", "group-workspace", "project-roots", "tool-usage", "group-task"],
 };
 
 export type PromptCompileInput = {

@@ -1,25 +1,29 @@
 /**
- * Composer / 历史中的文件引用。
- * 新：`@ATTACHMENTS/<id>-<filename>`（扁平落盘）
- * 旧：`@ATTACHMENTS/<id>/<filename>`（兼容历史消息）
+ * Composer / 历史中的文件 / 文件夹引用。
+ * 新：`@ATTACHMENTS/<name>_<id>.<ext>`（id 后缀，扩展名保持尾部）
+ * 目录：`@ATTACHMENTS/<name>_<id>/`（尾 `/` 标记，供 FileChip 显示文件夹图标）
+ * 旧扁平：`@ATTACHMENTS/<id>-<name>`（历史消息兼容）
+ * 旧嵌套：`@ATTACHMENTS/<id>/<name>`（兼容历史消息）
  * 文件名在 staging 时已去除空白（空格→`_`），保证 token 不被空格截断。
  */
 
 const ATTACHMENT_ID = "[A-Za-z0-9._-]+";
 /** 文件名：无空白、无 @、无 / */
 const ATTACHMENT_FILE = "[^\\s@/]+";
-/** 扁平：ATTACHMENTS/<file>；旧嵌套：ATTACHMENTS/<id>/<file> */
+/** 扁平：ATTACHMENTS/<file> 或 ATTACHMENTS/<dir>/；旧嵌套：ATTACHMENTS/<id>/<file> */
 const ATTACHMENT_REF_RE = new RegExp(
-  `(^|[\\s([{（【])@(ATTACHMENTS\\/(?:${ATTACHMENT_ID}\\/)?${ATTACHMENT_FILE})(?=$|[\\s,.;:!?，。；：！？)\\]}）】])`,
+  `(^|[\\s([{（【])@(ATTACHMENTS\\/(?:${ATTACHMENT_ID}\\/)?${ATTACHMENT_FILE}\\/?)(?=$|[\\s,.;:!?，。；：！？)\\]}）】])`,
   "g",
 );
 
 export type AttachmentRefHit = {
   start: number;
   end: number;
-  /** ATTACHMENTS/...，无前导 @ */
+  /** ATTACHMENTS/...，无前导 @；目录带尾 `/` */
   path: string;
   name: string;
+  /** 目录引用（path 以 `/` 结尾）。 */
+  folder: boolean;
 };
 
 export function attachmentRefToken(path: string): string {
@@ -27,13 +31,30 @@ export function attachmentRefToken(path: string): string {
   return `@${relative}`;
 }
 
-/** 展示用文件名：去掉扁平前缀 `<id>-`，旧路径取 basename。 */
+/**
+ * 展示用文件名：新格式剥 `<id>` 尾缀（保扩展名）；旧嵌套取 basename。
+ * 旧扁平 `<id>-<name>` 不再剥前缀（显示原样，含 id）。
+ */
 export function attachmentFileName(path: string): string {
-  const relative = path.replace(/^@/, "");
+  // 目录 path 带尾 `/`，剥掉再取 basename
+  const relative = path.replace(/^@/, "").replace(/\/+$/, "");
   const slash = relative.lastIndexOf("/");
   const base = slash >= 0 ? relative.slice(slash + 1) : relative;
-  const flat = /^[a-f0-9]{8}-(.+)$/i.exec(base);
-  return flat?.[1] || base;
+  // 新格式：贪婪剥「最后一个」`_<id>` 段（紧跟扩展名之前），名字自带的日期段不受影响
+  const modern = /^(.+)_[a-f0-9]{8}(\.[^./]+)?$/i.exec(base);
+  if (modern?.[1]) return `${modern[1]}${modern[2] ?? ""}`;
+  return base;
+}
+
+/** 目录芯片：staging / 工作区引用约定 path 以 `/` 结尾。 */
+export function isAttachmentFolderPath(path: string): boolean {
+  return path.replace(/^@/, "").trim().endsWith("/");
+}
+
+/** 统一目录引用形态：保证尾 `/`，供插入与展示。 */
+export function attachmentFolderPath(path: string): string {
+  const relative = path.replace(/^@/, "").trim().replace(/\/+$/, "");
+  return relative ? `${relative}/` : relative;
 }
 
 /**
@@ -67,7 +88,13 @@ export function findAttachmentRefs(text: string): AttachmentRefHit[] {
     const index = match.index ?? 0;
     const start = index + boundary.length;
     const end = start + match[0].length - boundary.length;
-    hits.push({ start, end, path, name: attachmentFileName(path) });
+    hits.push({
+      start,
+      end,
+      path,
+      name: attachmentFileName(path),
+      folder: isAttachmentFolderPath(path),
+    });
   }
   return hits;
 }
