@@ -1,7 +1,7 @@
 {
   "name": "@agentup/desktop",
   "productName": "AgentUp",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "AgentUp desktop — 本机 AI Agent 工作台",
   "author": "AgentUp",
   "private": true,
