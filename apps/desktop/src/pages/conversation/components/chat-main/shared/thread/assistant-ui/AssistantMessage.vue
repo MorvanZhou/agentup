@@ -17,6 +17,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import { t } from "../../../../../../../shared/model/ui/ui-locale";
 import { selectionToPlainText } from "../../../../../model/composer/copy-text";
+import { isOpenAskUserPart } from "../../../../../model/message/ask-user-summary";
 import {
   buildAssistantByproducts,
   type ByproductTabId,
@@ -78,12 +79,7 @@ const hasOpenAskUser = useAuiState(
   (s) =>
     s.message.role === "assistant" &&
     s.message.status?.type !== "running" &&
-    s.message.parts.some(
-      (part) =>
-        part.type === "tool-call" &&
-        part.toolName === "ask_user" &&
-        part.result === undefined,
-    ),
+    s.message.parts.some((part) => isOpenAskUserPart(part)),
 );
 /** 停止后：消息被标 cancelled，或 AskUser 浮层已撤但工具仍无结果。 */
 const terminated = computed(

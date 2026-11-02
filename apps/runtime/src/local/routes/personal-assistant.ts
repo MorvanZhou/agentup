@@ -5,11 +5,11 @@ import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import path from "node:path";
 
 import { ConfigError } from "../../config/load.js";
-import { requireEnabledModelRef } from "../../config/provider.js";
+import { requireEnabledModelRef } from "../../config/provider/index.js";
 import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import { clearPersonalContext, clearPersonalHistory, readPersonalHistory, readPersonalHistoryPage } from "../../session/history/history.js";
 import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
-import { setVisitSessionModel } from "../../session/model/session-model.js";
+import { resolveVisitModelConfig, setVisitSessionModel } from "../../session/model/session-model.js";
 import { listVisitSkills } from "../../session/skills/skills.js";
 import {
   bearer,
@@ -221,6 +221,16 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
     const userId = requireUserId(text(body, "user_id"));
     await chats.abort(userId, PERSONAL_ASSISTANT_ID, "personal");
     return json(c, 200, { aborted: true });
+  });
+
+  /** 私人助理的 API / Pi 原生会话也支持原生 steer；SDK 会返回 false 走 follow-up。 */
+  app.post("/personal-assistant/steer", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    const visit = personalAssistantVisit(config.userDataRoot, userId);
+    const model = resolveVisitModelConfig(config.userDataRoot, visit);
+    return json(c, 200, await chats.steer(visit, model, promptText(body)));
   });
 
   app.post("/personal-assistant/prompt", async (c) => {

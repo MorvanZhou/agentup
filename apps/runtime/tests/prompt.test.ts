@@ -5,14 +5,16 @@ import path from "node:path";
 import type { AddressInfo } from "node:net";
 
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import { setModelEnabled, upsertProviderConnection } from "../src/config/provider.js";
+import { setModelEnabled, upsertProviderConnection } from "../src/config/provider/index.js";
 import { startLocalServer } from "../src/local/server.js";
 import { packTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
 import type { Visit } from "../src/package/sync.js";
 import { VisitChats, type PromptSession } from "../src/session/turn/index.js";
+import { streamPrompt } from "../src/local/prompt.js";
+import { FollowUpQueueFull } from "../src/session/turn/follow-up-queue.js";
 
 const manifest = { version: 1, tools: [] as string[], modelCapabilities: [] as string[] };
 const files = { "SYSTEM.md": Buffer.from("你是呼吸科医生") };
@@ -26,6 +28,45 @@ const model = {
   baseUrl: "http://127.0.0.1:11434/v1",
   kind: "ollama" as const,
 };
+
+it("主 prompt 的 follow-up 队列满时返回稳定 409，而不是 500", async () => {
+  let status = 0;
+  let payload = "";
+  const response = {
+    writableFinished: false,
+    headersSent: false,
+    once: vi.fn(),
+    off: vi.fn(),
+    writeHead(code: number) {
+      status = code;
+      this.headersSent = true;
+    },
+    end(body?: Buffer) {
+      payload = body?.toString("utf8") ?? "";
+      this.writableFinished = true;
+    },
+  };
+  const request = { socket: { once: vi.fn(), off: vi.fn() } };
+  const chats = {
+    usesFollowUpQueue: () => true,
+    busy: () => true,
+    enqueueFollowUp: () => {
+      throw new FollowUpQueueFull();
+    },
+  };
+
+  await streamPrompt(
+    chats as unknown as VisitChats,
+    () => ({ ...model, templateId: "codebuddy-sdk", kind: "agent-sdk" }) as never,
+    visitFixture(),
+    "第六条",
+    request as unknown as http.IncomingMessage,
+    response as unknown as http.ServerResponse,
+  );
+
+  expect(status).toBe(409);
+  expect(JSON.parse(payload)).toEqual({ error: "队列已满", code: "follow_up_queue_full" });
+});
 
 /** prompt 路由按 visit 解析已启用模型；HTTP 测例需先落盘连接。 */
 function seedModel(userDataRoot: string): void {
@@ -93,6 +134,75 @@ it("trims prompt text before handing it to the session", async () => {
     /* drain */
   }
   expect(seen).toEqual(["你好"]);
+});
+
+it("SDK 会话走直连事件流并返回工具结果，不再经过只取最终 result 的 Pi 通道", async () => {
+  const prompt = vi.fn(async () => undefined);
+  const externalQuery = vi.fn(async () => ({
+    controller: new AbortController(),
+    timeoutMs: 1_000,
+    iterable: (async function* () {
+      yield {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "tool-1", name: "Read", input: { path: "a.md" } }],
+        },
+      };
+      yield {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "tool-1", content: "文件内容" }],
+        },
+      };
+      yield { type: "result", subtype: "success", result: "读完了" };
+    })(),
+  }));
+  const appended: unknown[] = [];
+  const chats = new VisitChats(async () => ({
+    subscribe: () => () => undefined,
+    prompt,
+    externalQuery,
+    sendCustomMessage: async () => undefined,
+    abort: async () => undefined,
+    dispose: () => undefined,
+    sessionManager: {
+      getBranch: () => [],
+      appendMessage: (message: unknown) => appended.push(message),
+    },
+  }) as unknown as PromptSession);
+  const sdkModel = { ...model, templateId: "codebuddy-sdk", kind: "agent-sdk" as const };
+
+  const stream = await chats.promptStream(visitFixture(), sdkModel, "你好");
+  const chunks: Array<{ type: string; toolName?: string; output?: unknown }> = [];
+  const reader = stream.getReader();
+  for (;;) {
+    const next = await reader.read();
+    if (next.done) break;
+    chunks.push(next.value as typeof chunks[number]);
+  }
+
+  expect(prompt).not.toHaveBeenCalled();
+  expect(externalQuery.mock.calls[0]?.[0]).toContain("用户：你好");
+  expect(chunks).toContainEqual(expect.objectContaining({ type: "tool-input-available", toolName: "Read" }));
+  expect(chunks).toContainEqual(expect.objectContaining({ type: "tool-output-available", output: "文件内容" }));
+  // 结构化落盘：user + toolCall + toolResult + 总结正文（digest 不进可见文本）
+  expect(appended).toHaveLength(4);
+  expect(appended[0]).toMatchObject({
+    role: "user",
+    content: [{ type: "text", text: "你好" }],
+  });
+  expect(appended[1]).toMatchObject({
+    role: "assistant",
+    content: [{ type: "toolCall", id: "tool-1", name: "Read" }],
+  });
+  expect(appended[2]).toMatchObject({ role: "toolResult", toolCallId: "tool-1" });
+  expect(appended[3]).toMatchObject({
+    role: "assistant",
+    content: [{ type: "text", text: "读完了" }],
+  });
+  expect(JSON.stringify(appended[3])).not.toContain("本轮用过的工具");
 });
 
 it("passes images to Pi prompt without appending path suffix text", async () => {

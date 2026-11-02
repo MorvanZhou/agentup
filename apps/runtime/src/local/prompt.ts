@@ -6,6 +6,7 @@ import { ConfigError, type ModelConfig } from "../config/load.js";
 import type { UiLocale } from "../i18n/locale.js";
 import { AttachmentError, type PromptAttachment } from "../session/workspace/attachments.js";
 import { resolveVisitModelConfig } from "../session/model/session-model.js";
+import { FollowUpQueueFull, type FollowUpItem } from "../session/turn/follow-up-queue.js";
 import { ChatBusy, VisitChats, type PromptRewind } from "../session/turn/index.js";
 import type { Visit } from "../package/sync.js";
 import { LocalError, sendNodeJson } from "./http.js";
@@ -35,6 +36,20 @@ export async function streamPrompt(
   socket?.once("close", onClientGone);
   res.once("close", onClientGone);
   try {
+    // 本地 Agent App（SDK）没有原生 steer：回合进行中不再 409，改为进 followUp 队列
+    // （docs/agent_cli §12.8）。纯附件的消息仍走原路径，队列这版只收文本。
+    if (
+      text.trim() &&
+      chats.usesFollowUpQueue(model) &&
+      chats.busy(visit.userId, visit.agentId, visit.kind)
+    ) {
+      const queued = chats.enqueueFollowUp(visit, text.trim());
+      sendNodeJson(res, 202, {
+        queued: serializeFollowUp(queued),
+        queue: chats.listFollowUps(visit).map(serializeFollowUp),
+      });
+      return;
+    }
     const stream = await chats.promptStream(
       visit,
       model,
@@ -58,12 +73,25 @@ export async function streamPrompt(
       sendNodeJson(res, 503, { error: error.message });
       return;
     }
+    if (error instanceof FollowUpQueueFull) {
+      sendNodeJson(res, 409, { error: "队列已满", code: "follow_up_queue_full" });
+      return;
+    }
     const message = error instanceof Error && error.message ? error.message : "对话失败";
     sendNodeJson(res, error instanceof ChatBusy ? 409 : 500, { error: message });
   } finally {
     socket?.off("close", onClientGone);
     res.off("close", onClientGone);
   }
+}
+
+/** 队列条目序列化：对外一律 snake_case。 */
+export function serializeFollowUp(item: FollowUpItem): {
+  id: string;
+  text: string;
+  created_at: number;
+} {
+  return { id: item.id, text: item.text, created_at: item.createdAt };
 }
 
 /** 兼容自定义 `{ text }` 与 AI SDK transport 的 `{ messages }`；允许仅附件。 */

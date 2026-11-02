@@ -78,4 +78,6 @@ interface Window {
     onSystemThemeChanged?: (listener: (prefersDark: boolean) => void) => () => void;
   };
   openedVisit?: string;
+  /** e2e：openExternal 记下的最近一次外链（SDK 登录 / Web 登录） */
+  openedExternal?: string;
 }

@@ -6,6 +6,7 @@ import { computed, ref } from "vue";
 import { t } from "../../../../../../../../shared/model/ui/ui-locale";
 import { usePinnedBottomScroll } from "../../../../../../composables/usePinnedBottomScroll";
 import { buildAssistantTimeline } from "../../../../../../model/message/assistant-process";
+import { isOpenAskUserPart } from "../../../../../../model/message/ask-user-summary";
 import { injectPendingAskUserToolCallId } from "../../../../../../model/thread/thread-ask-user";
 import { injectPendingApprovalToolCallId } from "../../../../../../model/thread/thread-approval";
 import { injectThreadAgentId } from "../../../../../../model/thread/thread-agent-id";
@@ -46,12 +47,7 @@ const hasOpenAskUser = useAuiState(
   (s) =>
     s.message.role === "assistant" &&
     s.message.status?.type !== "running" &&
-    s.message.parts.some(
-      (part) =>
-        part.type === "tool-call" &&
-        part.toolName === "ask_user" &&
-        part.result === undefined,
-    ),
+    s.message.parts.some((part) => isOpenAskUserPart(part)),
 );
 const error = useAuiState((s) => {
   const message = s.message;

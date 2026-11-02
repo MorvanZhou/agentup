@@ -8,7 +8,8 @@ export const i18n = createI18n({
   legacy: false,
   locale: "zh",
   fallbackLocale: "zh",
-  messages: { zh },
+  // 运行时只有 zh；类型上预留 en，英文包仍由 ensureLocaleMessages 按需装入
+  messages: { zh } as Record<UiLocale, typeof zh>,
   missingWarn: import.meta.env.DEV,
   fallbackWarn: import.meta.env.DEV,
 });

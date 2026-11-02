@@ -1,5 +1,4 @@
-import MarkdownIt from "markdown-it";
-import type Token from "markdown-it/lib/token.mjs";
+import MarkdownIt, { type Token } from "markdown-it";
 import hljs from "highlight.js/lib/common";
 
 /** Lucide copy / check 的精简 path，供 fence HTML 内联（v-html 无法挂 Vue 组件）。 */

@@ -72,25 +72,42 @@ export function scoreAgent(agent: RecruitedAgentInfo, query: string): number {
   return total;
 }
 
+/** 候选块里写的工具名：Pi 原生 vs SDK MCP 前缀。 */
+export type DiscoverToolSurface = "pi" | "external";
+
+function searchToolName(surface: DiscoverToolSurface): string {
+  return surface === "external" ? "mcp__agentup__agent_search" : "agent_search";
+}
+
+function delegateToolName(surface: DiscoverToolSurface): string {
+  return surface === "external" ? "mcp__agentup__delegate_to_agent" : "delegate_to_agent";
+}
+
 /**
  * 拼进每轮模型上下文的候选专家块。
- * 无命中 / 无 query / 空花名册 → 空串（不污染本轮；模型应主动 agent_search）。
+ * 无命中 / 无 query / 空花名册 → 空串（不污染本轮；模型应主动搜花名册）。
  */
-export function formatDiscoveredAgentsContext(result: DiscoverResult): string {
+export function formatDiscoveredAgentsContext(
+  result: DiscoverResult,
+  options?: { toolSurface?: DiscoverToolSurface },
+): string {
   if (result.agents.length === 0) return "";
 
+  const surface = options?.toolSurface ?? "pi";
+  const search = searchToolName(surface);
+  const delegate = delegateToolName(surface);
   const lines = result.agents.map(formatAgentCardLine);
   const footer = result.truncated
-    ? "\n\n(More agents available — call agent_search with a refined query.)"
+    ? `\n\n(More agents available — call ${search} with a refined query.)`
     : "";
 
   return (
     [
       "# Relevant recruited agents",
       "",
-      "Lexical hints only — not an agent_search result. Stay inside your own role.",
-      "Call agent_search with role or domain keywords before ask_user, file writes, or shell. A poor hint does not mean nobody fits.",
-      "If one is a better fit, ask the user who should do the work, then delegate_to_agent (tool approval required) and coordinate. Do not silently self-serve or redo their job.",
+      `Lexical hints only — not an ${search} result. Stay inside your own role.`,
+      `Call ${search} with role or domain keywords before ask_user, file writes, or shell. A poor hint does not mean nobody fits.`,
+      `If one is a better fit, ask the user who should do the work, then ${delegate} (tool approval required) and coordinate. Do not silently self-serve or redo their job.`,
 
       "",
       ...lines,
@@ -99,15 +116,18 @@ export function formatDiscoveredAgentsContext(result: DiscoverResult): string {
 }
 
 /**
- * 花名册非空但本轮没有词法命中时，提示私人助理必须先 agent_search。
+ * 花名册非空但本轮没有词法命中时，提示私人助理必须先搜花名册。
  * 有命中时走 formatDiscoveredAgentsContext，不重复注入。
  */
-export function formatAgentSearchRequired(): string {
+export function formatAgentSearchRequired(options?: {
+  toolSurface?: DiscoverToolSurface;
+}): string {
+  const search = searchToolName(options?.toolSurface ?? "pi");
   return [
     "# Roster search",
     "",
     "You have recruited specialists, and this turn has no lexical hint.",
-    "Call agent_search with role or domain keywords before ask_user, file writes, or shell.",
+    `Call ${search} with role or domain keywords before ask_user, file writes, or shell.`,
     "Do not decide you will do the work until that search returns.",
   ].join("\n");
 }

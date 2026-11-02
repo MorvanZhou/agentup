@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ImagePlusIcon } from "@lucide/vue";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 import { useDesktop } from "../../../../../app/desktop";
 import UserAvatar from "../../../../../shared/components/avatar/UserAvatar.vue";
@@ -10,6 +10,12 @@ import { t } from "../../../../../shared/model/ui/ui-locale";
 import { useAccountSettings } from "../../../composables/useAccountSettings";
 
 const { session, nickname, busy, avatarBusy, commitNickname, chooseAvatar } = useAccountSettings();
+/** 正式账号表单只用收窄后的 session；模板 v-else-if 收不窄可空 ref。 */
+const account = computed(() => {
+  const current = session.value;
+  if (!current || !isAccountSession(current)) return null;
+  return current;
+});
 const { logout, beginBrowserLogin } = useDesktop();
 const avatarInput = ref<HTMLInputElement>();
 const signingOut = ref(false);
@@ -69,7 +75,7 @@ function onAvatar(event: Event): void {
       </section>
 
       <!-- 表单 -->
-      <section v-else-if="isAccountSession(session)" class="grid max-w-md gap-5" :aria-label="t('accountProfile')">
+      <section v-else-if="account" class="grid max-w-md gap-5" :aria-label="t('accountProfile')">
         <div class="flex items-start gap-4">
           <div class="flex shrink-0 flex-col items-center gap-1.5">
             <button
@@ -79,7 +85,7 @@ function onAvatar(event: Event): void {
               :aria-label="t('accountAvatarPick')"
               @click="avatarInput?.click()"
             >
-              <UserAvatar :name="session.nickname" :avatar-url="session.avatarUrl" size="lg" />
+              <UserAvatar :name="account.nickname" :avatar-url="account.avatarUrl" size="lg" />
             </button>
             <input
               ref="avatarInput"
@@ -95,7 +101,7 @@ function onAvatar(event: Event): void {
               @click="avatarInput?.click()"
             >
               <ImagePlusIcon class="size-3.5" aria-hidden="true" />
-              {{ session.avatarUrl ? t("accountAvatarChange") : t("accountAvatarPick") }}
+              {{ account.avatarUrl ? t("accountAvatarChange") : t("accountAvatarPick") }}
             </button>
           </div>
           <p class="m-0 pt-1 text-xs leading-snug text-muted-foreground">
@@ -108,7 +114,7 @@ function onAvatar(event: Event): void {
           {{ t("accountEmail") }}
           <input
             type="email"
-            :value="session.email"
+            :value="account.email"
             readonly
             class="min-h-8 rounded-lg border border-rule bg-muted px-3 text-sm text-muted-foreground outline-none"
           />

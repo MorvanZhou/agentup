@@ -27,6 +27,11 @@ export type WakeTurnStreamHandlers = {
   onAskUser?: (data: AgentUpAskUserData) => void;
   onShellHang?: (data: AgentUpShellHangData) => void;
   onDelegationStarted?: (data: AgentUpDelegationStartedData) => void;
+  /**
+   * followUp 队列被消费时 runtime 先发用户那条（`data-agentup-follow-up-sent`）。
+   * 桌面据此先渲染用户气泡，再让助手气泡在它下面流式输出（顺序 = 用户 → 助手）。
+   */
+  onUserEcho?: (text: string) => void;
   /** 流结束：调用方拉一次权威历史，并入 AISDKChat。 */
   onDone?: () => void;
 };
@@ -76,6 +81,11 @@ export function useWakeTurnStream(options: {
     if (type === "data-agentup-model-unavailable" && isAgentUpModelUnavailable(data)) {
       showToast(data.message || t("modelUnavailable"), "error");
     }
+    // 队列被拼成一条发出去：先把用户这条亮出来（见 handlers.onUserEcho）
+    if (type === "data-agentup-follow-up-sent") {
+      const text = (data as { text?: unknown } | undefined)?.text;
+      if (typeof text === "string" && text.trim()) options.handlers.onUserEcho?.(text);
+    }
   }
 
   async function run(gen: number): Promise<void> {
@@ -118,6 +128,8 @@ export function useWakeTurnStream(options: {
 
       for await (const message of readUIMessageStream({ stream: chunkStream })) {
         if (gen !== generation || abort?.signal.aborted) return;
+        // 首块是 data-* 时 readUIMessageStream 会先给一条空壳（id 为空）：别拿它当气泡
+        if (!message.id) continue;
         liveMessage.value = message;
       }
     } catch (error) {

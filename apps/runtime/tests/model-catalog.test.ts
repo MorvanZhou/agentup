@@ -17,7 +17,7 @@ import {
   refreshProviderModels,
   setRuntimeProviderSecrets,
   upsertProviderConnection,
-} from "../src/config/provider.js";
+} from "../src/config/provider/index.js";
 import { openModelRuntime } from "../src/session/model/runtime.js";
 import { buildSessionPlan } from "../src/session/plan.js";
 import type { Visit } from "../src/package/sync.js";

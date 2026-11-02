@@ -1,0 +1,172 @@
+import type { UiLocale } from "../../i18n/index.js";
+import {
+  getProviderTemplate,
+  listProviderTemplateViews,
+  listVendorGroups,
+} from "../provider-templates.js";
+import { buildAgentSdkViews } from "./agent-sdk-state.js";
+import { envOverrides } from "./env.js";
+import { hasRuntimeApiKey } from "./secrets.js";
+import { readStored } from "./store.js";
+import type {
+  AvailableModelView,
+  ProviderConnection,
+  ProviderConnectionView,
+  ProviderSettingsView,
+  StoredFile,
+} from "./types.js";
+import { modelKey } from "./util.js";
+
+/** 设置页整页视图：连接 + 启用模型 + 可用目录 + 模板/厂商 + 本地接入状态。 */
+export function readProviderSettings(
+  userDataRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  locale: UiLocale = "zh",
+): ProviderSettingsView {
+  const stored = readStored(userDataRoot);
+  const overriddenByEnvironment = envOverrides(env);
+  const connections = stored.connections.map((item) => toConnectionView(item, locale));
+  /** 只有登录成功的本地接入才进「启用服务」列表：没登录查不到模型，也不该被启用 */
+  const readySdkIds = new Set(
+    stored.agentSdks.filter((item) => item.state === "ready").map((item) => item.templateId),
+  );
+  const availableModels = buildAvailableModels(stored, locale, readySdkIds);
+  return {
+    connections,
+    enabledModels: stored.enabledModels,
+    activeModel: stored.activeModel,
+    availableModels,
+    configured: Boolean(
+      overriddenByEnvironment.model ||
+        stored.enabledModels.some(
+          (model) =>
+            stored.connections.some((connection) => connection.templateId === model.templateId) ||
+            readySdkIds.has(model.templateId),
+        ),
+    ),
+    overriddenByEnvironment: Boolean(
+      overriddenByEnvironment.model ||
+        overriddenByEnvironment.baseUrl ||
+        overriddenByEnvironment.apiKey ||
+        overriddenByEnvironment.provider,
+    ),
+    templates: listProviderTemplateViews(locale),
+    vendors: listVendorGroups(locale),
+    agentSdks: buildAgentSdkViews(stored.agentSdks, locale),
+  };
+}
+
+/** 可用模型目录 = 已连接服务商（模板 + 发现 + 手动追加）+ 已登录的本地接入。 */
+export function buildAvailableModels(
+  stored: StoredFile,
+  locale: UiLocale,
+  readySdkIds: Set<string> = new Set(),
+): AvailableModelView[] {
+  const enabled = new Set(stored.enabledModels.map(modelKey));
+  const activeKey = stored.activeModel ? modelKey(stored.activeModel) : "";
+  const rows: AvailableModelView[] = [];
+  for (const connection of stored.connections) {
+    const template = getProviderTemplate(connection.templateId, locale);
+    if (!template) continue;
+    const models = [
+      ...(template.models ?? []),
+      ...(connection.discoveredModelIds ?? []).map((id) => ({
+        id,
+        name: id,
+        api: template.api ?? "openai-completions",
+        reasoning: false,
+      })),
+      ...(connection.customModelIds ?? []).map((id) => ({
+        id,
+        name: id,
+        api: template.api ?? "openai-completions",
+        reasoning: false,
+      })),
+    ];
+    if (models.length === 0 && template.defaultModelId) {
+      models.push({
+        id: template.defaultModelId,
+        name: template.defaultModelId,
+        api: template.api ?? "openai-completions",
+        reasoning: false,
+      });
+    }
+    const catalogIds = new Set([
+      ...(template.models ?? []).map((model) => model.id),
+      ...(connection.discoveredModelIds ?? []),
+    ]);
+    const customIds = new Set(connection.customModelIds ?? []);
+    const seen = new Set<string>();
+    for (const model of models) {
+      if (seen.has(model.id)) continue;
+      seen.add(model.id);
+      const ref = { templateId: connection.templateId, modelId: model.id };
+      const key = modelKey(ref);
+      rows.push({
+        templateId: connection.templateId,
+        modelId: model.id,
+        name: model.name,
+        vendorId: template.vendorId,
+        vendorLabel: template.vendorLabel,
+        optionLabel: template.optionLabel,
+        enabled: enabled.has(key),
+        active: key === activeKey,
+        custom: customIds.has(model.id) && !catalogIds.has(model.id),
+      });
+    }
+  }
+  // 本地接入没有「连接」记录，能用哪些模型由本地 SDK 登录后给出
+  for (const templateId of readySdkIds) {
+    const template = getProviderTemplate(templateId, locale);
+    if (!template) continue;
+    const record = stored.agentSdks.find((item) => item.templateId === templateId);
+    const models = record?.models?.length ? record.models : (template.models ?? []);
+    // 模板默认项没有倍率，只有 SDK 查回来的目录才有
+    const rates = new Map(
+      (record?.models ?? [])
+        .filter((model) => typeof model.credits === "number")
+        .map((model) => [model.id, model.credits as number]),
+    );
+    for (const model of models) {
+      const ref = { templateId, modelId: model.id };
+      const key = modelKey(ref);
+      const credits = rates.get(model.id);
+      rows.push({
+        templateId,
+        modelId: model.id,
+        name: model.name,
+        vendorId: template.vendorId,
+        vendorLabel: template.vendorLabel,
+        optionLabel: template.optionLabel,
+        enabled: enabled.has(key),
+        active: key === activeKey,
+        custom: false,
+        // 0 是真实倍率：只能用 !== undefined 判
+        ...(credits === undefined ? {} : { credits }),
+      });
+    }
+  }
+  return rows;
+}
+
+/** 连接 + 模板静态描述 + 本机是否已有明文密钥。 */
+export function toConnectionView(
+  connection: ProviderConnection,
+  locale: UiLocale,
+): ProviderConnectionView {
+  const template = getProviderTemplate(connection.templateId, locale);
+  const requiresApiKey = template?.requiresApiKey ?? true;
+  return {
+    ...connection,
+    hasApiKey:
+      Boolean(connection.apiKeyCipher) ||
+      hasRuntimeApiKey(connection.templateId) ||
+      !requiresApiKey,
+    piProviderId: template?.piProviderId ?? connection.templateId,
+    requiresApiKey,
+    vendorId: template?.vendorId ?? connection.templateId,
+    vendorLabel: template?.vendorLabel ?? connection.templateId,
+    optionLabel: template?.optionLabel ?? connection.templateId,
+    label: template?.label ?? connection.templateId,
+  };
+}

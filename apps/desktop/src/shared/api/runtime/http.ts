@@ -16,7 +16,7 @@ export class RuntimeHttp {
     path: string,
     token?: string,
     body?: Record<string, unknown>,
-    method?: "GET" | "POST" | "PUT" | "DELETE",
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   ): Promise<Record<string, unknown>> {
     let response: Response;
     try {

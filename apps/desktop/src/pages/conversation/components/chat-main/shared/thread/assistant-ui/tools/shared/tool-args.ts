@@ -146,6 +146,78 @@ export function summarizeArgs(args: unknown, keys: readonly string[]): string {
   return parts.join(" · ");
 }
 
+/**
+ * GenericTool 摘要：兼容 Pi 常见键，以及外部 SDK 壳（ToolSearch / DeferExecuteTool）。
+ * 优先扁平字符串；再挖 `params` / `input`；数组只取前几项。
+ */
+export function summarizeGenericToolArgs(args: unknown): string {
+  const preferred = summarizeArgs(args, [
+    "path",
+    "file_path",
+    "command",
+    "cmd",
+    "uri",
+    "query",
+    "pattern",
+    "name",
+    "toolName",
+    "tool_name",
+    "description",
+    "brief",
+  ]);
+  if (preferred) {
+    // DeferExecute：toolName + params.query/brief 拼一行
+    const nested = nestedToolSummary(args);
+    if (nested && !preferred.includes(nested)) return `${preferred} · ${nested}`;
+    return preferred;
+  }
+  const fromNames = toolNamesSummary(args);
+  if (fromNames) return fromNames;
+  const nested = nestedToolSummary(args);
+  if (nested) return nested;
+  return firstShortArgSummary(args);
+}
+
+function nestedToolSummary(args: unknown): string {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+  const row = args as Record<string, unknown>;
+  for (const key of ["params", "input", "arguments"]) {
+    const nested = row[key];
+    if (!nested || typeof nested !== "object" || Array.isArray(nested)) continue;
+    const hit = summarizeArgs(nested, ["query", "brief", "command", "cmd", "path", "name", "agent_id"]);
+    if (hit) return hit;
+  }
+  return "";
+}
+
+function toolNamesSummary(args: unknown): string {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+  const names = (args as Record<string, unknown>).tool_names;
+  if (!Array.isArray(names)) return "";
+  const labels = names
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
+  if (labels.length === 0) return "";
+  if (labels.length <= 2) return labels.join(", ");
+  return `${labels.slice(0, 2).join(", ")}…`;
+}
+
+function firstShortArgSummary(args: unknown): string {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return "";
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+    if (key === "raw") continue;
+    if (typeof value === "string" && value.trim()) {
+      const text = value.trim();
+      parts.push(text.length > 80 ? `${text.slice(0, 80)}…` : text);
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      parts.push(String(value));
+    }
+    if (parts.length >= 2) break;
+  }
+  return parts.join(" · ");
+}
+
 /** 工具是否仍在进行中（扫光）。取消与错误视为已结束。 */
 export function isToolProgressActive(
   statusType: string,

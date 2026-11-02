@@ -23,7 +23,6 @@ export function useProviderSettings(api = new DesktopApi()) {
   /** 本实例刚 bump 时跳过一次 epoch 监听，避免重复 load。 */
   let ignoreNextEpoch = false;
 
-  const draftVendorId = ref("");
   const draftTemplateId = ref("");
   const draftBaseUrl = ref("");
   const draftApiKey = ref("");
@@ -37,14 +36,20 @@ export function useProviderSettings(api = new DesktopApi()) {
   const availableModels = computed(() => settings.value?.availableModels ?? []);
   const configured = computed(() => Boolean(settings.value?.configured));
   const overridden = computed(() => Boolean(settings.value?.overriddenByEnvironment));
+  /** 本地 Agent App 接入候选：安装 + 登录后才会出现在「启用服务」里 */
+  const agentSdks = computed(() => settings.value?.agentSdks ?? []);
+  /** 全部接入方式（含 API 与本地 App），下拉按 access 分两组 */
+  const templates = computed(() => settings.value?.templates ?? []);
+  const apiTemplates = computed(() => templates.value.filter((item) => item.access === "api"));
 
-  const selectedVendor = computed(
-    () => vendors.value.find((item) => item.id === draftVendorId.value) ?? null,
-  );
-  const vendorOptions = computed(() => selectedVendor.value?.options ?? []);
   const selectedTemplate = computed(
-    () => vendorOptions.value.find((item) => item.id === draftTemplateId.value) ?? null,
+    () => templates.value.find((item) => item.id === draftTemplateId.value) ?? null,
   );
+  /** 选中的是本地 Agent App 时，表单换成安装 / 登录卡片 */
+  const selectedSdk = computed(
+    () => agentSdks.value.find((item) => item.templateId === draftTemplateId.value) ?? null,
+  );
+  const sdkSelected = computed(() => selectedTemplate.value?.access === "agent-sdk");
   const existingConnection = computed(
     () => connections.value.find((item) => item.templateId === draftTemplateId.value) ?? null,
   );
@@ -53,11 +58,15 @@ export function useProviderSettings(api = new DesktopApi()) {
     return kind === "ollama" || kind === "custom-openai";
   });
   const needsApiKey = computed(() => Boolean(selectedTemplate.value?.requiresApiKey));
+  /** 可刷新的来源：能拉 List Models 的服务商 + 已登录的本地接入（后者问本地 SDK） */
+  const sdkRefreshTargets = computed(() =>
+    agentSdks.value.filter((sdk) => sdk.state === "ready").map((sdk) => sdk.templateId),
+  );
   const canRefreshModels = computed(() =>
     connections.value.some((connection) => {
       const template = settings.value?.templates.find((item) => item.id === connection.templateId);
       return Boolean(template?.supportsModelDiscovery);
-    }),
+    }) || sdkRefreshTargets.value.length > 0,
   );
   /** 任意已连接服务商均可手动追加模型 ID（runtime 会对内置目录外的 id 按同端点动态注册）。 */
   const customModelTargets = computed(() => connections.value);
@@ -88,27 +97,18 @@ export function useProviderSettings(api = new DesktopApi()) {
     if (loaded.value) void load();
   });
 
-  watch(vendors, (list) => {
+  /** 目录到位后默认选中第一项；用户已选过就不抢他的选择 */
+  watch(templates, (list) => {
     if (!list.length) return;
-    if (!draftVendorId.value || !list.some((item) => item.id === draftVendorId.value)) {
-      draftVendorId.value = list[0]!.id;
-    }
-  });
-
-  watch([draftVendorId, vendorOptions], () => {
-    const options = vendorOptions.value;
-    if (!options.length) {
-      draftTemplateId.value = "";
-      return;
-    }
-    if (!options.some((item) => item.id === draftTemplateId.value)) {
-      draftTemplateId.value = options[0]!.id;
-      applyTemplateDefaults(options[0]!);
+    if (!list.some((item) => item.id === draftTemplateId.value)) {
+      const first = list.find((item) => item.access === "api") ?? list[0]!;
+      draftTemplateId.value = first.id;
+      applyTemplateDefaults(first);
     }
   });
 
   watch(draftTemplateId, (templateId) => {
-    const template = vendorOptions.value.find((item) => item.id === templateId);
+    const template = templates.value.find((item) => item.id === templateId);
     if (template) applyTemplateDefaults(template);
   });
 
@@ -133,9 +133,6 @@ export function useProviderSettings(api = new DesktopApi()) {
       const next = await api.providerSettings(session.value.token, locale());
       settings.value = next;
       await hydrateSecrets(next);
-      if (!draftVendorId.value && next.vendors[0]) {
-        draftVendorId.value = next.vendors[0].id;
-      }
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
@@ -164,12 +161,6 @@ export function useProviderSettings(api = new DesktopApi()) {
     const existing = connections.value.find((item) => item.templateId === template.id);
     draftBaseUrl.value = existing?.baseUrl ?? template.defaultBaseUrl ?? "";
     draftApiKey.value = "";
-  }
-
-  function onVendorChange(): void {
-    const options = vendorOptions.value;
-    draftTemplateId.value = options[0]?.id ?? "";
-    if (options[0]) applyTemplateDefaults(options[0]);
   }
 
   async function saveConnection(): Promise<void> {
@@ -255,7 +246,8 @@ export function useProviderSettings(api = new DesktopApi()) {
       const template = settings.value?.templates.find((item) => item.id === connection.templateId);
       return Boolean(template?.supportsModelDiscovery);
     });
-    if (!targets.length) {
+    const sdkTargets = sdkRefreshTargets.value;
+    if (!targets.length && !sdkTargets.length) {
       showToast("当前没有可自动拉取模型的服务商", "error");
       return;
     }
@@ -266,12 +258,31 @@ export function useProviderSettings(api = new DesktopApi()) {
       for (const connection of targets) {
         if (await refreshModelsFor(connection.templateId, { quiet: true })) ok += 1;
       }
+      // 本地接入的目录不在服务端，走 runtime 代问本地 SDK
+      for (const templateId of sdkTargets) {
+        if (await refreshAgentSdkModels(templateId)) ok += 1;
+      }
+      const total = targets.length + sdkTargets.length;
       if (ok > 0) {
         notifyProviderConfigChanged();
-        showToast(ok === targets.length ? "模型列表已更新" : `已更新 ${ok}/${targets.length} 个服务商`, "success");
+        showToast(ok === total ? "模型列表已更新" : `已更新 ${ok}/${total} 个服务商`, "success");
       }
     } finally {
       busy.value = false;
+    }
+  }
+
+  /** 向本地 SDK 重新问一次模型目录；失败只提示，不清掉已有目录。 */
+  async function refreshAgentSdkModels(templateId: string): Promise<boolean> {
+    if (!session.value) return false;
+    try {
+      settings.value = await api.refreshAgentSdkModels(session.value.token, templateId, locale());
+      // 换账号后目录会变，会话侧的模型列表也得跟着换（别的改动都 bump，这里以前漏了）
+      notifyProviderConfigChanged();
+      return true;
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+      return false;
     }
   }
 
@@ -396,6 +407,134 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
+  /** CLI / SDK 接入：安装与登录（阶段 1） */
+  const sdkBusy = ref(false);
+  const sdkPhase = ref<{ templateId: string; phase: string; detail?: string } | null>(null);
+
+  async function reload(): Promise<void> {
+    if (!session.value) return;
+    settings.value = await api.providerSettings(session.value.token, locale());
+  }
+
+  /** 点「开始接入」：runtime 代跑 npm 安装，这里只轮询进度。 */
+  async function startAgentSdkInstall(templateId: string): Promise<void> {
+    if (!session.value || sdkBusy.value) return;
+    sdkBusy.value = true;
+    sdkPhase.value = { templateId, phase: "resolving" };
+    try {
+      const jobId = await api.installAgentSdk(session.value.token, templateId);
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const job = await api.agentSdkInstallJob(session.value.token, templateId, jobId);
+        sdkPhase.value = { templateId, phase: job.phase, ...(job.detail ? { detail: job.detail } : {}) };
+        if (["done", "failed", "cancelled"].includes(job.phase)) {
+          await reload();
+          showToast(job.phase === "done" ? t("providerSdkInstallDone") : (job.error ?? t("providerSdkInstallFailed")), job.phase === "done" ? "success" : "error");
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      sdkBusy.value = false;
+      sdkPhase.value = null;
+    }
+  }
+
+  async function cancelAgentSdkInstall(templateId: string, jobId: string): Promise<void> {
+    if (!session.value) return;
+    try {
+      settings.value = await api.cancelAgentSdkInstall(session.value.token, templateId, jobId);
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    }
+  }
+
+  /** 登录：拿到 authUrl 就交系统浏览器，之后轮询登录态直到 ready。 */
+  async function loginAgentSdk(templateId: string): Promise<void> {
+    if (!session.value || sdkBusy.value) return;
+    sdkBusy.value = true;
+    try {
+      const started = await api.loginAgentSdk(session.value.token, templateId);
+      if (started.authUrl) {
+        const open = window.agentUp?.openExternal;
+        if (!open) {
+          showToast(t("providerSdkOpenFailed"), "error");
+          return;
+        }
+        await open(started.authUrl);
+      }
+      if (started.state === "ready") {
+        await reload();
+        showToast(t("providerSdkLoginDone"), "success");
+        return;
+      }
+      // 用户在浏览器里完成登录后，回来轮询直到状态落定
+      const deadline = Date.now() + 3 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const result = await api.checkAgentSdkLogin(session.value.token, templateId);
+        if (result.state === "ready") {
+          await reload();
+          showToast(t("providerSdkLoginDone"), "success");
+          return;
+        }
+        if (result.state === "not_logged_in" && !started.authUrl) break;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      await reload();
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      sdkBusy.value = false;
+    }
+  }
+
+  async function checkAgentSdkLogin(templateId: string): Promise<void> {
+    if (!session.value || sdkBusy.value) return;
+    sdkBusy.value = true;
+    try {
+      const result = await api.checkAgentSdkLogin(session.value.token, templateId);
+      await reload();
+      showToast(result.state === "ready" ? t("providerSdkLoginDone") : t("providerSdkLoginPending"), result.state === "ready" ? "success" : "error");
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      sdkBusy.value = false;
+    }
+  }
+
+  /**
+   * 登出本地 App：只把登录态打回未登录，SDK 还留着（卸载才会删目录）。
+   * 换账号 / 订阅过期都走这里；模型目录由 runtime 一并清空，这里只负责刷新。
+   */
+  async function logoutAgentSdk(templateId: string): Promise<void> {
+    if (!session.value || sdkBusy.value) return;
+    sdkBusy.value = true;
+    try {
+      settings.value = await api.logoutAgentSdk(session.value.token, templateId, locale());
+      notifyProviderConfigChanged();
+      showToast(t("providerSdkLogoutDone"), "success");
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      sdkBusy.value = false;
+    }
+  }
+
+  async function uninstallAgentSdk(templateId: string): Promise<void> {
+    if (!session.value || sdkBusy.value) return;
+    sdkBusy.value = true;
+    try {
+      settings.value = await api.uninstallAgentSdk(session.value.token, templateId, locale());
+      notifyProviderConfigChanged();
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      sdkBusy.value = false;
+    }
+  }
+
   function notifyProviderConfigChanged(): void {
     ignoreNextEpoch = true;
     bumpProviderConfig();
@@ -404,14 +543,16 @@ export function useProviderSettings(api = new DesktopApi()) {
   return {
     settings,
     vendors,
+    templates,
+    apiTemplates,
     connections,
     availableModels,
     filteredModels,
     configured,
     overridden,
+    agentSdks,
     busy,
     loaded,
-    draftVendorId,
     draftTemplateId,
     draftBaseUrl,
     draftApiKey,
@@ -420,15 +561,23 @@ export function useProviderSettings(api = new DesktopApi()) {
     draftAddTemplateId,
     customModelTargets,
     canAddCustomModel,
-    selectedVendor,
-    vendorOptions,
     selectedTemplate,
+    selectedSdk,
+    sdkSelected,
     existingConnection,
     needsBaseUrl,
     needsApiKey,
     canRefreshModels,
+    sdkBusy,
+    sdkPhase,
     load,
-    onVendorChange,
+    startAgentSdkInstall,
+    cancelAgentSdkInstall,
+    loginAgentSdk,
+    checkAgentSdkLogin,
+    logoutAgentSdk,
+    uninstallAgentSdk,
+    refreshAgentSdkModels,
     saveConnection,
     removeConnection,
     refreshAllDiscoverableModels,

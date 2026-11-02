@@ -58,16 +58,14 @@ export function isPendingHitlPart(
 }
 
 /**
- * 须打断折叠、单独外露的 part：HITL，以及仍在推进的工具
- *（折叠默认关闭时，Write 等流式进度仍要看得见）。
+ * 须打断折叠、单独外露的 part：仅待答 HITL。
+ * 进行中工具直接进折叠段，避免先外露再折回造成闪缩。
  */
 export function isTimelineExposedPart(
   part: AssistantProcessPart | undefined,
   options: BuildAssistantTimelineOptions = {},
 ): boolean {
-  if (!part || part.type !== "tool-call") return false;
-  if (isPendingHitlPart(part, options)) return true;
-  return isPartProgressActive(part as TurnProgressPart);
+  return isPendingHitlPart(part, options);
 }
 
 /**
@@ -143,7 +141,7 @@ export function groupHasRunningPart(
 
 /**
  * 过程段默认是否展开。
- * 默认关闭；进行中的工具已由时间线外露，不必靠整段自动打开。
+ * 一律关闭：新步骤直接进折叠内部；进行中由触发行 shimmer 提示。
  */
 export function isProcessGroupDefaultOpen(
   _streaming: boolean,

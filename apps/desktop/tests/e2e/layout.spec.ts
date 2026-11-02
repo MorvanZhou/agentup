@@ -29,7 +29,7 @@ test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) 
   await expect(page).toHaveURL(/\/settings\?section=appearance/);
   await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "外观" })).toBeVisible();
-  await page.getByRole("button", { name: "AI 服务" }).click();
+  await page.getByRole("button", { name: "AI 服务配置" }).click();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
   await expect(page.getByRole("button", { name: /保存连接|更新配置/ })).toBeVisible();
   await expect(messagesNav(page)).toBeVisible();

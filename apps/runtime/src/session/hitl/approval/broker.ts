@@ -206,7 +206,7 @@ export class ApprovalBroker {
   }
 
   private applyGrant(
-    request: Pick<ApprovalRequest, "userId" | "agentId" | "toolName" | "args">,
+    request: Pick<ApprovalRequest, "userId" | "agentId" | "toolName" | "args" | "allowKey">,
     scope: ApprovalScope,
   ): void {
     if (scope !== "session" && scope !== "agent") return;
@@ -224,7 +224,15 @@ export class ApprovalBroker {
     }
     if (isMcpTool(request.toolName)) {
       this.grantTool(request.userId, request.agentId, request.toolName, scope);
+      return;
     }
+    // 外部 SDK 等不透明工具：按 allowKey（含 templateId）或原名写入 toolAllow，不做 Pi 名映射。
+    this.grantTool(
+      request.userId,
+      request.agentId,
+      request.allowKey?.trim() || request.toolName,
+      scope,
+    );
   }
 
   /** 允许越界访问时：把提议目录写入 project_roots（once 也会挂载）。 */

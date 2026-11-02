@@ -298,3 +298,45 @@ it("releases a pending approval when the prompt is aborted", async () => {
   }, controller.signal)).resolves.toBeUndefined();
   expect(broker.decide(id, true)).toBe(false);
 });
+
+it("persists opaque SDK tools by allowKey and does not cross template ids", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-sdk-allow-"));
+  try {
+    const broker = new ApprovalBroker(root);
+    broker.subscribe((request) => broker.decide(request.id, true, "session"));
+
+    await expect(
+      broker.request({
+        userId: "patient",
+        agentId: "pa",
+        toolCallId: "bash-1",
+        toolName: "Bash",
+        allowKey: "codebuddy-sdk/Bash",
+        args: { command: "date" },
+      }),
+    ).resolves.toBe(true);
+
+    expect(readState(root, "patient").toolAllow).toEqual({
+      pa: { "codebuddy-sdk/Bash": "session" },
+    });
+    expect(broker.allowsTool("patient", "pa", "codebuddy-sdk/Bash")).toBe(true);
+    // 另一 template 同名不串权
+    expect(broker.allowsTool("patient", "pa", "claude-sdk/Bash")).toBe(false);
+    // 裸名也不命中（不做 Bash→bash 映射）
+    expect(broker.allowsTool("patient", "pa", "Bash")).toBe(false);
+    expect(broker.allowsCommand("patient", "pa")).toBe(false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("externalToolAllowKey namespaces vendor tools but leaves MCP alone", async () => {
+  const { externalToolAllowKey, sdkToolAllowKey } = await import("../src/session/hitl/approval/tools.js");
+  expect(sdkToolAllowKey("codebuddy-sdk", "Bash")).toBe("codebuddy-sdk/Bash");
+  expect(externalToolAllowKey("codebuddy-sdk", "Bash")).toBe("codebuddy-sdk/Bash");
+  expect(externalToolAllowKey("codebuddy-sdk", "mcp__agentup__delegate_to_agent")).toBe(
+    "mcp__agentup__delegate_to_agent",
+  );
+  expect(externalToolAllowKey("codebuddy-sdk", "delegate_to_agent")).toBe("delegate_to_agent");
+  expect(externalToolAllowKey(undefined, "Bash")).toBe("Bash");
+});

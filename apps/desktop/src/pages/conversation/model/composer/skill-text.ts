@@ -151,7 +151,7 @@ export function segmentDisplayMessage(text: string): ComposerSegment[] {
   return mergeTextSegments(segments);
 }
 
-export type DisplayFileRef = { path: string; name: string };
+export type DisplayFileRef = { path: string; name: string; folder?: boolean };
 
 /**
  * 历史气泡：文件引用抽到附件条，正文只留 skill + 文字，避免芯片与正文缠在一起。

@@ -14,12 +14,14 @@ export {
   ASK_USER_TOOL,
   AskUserBroker,
   createAskUserExtension,
+  formatAskUserResultText,
   parseAskUserAnswer,
   type AskUserAnswer,
   type AskUserItemAnswer,
   type AskUserOption,
   type AskUserQuestion,
   type AskUserRequest,
+  type AskUserResolved,
 } from "./ask-user.js";
 
 export {

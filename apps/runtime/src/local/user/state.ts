@@ -478,13 +478,16 @@ function clipPreview(text: string): string {
   return `${normalized.slice(0, PREVIEW_MAX - 1)}…`;
 }
 
-/** MCP / 内置审批工具名：非空、无路径分隔，长度有上限。 */
+/**
+ * toolAllow 键：MCP 原名，或外部 SDK 的 `{templateId}/{toolName}`。
+ * 禁止反斜杠与 NUL；正斜杠仅作 SDK 命名空间分隔，不当路径用。
+ */
 function isToolName(toolName: string): boolean {
   return (
     typeof toolName === "string" &&
     toolName.length > 0 &&
     toolName.length <= 200 &&
-    !/[/\\\u0000]/.test(toolName)
+    !/[\\\u0000]/.test(toolName)
   );
 }
 

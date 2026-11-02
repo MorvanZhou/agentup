@@ -107,7 +107,7 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
     if (response.request().method() !== "GET") return false;
     return new URL(response.url()).pathname.endsWith("/settings/provider");
   });
-  await page.getByRole("button", { name: "AI 服务" }).click();
+  await page.getByRole("button", { name: "AI 服务配置" }).click();
   await loaded;
 
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
@@ -139,7 +139,7 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
   await openUserMenu(page);
   await page.getByRole("menuitem", { name: "设置" }).click();
-  await page.getByRole("button", { name: "AI 服务" }).click();
+  await page.getByRole("button", { name: "AI 服务配置" }).click();
   await expect(page.getByRole("switch", { name: "停用 qwen3:4b" })).toBeVisible();
 });
 
@@ -152,7 +152,7 @@ test("手动添加模型 ID 到已连接服务商", async ({ page }) => {
     if (response.request().method() !== "GET") return false;
     return new URL(response.url()).pathname.endsWith("/settings/provider");
   });
-  await page.getByRole("button", { name: "AI 服务" }).click();
+  await page.getByRole("button", { name: "AI 服务配置" }).click();
   await loaded;
 
   await page.getByText("找不到你所需的模型？试试手动配置").click();

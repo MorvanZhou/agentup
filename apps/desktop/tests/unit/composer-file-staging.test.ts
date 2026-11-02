@@ -7,14 +7,16 @@ import { clearAttachmentImagePreviewCache } from "../../src/pages/conversation/m
 import { toastState } from "../../src/shared/model/ui/toast";
 
 /** 造一个最小 File 形状：磁盘路径场景不会读内容，base64 回落场景读 arrayBuffer。 */
-function makeFile(options: { path?: string | null; size?: number; content?: string } = {}) {
+function makeFile(
+  options: { path?: string | null; size?: number; content?: string } = {},
+): File & { arrayBuffer: ReturnType<typeof vi.fn> } {
   const content = options.content ?? "hello";
   return {
     name: "note.txt",
     type: "text/plain",
     size: options.size ?? 5,
     arrayBuffer: vi.fn(async () => new TextEncoder().encode(content).buffer),
-  } as unknown as File;
+  } as unknown as File & { arrayBuffer: ReturnType<typeof vi.fn> };
 }
 
 function makeApi() {
@@ -79,7 +81,7 @@ describe("useComposerFiles staging", () => {
     );
     // 有磁盘路径时不得再走 base64 编码（大文件会卡死主线程）
     expect(ctx.api.stageAttachment).not.toHaveBeenCalled();
-    expect((ctx.file as { arrayBuffer: ReturnType<typeof vi.fn> }).arrayBuffer).not.toHaveBeenCalled();
+    expect(ctx.file.arrayBuffer).not.toHaveBeenCalled();
     expect(ctx.composerText.value).toContain("@ATTACHMENTS/a1b2c3d4-note.txt");
   });
 
@@ -208,7 +210,7 @@ describe("useComposerFiles staging", () => {
     await ctx.stageAndInsertFiles([ctx.file]);
 
     expect(ctx.api.stageAttachment).not.toHaveBeenCalled();
-    expect((ctx.file as { arrayBuffer: ReturnType<typeof vi.fn> }).arrayBuffer).not.toHaveBeenCalled();
+    expect(ctx.file.arrayBuffer).not.toHaveBeenCalled();
     expect(ctx.composerText.value).toBe("");
     expect(toastState.open).toBe(true);
     expect(toastState.message).toContain("附件过大");

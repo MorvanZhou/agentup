@@ -84,6 +84,14 @@ const AskUserParams = Type.Object({
   }),
 });
 
+/** 用户答完后：供 SDK 回合把同形 tool result 推到 UI（避免假「已跳过」）。 */
+export type AskUserResolved = {
+  request: AskUserRequest;
+  answer: AskUserAnswer;
+  /** 与 Pi `ask_user` 工具返回同形，供 `summarizeAskUserTool` 解析。 */
+  resultText: string;
+};
+
 export class AskUserBroker {
   private readonly pending = new Map<
     string,
@@ -92,6 +100,7 @@ export class AskUserBroker {
   /** 进程重启后仍可回答的孤儿提问（无 Promise）。 */
   private readonly orphans = new Map<string, AskUserRequest>();
   private readonly listeners = new Set<(request: AskUserRequest) => void>();
+  private readonly resolvedListeners = new Set<(event: AskUserResolved) => void>();
   private readonly restoredUsers = new Set<string>();
 
   constructor(private readonly userDataRoot?: string) {}
@@ -142,6 +151,7 @@ export class AskUserBroker {
       pending.cleanup();
       pending.resolve(answer);
       this.persistUser(pending.request.userId);
+      this.emitResolved(pending.request, answer);
       return true;
     }
     const orphan = this.orphans.get(id);
@@ -152,6 +162,7 @@ export class AskUserBroker {
     repairOrphanAskUser(this.userDataRoot, orphan, answer);
     this.orphans.delete(id);
     this.persistUser(orphan.userId);
+    this.emitResolved(orphan, answer);
     return true;
   }
 
@@ -178,6 +189,19 @@ export class AskUserBroker {
   subscribe(listener: (request: AskUserRequest) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** SDK / 投影：答题完成后立刻拿到可展示的 tool result 文案。 */
+  subscribeResolved(listener: (event: AskUserResolved) => void): () => void {
+    this.resolvedListeners.add(listener);
+    return () => this.resolvedListeners.delete(listener);
+  }
+
+  private emitResolved(request: AskUserRequest, answer: AskUserAnswer): void {
+    if (this.resolvedListeners.size === 0) return;
+    const resultText = formatAskUserResultText(request.questions, answer);
+    const event: AskUserResolved = { request, answer, resultText };
+    for (const listener of this.resolvedListeners) listener(event);
   }
 
   private persistUser(userId: string): void {
@@ -232,7 +256,7 @@ export function createAskUserExtension(
             },
             signal,
           );
-          return formatAnswer(questions.items, answer);
+          return formatAskUserToolResult(questions.items, answer);
         },
       }),
     );
@@ -306,7 +330,15 @@ function optionalTrim(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
-function formatAnswer(
+/** Pi / SDK 共用：工具结果正文，桌面 `summarizeAskUserTool` 靠它还原选项。 */
+export function formatAskUserResultText(
+  questions: AskUserQuestion[],
+  answer: AskUserAnswer,
+): string {
+  return formatAskUserToolResult(questions, answer).content[0].text;
+}
+
+function formatAskUserToolResult(
   questions: AskUserQuestion[],
   answer: AskUserAnswer,
 ): { content: [{ type: "text"; text: string }]; details: AskUserDetails } {

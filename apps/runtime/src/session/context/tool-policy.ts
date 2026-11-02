@@ -43,7 +43,11 @@ const COMMON_TOOLS = [
 
 const BACKGROUND_TOOLS = ["bg_run", "bg_status", "bg_kill", "shell_hang_decide"] as const satisfies readonly PolicyToolName[];
 
-const ROOM_DELEGATION_TOOLS = [
+/**
+ * 房间协调侧委托工具全集。
+ * Pi 白名单与外部 MCP（`delegationTools`）必须同集；完备性测用这份当权威源。
+ */
+export const ROOM_DELEGATION_TOOLS = [
   "delegate_to_agent",
   "check_delegation",
   "cancel_delegation",
@@ -51,9 +55,19 @@ const ROOM_DELEGATION_TOOLS = [
   "resolve_delegation_update",
 ] as const satisfies readonly PolicyToolName[];
 
+/** 仅单聊（非群执掌）额外挂载；群聊花名册是房间成员。 */
+export const SINGLE_ONLY_DELEGATION_TOOLS = ["agent_search"] as const satisfies readonly PolicyToolName[];
+
 /** 每种场景一份白名单。解析时只查这张表，不再按场景写分支。 */
 export const TOOL_POLICY: Record<ExecutionMode, readonly PolicyToolName[]> = {
-  single: [...FILE_TOOLS, ...COMMON_TOOLS, ...BACKGROUND_TOOLS, "tool_search", "agent_search", ...ROOM_DELEGATION_TOOLS],
+  single: [
+    ...FILE_TOOLS,
+    ...COMMON_TOOLS,
+    ...BACKGROUND_TOOLS,
+    "tool_search",
+    ...SINGLE_ONLY_DELEGATION_TOOLS,
+    ...ROOM_DELEGATION_TOOLS,
+  ],
   "group-holder": [...FILE_TOOLS, ...COMMON_TOOLS, ...BACKGROUND_TOOLS, "tool_search", ...ROOM_DELEGATION_TOOLS],
   "single-delegation": [...FILE_TOOLS, ...COMMON_TOOLS, "shell_hang_decide", "tool_search", "deliver_artifacts"],
   "group-delegation": [...FILE_TOOLS, ...COMMON_TOOLS, "shell_hang_decide", "tool_search", "complete_group_task"],

@@ -12,6 +12,7 @@ import {
   partialJsonStringField,
   shortPath,
   summarizeArgs,
+  summarizeGenericToolArgs,
 } from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/shared/tool-args.js";
 
 it("reads string args and shortens paths", () => {
@@ -53,6 +54,21 @@ it("parses mcp tool names and summarizes args", () => {
     "hospital · b/note.md",
   );
   expect(summarizeArgs({ cursor: "page-2" }, ["server", "uri", "cursor"])).toBe("page-2");
+});
+
+it("GenericTool 摘要认 SDK ToolSearch / DeferExecuteTool 参数形", () => {
+  expect(
+    summarizeGenericToolArgs({
+      tool_names: ["mcp__agentup__agent_search", "mcp__agentup__delegate_to_agent"],
+    }),
+  ).toBe("mcp__agentup__agent_search, mcp__agentup__delegate_to_agent");
+  expect(
+    summarizeGenericToolArgs({
+      toolName: "mcp__agentup__agent_search",
+      params: { query: "weather 天气 气象" },
+    }),
+  ).toBe("mcp__agentup__agent_search · weather 天气 气象");
+  expect(summarizeGenericToolArgs({ path: "a/b/c.ts" })).toBe("b/c.ts");
 });
 
 it("formats and truncates tool results", () => {

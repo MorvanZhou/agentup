@@ -105,7 +105,7 @@ const {
           <AppSwitch
             :model-value="menuBarVisible"
             :disabled="busy"
-            :aria-label="t('appearanceMenuBar')"
+            :ariaLabel="t('appearanceMenuBar')"
             @update:model-value="toggleMenuBar"
           />
         </div>

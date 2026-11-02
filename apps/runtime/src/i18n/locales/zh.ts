@@ -14,6 +14,7 @@ export const zh: Record<string, string> = {
   "provider.option.qwenTokenPlanCn": "Qwen Token Plan 国内",
   "provider.option.volcengineArk": "火山方舟",
   "provider.option.openaiCompatible": "OpenAI 兼容接口",
+  "provider.option.agentSdk": "本地 Agent App",
 
   "provider.template.ollama.label": "Ollama（本机）",
   "provider.template.ollama.hint": "保存后自动拉取本机已下载的模型，在上方列表里开关即可",
@@ -26,6 +27,27 @@ export const zh: Record<string, string> = {
   "provider.template.tencent-coding.label": "腾讯 Coding Plan",
   "provider.template.tencent-coding.hint": "兼容 OpenAI 的编程套餐接口",
   "provider.template.custom-openai.label": "自定义 OpenAI Compatible",
+
+  "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
+  "provider.template.codebuddy-sdk.hint": "用你本机的 Workbuddy / CodeBuddy 订阅执行任务",
+
+  "agentSdk.fail.noDetail": "未知原因",
+  "agentSdk.fail.not_installed":
+    "本地 Agent App 未安装（{detail}）。请到「设置 → 本地 Agent App 接入」重新安装 Workbuddy / CodeBuddy 后重试。",
+  "agentSdk.fail.not_logged_in":
+    "本地 Agent App 的登录态已失效（{detail}）。请在设置里重新登录 Workbuddy / CodeBuddy 后重试。",
+  "agentSdk.fail.model_unavailable":
+    "本地 Agent App 的当前账号用不了这个模型（{detail}）。请在「启用服务」里换成该 App 查到的其它模型后重试。",
+  "agentSdk.fail.quota":
+    "本地 Agent App 的订阅额度已用尽（{detail}）。请到 Workbuddy / CodeBuddy 查看额度，或换一个仍可用的模型后重试。",
+  "agentSdk.fail.rate_limited":
+    "本地 Agent App 请求过于频繁（{detail}）。稍等一会儿再试，或把任务拆小一些。",
+  "agentSdk.fail.timeout":
+    "本地 Agent App 超过 {detail} 没有给出结果。它可能还在跑；可以重试，或到它的终端看进度。",
+  "agentSdk.fail.incompatible":
+    "本机安装的本地 Agent App 不能被 AgentUp 调用（{detail}）。请在设置里卸载后重新安装。",
+  "agentSdk.fail.unknown":
+    "本地 Agent App 执行失败（{detail}）。可在设置里重新登录或重装后重试。",
 
   "identity.systemTemplate": "你是{name}。岗位：{role}。\n\n{background}",
   "identity.err.nameLength": "名称须为 1–40 个字符",

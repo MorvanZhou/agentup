@@ -14,6 +14,7 @@ export const en: Record<string, string> = {
   "provider.option.qwenTokenPlanCn": "Qwen Token Plan China",
   "provider.option.volcengineArk": "Volcengine Ark",
   "provider.option.openaiCompatible": "OpenAI-compatible API",
+  "provider.option.agentSdk": "Local agent app",
 
   "provider.template.ollama.label": "Ollama (local)",
   "provider.template.ollama.hint": "After saving we fetch locally installed models; toggle them in the list above",
@@ -26,6 +27,27 @@ export const en: Record<string, string> = {
   "provider.template.tencent-coding.label": "Tencent Coding Plan",
   "provider.template.tencent-coding.hint": "OpenAI-compatible coding plan API",
   "provider.template.custom-openai.label": "Custom OpenAI Compatible",
+
+  "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
+  "provider.template.codebuddy-sdk.hint": "Runs tasks with your local Workbuddy / CodeBuddy subscription",
+
+  "agentSdk.fail.noDetail": "unknown reason",
+  "agentSdk.fail.not_installed":
+    "The local agent app is not installed ({detail}). Reinstall Workbuddy / CodeBuddy in Settings → Local agent apps, then retry.",
+  "agentSdk.fail.not_logged_in":
+    "The local agent app is no longer signed in ({detail}). Sign in to Workbuddy / CodeBuddy again in Settings, then retry.",
+  "agentSdk.fail.model_unavailable":
+    "This account cannot use that model in the local agent app ({detail}). Switch to another model listed by that app in Enable services and retry.",
+  "agentSdk.fail.quota":
+    "The local agent app's subscription quota is used up ({detail}). Check your quota in Workbuddy / CodeBuddy, or switch to another model that still works.",
+  "agentSdk.fail.rate_limited":
+    "The local agent app is being rate limited ({detail}). Wait a moment and retry, or split the task into smaller steps.",
+  "agentSdk.fail.timeout":
+    "The local agent app produced no result within {detail}. It may still be running; retry, or check its terminal for progress.",
+  "agentSdk.fail.incompatible":
+    "The installed local agent app cannot be called by AgentUp ({detail}). Uninstall it in Settings and reinstall.",
+  "agentSdk.fail.unknown":
+    "The local agent app failed ({detail}). Sign in again or reinstall it in Settings, then retry.",
 
   "identity.systemTemplate": "You are {name}. Role: {role}.\n\n{background}",
   "identity.err.nameLength": "Name must be 1–40 characters",

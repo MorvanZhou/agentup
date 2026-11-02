@@ -134,7 +134,7 @@ it("点市场卡片展开资料；点招募不展开", async () => {
 
 it("点已发布卡片展开资料；点管理不展开", async () => {
   const host = mountView(PublishedAgentCard, {
-    props: { agent: agent({ kind: "owned" }), busy: false },
+    props: { agent: agent(), busy: false },
   });
 
   clickButton(host, "管理 Weaty");
@@ -152,7 +152,6 @@ it("已发布卡片缺职位、背景和头像时仍能打开资料", async () =
   const host = mountView(PublishedAgentCard, {
     props: {
       agent: agent({
-        kind: "owned",
         role: "",
         background: "  ",
         avatarUrl: undefined,

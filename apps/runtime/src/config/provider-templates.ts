@@ -21,7 +21,37 @@ export type { UiLocale };
 /** @deprecated 使用 UiLocale */
 export type ProviderUiLocale = UiLocale;
 
-export type ProviderTemplateKind = "pi-native" | "custom-openai" | "ollama" | "volcengine-ark";
+export type ProviderTemplateKind =
+  | "pi-native"
+  | "custom-openai"
+  | "ollama"
+  | "volcengine-ark"
+  /** 本地 CLI / SDK 接入：执行外包给外部 agent，见 docs/agent_cli */
+  | "agent-sdk";
+
+/**
+ * 接入方式分组（设置页顶层两组）。
+ * - api：填 Base URL / API Key，runtime 直连供应商 HTTP 接口
+ * - agent-sdk：装本地 SDK 并用订阅登录，任务执行外包给外部 agent
+ */
+export type ProviderAccess = "api" | "agent-sdk";
+
+/** 本地 SDK 的静态描述；安装与登录在设置页按需触发，目录里只放描述。 */
+export interface AgentSdkProfile {
+  /** npm 包名，也用于定位安装目录内的包 */
+  package: string;
+  /** 安装 spec（含版本范围），避免装到不兼容的大版本 */
+  spec: string;
+  /** 安装体积提示，设置页提前告知，别让人以为卡死 */
+  sizeHintMb: number;
+  loginGuide?: { command: string; docUrl?: string };
+  /**
+   * 方案 D：AgentUp `.pi/skills`（及私人助理已启用技能）投影到的**项目相对**路径。
+   * 例：CodeBuddy / Workbuddy → `.codebuddy/skills`。
+   * 切 provider 时按各模板此字段拆旧链、建新链；未声明则不投影。
+   */
+  skillsProjectRel?: string;
+}
 
 /** 专有名用 string；需翻译用 catalog key。 */
 type Copy = string | { key: string };
@@ -42,6 +72,8 @@ export interface ProviderTemplate {
   optionLabel: string;
   label: string;
   kind: ProviderTemplateKind;
+  /** 顶层分组：API Key 接入 / CLI 与 SDK 接入 */
+  access: ProviderAccess;
   piProviderId: string;
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
@@ -50,6 +82,8 @@ export interface ProviderTemplate {
   createNative?: () => Provider;
   api?: Api;
   models?: ProviderTemplateModel[];
+  /** 仅 agent-sdk：本地安装与登录的静态描述 */
+  agentSdk?: AgentSdkProfile;
   /** 是否可通过 List Models 自动发现候选 */
   supportsModelDiscovery: boolean;
 }
@@ -76,6 +110,7 @@ interface TemplateDef {
   createNative?: () => Provider;
   api?: Api;
   models?: ProviderTemplateModel[];
+  agentSdk?: AgentSdkProfile;
 }
 
 const OFFICIAL_API: Copy = { key: "provider.option.officialApi" };
@@ -100,6 +135,8 @@ function resolveTemplate(def: TemplateDef, locale: UiLocale): ProviderTemplate {
     optionLabel,
     label,
     kind: def.kind,
+    access: def.kind === "agent-sdk" ? "agent-sdk" : "api",
+    agentSdk: def.agentSdk,
     piProviderId: def.piProviderId,
     requiresApiKey: def.requiresApiKey,
     defaultBaseUrl: def.defaultBaseUrl,
@@ -256,6 +293,35 @@ const TEMPLATE_DEFS: TemplateDef[] = [
     models: [],
   },
   {
+    // CLI / SDK 接入（形态 B）：任务执行外包给 CodeBuddy agent，阶段 0 只登记目录与状态
+    id: "codebuddy-sdk",
+    vendorId: "codebuddy",
+    vendorLabel: "Workbuddy / CodeBuddy",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.codebuddy-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "codebuddy-sdk",
+    requiresApiKey: false,
+    defaultModelId: "default",
+    hint: { key: "provider.template.codebuddy-sdk.hint" },
+    models: [
+      {
+        id: "default",
+        name: "CodeBuddy 默认模型",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+    ],
+    agentSdk: {
+      package: "@tencent-ai/agent-sdk",
+      spec: "@tencent-ai/agent-sdk@0.3.295",
+      sizeHintMb: 180,
+      loginGuide: { command: "cbc login" },
+      // 厂商项目技能目录；换其它 agent-sdk 模板时由 skills-project 换链
+      skillsProjectRel: ".codebuddy/skills",
+    },
+  },
+  {
     id: "custom-openai",
     vendorId: "custom",
     vendorLabel: { key: "provider.vendor.custom" },
@@ -290,10 +356,35 @@ export function listProviderTemplateViews(
   });
 }
 
+/** CLI / SDK 接入的候选（顶层第二组，不进 vendor 下拉）。 */
+export function listAgentSdkTemplates(
+  locale: UiLocale = "zh",
+): Array<Omit<ProviderTemplate, "createNative">> {
+  return listProviderTemplateViews(locale).filter((template) => template.access === "agent-sdk");
+}
+
+/** 当前模板的 skills 投影相对路径（方案 D）；非 SDK / 未声明则 undefined。 */
+export function agentSdkSkillsProjectRel(templateId: string): string | undefined {
+  const rel = getProviderTemplate(templateId)?.agentSdk?.skillsProjectRel?.trim();
+  return rel || undefined;
+}
+
+/** 所有已登记 SDK 模板的投影路径（切 provider 时用来扫掉其它厂商残留链）。 */
+export function listAgentSdkSkillsProjectRels(): string[] {
+  const rels = new Set<string>();
+  for (const template of listAgentSdkTemplates()) {
+    const rel = template.agentSdk?.skillsProjectRel?.trim();
+    if (rel) rels.add(rel);
+  }
+  return [...rels];
+}
+
 export function listVendorGroups(locale: UiLocale = "zh"): VendorGroup[] {
   const order: string[] = [];
   const map = new Map<string, VendorGroup>();
   for (const template of listProviderTemplateViews(locale)) {
+    // SDK 接入不靠 Base URL / API Key，混进供应商下拉会让表单出现无意义字段
+    if (template.access === "agent-sdk") continue;
     let group = map.get(template.vendorId);
     if (!group) {
       group = { id: template.vendorId, label: template.vendorLabel, options: [] };

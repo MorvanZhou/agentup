@@ -6,10 +6,21 @@ import {
   DEFAULT_MAX_TOKENS,
 } from "../../config/model-catalog.js";
 import type { ProviderTemplate } from "../../config/provider-templates.js";
+import type { Visit } from "../../package/sync.js";
 import { getProviderTemplate } from "../../config/provider-templates.js";
+import type { McpTool } from "../external/mcp/server.js";
 import { volcengineArkRegisterConfig } from "../../config/providers/volcengine-ark.js";
 import { resolveReasoningProfile } from "../../config/reasoning-profile.js";
 import type { SessionPlan, SessionProviderBinding } from "../plan.js";
+import type { WorkspacePolicy } from "../context/workspace-policy.js";
+import {
+  AGENT_SDK_API,
+  createAgentSdkStreamSimple,
+  queryExternalAgent,
+  type AgentSdkApprovalSink,
+  type AgentSdkAskUserSink,
+  type AgentSdkStreamContext,
+} from "./agent-sdk.js";
 
 type CredentialStore = NonNullable<Parameters<typeof ModelRuntime.create>[0]>["credentials"] & object;
 type Credential = Awaited<ReturnType<CredentialStore["read"]>>;
@@ -35,7 +46,30 @@ function memoryCredentials(): CredentialStore {
   };
 }
 
-export async function openModelRuntime(plan: SessionPlan) {
+/** 本地 Agent App 接入需要的东西：装在哪、谁来批工具。 */
+export type OpenModelRuntimeOptions = {
+  userDataRoot?: string;
+  /** 外部 agent 的工具审批走这个通道；不传则一律拒绝。 */
+  approvals?: AgentSdkApprovalSink;
+  /** 外部 agent 的 AskUserQuestion 走提问通道，并把答案回填给 SDK。 */
+  askUser?: AgentSdkAskUserSink;
+  userId?: string;
+  agentId?: string;
+  /** 外部 agent 整回合超时（毫秒），不传用默认。 */
+  turnTimeoutMs?: number;
+  /** 供外部 agent 拼接上下文（人设 / AGENTS.md / 挂载目录）；不传就只给 cwd。 */
+  visit?: Visit;
+  workspacePolicy?: WorkspacePolicy;
+  groupId?: string;
+  groupWorkspaceRoot?: string;
+  agentName?: string;
+  /** 群执掌花名册（含 agent_id）；SDK append 用。 */
+  groupRosterPrompt?: string;
+  /** 交给外部 agent 的 MCP 工具（委托协调）；子会话不传。 */
+  mcpTools?: McpTool[];
+};
+
+export async function openModelRuntime(plan: SessionPlan, options: OpenModelRuntimeOptions = {}) {
   const runtime = await ModelRuntime.create({
     credentials: memoryCredentials(),
     modelsPath: null,
@@ -44,11 +78,14 @@ export async function openModelRuntime(plan: SessionPlan) {
   const binding = plan.provider;
   const template = getProviderTemplate(binding.templateId);
   if (!template) throw new Error("未知的 Provider 模板");
+  let externalContext: AgentSdkStreamContext | undefined;
 
   if (template.kind === "pi-native" && template.createNative) {
     await registerPiNative(runtime, binding, template);
   } else if (template.kind === "volcengine-ark") {
     registerVolcengineArk(runtime, binding, template);
+  } else if (template.kind === "agent-sdk") {
+    externalContext = registerAgentSdk(runtime, binding, template, plan, options);
   } else {
     const baseUrl = binding.baseUrl || template.defaultBaseUrl;
     if (!baseUrl) throw new Error("缺少模型服务地址");
@@ -60,7 +97,15 @@ export async function openModelRuntime(plan: SessionPlan) {
 
   const model = runtime.getModel(binding.providerId, binding.modelId);
   if (!model) throw new Error("模型没有注册成功，请检查模型名称是否属于该 Provider");
-  return { runtime, model };
+  return {
+    runtime,
+    model,
+    ...(externalContext
+      ? {
+          externalQuery: (prompt: string) => queryExternalAgent(externalContext!, prompt),
+        }
+      : {}),
+  };
 }
 
 /** 内置目录有该 id 走 native；手动追加的未知 id 按同端点动态注册。 */
@@ -101,6 +146,65 @@ function registerVolcengineArk(
     baseUrl: config.baseUrl,
     api: config.api,
   });
+}
+
+/**
+ * 本地 Agent App：注册一个自定义 api 的 provider，把 `streamSimple` 顶掉，
+ * 整个回合交给外部 agent 跑（docs/agent_cli §3.2）。
+ * baseUrl 是注册的硬要求，实际不会被用到——我们从不发 HTTP。
+ */
+function registerAgentSdk(
+  runtime: ModelRuntime,
+  binding: SessionProviderBinding,
+  template: ProviderTemplate,
+  plan: SessionPlan,
+  options: OpenModelRuntimeOptions,
+): AgentSdkStreamContext {
+  const userDataRoot = options.userDataRoot;
+  if (!userDataRoot) throw new Error("本地 Agent App 接入缺少用户数据目录");
+  const reasoning = resolveReasoningProfile(binding.modelId, binding.templateId);
+  const context: AgentSdkStreamContext = {
+    userDataRoot,
+    templateId: binding.templateId,
+    providerId: binding.providerId,
+    modelId: binding.modelId,
+    cwd: plan.cwd,
+    ...(options.approvals ? { approvals: options.approvals } : {}),
+    ...(options.askUser ? { askUser: options.askUser } : {}),
+    ...(options.userId ? { userId: options.userId } : {}),
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    ...(options.turnTimeoutMs ? { turnTimeoutMs: options.turnTimeoutMs } : {}),
+    ...(options.visit ? { visit: options.visit } : {}),
+    ...(options.workspacePolicy ? { workspacePolicy: options.workspacePolicy } : {}),
+    ...(options.groupId ? { groupId: options.groupId } : {}),
+    ...(options.groupWorkspaceRoot ? { groupWorkspaceRoot: options.groupWorkspaceRoot } : {}),
+    ...(options.agentName ? { agentName: options.agentName } : {}),
+    ...(options.groupRosterPrompt ? { groupRosterPrompt: options.groupRosterPrompt } : {}),
+    ...(options.mcpTools && options.mcpTools.length > 0 ? { mcpTools: options.mcpTools } : {}),
+  };
+  runtime.registerProvider(binding.providerId, {
+    name: template.label,
+    baseUrl: "http://127.0.0.1",
+    api: AGENT_SDK_API,
+    apiKey: binding.apiKey || "ollama",
+    streamSimple: createAgentSdkStreamSimple(context),
+    models: [
+      {
+        id: binding.modelId,
+        name: binding.modelId,
+        reasoning: reasoning.reasoning,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: binding.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+        maxTokens: binding.maxTokens ?? DEFAULT_MAX_TOKENS,
+        compat: {
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: reasoning.supportsReasoningEffort,
+        },
+      },
+    ],
+  });
+  return context;
 }
 
 function registerDynamicModel(

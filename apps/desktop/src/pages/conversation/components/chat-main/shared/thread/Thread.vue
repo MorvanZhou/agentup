@@ -81,6 +81,8 @@ const delegationTrail = injectChatDelegationTrail();
 const wakeLive = injectThreadWakeLive();
 const wakeLiveMessage = computed(() => wakeLive?.value.message ?? null);
 const wakeLiveStreaming = computed(() => Boolean(wakeLive?.value.streaming));
+/** 队列消费时先亮出来的用户那条（空则不占位）。 */
+const wakeLiveUserText = computed(() => wakeLive?.value.userText ?? "");
 const threadMessages = useAuiState((state) => state.thread.messages);
 const messageIds = computed(() => threadMessages.value.map((message) => message.id));
 const messageCount = computed(() => messageIds.value.length);
@@ -411,6 +413,7 @@ async function scrollToPreviousUserMessage(): Promise<void> {
           v-if="wakeLiveMessage"
           :message="wakeLiveMessage"
           :streaming="wakeLiveStreaming"
+          :user-text="wakeLiveUserText"
         />
         <component :is="delegationTrail" v-if="delegationTrail" />
       </div>

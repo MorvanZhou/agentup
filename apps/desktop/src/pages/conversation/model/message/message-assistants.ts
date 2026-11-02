@@ -115,7 +115,10 @@ function asDelegatePart(raw: unknown): ToolLikePart | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const part = raw as ToolLikePart;
   const toolName = part.toolName ?? "";
-  if (toolName !== "delegate_to_agent") return undefined;
+  // API 裸名 + SDK MCP 全名
+  if (toolName !== "delegate_to_agent" && toolName !== "mcp__agentup__delegate_to_agent") {
+    return undefined;
+  }
   if (part.type === "tool-call" || part.type === "dynamic-tool") return part;
   return undefined;
 }

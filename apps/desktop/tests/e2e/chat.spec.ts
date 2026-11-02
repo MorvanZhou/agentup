@@ -64,6 +64,81 @@ test("招募并同步后，发送消息会呈现文本、推理和工具调用",
   await expect(page.getByText("病历")).toBeVisible();
 });
 
+test("外部 SDK 过程卡：解包后的 AgentUp 专用卡与协助 tab", async ({ page }) => {
+  await installRuntime(page, { prompt: "sdk-process" });
+  await signIn(page);
+  await startAgent(page, "呼吸科医生");
+  const composer = page.getByRole("textbox", { name: /^发送消息/ });
+  await composer.fill("帮我查天气");
+  await page.getByRole("button", { name: "发送" }).click();
+
+  await expect(page.getByText("已找到 Weaty。", { exact: true })).toBeVisible();
+  // 协助 tab：mcp__agentup__delegate_to_agent（触发器 aria 为「协助 Agent」）
+  await expect(page.getByRole("tab", { name: "协助 Agent" })).toBeVisible();
+  await page.getByRole("tab", { name: "过程" }).click();
+  await expect(page.getByText("先搜一下专家花名册。", { exact: true })).toBeVisible();
+  await expect(page.getByText("接下来委托气象员。", { exact: true })).toBeVisible();
+  const processTriggers = page.getByRole("button", { name: /\d+ 个步骤/ });
+  // agent_search + delegate 各成折叠段（旁白拆开）
+  await expect(processTriggers).toHaveCount(3);
+  for (let i = 0; i < 3; i += 1) await processTriggers.nth(i).click();
+  // 解包后走专用卡，不再出现 DeferExecute / ToolSearch 壳
+  await expect(page.getByRole("button", { name: /DeferExecuteTool/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /ToolSearch/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /搜索专家/ })).toBeVisible();
+  // 直播会话未招募 Weaty 时可能没有岗职称；名或默认标题即可
+  await expect(
+    page.getByRole("tabpanel").getByRole("button", { name: /Weaty|委托 Agent/ }),
+  ).toBeVisible();
+});
+
+test("SDK 形 history 重载仍有总结/过程双 tab，总结无 toolDigest 长尾", async ({ page }) => {
+  await installRuntime(page, {
+    recruited: ["weather"],
+    history: {
+      weather: [
+        { id: "user-sdk-0", role: "user", parts: [{ type: "text", text: "帮我查天气" }] },
+        {
+          id: "assistant-sdk-1",
+          role: "assistant",
+          metadata: { custom: { agentUpSummary: { textPartIndex: 0 } } },
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolCallId: "sdk-d1",
+              toolName: "mcp__agentup__delegate_to_agent",
+              state: "output-available",
+              input: { agent_id: "weather", brief: "查今天天气" },
+              output:
+                "Delegation completed.\ntask_id: task-hist-1\nagent: Weaty (weather)\nresult:\n阴转小雨",
+            },
+            { type: "text", text: "今天阴转小雨。", state: "done" },
+          ],
+        },
+      ],
+    },
+  });
+  const loaded = page.waitForRequest(
+    (request) =>
+      request.method() === "GET" &&
+      request.url().includes("/runtime/agents/weather/history?user_id=patient-a"),
+  );
+  await signIn(page);
+  await conversationItem(page, "Weaty").click();
+  await loaded;
+  await expect(page.getByText("今天阴转小雨。", { exact: true })).toBeVisible();
+  await expect(page.getByText("本轮用过的工具")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "总结" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "过程" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "协助 Agent" })).toBeVisible();
+  await page.getByRole("tab", { name: "过程" }).click();
+  await page.getByRole("button", { name: /\d+ 个步骤/ }).click();
+  // 过程时间线里的委托卡（避开侧栏 Weaty）
+  await expect(
+    page.getByRole("tabpanel").getByRole("button", { name: /Weaty|委托 Agent/ }),
+  ).toBeVisible();
+});
+
 test("已招募的会话会读回本机聊天记录，续聊不会并入上一轮回复", async ({ page }) => {
   await installRuntime(page, {
     recruited: ["weather"],
@@ -376,9 +451,9 @@ test("消息列表显示未读角标，选中后清除", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Weaty", exact: true })).toBeVisible();
 });
 
-test("输出中发送新要求会停下当前回复，并以新的用户消息另起一条", async ({ page }) => {
+test("插话没接住时退回老路子：停下当前回复，并以新的用户消息另起一条", async ({ page }) => {
   await installRuntime(page, {
-    prompt: "interruptible",
+    prompt: "interruptible-fallback",
     recruited: ["respiratory-doctor"],
     localVersions: { "respiratory-doctor": 1 },
   });
@@ -418,6 +493,40 @@ test("输出中发送新要求会停下当前回复，并以新的用户消息�
   await expect(thread.getByText("只要北京")).toBeVisible();
   await expect(thread.getByText("新回复", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "停止回复" })).toHaveCount(0);
+});
+
+test("输出中发送新要求走插话（steer）：不停止当前轮，也不另起一条", async ({ page }) => {
+  await installRuntime(page, {
+    prompt: "interruptible",
+    recruited: ["respiratory-doctor"],
+    localVersions: { "respiratory-doctor": 1 },
+  });
+  await signIn(page);
+  await conversationItem(page, "呼吸科医生").click();
+  const composer = page.getByRole("textbox", { name: /^发送消息/ });
+  await composer.fill("先查全国");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();
+
+  // 回合还在跑：发新要求应走 /steer，而不是 /abort + 重发（docs/agent_cli §12.8）
+  const aborts: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/abort")) aborts.push(request.url());
+  });
+  const steered = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      request.url().includes("/agents/respiratory-doctor/steer") &&
+      (request.postData() ?? "").includes("只要北京"),
+  );
+  await composer.fill("只要北京");
+  await page.getByRole("button", { name: "发送" }).click();
+  await steered;
+
+  expect(aborts).toHaveLength(0);
+  // 插话不停止当前轮：回合仍在跑（停止按钮还在），也没有另起一条用户消息
+  await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();
+  await expect(page.getByRole("list").getByText("只要北京")).toHaveCount(0);
 });
 
 test("stream 中切换会话或页面再回来，仍接回同一轮回复", async ({ page }) => {

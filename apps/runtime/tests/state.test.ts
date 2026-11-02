@@ -133,6 +133,22 @@ it("persists and clears session-scoped tool allow per agent tool", () => {
   });
 });
 
+it("persists SDK namespaced tool allow keys with templateId slash", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-state-sdk-tool-"));
+  setToolAllow(root, "patient-a", "pa", "codebuddy-sdk/Bash", "session");
+  setToolAllow(root, "patient-a", "pa", "claude-sdk/Bash", "agent");
+  expect(readState(root, "patient-a").toolAllow).toEqual({
+    pa: {
+      "codebuddy-sdk/Bash": "session",
+      "claude-sdk/Bash": "agent",
+    },
+  });
+  clearSessionToolAllow(root, "patient-a", "pa");
+  expect(readState(root, "patient-a").toolAllow).toEqual({
+    pa: { "claude-sdk/Bash": "agent" },
+  });
+});
+
 it("reads local package versions from instance.json", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-local-ver-"));
   const agentRoot = path.join(root, "users", "patient-a", "agents", "weather");

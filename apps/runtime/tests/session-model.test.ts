@@ -8,7 +8,7 @@ import {
   deleteProviderConnection,
   setModelEnabled,
   upsertProviderConnection,
-} from "../src/config/provider.js";
+} from "../src/config/provider/index.js";
 import { clearContext } from "../src/session/history/history.js";
 import {
   peekVisitModelRef,

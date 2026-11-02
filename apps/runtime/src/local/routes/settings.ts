@@ -10,7 +10,22 @@ import {
   setModelEnabled,
   setRuntimeProviderSecrets,
   upsertProviderConnection,
-} from "../../config/provider.js";
+} from "../../config/provider/index.js";
+import {
+  cancelAgentSdkInstall,
+  readInstallJob,
+  startAgentSdkInstall,
+  uninstallAgentSdk,
+} from "../../config/providers/agent-sdk/installer.js";
+import {
+  checkAgentSdkLogin,
+  logoutAgentSdk,
+  startAgentSdkLogin,
+} from "../../config/providers/agent-sdk/login.js";
+import {
+  ensureAgentSdkModels,
+  refreshAgentSdkModels,
+} from "../../config/providers/agent-sdk/models.js";
 import {
   bearer,
   json,
@@ -141,6 +156,115 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
         locale,
       });
       return json(c, 200, providerSettingsBody(settings));
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  // CLI / SDK 接入：按需安装（runtime 代跑 npm，用户不敲命令）
+  app.post("/settings/provider/agents/:templateId/install", (c) => {
+    bearer(c);
+    const templateId = c.req.param("templateId");
+    try {
+      const jobId = startAgentSdkInstall(config.userDataRoot, templateId);
+      return json(c, 200, { job_id: jobId });
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  app.get("/settings/provider/agents/:templateId/install/:jobId", (c) => {
+    bearer(c);
+    try {
+      return json(c, 200, readInstallJob(c.req.param("jobId")));
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 404);
+      throw error;
+    }
+  });
+
+  app.post("/settings/provider/agents/:templateId/install/:jobId/cancel", (c) => {
+    bearer(c);
+    try {
+      cancelAgentSdkInstall(c.req.param("jobId"));
+      return json(c, 200, providerSettingsBody(readProviderSettings(config.userDataRoot, process.env, uiLocaleFromRequest(c))));
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  app.post("/settings/provider/agents/:templateId/login", async (c) => {
+    bearer(c);
+    const templateId = c.req.param("templateId");
+    try {
+      const result = await startAgentSdkLogin(config.userDataRoot, templateId);
+      // 登录刚成功时顺手补一次模型目录，设置页的「启用服务」才有东西可选
+      if (result.state === "ready") {
+        await ensureAgentSdkModels(config.userDataRoot, templateId);
+      }
+      return json(c, 200, result);
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  app.post("/settings/provider/agents/:templateId/login-check", async (c) => {
+    bearer(c);
+    const templateId = c.req.param("templateId");
+    try {
+      const result = await checkAgentSdkLogin(config.userDataRoot, templateId);
+      if (result.state === "ready") {
+        await ensureAgentSdkModels(config.userDataRoot, templateId);
+      }
+      return json(c, 200, result);
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  // 登出：token 在 CLI 手里，runtime 只代调 logout 并把状态与模型目录打回未登录
+  app.post("/settings/provider/agents/:templateId/logout", async (c) => {
+    bearer(c);
+    const templateId = c.req.param("templateId");
+    const locale = uiLocaleFromRequest(c);
+    try {
+      await logoutAgentSdk(config.userDataRoot, templateId);
+      return json(c, 200, providerSettingsBody(readProviderSettings(config.userDataRoot, process.env, locale)));
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  // 本地接入的模型目录只能问本地 SDK；服务端不知道这家订阅能用什么
+  app.post("/settings/provider/agents/:templateId/models", async (c) => {
+    bearer(c);
+    const locale = uiLocaleFromRequest(c);
+    try {
+      await refreshAgentSdkModels(config.userDataRoot, c.req.param("templateId"));
+      return json(
+        c,
+        200,
+        providerSettingsBody(readProviderSettings(config.userDataRoot, process.env, locale)),
+      );
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  app.delete("/settings/provider/agents/:templateId", (c) => {
+    bearer(c);
+    const templateId = c.req.param("templateId");
+    const locale = uiLocaleFromRequest(c);
+    try {
+      uninstallAgentSdk(config.userDataRoot, templateId);
+      return json(c, 200, providerSettingsBody(readProviderSettings(config.userDataRoot, process.env, locale)));
     } catch (error) {
       if (error instanceof ConfigError) throw new LocalError(error.message, 400);
       throw error;

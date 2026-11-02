@@ -25,6 +25,7 @@ import {
 } from "../../../../../../model/message/process-fold-state";
 import { injectThreadActive } from "../../../../../../model/thread/thread-active";
 import AssistantPart from "../parts/AssistantPart.vue";
+import ShimmerTitle from "../parts/ShimmerTitle.vue";
 
 const props = defineProps<{
   agentId: string;
@@ -45,7 +46,7 @@ const open = computed(() => {
   if (userOpen.value !== null) return userOpen.value;
   const cached = getProcessFoldOverride(props.agentId, props.messageId, props.groupId);
   if (cached !== undefined) return cached;
-  // 默认关闭；进行中工具由时间线外露，不靠整段自动打开
+  // 默认关闭；新步骤直接进折叠内部，不靠整段自动打开
   return isProcessGroupDefaultOpen(props.streaming, running.value);
 });
 
@@ -107,7 +108,8 @@ const label = computed(() =>
       <ChevronRightIcon
         class="size-3 shrink-0 transition-transform duration-200 group-data-[state=open]/trigger:rotate-90 motion-reduce:transition-none"
       />
-      <span class="tabular-nums">{{ label }}</span>
+      <!-- 段内有进行中步骤时 shimmer，替代以前外露整卡造成的闪缩 -->
+      <ShimmerTitle :active="running" :title="label" />
     </CollapsibleTrigger>
     <CollapsibleContent
       data-slot="aui_process-content"

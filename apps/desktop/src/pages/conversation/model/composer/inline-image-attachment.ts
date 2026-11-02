@@ -23,8 +23,9 @@ export function createInlineImageAttachmentAdapter(): AttachmentAdapter {
     send(attachment, options) {
       return inner.send(attachment, options);
     },
-    remove(attachment) {
-      return inner.remove(attachment);
+    remove() {
+      // SimpleImageAttachmentAdapter.remove 不接收附件，删除只是空操作
+      return inner.remove();
     },
   };
 }

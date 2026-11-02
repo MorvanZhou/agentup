@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type { UIMessage, UIMessageChunk } from "ai";
 
-import { onRuntimeProviderSecrets, ProviderSecretPendingError } from "../../config/provider.js";
+import { onRuntimeProviderSecrets, ProviderSecretPendingError } from "../../config/provider/index.js";
 import { t } from "../../i18n/index.js";
 import { isUserCancelError } from "../model/unavailable.js";
 import { TRANSCRIPT_PAGE_SIZE } from "../transcript-page.js";

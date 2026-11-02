@@ -1,7 +1,10 @@
 import type { CreateAgentSessionResult } from "@earendil-works/pi-coding-agent";
 
 import type { ModelConfig } from "../config/load.js";
+import { getProviderTemplate } from "../config/provider-templates.js";
 import type { Visit } from "../package/sync.js";
+import { delegationTools } from "./external/mcp/delegation-tools.js";
+import type { McpTool } from "./external/mcp/server.js";
 import type { BackgroundJobs } from "./background/index.js";
 import { openProfiledSession } from "./core/session-factory.js";
 import type { ConversationRef } from "./core/conversation-ref.js";
@@ -43,10 +46,14 @@ export async function openSession(
     } catch {
       cards = [];
     }
+    // SDK 花名册写 MCP 工具名，避免模型用裸 delegate_to_agent / 显示名委派
+    const toolSurface =
+      getProviderTemplate(model.templateId)?.kind === "agent-sdk" ? "external" : "pi";
     groupRosterPrompt = formatGroupRosterPrompt({
       selfAgentId: visit.agentId,
       members,
       cards,
+      toolSurface,
     });
   }
   const { result } = await openProfiledSession({
@@ -59,6 +66,8 @@ export async function openSession(
     conversation,
     sessionDir: scope.sessionDir,
     services: { delegation: Boolean(delegation), background: Boolean(backgroundJobs) },
+    // 外部 agent：父会话 MCP 挂委托协调；产物确认由 session-factory 按委托 profile 另挂。技能走方案 D。
+    externalMcp: ({ cwd, groupId }) => externalMcpTools({ visit, cwd, delegation, groupId }),
     ...(groupRosterPrompt ? { groupRosterPrompt } : {}),
     parentExtensions: ({ cwd, groupId }) => ({
       afterArtifacts: delegation
@@ -88,4 +97,25 @@ export async function openSession(
     }),
   });
   return result;
+}
+
+/**
+ * 外部 agent 的 MCP 工具集（委托协调）。
+ * 技能改走方案 D：投影到厂商目录（如 `.codebuddy/skills`），由 SDK 自带工具读取；此处不再挂 skill_*。
+ */
+function externalMcpTools(input: {
+  visit: Visit;
+  /** 保留与开会话签名一致；技能投影不经 MCP。 */
+  cwd: string;
+  delegation?: DelegationService;
+  groupId?: string;
+}): McpTool[] {
+  void input.cwd;
+  if (!input.delegation) return [];
+  return delegationTools({
+    service: input.delegation,
+    userId: input.visit.userId,
+    agentId: input.visit.agentId,
+    ...(input.groupId ? { groupId: input.groupId } : {}),
+  });
 }

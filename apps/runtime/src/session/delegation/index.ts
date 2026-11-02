@@ -22,6 +22,7 @@ export {
   DISCOVER_TOP_K,
   type DiscoverMode,
   type DiscoverResult,
+  type DiscoverToolSurface,
 } from "./discover.js";
 export {
   formatActiveDelegationsContext,

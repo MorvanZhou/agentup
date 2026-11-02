@@ -9,6 +9,11 @@ export interface ApprovalRequest {
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
+  /**
+   * session/agent 落盘用的工具键（可与展示用 `toolName` 不同）。
+   * 外部 SDK：`{templateId}/{厂商原名}`；缺省则用 `toolName`。
+   */
+  allowKey?: string;
   /** visit=直聊；delegation=被委托子会话。缺省按 visit（旧盘孤儿）。 */
   origin?: HitlOrigin;
   taskId?: string;

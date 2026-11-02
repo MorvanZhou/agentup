@@ -6,9 +6,16 @@ import { expect, it } from "vitest";
 
 import { ATTACHMENTS_DIR } from "../src/session/workspace/attachments.js";
 import { startLocalServer } from "../src/local/server.js";
+import { setModelEnabled, upsertProviderConnection } from "../src/config/provider/index.js";
 
 it("serves personal-assistant history, context, attachments, and delegations", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-pa-routes-"));
+  upsertProviderConnection(root, {
+    templateId: "ollama",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    customModelId: "qwen",
+  });
+  setModelEnabled(root, { templateId: "ollama", modelId: "qwen" }, true);
   const local = await startLocalServer({
     backendUrl: "http://127.0.0.1:9",
     userDataRoot: root,
@@ -37,6 +44,14 @@ it("serves personal-assistant history, context, attachments, and delegations", a
     });
     expect(clearedHistory.status).toBe(200);
     expect(await clearedHistory.json()).toEqual({ cleared: true });
+
+    const steer = await fetch(`${local.url}/personal-assistant/steer`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ user_id: "patient", text: "补充要求" }),
+    });
+    expect(steer.status).toBe(200);
+    expect(await steer.json()).toEqual({ steered: false });
 
     const note = Buffer.from("hello note", "utf8").toString("base64");
     const staged = await fetch(`${local.url}/personal-assistant/attachments`, {

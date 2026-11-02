@@ -7,7 +7,7 @@ import type { UIMessage, UIMessageChunk } from "ai";
 import { expect, it, vi } from "vitest";
 
 import type { ModelConfig } from "../src/config/load.js";
-import { ProviderSecretPendingError } from "../src/config/provider.js";
+import { ProviderSecretPendingError } from "../src/config/provider/index.js";
 import type { Visit } from "../src/package/sync.js";
 import { ApprovalBroker } from "../src/session/hitl/approval/index.js";
 import { DelegationService } from "../src/session/delegation/index.js";
@@ -363,6 +363,54 @@ it("opens the holder directory and streams the reply text", async () => {
   expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
   release();
   await expect(pending).resolves.toMatchObject({ text: "迷宫好了" });
+});
+
+it("SDK holder 走直连事件通道，不退回只返回最终文本的 prompt 通道", async () => {
+  const holderDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-holder-sdk-"));
+  const prompt = vi.fn(async () => undefined);
+  const externalQuery = vi.fn(async () => ({
+    controller: new AbortController(),
+    iterable: (async function* () {
+      yield { type: "result", subtype: "success", result: "SDK 完成" };
+    })(),
+    timeoutMs: 1_000,
+  }));
+  const session = {
+    subscribe: () => () => undefined,
+    prompt,
+    externalQuery,
+    abort: async () => undefined,
+    dispose() {},
+  } as unknown as PromptSession;
+  const driver = createHolderTurnDriver({
+    resolveVisit: () =>
+      ({
+        userId: "u1",
+        agentId: "pm",
+        root: holderDir,
+        packageDigest: "x",
+        projectTrust: "granted",
+      }) as Visit,
+    resolveModel: () => ({}) as ModelConfig,
+    open: async () => session,
+  });
+  const chunks: UIMessageChunk[] = [];
+
+  const result = await driver.start({
+    userId: "u1",
+    groupId: "g1",
+    agentId: "pm",
+    prompt: "用户：继续",
+    sessionDir: holderDir,
+    signal: new AbortController().signal,
+    onChunk: (items) => chunks.push(...items),
+    onReady: () => undefined,
+  });
+
+  expect(externalQuery).toHaveBeenCalledOnce();
+  expect(prompt).not.toHaveBeenCalled();
+  expect(result.text).toBe("SDK 完成");
+  expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
 });
 
 it("projects group HITL onto the holder stream and skips the one-to-one request", async () => {

@@ -10,7 +10,7 @@ import {
   touchActiveModel,
   tryEnabledModelRef,
   type ModelRef,
-} from "../../config/provider.js";
+} from "../../config/provider/index.js";
 import type { ModelConfig } from "../../config/load.js";
 import { ConfigError } from "../../config/load.js";
 import type { Visit } from "../../package/sync.js";

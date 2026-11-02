@@ -105,6 +105,12 @@ describe("formatAgentSearchRequired", () => {
     expect(text).toContain("Call agent_search");
     expect(text).toContain("before ask_user");
   });
+
+  it("SDK / external 面：指向 MCP agent_search 名", () => {
+    const text = formatAgentSearchRequired({ toolSurface: "external" });
+    expect(text).toContain("mcp__agentup__agent_search");
+    expect(text).not.toContain("Call agent_search with");
+  });
 });
 
 describe("formatDiscoveredAgentsContext", () => {
@@ -141,6 +147,29 @@ describe("formatDiscoveredAgentsContext", () => {
     expect(text).toContain("汇率分析师");
     expect(text).toContain("外汇与跨境结算");
     expect(text).toContain("More agents available");
+  });
+
+  it("SDK / external 面：候选块指向 MCP 工具名，不写裸 Pi 名", () => {
+    const text = formatDiscoveredAgentsContext(
+      {
+        mode: "search",
+        agents: [
+          card({
+            agentId: "weaty",
+            name: "Weaty",
+            role: "天气助手",
+            background: "天气预报",
+          }),
+        ],
+        truncated: true,
+      },
+      { toolSurface: "external" },
+    );
+    expect(text).toContain("mcp__agentup__agent_search");
+    expect(text).toContain("mcp__agentup__delegate_to_agent");
+    expect(text).not.toContain("Call agent_search with");
+    expect(text).not.toContain("then delegate_to_agent (tool approval");
+    expect(text).toContain("Weaty");
   });
 });
 

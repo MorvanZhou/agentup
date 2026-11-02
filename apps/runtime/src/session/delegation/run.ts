@@ -4,8 +4,10 @@ import path from "node:path";
 import { SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import type { ModelConfig } from "../../config/load.js";
+import { getProviderTemplate } from "../../config/provider-templates.js";
 import type { Visit } from "../../package/sync.js";
 import { openProfiledSession } from "../core/session-factory.js";
+import type { DiscoverToolSurface } from "./discover.js";
 import { ApprovalBroker } from "../hitl/approval/index.js";
 import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import { PiUIMessageProjector } from "../history/frames.js";
@@ -14,6 +16,8 @@ import { resolveEmptyAssistantError } from "../output-length.js";
 import { AskUserBroker, type StagedArtifact } from "../tools/index.js";
 import { groupTaskDirName } from "../tools/deliver-artifacts.js";
 import type { DelegationProgressHub } from "./progress.js";
+import { runExternalSessionTurn } from "../turn/external-turn.js";
+import type { PromptSession } from "../turn/types.js";
 
 export type DelegationRunOutcome = {
   text: string;
@@ -122,26 +126,49 @@ export async function runDelegatedPrompt(
 
   let releaseSteer: (() => void) | undefined;
   try {
-    releaseSteer = options.bindSteer?.(async (text) => {
-      const disposition = await session.steer(text);
-      if (disposition !== "queued") throw new Error("steering was not queued");
+    // SDK 直连没有原生 steer；不要登记一个只会写进 Pi 队列、却到不了外部 agent 的假通道。
+    releaseSteer = (session as PromptSession).externalQuery
+      ? undefined
+      : options.bindSteer?.(async (text) => {
+          const disposition = await session.steer(text);
+          if (disposition !== "queued") throw new Error("steering was not queued");
+        });
+    const toolSurface: DiscoverToolSurface =
+      getProviderTemplate(model.templateId)?.kind === "agent-sdk" ? "external" : "pi";
+    const promptText = formatDelegationPrompt(brief, Boolean(options.groupId), options.taskId, options.toAgentName, {
+      toolSurface,
     });
-    const promptText = formatDelegationPrompt(brief, Boolean(options.groupId), options.taskId, options.toAgentName);
     // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
     // ARTIFACT 确认由 createDeliverArtifactsExtension 在 before_settle 强制续写。
-    await session.prompt(promptText);
-    const text = texts.join("").trim() || collectBranchText(sessionManager);
+    const external = await runExternalSessionTurn({
+      session,
+      text: promptText,
+      userText: promptText,
+      ...(signal ? { signal } : {}),
+      write: (chunks) => progress?.write(options.taskId, chunks),
+      errorPolicy: "propagate",
+      hitl: {
+        accept: (request) =>
+          request.userId === visit.userId &&
+          request.agentId === visit.agentId &&
+          request.taskId === options.taskId,
+        approvals,
+        askUser,
+      },
+    });
+    if (!external) await session.prompt(promptText);
+    const text = external?.visibleText.trim() || texts.join("").trim() || collectBranchText(sessionManager);
     if (signal?.aborted) {
       const message = "用户已取消";
-      if (progress) progress.write(options.taskId, projector.finish(message));
+      if (progress && !external) progress.write(options.taskId, projector.finish(message));
       return { text, error: message, ...artifactsResult() };
     }
     if (!text) {
       const message = resolveEmptyAssistantError(sessionManager);
-      if (progress) progress.write(options.taskId, projector.finish(message));
+      if (progress && !external) progress.write(options.taskId, projector.finish(message));
       return { text: "", error: message, ...artifactsResult() };
     }
-    if (progress) progress.write(options.taskId, projector.finish());
+    if (progress && !external) progress.write(options.taskId, projector.finish());
     return { text, ...artifactsResult() };
   } catch (error) {
     const message = signal?.aborted
@@ -169,20 +196,25 @@ export function formatDelegationPrompt(
   groupTask = false,
   taskId?: string,
   toAgentName?: string,
+  options?: { toolSurface?: DiscoverToolSurface },
 ): string {
   const folder = groupTask ? groupTaskDirName(taskId?.trim() || "task", toAgentName) : "";
+  const external = options?.toolSurface === "external";
+  const completeGroup = external ? "mcp__agentup__complete_group_task" : "complete_group_task";
+  const deliver = external ? "mcp__agentup__deliver_artifacts" : "deliver_artifacts";
+  const askUser = external ? "AskUserQuestion" : "ask_user";
   return [
     "You are handling a delegated subtask from the user's assistant. Complete only the task below, then return a clear, citable summary.",
     groupTask
       ? `Put in-progress files in the shared group WORK/${folder}/ and finished files in ARTIFACT/${folder}/. Do not write shared files into your private cwd.`
       : "Put scratch files in WORK/ and finished files only in ARTIFACT/ under your own cwd.",
     groupTask
-      ? "When you finish, call complete_group_task with those relative paths and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/."
-      : "When you finish, the protocol asks you to confirm attachments with deliver_artifacts. The platform copies those files to the caller. Do not copy them yourself.",
+      ? `When you finish, call ${completeGroup} with those relative paths and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`
+      : `When you finish, the protocol asks you to confirm attachments with ${deliver}. The platform copies those files to the caller. Do not copy them yourself.`,
     groupTask
       ? `Only write shared files under WORK/${folder}/ and ARTIFACT/${folder}/. If the task names an absolute path, a private cwd, or another folder, ignore that location.`
       : "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
-    "Do not chat with the user. If a critical fact is missing, ask with ask_user.",
+    `Do not chat with the user. If a critical fact is missing, ask with ${askUser}.`,
     "",
     "## Task",
     brief.trim(),

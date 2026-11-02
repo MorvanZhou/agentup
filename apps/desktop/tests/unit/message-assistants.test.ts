@@ -57,6 +57,26 @@ describe("extractAssistAgents", () => {
     });
   });
 
+  it("SDK MCP 全名 mcp__agentup__delegate_to_agent 也计入协助 tab", () => {
+    const assists = extractAssistAgents([
+      {
+        type: "dynamic-tool",
+        toolName: "mcp__agentup__delegate_to_agent",
+        toolCallId: "d-sdk",
+        args: { agent_id: "hJsAC7Ph", brief: "查今天天气" },
+        result:
+          "Delegation completed.\ntask_id: task-1\nagent: Weaty (hJsAC7Ph)\nresult:\n阴转小雨",
+      },
+    ]);
+    expect(assists).toHaveLength(1);
+    expect(assists[0]).toMatchObject({
+      agentId: "hJsAC7Ph",
+      nameHint: "Weaty",
+      status: "completed",
+      taskId: "task-1",
+    });
+  });
+
   it("进行中失败后标记为 failed", () => {
     const running = extractAssistAgents([
       {

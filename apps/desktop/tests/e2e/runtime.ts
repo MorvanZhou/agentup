@@ -21,29 +21,42 @@ function sse(chunks: unknown[]): string {
   return `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}`).join("\n\n")}\n\ndata: [DONE]\n\n`;
 }
 
-function sessionModelPayload(settings: {
+function sessionModelPayload(
+  settings: {
   active_model: { template_id: string; model_id: string } | null;
   available_models: Array<{
     template_id: string;
     model_id: string;
     name: string;
+    vendor_id?: string;
     vendor_label: string;
     option_label: string;
     enabled: boolean;
+    credits?: number;
   }>;
   configured: boolean;
-}) {
+  templates?: Array<{ id: string; access?: string }>;
+},
+  followUp = false,
+) {
   const enabled = settings.available_models.filter((model) => model.enabled);
+  const activeAccess = settings.active_model
+    ? settings.templates?.find((item) => item.id === settings.active_model!.template_id)?.access
+    : undefined;
   return {
     current: settings.active_model,
     models: enabled.map((model) => ({
       template_id: model.template_id,
       model_id: model.model_id,
       name: model.name,
+      vendor_id: model.vendor_id ?? "",
       vendor_label: model.vendor_label,
       option_label: model.option_label,
+      credits: model.credits ?? null,
     })),
     configured: settings.configured,
+    // 本地 Agent App 当前模型 → 桌面回合中发送改成排队（也可由 prompt 场景强制）
+    follow_up: followUp || activeAccess === "agent-sdk",
   };
 }
 
@@ -55,12 +68,19 @@ export async function installRuntime(
       | "stream"
       | "slow-stream"
       | "interruptible"
+      | "interruptible-fallback"
       | "missing-model"
       | "approval"
       | "ask-user"
       | "ask-user-multi"
       | "delegation"
-      | "delegation-running";
+      | "delegation-running"
+      /** 外部 SDK 过程卡：解包后的 mcp__agentup__* 专用卡 + 旁白 */
+      | "sdk-process"
+      /** 第一轮挂起（保持 busy），后续 prompt 一律 202 入队 */
+      | "follow-up"
+      /** 同上，但第一轮 1.2s 就收：用来测队列被消费那一轮的顺序 */
+      | "follow-up-drain";
     inspectError?: {
       error: string;
       details: Array<{ path: string; message: string }>;
@@ -209,8 +229,10 @@ export async function installRuntime(
       published_agent_id: agent.published_agent_id,
     };
   }
+  // 契约与 runtime serialize 对齐：模板带 access，顶层带 agent_sdks（缺了 reader 会拒收整份配置）
   const ollamaTemplate = {
     id: "ollama",
+    access: "api",
     vendor_id: "ollama",
     vendor_label: "Ollama",
     option_label: "本机",
@@ -227,6 +249,7 @@ export async function installRuntime(
   };
   const deepseekTemplate = {
     id: "deepseek",
+    access: "api",
     vendor_id: "deepseek",
     vendor_label: "DeepSeek",
     option_label: "DeepSeek",
@@ -238,6 +261,42 @@ export async function installRuntime(
     supports_model_discovery: false,
     models: [{ id: "deepseek-flash", name: "deepseek-flash", api: "openai-completions", reasoning: false }],
   };
+  // 与生产目录对齐：本地 Agent App 始终出现在第二组（默认未安装）
+  const codebuddySdkTemplate = {
+    id: "codebuddy-sdk",
+    access: "agent-sdk",
+    vendor_id: "codebuddy",
+    vendor_label: "Workbuddy / CodeBuddy",
+    option_label: "本地 Agent App",
+    label: "Workbuddy / CodeBuddy",
+    kind: "agent-sdk",
+    pi_provider_id: "codebuddy-sdk",
+    requires_api_key: false,
+    default_model_id: "claude-sonnet-5",
+    supports_model_discovery: false,
+    models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
+  };
+  type AgentSdkRow = {
+    template_id: string;
+    vendor_label: string;
+    option_label: string;
+    label: string;
+    hint: string | null;
+    package: string;
+    size_hint_mb: number;
+    login_guide: { command: string; doc_url: string | null } | null;
+    state: string;
+    installed_version: string | null;
+    last_error: string | null;
+    account_label: string | null;
+    models: Array<{ id: string; name: string; credits: number | null }>;
+  };
+  const defaultSdkModels: AgentSdkRow["models"] = [
+    { id: "claude-sonnet-5", name: "Claude-Sonnet-5", credits: 1.33 },
+  ];
+  /** 安装轮询：第 1 次 downloading，第 2 次起 done（对齐桌面 700ms 轮询） */
+  let sdkInstallPolls = 0;
+  let sdkInstallJobId: string | null = null;
   let providerSettings = {
     connections:
       options?.modelConfigured === false
@@ -265,26 +324,73 @@ export async function installRuntime(
     available_models:
       options?.modelConfigured === false
         ? []
-        : [
+        : ([
             {
               template_id: "ollama",
               model_id: "qwen3:4b",
               name: "qwen3:4b",
+              vendor_id: "ollama",
               vendor_label: "Ollama",
               option_label: "本机",
               enabled: true,
               active: true,
               custom: true,
             },
-          ],
+          ] as Array<{
+            template_id: string;
+            model_id: string;
+            name: string;
+            vendor_id: string;
+            vendor_label: string;
+            option_label: string;
+            enabled: boolean;
+            active: boolean;
+            custom: boolean;
+            credits?: number;
+          }>),
     configured: options?.modelConfigured !== false,
     overridden_by_environment: false,
     vendors: [
       { id: "ollama", label: "Ollama", options: [ollamaTemplate] },
       { id: "deepseek", label: "DeepSeek", options: [deepseekTemplate] },
     ],
-    templates: [ollamaTemplate, deepseekTemplate],
+    templates: [ollamaTemplate, deepseekTemplate, codebuddySdkTemplate],
+    agent_sdks: [
+      {
+        template_id: "codebuddy-sdk",
+        vendor_label: "Workbuddy / CodeBuddy",
+        option_label: "本地 Agent App",
+        label: "Workbuddy / CodeBuddy",
+        hint: "用你本机的 Workbuddy / CodeBuddy 订阅执行任务",
+        package: "@tencent-ai/agent-sdk",
+        size_hint_mb: 180,
+        login_guide: { command: "cbc login", doc_url: null },
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        account_label: null,
+        models: [],
+      },
+    ] as AgentSdkRow[],
   };
+
+  function sdkRow(): AgentSdkRow {
+    return providerSettings.agent_sdks[0]!;
+  }
+
+  function clearSdkModelsFromSelection(): void {
+    const templateId = "codebuddy-sdk";
+    let enabledModels = providerSettings.enabled_models.filter((item) => item.template_id !== templateId);
+    let activeModel =
+      providerSettings.active_model?.template_id === templateId ? null : providerSettings.active_model;
+    if (!activeModel && enabledModels.length > 0) activeModel = enabledModels[0]!;
+    providerSettings = {
+      ...providerSettings,
+      enabled_models: enabledModels,
+      active_model: activeModel,
+      configured: Boolean(activeModel),
+    };
+  }
 
   function rebuildAvailableModels(): void {
     const enabled = new Set(
@@ -317,11 +423,33 @@ export async function installRuntime(
           template_id: connection.template_id,
           model_id: modelId,
           name: catalog?.name ?? modelId,
+          vendor_id: template.vendor_id,
           vendor_label: template.vendor_label,
           option_label: template.option_label,
           enabled: enabled.has(key),
           active: key === activeKey,
           custom: customIds.has(modelId) && !catalogIds.has(modelId),
+        });
+      }
+    }
+    // 本地接入没有 connection：ready 后目录进「启用服务」
+    for (const sdk of providerSettings.agent_sdks) {
+      if (sdk.state !== "ready") continue;
+      const template = providerSettings.templates.find((item) => item.id === sdk.template_id);
+      if (!template) continue;
+      for (const model of sdk.models) {
+        const key = `${sdk.template_id}::${model.id}`;
+        rows.push({
+          template_id: sdk.template_id,
+          model_id: model.id,
+          name: model.name,
+          vendor_id: template.vendor_id,
+          vendor_label: template.vendor_label,
+          option_label: template.option_label,
+          enabled: enabled.has(key),
+          active: key === activeKey,
+          custom: false,
+          ...(typeof model.credits === "number" ? { credits: model.credits } : {}),
         });
       }
     }
@@ -367,10 +495,41 @@ export async function installRuntime(
   // 只拦截应用的 /runtime 控制面；不要误伤 Vite 的 /src/shared/api/runtime/*.ts 模块。
   let interruptiblePrompts = 0;
   let releaseFirstInterrupt: (() => void) | null = null;
+  /** followUp 队列 mock：本地 Agent App 接入下，回合中的新消息落到这里。 */
+  let followUpPrompts = 0;
+  let followUpQueue: Array<{ id: string; text: string; created_at: number }> = [];
+  /** 第一轮（挂着的那轮）是否已回完：/turn-stream 要等它结束才发消费轮。 */
+  let firstDrainTurnServed = false;
+  /** 消费轮已开始：wake busy 要保持到测试结束，直播区块才不会一闪而过。 */
+  let drainWake = false;
+  /**
+   * 消费轮要发的那条用户消息：第一次消费时把队列拼好并清空，之后重连（runtime 的 hub 会回放缓冲）
+   * 仍发同一条，保证晚连上的客户端也先看到用户那条。
+   */
+  let drainedEcho: string | null = null;
+  /** 队列被消费后发的那一轮：先 echo 用户那条，再出助手正文（顺序 = 用户 → 助手）。 */
+  function followUpDrainSse(): string {
+    if (drainedEcho === null) {
+      drainedEcho = followUpQueue.map((item) => item.text).join("\n");
+      followUpQueue = [];
+    }
+    const joined = drainedEcho;
+    return sse([
+      { type: "data-agentup-follow-up-sent", data: { text: joined, ids: [] } },
+      { type: "start", messageId: "follow-up-drain" },
+      { type: "start-step" },
+      { type: "text-start", id: "follow-up-drain-text" },
+      { type: "text-delta", id: "follow-up-drain-text", delta: "已收到，正在查" },
+      { type: "text-end", id: "follow-up-drain-text" },
+      { type: "finish-step" },
+      { type: "finish" },
+    ]);
+  }
   await page.route(/^https?:\/\/[^/]+\/runtime(?:\/|$)/, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/runtime/, "");
+
     // ── 群聊 mock（e2e：群附件 / 芯片缩略预览） ──
     if (request.method() === "GET" && path === "/groups") {
       return json(route, 200, { groups: groupRooms });
@@ -450,6 +609,98 @@ export async function installRuntime(
     }
     if (request.method() === "GET" && path === "/settings/provider") {
       return json(route, 200, providerSettings);
+    }
+    // ── 本地 Agent App：安装 / 登录 / 登出 / 模型 / 卸载（docs/agent_cli） ──
+    const sdkAgent = path.match(/^\/settings\/provider\/agents\/([^/]+)(.*)$/);
+    if (sdkAgent) {
+      const templateId = decodeURIComponent(sdkAgent[1]!);
+      const rest = sdkAgent[2] ?? "";
+      if (templateId !== "codebuddy-sdk") {
+        return json(route, 400, { error: "未知的本地接入" });
+      }
+      if (request.method() === "POST" && rest === "/install") {
+        sdkInstallJobId = `sdk-install-${Date.now()}`;
+        sdkInstallPolls = 0;
+        sdkRow().state = "installing";
+        sdkRow().last_error = null;
+        return json(route, 200, { job_id: sdkInstallJobId });
+      }
+      const installJob = rest.match(/^\/install\/([^/]+)$/);
+      if (request.method() === "GET" && installJob) {
+        const jobId = decodeURIComponent(installJob[1]!);
+        if (jobId !== sdkInstallJobId) return json(route, 404, { error: "安装任务不存在" });
+        sdkInstallPolls += 1;
+        if (sdkInstallPolls < 2) {
+          return json(route, 200, {
+            job_id: jobId,
+            template_id: templateId,
+            phase: "downloading",
+            detail: "正在下载本地 Agent App…",
+          });
+        }
+        sdkRow().state = "not_logged_in";
+        sdkRow().installed_version = "0.3.295";
+        sdkRow().models = [];
+        sdkRow().account_label = null;
+        rebuildAvailableModels();
+        return json(route, 200, {
+          job_id: jobId,
+          template_id: templateId,
+          phase: "done",
+        });
+      }
+      if (request.method() === "POST" && rest === "/login") {
+        if (sdkRow().state === "not_installed") {
+          return json(route, 400, { error: "尚未安装，请先开始接入" });
+        }
+        sdkRow().state = "logging_in";
+        return json(route, 200, {
+          auth_url: "https://example.com/codebuddy-login",
+          state: "logging_in",
+        });
+      }
+      if (request.method() === "POST" && rest === "/login-check") {
+        sdkRow().state = "ready";
+        sdkRow().account_label = "mock-sdk-user";
+        sdkRow().models = [...defaultSdkModels];
+        sdkRow().last_error = null;
+        rebuildAvailableModels();
+        return json(route, 200, {
+          auth_url: null,
+          state: "ready",
+          account_label: "mock-sdk-user",
+        });
+      }
+      if (request.method() === "POST" && rest === "/logout") {
+        sdkRow().state = "not_logged_in";
+        sdkRow().account_label = null;
+        sdkRow().models = [];
+        clearSdkModelsFromSelection();
+        rebuildAvailableModels();
+        return json(route, 200, providerSettings);
+      }
+      if (request.method() === "POST" && rest === "/models") {
+        if (sdkRow().state !== "ready") {
+          return json(route, 400, { error: "请先登录本地 Agent App" });
+        }
+        sdkRow().models = [
+          ...defaultSdkModels,
+          { id: "claude-opus-4", name: "Claude-Opus-4", credits: 5 },
+        ];
+        rebuildAvailableModels();
+        return json(route, 200, providerSettings);
+      }
+      if (request.method() === "DELETE" && rest === "") {
+        sdkRow().state = "not_installed";
+        sdkRow().installed_version = null;
+        sdkRow().account_label = null;
+        sdkRow().models = [];
+        sdkRow().last_error = null;
+        sdkInstallJobId = null;
+        clearSdkModelsFromSelection();
+        rebuildAvailableModels();
+        return json(route, 200, providerSettings);
+      }
     }
     if (request.method() === "PUT" && path === "/settings/provider/runtime-secrets") {
       return json(route, 200, { ok: true });
@@ -843,7 +1094,7 @@ export async function installRuntime(
       return json(route, 200, { messages: histories["personal-assistant"] ?? [] });
     }
     if (request.method() === "GET" && path === "/personal-assistant/session/model") {
-      return json(route, 200, sessionModelPayload(providerSettings));
+      return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
     }
     if (request.method() === "PUT" && path === "/personal-assistant/session/model") {
       const body = request.postDataJSON() as { template_id: string; model_id: string };
@@ -852,11 +1103,11 @@ export async function installRuntime(
         active_model: { template_id: body.template_id, model_id: body.model_id },
         configured: true,
       };
-      return json(route, 200, sessionModelPayload(providerSettings));
+      return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
     }
     const agentSessionModel = path.match(/^\/agents\/([^/]+)\/session\/model$/);
     if (agentSessionModel && request.method() === "GET") {
-      return json(route, 200, sessionModelPayload(providerSettings));
+      return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
     }
     if (agentSessionModel && request.method() === "PUT") {
       const body = request.postDataJSON() as { template_id: string; model_id: string };
@@ -865,7 +1116,7 @@ export async function installRuntime(
         active_model: { template_id: body.template_id, model_id: body.model_id },
         configured: true,
       };
-      return json(route, 200, sessionModelPayload(providerSettings));
+      return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
     }
     const delegationHistory = path.match(
       /^\/personal-assistant\/delegations\/([^/]+)\/history$/,
@@ -1344,18 +1595,121 @@ export async function installRuntime(
         package_digest: agent.latest_digest,
       });
     }
+    // ── followUp 队列 mock（本地 Agent App 接入，见 docs/agent_cli §12.8） ──
+    if (path === "/follow-ups") {
+      if (request.method() === "GET") return json(route, 200, { queue: followUpQueue });
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as { text?: string };
+        const item = makeFollowUp(typeof body.text === "string" ? body.text : "");
+        followUpQueue.push(item);
+        return json(route, 202, { queued: item, queue: followUpQueue });
+      }
+      if (request.method() === "DELETE") {
+        const cleared = followUpQueue.length;
+        followUpQueue = [];
+        return json(route, 200, { cleared });
+      }
+    }
+    const followUpItem = path.match(/^\/follow-ups\/([^/]+)(?:\/promote)?$/);
+    if (followUpItem) {
+      const id = decodeURIComponent(followUpItem[1]!);
+      if (path.endsWith("/promote") && request.method() === "POST") {
+        const at = followUpQueue.findIndex((item) => item.id === id);
+        if (at > 0) {
+          const [row] = followUpQueue.splice(at, 1);
+          followUpQueue.unshift(row!);
+        }
+        return json(route, 200, { queue: followUpQueue });
+      }
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as { text?: string };
+        const row = followUpQueue.find((item) => item.id === id);
+        if (row && typeof body.text === "string" && body.text.trim()) row.text = body.text.trim();
+        return json(route, 200, { queue: followUpQueue });
+      }
+      if (request.method() === "DELETE") {
+        followUpQueue = followUpQueue.filter((item) => item.id !== id);
+        return json(route, 200, { queue: followUpQueue });
+      }
+    }
+
+    // 队列被消费的那一轮：桌面连 /turn-stream 看直播（docs/agent_cli §12.8.1）。
+    // runtime 的顺序是先 echo 拼好的用户那条，再出助手正文——错的那个版本反过来。
+    if (request.method() === "GET" && path === "/turn-stream") {
+      if (options?.prompt !== "follow-up-drain") return json(route, 404, { error: "本场景没有旁路流" });
+      // 等第一轮收完、队列里真有东西，再发消费轮
+      const deadline = Date.now() + 15_000;
+      while (!(firstDrainTurnServed && followUpQueue.length > 0) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "text/event-stream; charset=utf-8",
+          "x-vercel-ai-ui-message-stream": "v1",
+          "cache-control": "no-cache",
+        },
+        body: followUpDrainSse(),
+      });
+    }
+
+    // 插话：API / Pi 原生接入走 runtime 的 Pi 原生 steer（docs/agent_cli §12.8）。
+    // `interruptible-fallback` 场景 = runtime 没接住（会话没在跑等）→ 退回停止后重发。
+    const steerMatch = path.match(/^\/agents\/([^/]+)\/steer$/);
+    if (steerMatch && request.method() === "POST") {
+      return json(route, 200, { steered: options?.prompt !== "interruptible-fallback" });
+    }
+
     const promptMatch =
       path === "/personal-assistant/prompt"
         ? ["", "personal-assistant"]
         : path.match(/^\/agents\/([^/]+)\/prompt$/);
     if (request.method() === "POST" && promptMatch) {
       if (options?.prompt === "missing-model") return json(route, 503, { error: "打开会话前请先在设置中配置本地模型" });
+      // 第一轮挂起（保持 busy）；之后的 prompt 一律 202 入队，模拟 SDK 接入没有 steer。
+      // `follow-up-drain` 只挂 1.2s 就收，用来测「队列被消费那一轮」的收发顺序。
+      if (options?.prompt === "follow-up" || options?.prompt === "follow-up-drain") {
+        followUpPrompts += 1;
+        if (followUpPrompts === 1) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, options?.prompt === "follow-up-drain" ? 6_000 : 20_000),
+          );
+          try {
+            return await route.fulfill({
+              status: 200,
+              headers: {
+                "content-type": "text/event-stream; charset=utf-8",
+                "x-vercel-ai-ui-message-stream": "v1",
+                "cache-control": "no-cache",
+              },
+              body: sse([
+                { type: "start", messageId: "follow-up-old" },
+                { type: "start-step" },
+                { type: "text-start", id: "follow-up-old-text" },
+                { type: "text-delta", id: "follow-up-old-text", delta: "旧回复" },
+                { type: "text-end", id: "follow-up-old-text" },
+                { type: "finish-step" },
+                { type: "finish" },
+              ]),
+            });
+          } catch {
+            return;
+          } finally {
+            firstDrainTurnServed = true;
+          }
+        }
+        const body = request.postDataJSON() as { text?: string } | null;
+        const item = makeFollowUp(typeof body?.text === "string" ? body.text : "");
+        followUpQueue.push(item);
+        return json(route, 202, { queued: item, queue: followUpQueue });
+      }
       // 模拟长回复：先挂起再吐完整 SSE，便于测切走再接回。
       if (options?.prompt === "slow-stream") {
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       // 第一轮挂起，直到客户端中止或下一轮 prompt 到来；第二轮立刻返回新助手正文。
-      if (options?.prompt === "interruptible") {
+      // `interruptible-fallback` 同样挂起第一轮，只是 /steer 会回 false（见上）
+      if (options?.prompt === "interruptible" || options?.prompt === "interruptible-fallback") {
         interruptiblePrompts += 1;
         if (interruptiblePrompts === 1) {
           await new Promise<void>((resolve) => {
@@ -1438,49 +1792,51 @@ export async function installRuntime(
                 { type: "finish-step" },
                 { type: "finish" },
               ]
-            : [
-                { type: "start", messageId: `${turn}-assistant` },
-                { type: "start-step" },
-                { type: "reasoning-start", id: `${turn}-reasoning` },
-                { type: "reasoning-delta", id: `${turn}-reasoning`, delta: "先看" },
-                { type: "reasoning-end", id: `${turn}-reasoning` },
-                { type: "text-start", id: `${turn}-text` },
-                { type: "text-delta", id: `${turn}-text`, delta: "你好" },
-                { type: "text-end", id: `${turn}-text` },
-                {
-                  type: "tool-input-start",
-                  toolCallId: `${turn}-call`,
-                  toolName: "read",
-                  dynamic: true,
-                },
-                {
-                  type: "tool-input-delta",
-                  toolCallId: `${turn}-call`,
-                  inputTextDelta: '{"path":"note"}',
-                },
-                {
-                  type: "tool-input-available",
-                  toolCallId: `${turn}-call`,
-                  toolName: "read",
-                  input: { path: "note" },
-                  dynamic: true,
-                },
-                {
-                  type: "tool-output-available",
-                  toolCallId: `${turn}-call`,
-                  output: "病历",
-                  dynamic: true,
-                  preliminary: true,
-                },
-                {
-                  type: "tool-output-available",
-                  toolCallId: `${turn}-call`,
-                  output: "病历",
-                  dynamic: true,
-                },
-                { type: "finish-step" },
-                { type: "finish" },
-              ];
+            : options?.prompt === "sdk-process"
+              ? sdkProcessChunks(turn)
+              : [
+                  { type: "start", messageId: `${turn}-assistant` },
+                  { type: "start-step" },
+                  { type: "reasoning-start", id: `${turn}-reasoning` },
+                  { type: "reasoning-delta", id: `${turn}-reasoning`, delta: "先看" },
+                  { type: "reasoning-end", id: `${turn}-reasoning` },
+                  { type: "text-start", id: `${turn}-text` },
+                  { type: "text-delta", id: `${turn}-text`, delta: "你好" },
+                  { type: "text-end", id: `${turn}-text` },
+                  {
+                    type: "tool-input-start",
+                    toolCallId: `${turn}-call`,
+                    toolName: "read",
+                    dynamic: true,
+                  },
+                  {
+                    type: "tool-input-delta",
+                    toolCallId: `${turn}-call`,
+                    inputTextDelta: '{"path":"note"}',
+                  },
+                  {
+                    type: "tool-input-available",
+                    toolCallId: `${turn}-call`,
+                    toolName: "read",
+                    input: { path: "note" },
+                    dynamic: true,
+                  },
+                  {
+                    type: "tool-output-available",
+                    toolCallId: `${turn}-call`,
+                    output: "病历",
+                    dynamic: true,
+                    preliminary: true,
+                  },
+                  {
+                    type: "tool-output-available",
+                    toolCallId: `${turn}-call`,
+                    output: "病历",
+                    dynamic: true,
+                  },
+                  { type: "finish-step" },
+                  { type: "finish" },
+                ];
       return route.fulfill({
         status: 200,
         headers: {
@@ -1499,10 +1855,23 @@ export async function installRuntime(
     }
     // 桌面合并脉冲：attention + fleets + 本机群；e2e 默认空快照即可。
     if (request.method() === "GET" && path === "/desktop-pulse") {
+      // 消费轮是 wake 回合：桌面据此连 /turn-stream 直播（第一轮跑完且队列有货才开始）
+      const drainTurn =
+        options?.prompt === "follow-up-drain" &&
+        firstDrainTurnServed &&
+        (drainWake || followUpQueue.length > 0);
+      if (drainTurn) drainWake = true;
+      const wakeTurns = drainTurn
+        ? agents.filter((item) => item.recruited).map((item) => ({
+            agent_id: item.agent_id,
+            phase: "wake",
+            sources: [],
+          }))
+        : [];
       return json(route, 200, {
         attention: {
           busy_agent_ids: [],
-          busy_turns: [],
+          busy_turns: wakeTurns,
           approvals: [],
           ask_users: [],
           shell_hangs: [],
@@ -1595,6 +1964,74 @@ function askUserChunks(turn: string, askUserId: string, multi: boolean): unknown
       transient: true,
     },
   ];
+}
+
+/** 模拟外部 SDK 回合：工具间旁白 + ToolSearch/DeferExecute 形参数（桌面 GenericTool 摘要）。 */
+function sdkProcessChunks(turn: string): object[] {
+  // 模拟 translator 解包后的投影：无 ToolSearch / DeferExecute 壳，直接 AgentUp MCP
+  const searchId = `${turn}-agent-search`;
+  const delegateId = `${turn}-delegate`;
+  return [
+    { type: "start", messageId: `${turn}-assistant` },
+    { type: "start-step" },
+    { type: "text-start", id: `${turn}-text-1` },
+    { type: "text-delta", id: `${turn}-text-1`, delta: "先搜一下专家花名册。" },
+    { type: "text-end", id: `${turn}-text-1` },
+    {
+      type: "tool-input-available",
+      toolCallId: searchId,
+      toolName: "mcp__agentup__agent_search",
+      input: { query: "weather 天气 气象" },
+      dynamic: true,
+    },
+    {
+      type: "tool-output-available",
+      toolCallId: searchId,
+      output: "Weaty (气象员)",
+      dynamic: true,
+    },
+    { type: "text-start", id: `${turn}-text-2` },
+    { type: "text-delta", id: `${turn}-text-2`, delta: "接下来委托气象员。" },
+    { type: "text-end", id: `${turn}-text-2` },
+    {
+      type: "tool-input-available",
+      toolCallId: delegateId,
+      toolName: "mcp__agentup__delegate_to_agent",
+      input: { agent_id: "weather", brief: "查今天天气" },
+      dynamic: true,
+    },
+    {
+      type: "data-agentup-delegation-started",
+      data: {
+        taskId: "task-sdk-1",
+        toolCallId: delegateId,
+        toAgentId: "weather",
+        toAgentName: "Weaty",
+        brief: "查今天天气",
+        wait: false,
+      },
+    },
+    {
+      type: "tool-output-available",
+      toolCallId: delegateId,
+      output:
+        "Delegation completed.\ntask_id: task-sdk-1\nagent: Weaty (weather)\nresult:\n阴转小雨",
+      dynamic: true,
+    },
+    { type: "text-start", id: `${turn}-text-3` },
+    { type: "text-delta", id: `${turn}-text-3`, delta: "已找到 Weaty。" },
+    { type: "text-end", id: `${turn}-text-3` },
+    {
+      type: "data-agentup-summary",
+      data: { textPartIndex: 2 },
+    },
+    { type: "finish-step" },
+    { type: "finish" },
+  ];
+}
+
+function makeFollowUp(text: string): { id: string; text: string; created_at: number } {
+  return { id: `fu-${Date.now()}-${Math.random().toString(16).slice(2)}`, text, created_at: Date.now() };
 }
 
 function json(route: Route, status: number, body: unknown): Promise<void> {

@@ -391,6 +391,26 @@ export async function abortTurn(
   await http.request(endpoint, token, { user_id: userId });
 }
 
+/**
+ * 插话（API / Pi 原生接入，docs/agent_cli §12.8）：走 runtime 的 Pi 原生 steer，
+ * 插到当前工具批次之后，保留已做的工作。会话没在跑或外部 agent 接入时返回 false
+ * —— 调用方改走「停止后重发」。
+ */
+export async function steerTurn(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  userId: string,
+  text: string,
+): Promise<boolean> {
+  const endpoint =
+    agentId === PERSONAL_ASSISTANT_ID
+      ? "/personal-assistant/steer"
+      : `/agents/${encodeURIComponent(agentId)}/steer`;
+  const payload = await http.request(endpoint, token, { user_id: userId, text });
+  return payload.steered === true;
+}
+
 export async function clearContext(
   http: RuntimeHttp,
   token: string,

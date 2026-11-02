@@ -24,8 +24,11 @@ import { createArtifactsExtension } from "../history/artifacts.js";
 import { healInterruptedSessionTools } from "../history/history.js";
 import { createSummaryExtension } from "../history/summary.js";
 import { ApprovalBroker, createApprovalExtension } from "../hitl/approval/index.js";
-import type { HitlExtensionContext } from "../hitl/origin.js";
+import { hitlScopeFields, type HitlExtensionContext } from "../hitl/origin.js";
 import { createShellHangExtension, type ShellHangBroker } from "../hitl/shell-hang/index.js";
+import { artifactDeliveryTools } from "../external/mcp/artifact-tools.js";
+import type { McpTool } from "../external/mcp/server.js";
+import { syncSkillsProject } from "../external/skills-project.js";
 import { openModelRuntime } from "../model/runtime.js";
 import { writeSessionModelRef } from "../model/session-model.js";
 import { createOutputLengthExtension } from "../output-length.js";
@@ -75,6 +78,11 @@ type SharedOpen = {
    * 由调用方提供，以免本模块去加载委托服务（那会和 run 互相引用）。
    */
   parentExtensions?: (scope: { cwd: string; groupId?: string }) => ParentSessionExtensions;
+  /**
+   * 交给外部 agent（本地 Agent App）的 MCP 工具，按 cwd 现算（§12.7 / §12.9）。
+   * 子会话（kind=delegation）不传 → 天然不再嵌套委托。
+   */
+  externalMcp?: (scope: { cwd: string; groupId?: string }) => McpTool[];
 };
 
 export type ProfiledSessionRequest = SharedOpen &
@@ -126,6 +134,13 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
   if (profile.session === "fresh") fs.mkdirSync(sessionDir, { recursive: true });
   fs.mkdirSync(plan.cwd, { recursive: true });
   ensureCwdLayout(plan.cwd);
+  // 方案 D：agent-sdk 按厂商路径投影 skills；API/Pi 或未声明路径则清掉旧链（切 provider 必走这里）。
+  syncSkillsProject({
+    cwd: plan.cwd,
+    templateId: input.model.templateId,
+    visit,
+    userDataRoot: userDataRootFromVisit(visit),
+  });
   const personal = visit.kind === "personal";
   const workspacePolicy = WORKSPACE_POLICY[mode];
   const groupWorkspace =
@@ -264,7 +279,39 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
     },
   });
   await resourceLoader.reload();
-  const { runtime, model: registered } = await openModelRuntime(plan);
+  // 本地 Agent App：信任模式（bypass）下工具不弹 HITL；AskUser 仍接提问通道。
+  const { runtime, model: registered, externalQuery } = await openModelRuntime(plan, {
+    userDataRoot: userDataRootFromVisit(visit),
+    // approvals 仍注入以保持接线形状；canUseTool 信任模式下不再 request。
+    approvals: {
+      request: (request, signal) => input.approvals.request(request, signal),
+      allowsTool: (toolName) => input.approvals.allowsTool(visit.userId, visit.agentId, toolName),
+    },
+    // AskUserQuestion 不是工具权限：等待 AskUserBroker 的答案，再回填 SDK updatedInput.answers。
+    askUser: {
+      request: (request, signal) =>
+        input.askUser.request({ ...request, ...hitlScopeFields(hitl) }, signal),
+    },
+    userId: visit.userId,
+    agentId: visit.agentId,
+    // 外部 agent 接入时按 visit 现拼上下文（人设 / AGENTS.md / 挂载目录）
+    visit,
+    workspacePolicy,
+    ...(groupId ? { groupId } : {}),
+    ...(groupWorkspace ? { groupWorkspaceRoot: groupWorkspace.root } : {}),
+    ...(groupRosterPrompt ? { groupRosterPrompt } : {}),
+    // SDK：委托确认工具挂 MCP（与 Pi extension 同写 deliverState）；父会话另挂委托协调工具。
+    // 子会话不传 externalMcp → 天然不嵌套 delegate（围栏）。
+    mcpTools: [
+      ...artifactMcpToolsForProfile({
+        profile,
+        deliverState,
+        cwd: plan.cwd,
+        groupWorkspaceRoot: groupWorkspace?.root,
+      }),
+      ...(input.externalMcp?.({ cwd: plan.cwd, ...(groupId ? { groupId } : {}) }) ?? []),
+    ],
+  });
   const tools = sessionTools.length > 0 ? sessionTools : undefined;
   const sessionManager =
     profile.session === "fresh"
@@ -295,7 +342,38 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
   };
   const result = await createAgentSession(options);
   await result.session.bindExtensions({});
+  if (externalQuery) {
+    // SDK 直连流挂在会话最小面上；VisitChats 据此切到 runExternalTurn。
+    (result.session as typeof result.session & { externalQuery?: typeof externalQuery }).externalQuery =
+      externalQuery;
+  }
   return { result, sessionManager, deliverState };
+}
+
+/** 按 profile 挂 SDK 产物确认 MCP；无 deliverState 或非委托确认场景返回空。 */
+function artifactMcpToolsForProfile(input: {
+  profile: ReturnType<typeof profileForMode>;
+  deliverState?: DeliverArtifactsState;
+  cwd: string;
+  groupWorkspaceRoot?: string;
+}): McpTool[] {
+  const { profile, deliverState, cwd, groupWorkspaceRoot } = input;
+  if (!deliverState) return [];
+  if (profile.completeGroupTask && groupWorkspaceRoot) {
+    return artifactDeliveryTools({
+      kind: "complete_group_task",
+      workspaceRoot: groupWorkspaceRoot,
+      state: deliverState,
+    });
+  }
+  if (profile.deliverArtifacts) {
+    return artifactDeliveryTools({
+      kind: "deliver_artifacts",
+      cwd,
+      state: deliverState,
+    });
+  }
+  return [];
 }
 
 function openFreshSession(cwd: string, sessionDir: string): SessionManager {

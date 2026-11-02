@@ -22,7 +22,7 @@ import { loadAgentSource, preparePublishSource } from "../../package/source.js";
 import { BackendClientError } from "../../control/client.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
-import { requireEnabledModelRef } from "../../config/provider.js";
+import { requireEnabledModelRef } from "../../config/provider/index.js";
 import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
 import { clearContext, clearHistory, readHistory, readHistoryPage } from "../../session/history/history.js";
@@ -352,6 +352,21 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const userId = requirePathUserId(text(body, "user_id"));
     await chats.abort(userId, agentId, visitKind(agentId));
     return json(c, 200, { aborted: true });
+  });
+
+  /**
+   * 插话（API / Pi 原生接入）：走 Pi 原生 steer，插到当前工具批次之后、下一次 LLM 调用之前，
+   * 保留已做的工作；不另起一条助手消息（docs/agent_cli §12.8）。
+   * 会话没在跑或外部 agent 接入时返回 `steered: false`，桌面按「停止后重发」处理。
+   */
+  app.post("/agents/:agentId/steer", async (c) => {
+    const token = bearer(c);
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const body = await readJson(c);
+    const userId = requirePathUserId(text(body, "user_id"));
+    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
+    const outcome = await chats.steer(visit, readModel(), promptText(body));
+    return json(c, 200, outcome);
   });
 
   app.post("/agents/:agentId/context", async (c) => {

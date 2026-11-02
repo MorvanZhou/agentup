@@ -1,6 +1,36 @@
 import { expect, it } from "vitest";
 
-import { summarizeAskUserTool } from "../../src/pages/conversation/model/message/ask-user-summary.js";
+import {
+  isOpenAskUserPart,
+  summarizeAskUserTool,
+} from "../../src/pages/conversation/model/message/ask-user-summary.js";
+
+it("认未答 ask_user（含 SDK AskUserQuestion），已有结果则不算开着", () => {
+  expect(
+    isOpenAskUserPart({ type: "tool-call", toolName: "ask_user", result: undefined }),
+  ).toBe(true);
+  expect(
+    isOpenAskUserPart({
+      type: "dynamic-tool",
+      toolName: "ask_user",
+      state: "input-available",
+    }),
+  ).toBe(true);
+  expect(isOpenAskUserPart({ toolName: "AskUserQuestion" })).toBe(true);
+  expect(
+    isOpenAskUserPart({ type: "tool-call", toolName: "ask_user", result: "User answered: …" }),
+  ).toBe(false);
+  expect(
+    isOpenAskUserPart({
+      type: "dynamic-tool",
+      toolName: "ask_user",
+      state: "output-available",
+      output: "ok",
+    }),
+  ).toBe(false);
+  expect(isOpenAskUserPart({ type: "tool-call", toolName: "bash" })).toBe(false);
+});
+
 
 const args = {
   questions: [

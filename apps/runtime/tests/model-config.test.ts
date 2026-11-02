@@ -16,7 +16,7 @@ import {
   setModelEnabled,
   setRuntimeProviderSecrets,
   upsertProviderConnection,
-} from "../src/config/provider.js";
+} from "../src/config/provider/index.js";
 
 it("persists provider connections and loads the active model", () => {
   clearRuntimeProviderSecrets();
@@ -32,6 +32,7 @@ it("persists provider connections and loads the active model", () => {
   expect(settings.configured).toBe(true);
   expect(settings.activeModel).toEqual({ templateId: "ollama", modelId: "qwen3:0.6b" });
   expect(settings.availableModels.some((m) => m.modelId === "qwen3:0.6b" && m.enabled)).toBe(true);
+  expect(settings.availableModels.find((m) => m.modelId === "qwen3:0.6b")?.vendorId).toBe("ollama");
   expect(loadModelConfig(root, {})).toMatchObject({
     providerId: "ollama",
     templateId: "ollama",

@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { ChevronDownIcon } from "@lucide/vue";
+import { CheckIcon, ChevronDownIcon } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
-import type { SessionModelOption } from "../../../../../../../../shared/model/runtime/runtime";
+import ProviderLogo from "../../../../../../../../shared/components/ProviderLogo.vue";
+import type {
+  ProviderModelRef,
+  SessionModelOption,
+} from "../../../../../../../../shared/model/runtime/runtime";
 import { t } from "../../../../../../../../shared/model/ui/ui-locale";
 
 const props = defineProps<{
   models: SessionModelOption[];
   currentLabel: string;
+  /** 当前会话模型 ref，触发器 logo / 勾选态用它对齐 */
+  current?: ProviderModelRef | null;
   disabled?: boolean;
   busy?: boolean;
 }>();
@@ -21,6 +27,28 @@ const open = ref(false);
 const rootRef = ref<HTMLElement | null>(null);
 
 const hasModels = computed(() => props.models.length > 0);
+
+/** 触发器上展示当前项的供应商 logo */
+const currentModel = computed(() => {
+  const selected = props.current;
+  if (!selected) return null;
+  return (
+    props.models.find(
+      (model) => model.templateId === selected.templateId && model.modelId === selected.modelId,
+    ) ?? null
+  );
+});
+
+function isSelected(model: SessionModelOption): boolean {
+  const selected = props.current;
+  if (!selected) return false;
+  return model.templateId === selected.templateId && model.modelId === selected.modelId;
+}
+
+/** 参考下拉：右侧倍率统一两位小数 + x */
+function creditsLabel(credits: number): string {
+  return `${credits.toFixed(2)}x`;
+}
 
 function toggle(): void {
   if (props.disabled || props.busy || !hasModels.value) return;
@@ -54,12 +82,18 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer, 
     <button
       v-if="hasModels"
       type="button"
-      class="flex min-h-8 max-w-[12rem] items-center gap-1 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-40"
+      class="flex min-h-8 max-w-[14rem] items-center gap-1.5 rounded-lg border border-rule bg-paper px-2 py-1 text-xs font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-40"
       :disabled="disabled || busy"
       :aria-expanded="open"
       :aria-label="t('composerModelPickerAria')"
       @click="toggle"
     >
+      <ProviderLogo
+        v-if="currentModel"
+        size="sm"
+        :vendor-id="currentModel.vendorId"
+        :label="currentModel.vendorLabel"
+      />
       <span class="truncate">{{ currentLabel || t("composerModelPick") }}</span>
       <ChevronDownIcon class="size-3.5 shrink-0 text-muted-foreground" />
     </button>
@@ -71,24 +105,45 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer, 
       {{ t("composerModelSetup") }}
     </RouterLink>
 
+    <!-- 模型菜单：单色标 · 名称 · 倍率 · 勾选，对齐参考下拉 -->
     <ul
       v-if="open && hasModels"
-      class="absolute bottom-full right-0 z-20 mb-1 max-h-56 min-w-[14rem] list-none overflow-auto rounded-lg border border-rule bg-background p-1 shadow-sm"
+      class="absolute bottom-full right-0 z-20 mb-1 max-h-72 min-w-[18rem] list-none overflow-auto rounded-xl border border-rule bg-paper p-1.5 shadow-sm"
       role="listbox"
     >
       <li v-for="model in models" :key="`${model.templateId}::${model.modelId}`" class="m-0 p-0">
         <button
           type="button"
-          class="flex w-full flex-col items-start gap-0.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-left transition duration-200 hover:bg-paper"
+          class="flex w-full items-center gap-2.5 rounded-lg border-0 px-2.5 py-2.5 text-left transition duration-150"
+          :class="
+            isSelected(model)
+              ? 'bg-muted text-foreground'
+              : 'bg-transparent text-foreground hover:bg-muted/70'
+          "
           role="option"
+          :aria-selected="isSelected(model)"
           @click="onSelect(model)"
         >
-          <span class="truncate text-sm font-medium text-foreground">{{ model.name }}</span>
-          <span class="truncate text-xs text-muted-foreground">
-            {{ model.vendorLabel }}
-            <template v-if="model.optionLabel !== model.vendorLabel">
-              · {{ model.optionLabel }}
-            </template>
+          <ProviderLogo
+            size="md"
+            :vendor-id="model.vendorId"
+            :label="model.vendorLabel"
+          />
+          <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ model.name }}</span>
+          <!-- credit 倍率：本地 App 才有；0 也要显示 -->
+          <span
+            v-if="model.credits !== undefined"
+            class="shrink-0 tabular-nums text-xs text-muted-foreground"
+            :title="t('providerModelCreditsHint')"
+          >
+            {{ creditsLabel(model.credits) }}
+          </span>
+          <span class="grid size-4 shrink-0 place-items-center">
+            <CheckIcon
+              v-if="isSelected(model)"
+              class="size-4 text-success-foreground"
+              aria-hidden="true"
+            />
           </span>
         </button>
       </li>

@@ -147,7 +147,7 @@ onUnmounted(() => {
     v-if="src"
     v-model:open="open"
     test-id="image-preview"
-    :aria-label="t('msgImagePreview')"
+    :ariaLabel="t('msgImagePreview')"
     :title="chromeTitle"
     close-on-backdrop
     :show-reveal="Boolean(revealPath)"

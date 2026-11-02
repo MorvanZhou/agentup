@@ -30,6 +30,16 @@ it("reads and saves provider settings through the loopback API", async () => {
     expect(Array.isArray(empty.templates)).toBe(true);
     expect(Array.isArray(empty.vendors)).toBe(true);
     expect(empty.templates.some((item: { id: string }) => item.id === "deepseek")).toBe(true);
+    // CLI / SDK 接入：阶段 0 就应出现在目录里，且默认未安装
+    expect(empty.agent_sdks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          template_id: "codebuddy-sdk",
+          state: "not_installed",
+          size_hint_mb: expect.any(Number),
+        }),
+      ]),
+    );
 
     const saved = await request("POST", "/settings/provider/connections", {
       template_id: "ollama",

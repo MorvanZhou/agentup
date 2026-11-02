@@ -1,5 +1,6 @@
 import { t } from "../../i18n/index.js";
 import { normalizeLocale, type UiLocale } from "../../i18n/locale.js";
+import { agentSdkFailureNotice, isAgentSdkFailure } from "./agent-sdk-failures.js";
 
 /** 是否像「模型服务连不上 / 不可用」，而非用户取消或普通业务错误。 */
 export function isModelServiceUnavailable(error: string): boolean {
@@ -146,6 +147,8 @@ export function assistantFailureNotice(
   if (isUserCancelError(text)) {
     return options.includeCancel ? turnCancelledNotice(locale) : null;
   }
+  // 本地 Agent App 自带原因码：它那套「检查 API Key / 换模型」的建议不适用，先让它自己说
+  if (isAgentSdkFailure(text)) return agentSdkFailureNotice(text, locale);
   if (isModelServiceUnavailable(text)) return modelUnavailableNotice(locale);
   if (isQuotaOrBillingError(text)) return quotaExhaustedNotice(locale);
   if (isRateLimitError(text)) return rateLimitNotice(locale);

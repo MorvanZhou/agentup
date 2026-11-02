@@ -9,7 +9,7 @@ import {
   refreshProviderModels,
   setRuntimeProviderSecrets,
   upsertProviderConnection,
-} from "../src/config/provider.js";
+} from "../src/config/provider/index.js";
 import { discoverRemoteModels } from "../src/config/discover-models.js";
 
 afterEach(() => {

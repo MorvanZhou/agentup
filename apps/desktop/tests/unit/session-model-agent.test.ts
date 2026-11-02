@@ -14,6 +14,7 @@ describe("group model picker", () => {
         placeholder: "",
         members: [{ id: "pm", name: "产品" }],
         defaultResourceAgentId: "",
+        groupId: "g-1",
       }).modelPicker,
     ).toBe(true);
   });
@@ -24,6 +25,7 @@ describe("group model picker", () => {
         placeholder: "",
         members: [{ id: "pm", name: "产品" }],
         defaultResourceAgentId: "",
+        groupId: "g-1",
       }).editResend,
     ).toBe(true);
   });

@@ -93,6 +93,8 @@ test("停止回复后 ask_user 浮层收起并显示已终止", async ({ page })
   await page.getByRole("button", { name: "停止回复" }).click();
 
   await expect(page.getByRole("heading", { name: "用哪个数据库？" })).toHaveCount(0);
+  // 浮层撤后 ask_user 收进过程折叠段；展开后卡上应标「已终止」
+  await page.getByRole("button", { name: /\d+ 个步骤/ }).click();
   await expect(page.getByText("已终止").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "发送" })).toBeVisible();
 });

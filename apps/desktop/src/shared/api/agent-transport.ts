@@ -45,6 +45,27 @@ export function createAgentUpTransport(options: {
       await abortBusyTurn();
       response = await baseFetch(input, init);
     }
+    // 202=已进 followUp 队列（本地 Agent App 接入，见 docs/agent_cli §12.8）：
+    // 响应体是 JSON 不是 SSE，别让 AI SDK 当流解析；队列由 FollowUpQueueStrip 拉取展示。
+    if (response.status === 202) {
+      await response.text().catch(() => "");
+      // 必须给一条「完整但空」的流：否则 assistant-ui 停在 submitted，作曲器再发不出第二条
+      const events = [
+        { type: "start", messageId: `queued-${Date.now()}` },
+        { type: "start-step" },
+        { type: "finish-step" },
+        { type: "finish" },
+      ];
+      const body = `${events.map((event) => `data: ${JSON.stringify(event)}`).join("\n\n")}\n\ndata: [DONE]\n\n`;
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "content-type": "text/event-stream; charset=utf-8",
+          "x-vercel-ai-ui-message-stream": "v1",
+          "cache-control": "no-cache",
+        },
+      });
+    }
     if (response.ok) return response;
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {

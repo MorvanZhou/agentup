@@ -1,5 +1,24 @@
 /** 从 ask_user 工具 args + result 文本还原可展示的答题摘要。 */
 
+/**
+ * 气泡里仍有未答完的 ask_user（浮层可能已撤）。
+ * 不绑死 part.type：流式里可能是 `tool-call` / `dynamic-tool`，AUI 投影字段也不一。
+ * 有 result/output 或已到 output-* 态才算答完。
+ */
+export function isOpenAskUserPart(part: {
+  type?: string;
+  toolName?: string;
+  result?: unknown;
+  output?: unknown;
+  state?: string;
+}): boolean {
+  if (part.toolName !== "ask_user" && part.toolName !== "AskUserQuestion") return false;
+  if (part.result != null) return false;
+  if (part.output != null) return false;
+  if (part.state === "output-available" || part.state === "output-error") return false;
+  return true;
+}
+
 export type AskUserSummaryRow = {
   index: number;
   question: string;

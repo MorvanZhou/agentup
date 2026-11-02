@@ -10,6 +10,11 @@ export function composerRunActions(input: {
   steerBlocked: boolean;
   /** 子任务还在跑，但执掌者这句已经说完：空框停止，有字发送（与单聊一致）。 */
   tasksBusy?: boolean;
+  /**
+   * SDK 接入的消费轮（drain/wake）：assistant-ui 线程没在跑（streaming=false），
+   * 但发送仍是「进 followUp 队列」语义，不该被 steerBlocked 封死。空框停止，有字发送。
+   */
+  queueWhileBusy?: boolean;
 }): { stop: boolean; send: boolean; interrupt: boolean } {
   const interrupt =
     input.streaming && input.hasText && !input.inputDisabled && !input.steerBlocked;
@@ -17,6 +22,11 @@ export function composerRunActions(input: {
     input.tasksBusy === true && !input.streaming && !input.steerBlocked && !interrupt;
   // 群子任务忙碌：与流式中同一套互斥——空→停，有字→发。
   if (tasksBusy) {
+    const canSend = input.hasText && !input.inputDisabled;
+    return { stop: !canSend, send: canSend, interrupt: false };
+  }
+  // SDK 消费轮：同 tasksBusy 一套互斥——发送即入队，不打扰正在跑的这一轮。
+  if (input.queueWhileBusy && !input.streaming && !interrupt) {
     const canSend = input.hasText && !input.inputDisabled;
     return { stop: !canSend, send: canSend, interrupt: false };
   }

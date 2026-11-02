@@ -267,6 +267,10 @@ const actions = computed<ThreadActions>(() => ({
   stopTurn: async () => {
     emit("stop");
   },
+  // 群会话本期不接 followUp 队列：群发言本来就按行排队，不需要再叠一层
+  enqueueFollowUp: async () => undefined,
+  // 同上：群也不接 steer（返回 false → Composer 退回停止后重发）
+  steerTurn: async () => false,
 }));
 
 const liveAuthor = computed(() => {
@@ -301,7 +305,8 @@ function appendText(message: AppendMessage): string {
 
 /** 附件条里的图片 id 就是 staged 路径；发出去时拼进正文，输入框本身不放芯片。 */
 function outgoingText(message: AppendMessage): string {
-  const ids = message.role === "user" ? message.attachments.map((item) => item.id) : [];
+  const ids =
+    message.role === "user" ? (message.attachments ?? []).map((item) => item.id) : [];
   return groupOutgoingText(appendText(message), ids);
 }
 
@@ -407,6 +412,8 @@ provide(
   computed(() => ({
     streaming: Boolean(live.value) && speaking.value,
     message: live.value,
+    // 群发言本来就按行排队，不走 followUp 队列
+    userText: "",
   })),
 );
 provide(chatMessageFooterKey, GroupMessageFooter);

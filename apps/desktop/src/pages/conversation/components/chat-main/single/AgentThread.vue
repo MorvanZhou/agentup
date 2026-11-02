@@ -5,8 +5,11 @@ import { AuiConfig, AuiProvider } from "@assistant-ui/vue";
 import type { UIMessage } from "ai";
 import { computed, onBeforeUnmount, provide, ref, shallowRef, toRef, watch } from "vue";
 
+import { DesktopApi } from "../../../../../shared/api/runtime";
 import ChatSettingsPanel from "./ChatSettingsPanel.vue";
 import WorkspacePanel from "../shared/workspace/WorkspacePanel.vue";
+import FollowUpQueueStrip from "../shared/FollowUpQueueStrip.vue";
+import FollowUpResumeDialog from "../shared/FollowUpResumeDialog.vue";
 
 import { useDesktop } from "../../../../../app/desktop";
 import { createAgentUpTransport } from "../../../../../shared/api/agent-transport";
@@ -174,6 +177,7 @@ provide(threadDelegationKey, delegationApi);
 const resolvedRuntimeBaseUrl = computed(
   () => props.runtimeBaseUrl ?? defaultRuntimeBaseUrl(),
 );
+const runtimeApi = new DesktopApi();
 
 const { pulseFleets } = useDesktop();
 const runningDelegations = computed(() => pulseFleets.value.runningDelegations);
@@ -193,6 +197,8 @@ const wakeEnabled = computed(
   () => Boolean(props.active && props.busyTurn?.phase === "wake"),
 );
 const streamRunning = ref(false);
+/** followUp 队列被消费时先亮出来的用户那条（runtime 侧已拼成一条）。 */
+const wakeUserText = ref("");
 
 const { streaming: wakeStreaming, liveMessage: wakeLiveMessage } = useWakeTurnStream({
   baseUrl: resolvedRuntimeBaseUrl,
@@ -208,10 +214,19 @@ const { streaming: wakeStreaming, liveMessage: wakeLiveMessage } = useWakeTurnSt
       delegationApi.value.registerStarted(data);
       noteFleetStarted(data);
     },
+    onUserEcho: (text) => {
+      wakeUserText.value = text;
+    },
     onDone: () => {
       void props.reloadHistory?.();
     },
   },
+});
+
+// 新一轮 wake 开始就撤掉上一条直播用户气泡：避免和历史里的同一条重复占位；
+// 生产里 busyTurn 也会在同一时间解开，live 区块整体让位给权威历史。
+watch(wakeEnabled, (on) => {
+  if (on) wakeUserText.value = "";
 });
 
 provide(
@@ -220,6 +235,7 @@ provide(
     streaming: wakeStreaming.value,
     message:
       wakeEnabled.value || wakeStreaming.value ? wakeLiveMessage.value : null,
+    userText: wakeEnabled.value || wakeStreaming.value ? wakeUserText.value : "",
   })),
 );
 
@@ -242,6 +258,9 @@ watch(
 );
 const clearing = ref(false);
 const clearingHistory = ref(false);
+/** 停止后仍留在队列里的条数（§12.8.1 的「还有 N 条，要继续吗」）。 */
+const pendingFollowUps = ref(0);
+const resumeFollowUpsOpen = ref(false);
 /** 立刻收起 AskUser / 审批 / 命令超时浮层（不依赖 SSE）。 */
 function dismissHitl(): void {
   if (props.askUser) emit("askUser", undefined);
@@ -280,6 +299,23 @@ const threadActions = computed<ThreadActions>(() => ({
     if (!props.dismiss) return;
     await props.dismiss();
   },
+  /** 本地 Agent App（SDK）接入：回合中的新消息进 runtime 的 followUp 队列（docs/agent_cli §12.8）。 */
+  async enqueueFollowUp(text: string) {
+    await runtimeApi.enqueueFollowUp(props.token, props.userId, props.agentId, text);
+  },
+  /**
+   * 插话（API / Pi 原生接入）：先试 runtime 的 Pi 原生 steer。
+   * 插不上（没在跑 / 外部 agent 接入）就返回 false，Composer 退回「停止后重发」（§12.8）。
+   */
+  async steerTurn(text: string): Promise<boolean> {
+    if (!props.token || !props.userId || !props.agentId) return false;
+    try {
+      return await runtimeApi.steerTurn(props.token, props.agentId, props.userId, text);
+    } catch {
+      // 插话失败不挡输入：退回老路子
+      return false;
+    }
+  },
   async stopTurn() {
     dismissHitl();
     if (!props.abortTurn) return;
@@ -288,8 +324,45 @@ const threadActions = computed<ThreadActions>(() => ({
     } catch {
       // 停止失败不挡 UI；重发时 transport 仍会 409→abort→重试。
     }
+    await askPendingFollowUps();
   },
 }));
+
+/**
+ * 停止不清队列（§12.8.1）：停下后若队列还有内容，弹一次「还有 N 条，要继续吗」。
+ * 只有本地 Agent App（SDK）接入会有队列；其它接入查出来是空，自然不弹。
+ */
+async function askPendingFollowUps(): Promise<void> {
+  if (!props.token || !props.userId || !props.agentId) return;
+  try {
+    const queue = await runtimeApi.listFollowUps(props.token, props.userId, props.agentId);
+    if (queue.length === 0) return;
+    pendingFollowUps.value = queue.length;
+    resumeFollowUpsOpen.value = true;
+  } catch {
+    // 队列拉不到就不打扰，保持"已停止"的安静状态
+  }
+}
+
+/** 继续：显式通知 runtime 把保留的队列合并成一条再开一轮。 */
+async function resumePendingFollowUps(): Promise<void> {
+  resumeFollowUpsOpen.value = false;
+  try {
+    await runtimeApi.resumeFollowUps(props.token, props.userId, props.agentId);
+  } catch {
+    // 状态若已变化（例如队列被别处清空），关闭弹窗即可。
+  }
+}
+
+/** 清空：当前轮已经停止，只需撤掉保留的队列。 */
+async function clearPendingFollowUps(): Promise<void> {
+  resumeFollowUpsOpen.value = false;
+  try {
+    await runtimeApi.clearFollowUps(props.token, props.userId, props.agentId);
+  } catch {
+    // 队列状态已变化时安静关闭弹窗。
+  }
+}
 provide(threadActionsKey, threadActions);
 
 /** 右侧抽屉：工作空间 / 对话配置 互斥。 */
@@ -445,6 +518,22 @@ const config = AuiConfig({
         <ShellHangDock :hang="shellHang" @decide="(action) => emit('shell-hang-decide', action)" />
         <ApprovalDock :approval="approval" @decide="(allow, scope) => emit('decide', allow, scope)" />
         <AskUserDock :ask-user="askUser" @answer="(answer) => emit('answer', answer)" />
+        <!-- 已排队消息：本地 Agent App 接入下回合中的新消息 -->
+        <FollowUpQueueStrip
+          v-if="agentId && token && userId"
+          :token="token"
+          :user-id="userId"
+          :agent-id="agentId"
+          :busy="streamRunning || Boolean(busyTurn)"
+        />
+        <!-- 停止后的队列确认：继续发送 / 清空队列 -->
+        <FollowUpResumeDialog
+          v-if="agentId && token && userId"
+          v-model:open="resumeFollowUpsOpen"
+          :count="pendingFollowUps"
+          @resume="resumePendingFollowUps"
+          @clear="clearPendingFollowUps"
+        />
       </template>
       <template #composer>
         <Composer />

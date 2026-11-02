@@ -1,3 +1,4 @@
+import type { PendingAttachment } from "@assistant-ui/core";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,6 +7,16 @@ import {
 } from "../../src/pages/conversation/model/composer/group-image-attachment";
 import type { DesktopApi } from "../../src/shared/api/runtime";
 import { setToastOpen, toastState } from "../../src/shared/model/ui/toast";
+
+/** add 的声明同时允许异步生成器；本适配器只返回一张待发送附件。 */
+function asPending(
+  value: PendingAttachment | AsyncGenerator<PendingAttachment, void>,
+): PendingAttachment {
+  if (typeof value !== "object" || value === null || Symbol.asyncIterator in value) {
+    throw new Error("expected a pending attachment");
+  }
+  return value;
+}
 
 function imageFile(): File {
   return {
@@ -36,7 +47,7 @@ describe("group image attachment adapter", () => {
       auth: () => ({ token: "tok", userId: "u1", groupId: "g-1" }),
     });
     const file = imageFile();
-    const pending = await adapter.add({ file });
+    const pending = asPending(await adapter.add({ file }));
 
     expect(stageGroupAttachmentFromPath).toHaveBeenCalledWith(
       "tok",

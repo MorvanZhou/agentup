@@ -33,6 +33,7 @@ import * as settingsApi from "./settings";
 import * as stateApi from "./state";
 import * as groupsApi from "./groups";
 import * as projectRootsApi from "./project-roots";
+import * as followUpsApi from "./follow-ups";
 import * as pulseApi from "./pulse";
 import * as workspaceApi from "./workspace";
 import type { WorkspaceEntry, WorkspaceFile } from "./workspace";
@@ -270,6 +271,57 @@ export class DesktopApi {
     locale?: UiLocale,
   ): Promise<ProviderSettings> {
     return settingsApi.setProviderActiveModel(this.http, token, ref, locale);
+  }
+
+  /** CLI / SDK 接入：开始安装（runtime 代跑 npm），返回 job id 供轮询 */
+  installAgentSdk(token: string, templateId: string): Promise<string> {
+    return settingsApi.installAgentSdk(this.http, token, templateId);
+  }
+
+  agentSdkInstallJob(
+    token: string,
+    templateId: string,
+    jobId: string,
+  ): Promise<settingsApi.AgentSdkInstallJob> {
+    return settingsApi.agentSdkInstallJob(this.http, token, templateId, jobId);
+  }
+
+  cancelAgentSdkInstall(
+    token: string,
+    templateId: string,
+    jobId: string,
+  ): Promise<ProviderSettings> {
+    return settingsApi.cancelAgentSdkInstall(this.http, token, templateId, jobId);
+  }
+
+  /** 触发登录：返回 auth_url 时由桌面用系统浏览器打开 */
+  loginAgentSdk(
+    token: string,
+    templateId: string,
+  ): Promise<settingsApi.AgentSdkLoginResult> {
+    return settingsApi.loginAgentSdk(this.http, token, templateId);
+  }
+
+  checkAgentSdkLogin(token: string, templateId: string): Promise<settingsApi.AgentSdkLoginResult> {
+    return settingsApi.checkAgentSdkLogin(this.http, token, templateId);
+  }
+
+  /** 登出本地 App：回到「已安装 / 未登录」，可以再登录别的账号 */
+  logoutAgentSdk(token: string, templateId: string, locale?: UiLocale): Promise<ProviderSettings> {
+    return settingsApi.logoutAgentSdk(this.http, token, templateId, locale);
+  }
+
+  uninstallAgentSdk(token: string, templateId: string, locale?: UiLocale): Promise<ProviderSettings> {
+    return settingsApi.uninstallAgentSdk(this.http, token, templateId, locale);
+  }
+
+  /** 重新向本地 SDK 问一次模型目录（登录后可刷新） */
+  refreshAgentSdkModels(
+    token: string,
+    templateId: string,
+    locale?: UiLocale,
+  ): Promise<ProviderSettings> {
+    return settingsApi.refreshAgentSdkModels(this.http, token, templateId, locale);
   }
 
   hydrateProviderRuntimeSecrets(token: string, secrets: Record<string, string>): Promise<void> {
@@ -525,6 +577,11 @@ export class DesktopApi {
 
   abortTurn(token: string, agentId: string, userId: string): Promise<void> {
     return chatApi.abortTurn(this.http, token, agentId, userId);
+  }
+
+  /** 插话：插进正在跑的回合（API / Pi 原生）；false = 没插上，走停止后重发。 */
+  steerTurn(token: string, agentId: string, userId: string, text: string): Promise<boolean> {
+    return chatApi.steerTurn(this.http, token, agentId, userId, text);
   }
 
   clearContext(token: string, agentId: string, userId: string): Promise<void> {
@@ -805,6 +862,55 @@ export class DesktopApi {
     path: string,
   ): Promise<string[]> {
     return projectRootsApi.removeProjectRoot(this.http, token, userId, agentId, personal, path);
+  }
+
+  listFollowUps(token: string, userId: string, agentId: string): Promise<followUpsApi.FollowUpItem[]> {
+    return followUpsApi.listFollowUps(this.http, token, userId, agentId);
+  }
+
+  enqueueFollowUp(
+    token: string,
+    userId: string,
+    agentId: string,
+    text: string,
+  ): Promise<followUpsApi.FollowUpItem[]> {
+    return followUpsApi.enqueueFollowUp(this.http, token, userId, agentId, text);
+  }
+
+  updateFollowUp(
+    token: string,
+    userId: string,
+    agentId: string,
+    id: string,
+    text: string,
+  ): Promise<followUpsApi.FollowUpItem[]> {
+    return followUpsApi.updateFollowUp(this.http, token, userId, agentId, id, text);
+  }
+
+  promoteFollowUp(
+    token: string,
+    userId: string,
+    agentId: string,
+    id: string,
+  ): Promise<followUpsApi.FollowUpItem[]> {
+    return followUpsApi.promoteFollowUp(this.http, token, userId, agentId, id);
+  }
+
+  removeFollowUp(
+    token: string,
+    userId: string,
+    agentId: string,
+    id: string,
+  ): Promise<followUpsApi.FollowUpItem[]> {
+    return followUpsApi.removeFollowUp(this.http, token, userId, agentId, id);
+  }
+
+  clearFollowUps(token: string, userId: string, agentId: string): Promise<number> {
+    return followUpsApi.clearFollowUps(this.http, token, userId, agentId);
+  }
+
+  resumeFollowUps(token: string, userId: string, agentId: string): Promise<void> {
+    return followUpsApi.resumeFollowUps(this.http, token, userId, agentId);
   }
 
   listGroups(token: string, userId: string) {

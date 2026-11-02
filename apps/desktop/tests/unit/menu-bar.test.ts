@@ -26,7 +26,12 @@ const {
         size: { width: number; height: number },
       ) => { toPNG: () => Buffer };
       createEmpty: () => {
-        addRepresentation: (rep: unknown) => void;
+        addRepresentation: (rep: {
+          scaleFactor: number;
+          width: number;
+          height: number;
+          buffer: Buffer;
+        }) => void;
         setTemplateImage: (value: boolean) => void;
       };
     },
@@ -57,7 +62,12 @@ const {
         size: { width: number; height: number },
       ) => { toPNG: () => Buffer };
       createEmpty: () => {
-        addRepresentation: (rep: unknown) => void;
+        addRepresentation: (rep: {
+          scaleFactor: number;
+          width: number;
+          height: number;
+          buffer: Buffer;
+        }) => void;
         setTemplateImage: (value: boolean) => void;
       };
     };

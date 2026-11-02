@@ -50,14 +50,14 @@ function escapeGuard(): boolean {
   <PreviewShell
     v-model:open="open"
     test-id="markdown-preview"
-    :aria-label="t('msgMarkdownPreview')"
+    :ariaLabel="t('msgMarkdownPreview')"
     :title="chromeTitle"
     :escape-guard="escapeGuard"
     :show-reveal="Boolean(revealPath)"
     @reveal="emit('reveal')"
   >
     <template #view-mode>
-      <PreviewModeTabs v-model="mode" :modes="modeTabs" :aria-label="t('msgMarkdownPreviewModes')" />
+      <PreviewModeTabs v-model="mode" :modes="modeTabs" :ariaLabel="t('msgMarkdownPreviewModes')" />
     </template>
 
     <div

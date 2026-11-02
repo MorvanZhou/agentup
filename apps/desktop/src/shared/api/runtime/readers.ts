@@ -1,8 +1,15 @@
+import {
+  AGENT_SDK_STATES,
+  type AgentSdkModelOption,
+  type AgentSdkOption,
+  type AgentSdkState,
+} from "../../model/runtime/runtime";
 import type {
   AgentCard,
   AvailableProviderModel,
   InvocableSkill,
   PersonalAssistantProfile,
+  ProviderAccess,
   ProviderConnection,
   ProviderModelRef,
   ProviderSettings,
@@ -199,11 +206,16 @@ export function readSessionModelState(payload: Record<string, unknown>): Session
         templateId: row.template_id,
         modelId: row.model_id,
         name: row.name,
+        // 老 runtime 没有 vendor_id 时回落空串，logo 走字母占位
+        vendorId: typeof row.vendor_id === "string" ? row.vendor_id : "",
         vendorLabel: row.vendor_label,
         optionLabel: row.option_label,
+        // 0 是真实倍率；老 runtime / API 服务商没有就省略
+        ...(typeof row.credits === "number" && row.credits >= 0 ? { credits: row.credits } : {}),
       };
     }),
     configured: payload.configured,
+    followUp: payload.follow_up === true,
   };
 }
 
@@ -217,7 +229,8 @@ export function readProviderSettings(payload: Record<string, unknown>): Provider
     typeof payload.configured !== "boolean" ||
     typeof payload.overridden_by_environment !== "boolean" ||
     !Array.isArray(payload.vendors) ||
-    !Array.isArray(payload.templates)
+    !Array.isArray(payload.templates) ||
+    !Array.isArray(payload.agent_sdks)
   ) {
     throw new DesktopApiError("AI 服务配置响应无效");
   }
@@ -230,7 +243,71 @@ export function readProviderSettings(payload: Record<string, unknown>): Provider
     overriddenByEnvironment: payload.overridden_by_environment,
     vendors: payload.vendors.map(readProviderVendor),
     templates: payload.templates.map(readProviderTemplate),
+    agentSdks: payload.agent_sdks.map(readAgentSdkOption),
   };
+}
+
+function readProviderAccess(value: unknown, kind: unknown): ProviderAccess {
+  if (value === "agent-sdk" || kind === "agent-sdk") return "agent-sdk";
+  return "api";
+}
+
+function readAgentSdkOption(value: unknown): AgentSdkOption {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new DesktopApiError("本地 SDK 配置无效");
+  }
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.template_id !== "string" ||
+    typeof payload.vendor_label !== "string" ||
+    typeof payload.option_label !== "string" ||
+    typeof payload.label !== "string" ||
+    typeof payload.package !== "string" ||
+    typeof payload.size_hint_mb !== "number" ||
+    typeof payload.state !== "string"
+  ) {
+    throw new DesktopApiError("本地 SDK 配置无效");
+  }
+  const guide = payload.login_guide as Record<string, unknown> | null;
+  return {
+    templateId: payload.template_id,
+    vendorLabel: payload.vendor_label,
+    optionLabel: payload.option_label,
+    label: payload.label,
+    hint: typeof payload.hint === "string" ? payload.hint : null,
+    package: payload.package,
+    sizeHintMb: payload.size_hint_mb,
+    loginGuide:
+      guide && typeof guide.command === "string"
+        ? { command: guide.command, docUrl: typeof guide.doc_url === "string" ? guide.doc_url : null }
+        : null,
+    // 未知状态回落 not_installed，避免旧版 runtime 让设置页崩掉
+    state: (AGENT_SDK_STATES as readonly string[]).includes(payload.state)
+      ? (payload.state as AgentSdkState)
+      : "not_installed",
+    installedVersion: typeof payload.installed_version === "string" ? payload.installed_version : null,
+    lastError: typeof payload.last_error === "string" ? payload.last_error : null,
+    accountLabel: typeof payload.account_label === "string" ? payload.account_label : null,
+    models: readAgentSdkModels(payload.models),
+  };
+}
+
+/** 模型目录缺省为空：没登录 / 没查过时列表就该是空的，不抛错。 */
+function readAgentSdkModels(value: unknown): AgentSdkModelOption[] {
+  if (!Array.isArray(value)) return [];
+  const out: AgentSdkModelOption[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.name !== "string") continue;
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    // 倍率可选：老 runtime 不带；0 是真实值要留，负数和字符串一律当没有
+    const credits = typeof row.credits === "number" && row.credits >= 0 ? row.credits : undefined;
+    out.push({ id: row.id, name: row.name, ...(credits === undefined ? {} : { credits }) });
+  }
+  return out;
 }
 
 function readProviderModelRef(value: unknown): ProviderModelRef {
@@ -301,11 +378,17 @@ function readAvailableProviderModel(value: unknown): AvailableProviderModel {
     templateId: payload.template_id,
     modelId: payload.model_id,
     name: payload.name,
+    // 老 runtime 没有 vendor_id 时回落空串，logo 走字母占位
+    vendorId: typeof payload.vendor_id === "string" ? payload.vendor_id : "",
     vendorLabel: payload.vendor_label,
     optionLabel: payload.option_label,
     enabled: payload.enabled,
     active: payload.active,
     custom: payload.custom === true,
+    // 0 是真实倍率（自部署 / 免费档），照常带上
+    ...(typeof payload.credits === "number" && payload.credits >= 0
+      ? { credits: payload.credits }
+      : {}),
   };
 }
 
@@ -350,6 +433,8 @@ function readProviderTemplate(value: unknown): ProviderTemplate {
     optionLabel: payload.option_label,
     label: payload.label,
     kind: payload.kind,
+    // 旧 runtime 不带该字段：按 kind 推断，保证升级过程不炸
+    access: readProviderAccess(payload.access, payload.kind),
     piProviderId: payload.pi_provider_id,
     requiresApiKey: payload.requires_api_key,
     defaultBaseUrl: typeof payload.default_base_url === "string" ? payload.default_base_url : undefined,

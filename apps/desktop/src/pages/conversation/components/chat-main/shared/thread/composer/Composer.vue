@@ -81,10 +81,14 @@ const modelAgentId = computed(() =>
 );
 const {
   models: sessionModels,
+  current: sessionModelCurrent,
   currentLabel: sessionModelLabel,
   busy: sessionModelBusy,
   select: selectSessionModel,
+  state: sessionModelState,
 } = useSessionModel(modelAgentId);
+/** 会话当前模型就是本地 Agent App（SDK）接入：回合中的发送一律进队列，不中断当前轮。 */
+const sdkAccess = computed(() => sessionModelState.value?.followUp === true);
 const cursor = ref(0);
 const caretRect = ref<CaretClientRect | null>(null);
 
@@ -201,11 +205,20 @@ const inputDisabled = computed(
 const hasDraft = computed(() => composerText.value.trim().length > 0);
 /** AskUser / 审批 / wake 已经在等用户，不再把自由文本插进当前回复。 */
 const steerBlocked = computed(() => hitlPending.value || Boolean(wakeBusy.value));
+/**
+ * SDK 接入且正处于消费轮（wake）：第二轮不走 assistant-ui 线程，isRunning 不会亮，
+ * 但发送仍是入队语义（runtime 的 slot.busy=true 收 POST /follow-ups），
+ * 不能被 steerBlocked 封死成「只有停止」。AskUser/审批仍只停不发。
+ */
+const queueWhileBusy = computed(
+  () => sdkAccess.value && Boolean(wakeBusy.value) && !hitlPending.value,
+);
 const runActions = computed(() =>
   composerRunActions({
     streaming: isRunning.value,
     stopVisible: turnBusy.value,
     tasksBusy: tasksBusy.value,
+    queueWhileBusy: queueWhileBusy.value,
     hasText: hasDraft.value,
     inputDisabled: inputDisabled.value,
     steerBlocked: steerBlocked.value,
@@ -215,6 +228,7 @@ const showStop = computed(() => runActions.value.stop);
 const showSend = computed(() => runActions.value.send);
 const showInterruptSend = computed(() => runActions.value.interrupt);
 const interrupting = ref(false);
+const enqueueing = ref(false);
 
 onMounted(() => {
   if (composerAttachSlot) composerAttachSlot.value = composerAttachApi;
@@ -243,9 +257,30 @@ function prepareSend() {
   trimComposerTextBeforeSend();
 }
 
-function trySend(): void {
+async function trySend(): Promise<void> {
   prepareSend();
+  // 本地 Agent App（SDK）接入且这一轮还在跑（含消费轮 wake）：走队列，不打扰当前回合
+  if (sdkAccess.value && (isRunning.value || queueWhileBusy.value)) {
+    const text = aui.composer.getState().text.trim();
+    if (!text) return;
+    await enqueueFollowUp(text);
+    return;
+  }
   void aui.composer.send();
+}
+
+/** 队列发送串行化：避免双击/连按回车重复入队，失败时保留草稿并明确提示。 */
+async function enqueueFollowUp(text: string): Promise<void> {
+  if (enqueueing.value) return;
+  enqueueing.value = true;
+  try {
+    await actions?.value.enqueueFollowUp?.(text);
+    if (aui.composer.getState().text.trim() === text) aui.composer.setText("");
+  } catch {
+    showToast(t("followUpSendFailed"), "error");
+  } finally {
+    enqueueing.value = false;
+  }
 }
 
 function onComposerSendClick(): void {
@@ -292,6 +327,18 @@ async function interruptAndSend(): Promise<void> {
   prepareSend();
   const text = aui.composer.getState().text.trim();
   if (!text) return;
+  // 本地 Agent App（SDK）接入没有 steer：回合中的新消息直接进 runtime 的 followUp 队列，
+  // 不中断当前轮（docs/agent_cli §12.8）。
+  if (sdkAccess.value) {
+    await enqueueFollowUp(text);
+    return;
+  }
+  // API / Pi 原生：先试 Pi 原生 steer——插到当前工具批次之后，保留已做的工作（§12.8）。
+  // 插不上（会话其实没在跑）才退回「停止 + 重发」。
+  if (await actions?.value.steerTurn?.(text)) {
+    aui.composer.setText("");
+    return;
+  }
   interrupting.value = true;
   try {
     aui.thread.cancelRun();
@@ -493,6 +540,7 @@ function onToolbarPickFiles(files: File[]): void {
           <ComposerModelPicker
             v-if="surface.modelPicker"
             :models="sessionModels"
+            :current="sessionModelCurrent"
             :current-label="sessionModelLabel"
             :disabled="inputDisabled || turnBusy"
             :busy="sessionModelBusy"
@@ -519,8 +567,18 @@ function onToolbarPickFiles(files: File[]): void {
           >
             {{ t("composerSend") }}
           </button>
+          <!-- SDK 消费轮（wake）：发送即入队（POST /follow-ups），不走 assistant-ui 的 composer.send -->
+          <button
+            v-if="showSend && queueWhileBusy"
+            type="button"
+            class="bg-primary text-primary-foreground min-h-8 rounded-lg px-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
+            :aria-label="t('composerSend')"
+            @click="trySend"
+          >
+            {{ t("composerSend") }}
+          </button>
           <ComposerPrimitiveSend
-            v-if="showSend && !showInterruptSend"
+            v-else-if="showSend && !showInterruptSend"
             class="bg-primary text-primary-foreground min-h-8 rounded-lg px-3 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-40"
             :aria-label="t('composerSend')"
             @click="onComposerSendClick"

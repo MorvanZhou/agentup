@@ -86,7 +86,18 @@ it("interrupts the timeline for pending ask_user and approval", () => {
   ).toBe(true);
 });
 
-it("exposes in-progress tools outside the closed fold", () => {
+it("folds in-progress tools into the closed group instead of flashing them outside", () => {
+  expect(
+    buildAssistantTimeline([
+      { type: "tool-call", toolName: "read", result: "ok" },
+      { type: "tool-call", toolName: "write", status: { type: "running" } },
+    ]),
+  ).toEqual({
+    items: [
+      { kind: "group", id: "g-0", indices: [0, 1], stepCount: 2 },
+    ],
+  });
+
   expect(
     buildAssistantTimeline([
       { type: "text" },
@@ -95,7 +106,7 @@ it("exposes in-progress tools outside the closed fold", () => {
   ).toEqual({
     items: [
       { kind: "text", index: 0 },
-      { kind: "hitl", index: 1 },
+      { kind: "group", id: "g-1", indices: [1], stepCount: 1 },
     ],
   });
 });

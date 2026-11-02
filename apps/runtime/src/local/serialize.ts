@@ -1,5 +1,6 @@
 import type { UiLocale } from "../i18n/index.js";
-import { readProviderSettings } from "../config/provider.js";
+import { readProviderSettings } from "../config/provider/index.js";
+import { getProviderTemplate } from "../config/provider-templates.js";
 import { peekVisitModelRef } from "../session/model/session-model.js";
 import type { UserState } from "./user/state.js";
 
@@ -95,11 +96,13 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       template_id: model.templateId,
       model_id: model.modelId,
       name: model.name,
+      vendor_id: model.vendorId,
       vendor_label: model.vendorLabel,
       option_label: model.optionLabel,
       enabled: model.enabled,
       active: model.active,
       custom: model.custom,
+      credits: model.credits ?? null,
     })),
     configured: settings.configured,
     overridden_by_environment: settings.overriddenByEnvironment,
@@ -113,6 +116,7 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
         option_label: option.optionLabel,
         label: option.label,
         kind: option.kind,
+        access: option.access,
         pi_provider_id: option.piProviderId,
         requires_api_key: option.requiresApiKey,
         default_base_url: option.defaultBaseUrl,
@@ -128,6 +132,29 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
         })),
       })),
     })),
+    agent_sdks: settings.agentSdks.map((sdk) => ({
+      template_id: sdk.templateId,
+      vendor_label: sdk.vendorLabel,
+      option_label: sdk.optionLabel,
+      label: sdk.label,
+      hint: sdk.hint ?? null,
+      package: sdk.package,
+      size_hint_mb: sdk.sizeHintMb,
+      login_guide: sdk.loginGuide
+        ? { command: sdk.loginGuide.command, doc_url: sdk.loginGuide.docUrl ?? null }
+        : null,
+      state: sdk.state,
+      installed_version: sdk.installedVersion ?? null,
+      last_error: sdk.lastError ?? null,
+      // 登录账号的展示名；登出后为 null
+      account_label: sdk.accountLabel ?? null,
+      // 登录后从本地 SDK 查到的模型，「启用服务」列表直接用这份目录
+      models: (sdk.models ?? []).map((model) => ({
+        id: model.id,
+        name: model.name,
+        credits: model.credits ?? null,
+      })),
+    })),
     templates: settings.templates.map((template) => ({
       id: template.id,
       vendor_id: template.vendorId,
@@ -135,6 +162,7 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       option_label: template.optionLabel,
       label: template.label,
       kind: template.kind,
+      access: template.access,
       pi_provider_id: template.piProviderId,
       requires_api_key: template.requiresApiKey,
       default_base_url: template.defaultBaseUrl,
@@ -170,9 +198,13 @@ export function sessionModelBody(
       template_id: model.templateId,
       model_id: model.modelId,
       name: model.name,
+      vendor_id: model.vendorId,
       vendor_label: model.vendorLabel,
       option_label: model.optionLabel,
+      credits: model.credits ?? null,
     })),
     configured: settings.configured,
+    // 会话当前模型是不是本地 Agent App（SDK）接入：桌面据此把「回合中发送」改成排队（§12.8）
+    follow_up: current ? getProviderTemplate(current.templateId)?.kind === "agent-sdk" : false,
   };
 }

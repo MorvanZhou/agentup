@@ -71,3 +71,25 @@ export function delegationKey(userId: string, toAgentId: string): string {
 export function toolKey(userId: string, agentId: string, toolName: string): string {
   return `${userId}/${agentId}/${toolName}`;
 }
+
+/**
+ * 外部 SDK 厂商工具的记忆键：`{templateId}/{toolName}`。
+ * 避免换厂商后同名工具（Bash / Write）串权。MCP / 委托不走此键。
+ */
+export function sdkToolAllowKey(templateId: string, toolName: string): string {
+  return `${templateId}/${toolName}`;
+}
+
+/** AgentUp 自有能力：不套厂商 templateId。 */
+export function isAgentUpOwnedTool(toolName: string): boolean {
+  return isMcpTool(toolName) || isDelegationTool(toolName);
+}
+
+/**
+ * SDK `canUseTool` / `allowsTool` 用的持久化名：
+ * MCP·委托原样；其余带 `templateId/` 前缀。
+ */
+export function externalToolAllowKey(templateId: string | undefined, toolName: string): string {
+  if (!templateId || isAgentUpOwnedTool(toolName)) return toolName;
+  return sdkToolAllowKey(templateId, toolName);
+}

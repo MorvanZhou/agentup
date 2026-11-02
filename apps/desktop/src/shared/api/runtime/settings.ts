@@ -187,6 +187,155 @@ export async function hydrateProviderRuntimeSecrets(
   await http.request("/settings/provider/runtime-secrets", token, { secrets }, "PUT");
 }
 
+/** CLI / SDK 接入：安装 / 登录 / 卸载（阶段 1） */
+
+export interface AgentSdkInstallJob {
+  jobId: string;
+  templateId: string;
+  phase: string;
+  detail?: string;
+  error?: string;
+}
+
+export interface AgentSdkLoginResult {
+  authUrl: string | null;
+  state: "logging_in" | "ready" | "not_logged_in";
+  accountLabel?: string;
+}
+
+export async function installAgentSdk(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+): Promise<string> {
+  const payload = await http.request(
+    `/settings/provider/agents/${encodeURIComponent(templateId)}/install`,
+    token,
+    {},
+  );
+  const jobId = (payload as { job_id?: unknown }).job_id;
+  if (typeof jobId !== "string") throw new DesktopApiError("本地接入安装启动失败");
+  return jobId;
+}
+
+export async function agentSdkInstallJob(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+  jobId: string,
+): Promise<AgentSdkInstallJob> {
+  const payload = (await http.request(
+    `/settings/provider/agents/${encodeURIComponent(templateId)}/install/${encodeURIComponent(jobId)}`,
+    token,
+  )) as { job_id?: unknown; template_id?: unknown; phase?: unknown; detail?: unknown; error?: unknown };
+  return {
+    jobId: typeof payload.job_id === "string" ? payload.job_id : "",
+    templateId: typeof payload.template_id === "string" ? payload.template_id : templateId,
+    phase: typeof payload.phase === "string" ? payload.phase : "failed",
+    ...(typeof payload.detail === "string" ? { detail: payload.detail } : {}),
+    ...(typeof payload.error === "string" ? { error: payload.error } : {}),
+  };
+}
+
+export async function cancelAgentSdkInstall(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+  jobId: string,
+): Promise<ProviderSettings> {
+  return readProviderSettings(
+    await http.request(
+      `/settings/provider/agents/${encodeURIComponent(templateId)}/install/${encodeURIComponent(jobId)}/cancel`,
+      token,
+      {},
+    ),
+  );
+}
+
+export async function loginAgentSdk(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+): Promise<AgentSdkLoginResult> {
+  const payload = (await http.request(
+    `/settings/provider/agents/${encodeURIComponent(templateId)}/login`,
+    token,
+    {},
+  )) as { auth_url?: unknown; state?: unknown; account_label?: unknown };
+  return {
+    authUrl: typeof payload.auth_url === "string" ? payload.auth_url : null,
+    state:
+      payload.state === "ready" || payload.state === "logging_in" ? payload.state : "not_logged_in",
+    ...(typeof payload.account_label === "string" ? { accountLabel: payload.account_label } : {}),
+  };
+}
+
+export async function checkAgentSdkLogin(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+): Promise<AgentSdkLoginResult> {
+  const payload = (await http.request(
+    `/settings/provider/agents/${encodeURIComponent(templateId)}/login-check`,
+    token,
+    {},
+  )) as { auth_url?: unknown; state?: unknown; account_label?: unknown };
+  return {
+    authUrl: typeof payload.auth_url === "string" ? payload.auth_url : null,
+    state:
+      payload.state === "ready" || payload.state === "logging_in" ? payload.state : "not_logged_in",
+    ...(typeof payload.account_label === "string" ? { accountLabel: payload.account_label } : {}),
+  };
+}
+
+/** 登出：token 在 CLI 手里，runtime 代调 logout 后回整份设置（状态与模型目录都会变） */
+export async function logoutAgentSdk(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+  locale?: UiLocale,
+): Promise<ProviderSettings> {
+  return readProviderSettings(
+    await http.request(
+      providerPath(`/settings/provider/agents/${encodeURIComponent(templateId)}/logout`, locale),
+      token,
+      {},
+    ),
+  );
+}
+
+/** 本地接入的模型目录：只能问本机 SDK，服务端不知道这家订阅能用什么 */
+export async function refreshAgentSdkModels(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+  locale?: UiLocale,
+): Promise<ProviderSettings> {
+  return readProviderSettings(
+    await http.request(
+      providerPath(`/settings/provider/agents/${encodeURIComponent(templateId)}/models`, locale),
+      token,
+      {},
+    ),
+  );
+}
+
+export async function uninstallAgentSdk(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+  locale?: UiLocale,
+): Promise<ProviderSettings> {
+  return readProviderSettings(
+    await http.request(
+      providerPath(`/settings/provider/agents/${encodeURIComponent(templateId)}`, locale),
+      token,
+      undefined,
+      "DELETE",
+    ),
+  );
+}
+
 export async function preferences(http: RuntimeHttp, token: string): Promise<UserPreferences> {
   return readPreferences(await http.request("/preferences", token));
 }

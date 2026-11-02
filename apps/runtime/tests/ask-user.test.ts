@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   AskUserBroker,
   createAskUserExtension,
+  formatAskUserResultText,
   parseAskUserAnswer,
 } from "../src/session/tools/index.js";
 
@@ -39,6 +40,43 @@ it("resolves a pending ask_user with a selection answer", async () => {
     items: [{ kind: "selection", selections: ["Postgres"] }],
   });
   expect(broker.answer(seenId, { kind: "cancelled" })).toBe(false);
+  unsub();
+});
+
+it("answer 时 emitResolved，文案与 Pi ask_user 工具结果同形", async () => {
+  const broker = new AskUserBroker();
+  const questions = [
+    {
+      question: "查天气这事，谁来办？",
+      options: [{ title: "交给 Weaty（气象员）" }, { title: "我直接查" }],
+      allowMultiple: false,
+    },
+  ];
+  let seenId = "";
+  broker.subscribe((request) => {
+    seenId = request.id;
+  });
+  const pending = broker.request({
+    userId: "u1",
+    agentId: "a1",
+    toolCallId: "call-ask",
+    questions,
+  });
+  const seen: Array<{ toolCallId: string; resultText: string }> = [];
+  const unsub = broker.subscribeResolved((event) => {
+    seen.push({ toolCallId: event.request.toolCallId, resultText: event.resultText });
+  });
+  const answer = {
+    kind: "answers" as const,
+    items: [{ kind: "selection" as const, selections: ["交给 Weaty（气象员）"] }],
+  };
+  expect(broker.answer(seenId, answer)).toBe(true);
+  await pending;
+  expect(seen).toHaveLength(1);
+  expect(seen[0]?.toolCallId).toBe("call-ask");
+  expect(seen[0]?.resultText).toBe(formatAskUserResultText(questions, answer));
+  expect(seen[0]?.resultText).toContain("User answered:");
+  expect(seen[0]?.resultText).toContain("交给 Weaty（气象员）");
   unsub();
 });
 

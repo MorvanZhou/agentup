@@ -119,7 +119,7 @@ function openMarkdownPreview(): void {
         <PreviewModeTabs
           v-model="htmlPanelMode"
           :modes="htmlModeTabs"
-          :aria-label="t('msgHtmlPreviewModes')"
+          :ariaLabel="t('msgHtmlPreviewModes')"
         />
         <button
           type="button"
@@ -138,7 +138,7 @@ function openMarkdownPreview(): void {
         <PreviewModeTabs
           v-model="markdownPanelMode"
           :modes="markdownModeTabs"
-          :aria-label="t('msgMarkdownPreviewModes')"
+          :ariaLabel="t('msgMarkdownPreviewModes')"
         />
         <button
           type="button"

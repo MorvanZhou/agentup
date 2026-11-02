@@ -45,13 +45,13 @@ watch(open, (value) => {
   <PreviewShell
     v-model:open="open"
     test-id="html-preview"
-    :aria-label="t('msgHtmlPreview')"
+    :ariaLabel="t('msgHtmlPreview')"
     :title="chromeTitle"
     :show-reveal="Boolean(revealPath)"
     @reveal="emit('reveal')"
   >
     <template #view-mode>
-      <PreviewModeTabs v-model="mode" :modes="modeTabs" :aria-label="t('msgHtmlPreviewModes')" />
+      <PreviewModeTabs v-model="mode" :modes="modeTabs" :ariaLabel="t('msgHtmlPreviewModes')" />
     </template>
 
     <div

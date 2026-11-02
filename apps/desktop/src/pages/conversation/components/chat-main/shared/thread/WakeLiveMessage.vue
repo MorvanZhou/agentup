@@ -12,16 +12,24 @@ import {
 import type { UIMessage } from "ai";
 import { computed, defineComponent, h } from "vue";
 
+import { useDesktop } from "../../../../../../app/desktop";
+import UserAvatar from "../../../../../../shared/components/avatar/UserAvatar.vue";
+import { sessionDisplayNickname } from "../../../../../../shared/model/session/session";
 import { AISDKMessageConverter } from "../../../../model/thread/ui-to-thread-messages";
+import ChatBubble from "../ChatBubble.vue";
 import AssistantMessage from "./assistant-ui/AssistantMessage.vue";
 
 const props = withDefaults(
   defineProps<{
     message: UIMessage;
     streaming?: boolean;
+    /** followUp 被消费时先亮出来的用户那条；排在助手气泡之上。 */
+    userText?: string;
   }>(),
-  { streaming: true },
+  { streaming: true, userText: "" },
 );
+
+const { session } = useDesktop();
 
 const threadMessages = computed(
   () =>
@@ -66,7 +74,20 @@ const AssistantScope = defineComponent({
 <template>
   <!-- wake 直播：与主线程同形气泡，不写入 AISDKChat（结束后再刷历史） -->
   <AuiProvider :key="providerKey" :config="config" :extends="null">
-    <div class="mb-4 min-w-0" data-testid="wake-live-message" aria-live="polite">
+    <div class="mb-4 flex min-w-0 flex-col gap-y-4" data-testid="wake-live-message" aria-live="polite">
+      <!-- 队列消费：用户这条先出，助手气泡在它下面流式输出 -->
+      <div v-if="props.userText" data-testid="wake-live-user">
+        <ChatBubble side="user">
+          <template #avatar>
+            <UserAvatar
+              :name="sessionDisplayNickname(session)"
+              :avatar-url="session?.avatarUrl"
+              size="lg"
+            />
+          </template>
+          <span class="inline whitespace-pre-wrap">{{ props.userText }}</span>
+        </ChatBubble>
+      </div>
       <AssistantScope />
     </div>
   </AuiProvider>

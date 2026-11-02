@@ -15,16 +15,22 @@ const contentUrl = useAuiState((s) => {
       if (part.type === "image" && typeof (part as { image?: unknown }).image === "string") {
         return (part as { image: string }).image;
       }
-      if (part.type === "file" && typeof (part as { url?: unknown }).url === "string") {
-        return (part as { url: string }).url;
-      }
-      if (part.type === "file" && typeof (part as { data?: unknown }).data === "string") {
-        return (part as { data: string }).data;
+      if (part.type === "file") {
+        // FileMessagePart 只有 data；旧数据可能仍带 url，用字段读取而不是互不重叠的断言
+        const legacyUrl = stringField(part, "url");
+        if (legacyUrl) return legacyUrl;
+        if (typeof part.data === "string") return part.data;
       }
     }
   }
   return "";
 });
+
+/** 附件 part 上的可选字符串字段；正式类型没有该键时按运行时值读取。 */
+function stringField(value: object, key: string): string {
+  const field = (value as unknown as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : "";
+}
 
 const previewUrl = ref("");
 const previewOpen = ref(false);

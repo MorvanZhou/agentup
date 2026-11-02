@@ -47,7 +47,7 @@ describe("summarizeApproval", () => {
     expect(summary.target).toBe("node check.mjs");
   });
 
-  it("把写文件审批整理成单次确认", () => {
+  it("把写文件审批整理成可记住范围的确认（SDK Write 等同）", () => {
     const summary = summarizeApproval({
       id: "a2",
       toolCallId: "c2",
@@ -57,11 +57,10 @@ describe("summarizeApproval", () => {
     expect(summary.command).toBe(false);
     expect(summary.kind).toBe("write");
     expect(summary.target).toBe("todo.md");
-    expect(summary.scopes).toEqual([]);
-    expect(summary.description).toContain("这一次");
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
 
-  it("其他工具给出通用说明", () => {
+  it("其他工具给出通用说明，并提供三级允许范围", () => {
     const summary = summarizeApproval({
       id: "a3",
       toolCallId: "c3",
@@ -70,7 +69,19 @@ describe("summarizeApproval", () => {
     });
     expect(summary.kind).toBe("tool");
     expect(summary.target).toBe("custom_tool");
-    expect(summary.scopes).toEqual([]);
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
+  });
+
+  it("SDK Bash（大小写）按命令类展示且带三级范围", () => {
+    const summary = summarizeApproval({
+      id: "a3b",
+      toolCallId: "c3b",
+      toolName: "Bash",
+      args: { command: "date" },
+    });
+    expect(summary.kind).toBe("command");
+    expect(summary.command).toBe(true);
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
 
   it("MCP 工具提供三级允许范围", () => {
@@ -86,7 +97,20 @@ describe("summarizeApproval", () => {
     expect(summary.description).toContain("记住");
   });
 
-  it("把 web_fetch 审批整理成网络访问说明", () => {
+  // 外部 agent（codebuddy-sdk）走 deferred 时 runtime 会解出内层真工具名，
+  // 这里是「选得到 session / agent」的契约：名字必须是 mcp__ 前缀才带三级范围。
+  it("外部 agent 的委托 MCP 工具提供三级允许范围", () => {
+    const summary = summarizeApproval({
+      id: "a3n",
+      toolCallId: "c3n",
+      toolName: "mcp__agentup__delegate_to_agent",
+      args: { agent_id: "hJsAC7Ph", brief: "深圳天气" },
+    });
+    expect(summary.kind).toBe("tool");
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
+  });
+
+  it("把 web_fetch 审批整理成网络访问说明，并提供三级允许范围", () => {
     const summary = summarizeApproval({
       id: "a4",
       toolCallId: "c4",
@@ -96,11 +120,10 @@ describe("summarizeApproval", () => {
     expect(summary.kind).toBe("tool");
     expect(summary.title).toBe("要访问网络地址");
     expect(summary.target).toBe("https://example.com/docs");
-    expect(summary.scopes).toEqual([]);
-    expect(summary.description).toContain("这一次");
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
 
-  it("把 web_search 审批整理成搜索说明", () => {
+  it("把 web_search 审批整理成搜索说明，并提供三级允许范围", () => {
     const summary = summarizeApproval({
       id: "a5",
       toolCallId: "c5",
@@ -110,7 +133,7 @@ describe("summarizeApproval", () => {
     expect(summary.kind).toBe("tool");
     expect(summary.title).toBe("要搜索网络");
     expect(summary.target).toBe("agent tools");
-    expect(summary.scopes).toEqual([]);
+    expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
 
   it("委托审批：标题用 Agent 名称，目标只写要帮的事", () => {

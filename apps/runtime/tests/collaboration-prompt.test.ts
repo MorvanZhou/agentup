@@ -89,9 +89,25 @@ it("lists every other group member and omits the speaker and long instructions",
   expect(text).toContain("工程师");
   expect(text).toContain("写代码");
   expect(text).toContain("设计师 (agent_id: design)");
+  expect(text).toContain("delegate_to_agent may use only these agent_ids");
+  expect(text).not.toContain("mcp__agentup__delegate_to_agent");
   expect(text).not.toContain("agent_id: pm");
   expect(text).not.toContain("SECRET-SYSTEM-BODY");
   expect(text).not.toContain("SECRET-AGENTS-BODY");
+});
+
+it("external 花名册写 MCP 委托工具名", () => {
+  const text = formatGroupRosterPrompt({
+    selfAgentId: "pm",
+    members: [
+      { agentId: "pm", name: "产品经理" },
+      { agentId: "dev", name: "开发" },
+    ],
+    cards: [],
+    toolSurface: "external",
+  });
+  expect(text).toContain("mcp__agentup__delegate_to_agent may use only these agent_ids");
+  expect(text).toContain("agent_id: dev");
 });
 
 it("tells a group specialist to write in the shared workspace for that task", () => {
@@ -100,6 +116,7 @@ it("tells a group specialist to write in the shared workspace for that task", ()
   expect(text).toContain("ARTIFACT/from-QA-Ab12Cd34/");
   expect(text).toContain("complete_group_task");
   expect(text).not.toContain("deliver_artifacts");
+  expect(text).not.toContain("mcp__agentup__complete_group_task");
   const preamble = text.slice(0, text.indexOf("## Task"));
   expect(preamble).not.toMatch(/[\u4e00-\u9fff]/);
 });
@@ -113,6 +130,25 @@ it("tells the specialist in English to write only in their cwd and ignore caller
   expect(text).toContain("absolute path");
   expect(text).toContain("ignore that location");
   expect(text).toContain("shell");
+  expect(text).not.toContain("mcp__agentup__deliver_artifacts");
   const preamble = text.slice(0, text.indexOf("## Task"));
   expect(preamble).not.toMatch(/[\u4e00-\u9fff]/);
+});
+
+it("SDK 委托提示写 MCP 确认工具名，不写裸 Pi 名", () => {
+  const group = formatDelegationPrompt("做迷宫", true, "Ab12Cd34", "QA", {
+    toolSurface: "external",
+  });
+  expect(group).toContain("mcp__agentup__complete_group_task");
+  expect(group).toContain("AskUserQuestion");
+  expect(group).not.toContain("call complete_group_task");
+  expect(group).not.toContain("ask_user");
+
+  const single = formatDelegationPrompt("做迷宫", false, undefined, undefined, {
+    toolSurface: "external",
+  });
+  expect(single).toContain("mcp__agentup__deliver_artifacts");
+  expect(single).toContain("AskUserQuestion");
+  expect(single).not.toContain("with deliver_artifacts");
+  expect(single).not.toContain("ask_user");
 });

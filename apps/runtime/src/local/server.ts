@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { createAdaptorServer } from "@hono/node-server";
 
 import { type LocalConfig, type ModelConfig } from "../config/load.js";
-import { loadModelConfig } from "../config/provider.js";
+import { loadModelConfig } from "../config/provider/index.js";
 import { Runtime, type Visit } from "../package/sync.js";
 import { BackgroundJobs } from "../session/background/index.js";
 import { ApprovalBroker } from "../session/hitl/approval/index.js";

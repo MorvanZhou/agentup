@@ -33,9 +33,17 @@ const toolName = useAuiState((s) =>
   s.part.type === "tool-call" ? s.part.toolName : "",
 );
 
+/** SDK MCP 名 `mcp__agentup__X` 与 API 裸名 `X` 走同一张专用卡。 */
+function agentUpToolName(name: string): string {
+  const prefix = "mcp__agentup__";
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+}
+
 const component = computed(() => {
-  const name = toolName.value;
-  if (name.startsWith("mcp__")) return McpTool;
+  const raw = toolName.value;
+  // 非 AgentUp 的第三方 MCP 仍用通用卡
+  if (raw.startsWith("mcp__") && !raw.startsWith("mcp__agentup__")) return McpTool;
+  const name = agentUpToolName(raw);
   switch (name) {
     case "read":
       return ReadTool;
@@ -67,6 +75,7 @@ const component = computed(() => {
     case "web_fetch":
       return WebFetchTool;
     case "ask_user":
+    case "AskUserQuestion": // 外部 SDK 原名；与 Pi ask_user 同一张卡
       return AskUserTool;
     case "tool_search":
       return GenericTool;
@@ -84,12 +93,16 @@ const component = computed(() => {
       return DeliverTool;
     case "todo":
       return TodoTool;
+    case "skill_list":
+    case "skill_load":
+    case "skill_read":
+      return GenericTool;
     case "list_mcp_resources":
     case "list_mcp_resource_templates":
     case "read_mcp_resource":
       return McpResourceTool;
     default:
-      return GenericTool;
+      return raw.startsWith("mcp__") ? McpTool : GenericTool;
   }
 });
 </script>

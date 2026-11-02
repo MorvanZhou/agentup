@@ -165,6 +165,8 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
     };
   }
 
+  // 外部 SDK（Write / WebSearch / Bash 等）与通用工具：提供 once/session/agent，
+  // 由 runtime 按 allowKey（含 templateId）写入 toolAllow；不做 Pi 工具名映射。
   if (toolName.includes("write") || toolName.includes("edit")) {
     return {
       kind: "write",
@@ -172,7 +174,7 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
       description: t("approvalWriteDesc"),
       target: target || t("approvalWriteNoTarget"),
       command: false,
-      scopes: [],
+      scopes: commandScopes(),
     };
   }
 
@@ -183,7 +185,7 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
       description: t("approvalFetchDesc"),
       target: target || t("approvalFetchNoTarget"),
       command: false,
-      scopes: [],
+      scopes: commandScopes(),
     };
   }
 
@@ -194,7 +196,7 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
       description: t("approvalSearchDesc"),
       target: target || t("approvalSearchNoTarget"),
       command: false,
-      scopes: [],
+      scopes: commandScopes(),
     };
   }
 
@@ -204,7 +206,7 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
     description: t("approvalToolDesc"),
     target: target || approval.toolName,
     command: false,
-    scopes: [],
+    scopes: commandScopes(),
   };
 }
 

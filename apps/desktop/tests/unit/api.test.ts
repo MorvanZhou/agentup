@@ -84,6 +84,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
                 template_id: "ollama",
                 model_id: modelId,
                 name: modelId,
+                vendor_id: "ollama",
                 vendor_label: "Ollama",
                 option_label: "本机",
                 enabled: true,
@@ -95,6 +96,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
         overridden_by_environment: false,
         vendors: [{ id: "ollama", label: "Ollama", options: [ollamaTemplate] }],
         templates: [ollamaTemplate],
+        agent_sdks: [],
       });
     }
     if (path.endsWith("/preferences")) {

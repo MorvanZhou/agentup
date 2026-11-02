@@ -89,6 +89,7 @@ const hasArgsPayload = computed(() => {
 const canExpand = computed(() => {
   if (errorMessage.value) return true;
   if (typeof props.expandable === "boolean") return props.expandable;
+  // 默认：有自定义正文 / 结果 / 参数才可展开（API/Pi 专用卡行为不变）
   return hasCustomBody.value || hasResult.value || hasArgsPayload.value;
 });
 const showStats = computed(() => props.added > 0 || props.removed > 0);

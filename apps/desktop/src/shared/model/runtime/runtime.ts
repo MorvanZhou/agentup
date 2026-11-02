@@ -89,6 +89,59 @@ export interface ProviderTemplateModel {
   reasoning: boolean;
 }
 
+/** 顶层分组：API Key 接入 / CLI 与 SDK 接入 */
+export type ProviderAccess = "api" | "agent-sdk";
+
+/** 本地 SDK 状态机，见 docs/agent_cli §2.2 */
+export type AgentSdkState =
+  | "not_installed"
+  | "installing"
+  | "install_failed"
+  | "installed"
+  | "not_logged_in"
+  | "logging_in"
+  | "ready"
+  | "error";
+
+/** 状态机取值；解析未知状态时回落到 not_installed */
+export const AGENT_SDK_STATES: readonly AgentSdkState[] = [
+  "not_installed",
+  "installing",
+  "install_failed",
+  "installed",
+  "not_logged_in",
+  "logging_in",
+  "ready",
+  "error",
+];
+
+/** 本地接入查回来的模型（各家订阅能用什么，只有本机 SDK 知道） */
+export interface AgentSdkModelOption {
+  id: string;
+  name: string;
+  /** credit 消耗倍率（如 1.33）；本地 App 才报得出来，没有就是不显示 */
+  credits?: number;
+}
+
+/** CLI / SDK 接入卡片：模板静态描述 + 本机状态 */
+export interface AgentSdkOption {
+  templateId: string;
+  vendorLabel: string;
+  optionLabel: string;
+  label: string;
+  hint: string | null;
+  package: string;
+  sizeHintMb: number;
+  loginGuide: { command: string; docUrl: string | null } | null;
+  state: AgentSdkState;
+  installedVersion: string | null;
+  lastError: string | null;
+  /** 登录账号的展示名；没登录 / 老 runtime 为 null */
+  accountLabel: string | null;
+  /** 登录后从本地 SDK 查到的模型目录；没查到时为空 */
+  models: AgentSdkModelOption[];
+}
+
 export interface ProviderTemplate {
   id: string;
   vendorId: string;
@@ -96,6 +149,7 @@ export interface ProviderTemplate {
   optionLabel: string;
   label: string;
   kind: string;
+  access: ProviderAccess;
   piProviderId: string;
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
@@ -136,12 +190,16 @@ export interface AvailableProviderModel {
   templateId: string;
   modelId: string;
   name: string;
+  /** 稳定厂商 id，设置页 / Composer 按此挂公司 logo */
+  vendorId: string;
   vendorLabel: string;
   optionLabel: string;
   enabled: boolean;
   active: boolean;
   /** 手动追加的模型，可从列表移除 */
   custom: boolean;
+  /** credit 消耗倍率；只有本地 App 接入的模型有，API 服务商没有 */
+  credits?: number;
 }
 
 /** 当前 Pi session 选用的模型 + Composer 下拉候选。 */
@@ -149,14 +207,19 @@ export interface SessionModelOption {
   templateId: string;
   modelId: string;
   name: string;
+  vendorId: string;
   vendorLabel: string;
   optionLabel: string;
+  /** credit 消耗倍率；本地 App 才有，下拉右侧显示如 1.58x */
+  credits?: number;
 }
 
 export interface SessionModelState {
   current: ProviderModelRef | null;
   models: SessionModelOption[];
   configured: boolean;
+  /** 当前模型是本地 Agent App（SDK）接入：回合中的发送走 followUp 队列。 */
+  followUp: boolean;
 }
 
 export interface ProviderSettings {
@@ -168,6 +231,8 @@ export interface ProviderSettings {
   overriddenByEnvironment: boolean;
   vendors: ProviderVendorGroup[];
   templates: ProviderTemplate[];
+  /** CLI / SDK 接入候选与状态（第二组） */
+  agentSdks: AgentSdkOption[];
 }
 
 export type ThemeMode = "system" | "light" | "dark";
