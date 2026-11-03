@@ -12,7 +12,7 @@
 ; - 打包态 Desktop + runtime 都叫 AgentUp.exe（runtime = ELECTRON_RUN_AS_NODE）
 ; - 完成页默认勾选「运行」时，安装器会 StartApp → 立刻出现这一对进程
 ; - 若此时再跑一次 setup，就会撞上「无法关闭」；看起来像「装的时候启动的」
-; - 覆盖更新完成页默认取消勾选「运行」，避免装完马上又锁住目录
+; - 完成页「运行」默认不勾（MUI_FINISHPAGE_RUN_NOTCHECKED），避免装完马上又锁住目录
 ;
 ; 关进程（customCheckAppRunning + customInstall 展开前）
 ; - electron-builder 默认软关 / 不带 /T，无窗 runtime 常关不掉
@@ -68,7 +68,8 @@
     ${endIf}
 !macroend
 
-; 覆盖更新：完成页「运行」默认不勾，避免装完立刻再占目录；首次安装仍默认勾选
+; 完成页「运行」默认不勾（勿用 $mui.FinishPage.Run：NSIS warning 6000 在 CI 当 error）
+; 避免装完立刻 StartApp → 两个 AgentUp.exe 占目录，用户再跑 setup 就「无法关闭」
 !macro customFinishPage
   Function AgentupStartApp
     ${if} ${isUpdated}
@@ -79,17 +80,10 @@
     ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
   FunctionEnd
 
-  Function AgentupFinishShow
-    ${if} ${isUpdated}
-      ; 更新场景：取消默认「运行」，需要的话用户可自行勾选
-      SendMessage $mui.FinishPage.Run ${BM_SETCHECK} ${BST_UNCHECKED} 0
-    ${endif}
-  FunctionEnd
-
   !ifndef HIDE_RUN_AFTER_FINISH
     !define MUI_FINISHPAGE_RUN
     !define MUI_FINISHPAGE_RUN_FUNCTION "AgentupStartApp"
-    !define MUI_PAGE_CUSTOMFUNCTION_SHOW AgentupFinishShow
+    !define MUI_FINISHPAGE_RUN_NOTCHECKED
   !endif
   !insertmacro MUI_PAGE_FINISH
 !macroend
