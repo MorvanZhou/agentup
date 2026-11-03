@@ -103,6 +103,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
       "artifactName": "${productName}-${version}-setup.${ext}",
       "include": "electron/installer.nsh",
       "preCompressedFileExtensions": [

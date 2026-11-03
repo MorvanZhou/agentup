@@ -611,6 +611,8 @@ function spawnRuntime(packagedRuntimeRoot) {
       stdio: ["ignore", stdout, stderr],
       env,
       cwd: packagedRuntimeRoot || path.join(process.resourcesPath, "runtime"),
+      // Windows：无控制台闪窗；与 UI 同为 AgentUp.exe，退出/安装靠 taskkill /T 清树
+      windowsHide: true,
     });
   }
   return spawn(process.env.AGENTUP_NODE || "node", [cli], {
