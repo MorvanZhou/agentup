@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { repairSkillMarkdown, validateAgentPackage } from "../src/package/validate.js";
+import {
+  isSafeSkillName,
+  repairSkillMarkdown,
+  validateAgentPackage,
+} from "../src/package/validate.js";
 
 const bytes = (value: string) => Buffer.from(value);
 
@@ -111,5 +115,20 @@ describe("agent package validation", () => {
       { requireSystemMd: false },
     );
     expect(issues).toEqual([]);
+  });
+
+  it("accepts mixed-case skill directory names and rejects traversal-like names", () => {
+    expect(
+      validateAgentPackage({
+        "SYSTEM.md": bytes("You are a test agent."),
+        "skills/Bad_Name/SKILL.md": bytes(
+          "---\nname: Bad_Name\ndescription: Mixed case skill directory is allowed.\n---\n\nDo the thing.\n",
+        ),
+      }),
+    ).toEqual([]);
+    expect(isSafeSkillName("Bad_Name")).toBe(true);
+    expect(isSafeSkillName("..")).toBe(false);
+    expect(isSafeSkillName("../escape")).toBe(false);
+    expect(isSafeSkillName("foo/bar")).toBe(false);
   });
 });

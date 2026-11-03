@@ -11,8 +11,8 @@ import { HttpPackageSource } from "../control/package-source.js";
 import { type UiLocale } from "../i18n/index.js";
 import { installSkillPackageTo, UserResourceError } from "../local/assistant/user-resources.js";
 import { AgentSourceError, preparePublishSource } from "./source.js";
+import { isSafeSkillName } from "./validate.js";
 
-const SKILL_DIR_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MCP_MAX_BYTES = 200_000;
 const MAX_AVATAR_BYTES = 1_048_576;
 
@@ -192,7 +192,7 @@ function writeMcp(pi: string, mcpServers: Record<string, unknown>): void {
 }
 
 function removeSkill(pi: string, skillName: string): void {
-  if (!SKILL_DIR_NAME.test(skillName) || skillName.length > 64) {
+  if (!isSafeSkillName(skillName)) {
     throw new AgentSourceError("remove_skills 无效");
   }
   const skillsDir = path.resolve(pi, "skills");
@@ -207,7 +207,7 @@ export function skillsFromFiles(files: Record<string, Uint8Array>): string[] {
   const names = new Set<string>();
   for (const key of Object.keys(files)) {
     const match = /^skills\/([^/]+)\/SKILL\.md$/.exec(key.replace(/\\/g, "/"));
-    if (match && SKILL_DIR_NAME.test(match[1]!) && match[1]!.length <= 64) {
+    if (match && isSafeSkillName(match[1]!)) {
       names.add(match[1]!);
     }
   }

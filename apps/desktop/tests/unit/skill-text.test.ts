@@ -71,6 +71,15 @@ describe("segmentComposerText", () => {
       { type: "text", value: "/check-weather杭州" },
     ]);
   });
+
+  it("matches mixed-case skill names case-insensitively and keeps canonical casing", () => {
+    const known = new Set(["Bad_Name"]);
+    expect(segmentComposerText("用 /bad_name 一下", known)).toEqual([
+      { type: "text", value: "用 " },
+      { type: "skill", name: "Bad_Name" },
+      { type: "text", value: " 一下" },
+    ]);
+  });
 });
 
 describe("segmentDisplayMessage", () => {

@@ -50,6 +50,13 @@ it("leaves unknown slash tokens untouched", () => {
   expect(expandSkillReferences("run /not-a-skill now", [weather])).toBe("run /not-a-skill now");
 });
 
+it("expands mixed-case skill refs case-insensitively", () => {
+  const skill = fakeSkill("Bad_Name", "Mixed case body.");
+  const expanded = expandSkillReferences("用 /Bad_Name 一下", [skill]);
+  expect(expanded.startsWith('<skill name="Bad_Name"')).toBe(true);
+  expect(expanded.includes("/Bad_Name")).toBe(false);
+});
+
 it("requires space before CJK args (does not expand glued tokens)", () => {
   const weather = fakeSkill("check-weather", "# Weather\nUse the script.");
   expect(expandSkillReferences("/check-weather杭州", [weather])).toBe("/check-weather杭州");

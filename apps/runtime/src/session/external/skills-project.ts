@@ -7,6 +7,7 @@ import {
 } from "../../config/provider-templates.js";
 import { listEnabledUserSkillPaths } from "../../local/assistant/user-resources.js";
 import type { Visit } from "../../package/sync.js";
+import { isSafeSkillName } from "../../package/validate.js";
 
 /**
  * 方案 D：把 AgentUp 技能投影到厂商项目目录（如 `.codebuddy/skills`），
@@ -17,7 +18,6 @@ import type { Visit } from "../../package/sync.js";
  */
 
 const MARKER_VERSION = 1;
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 type SkillsProjectMarker = {
   version: number;
@@ -65,7 +65,7 @@ export function listProjectableSkills(visit: Visit, cwd: string): ProjectableSki
   if (visit.kind === "personal") {
     for (const dir of listEnabledUserSkillPaths(visit.root)) {
       const name = path.basename(dir);
-      if (!SKILL_NAME.test(name) || byName.has(name)) continue;
+      if (!isSafeSkillName(name) || byName.has(name)) continue;
       if (!fs.existsSync(path.join(dir, "SKILL.md"))) continue;
       byName.set(name, dir);
     }
@@ -132,7 +132,7 @@ function scanSkillsParent(skillsRoot: string): ProjectableSkill[] {
   if (!fs.existsSync(skillsRoot) || !fs.statSync(skillsRoot).isDirectory()) return [];
   const out: ProjectableSkill[] = [];
   for (const name of fs.readdirSync(skillsRoot)) {
-    if (!SKILL_NAME.test(name)) continue;
+    if (!isSafeSkillName(name)) continue;
     const dir = path.join(skillsRoot, name);
     if (!fs.existsSync(path.join(dir, "SKILL.md"))) continue;
     if (!fs.statSync(dir).isDirectory()) continue;
@@ -150,7 +150,7 @@ function projectSkills(cwd: string, rel: string, skills: ProjectableSkill[]): st
   // 先拆掉本目录里我们不再需要的旧链（同 marker 管理范围内）
   if (fs.existsSync(targetRoot) && fs.statSync(targetRoot).isDirectory()) {
     for (const name of fs.readdirSync(targetRoot)) {
-      if (!SKILL_NAME.test(name) || wanted.has(name)) continue;
+      if (!isSafeSkillName(name) || wanted.has(name)) continue;
       const entry = path.join(targetRoot, name);
       try {
         if (fs.lstatSync(entry).isSymbolicLink()) fs.unlinkSync(entry);
@@ -223,7 +223,7 @@ function readMarker(cwd: string): SkillsProjectMarker | null {
     const templateId = typeof raw.templateId === "string" ? raw.templateId : "";
     if (!rel || !templateId) return null;
     const names = Array.isArray(raw.names)
-      ? raw.names.filter((name): name is string => typeof name === "string" && SKILL_NAME.test(name))
+      ? raw.names.filter((name): name is string => typeof name === "string" && isSafeSkillName(name))
       : [];
     return { version: MARKER_VERSION, templateId, rel, names };
   } catch {

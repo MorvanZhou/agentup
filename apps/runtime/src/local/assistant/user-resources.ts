@@ -6,13 +6,12 @@ import { randomUUID } from "node:crypto";
 import { openPromise as openZipPromise } from "yauzl";
 
 import {
+  isSafeSkillName,
   repairSkillMarkdown,
   validateAgentPackage,
   type PackageIssue,
 } from "../../package/validate.js";
 import { ensurePersonalAssistant } from "./personal-assistant.js";
-
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_MAX_BYTES = 200_000;
 const SKILL_PACKAGE_MAX_BYTES = 5_000_000;
 const MCP_MAX_BYTES = 200_000;
@@ -62,7 +61,7 @@ export function listUserSkills(userDataRoot: string, userId: string): UserSkill[
   if (!fs.existsSync(root)) return [];
   const skills: UserSkill[] = [];
   for (const name of fs.readdirSync(root).sort()) {
-    if (!SKILL_NAME.test(name)) continue;
+    if (!isSafeSkillName(name)) continue;
     const file = path.join(root, name, "SKILL.md");
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
     const content = fs.readFileSync(file, "utf8");
@@ -82,7 +81,7 @@ export function listEnabledUserSkillPaths(userRoot: string): string[] {
   const state = readSkillsState(userRoot);
   return fs
     .readdirSync(root)
-    .filter((name) => SKILL_NAME.test(name))
+    .filter((name) => isSafeSkillName(name))
     .filter((name) => fs.existsSync(path.join(root, name, "SKILL.md")))
     .filter((name) => state.enabled[name] !== false)
     .map((name) => path.join(root, name));
@@ -94,7 +93,7 @@ export function setUserSkillEnabled(
   name: string,
   enabled: boolean,
 ): UserSkill {
-  if (!SKILL_NAME.test(name) || name.length > 64) throw new UserResourceError("技能名称无效");
+  if (!isSafeSkillName(name)) throw new UserResourceError("技能名称无效");
   const dir = path.join(userSkillsDir(userDataRoot, userId), name);
   const file = path.join(dir, "SKILL.md");
   if (!fs.existsSync(file)) throw new UserResourceError("技能不存在");
@@ -140,7 +139,7 @@ export async function installSkillPackageTo(
     const content = repairSkillMarkdown(fs.readFileSync(skillFile, "utf8"));
     fs.writeFileSync(skillFile, content);
     const name = skillFrontmatterName(content);
-    if (!name || !SKILL_NAME.test(name) || name.length > 64) {
+    if (!name || !isSafeSkillName(name)) {
       throw new UserResourceError("技能名称无效");
     }
     if (options.expectName && options.expectName !== name) {
@@ -196,7 +195,7 @@ export async function installUserSkillPackage(
 }
 
 export function deleteUserSkill(userDataRoot: string, userId: string, name: string): void {
-  if (!SKILL_NAME.test(name) || name.length > 64) {
+  if (!isSafeSkillName(name)) {
     throw new UserResourceError("技能名称无效");
   }
   const dir = path.join(userSkillsDir(userDataRoot, userId), name);

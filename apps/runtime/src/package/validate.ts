@@ -1,9 +1,20 @@
 import { parseDocument } from "yaml";
 
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const USER_HEADER = "x-agentup-user-id";
 const ALLOWED_ROOT_FILES = new Set(["SYSTEM.md", "AGENTS.md", "mcp.json", "settings.json"]);
 const ALLOWED_ROOT_DIRS = new Set(["skills", "hooks"]);
+const SKILL_NAME_MAX = 64;
+
+/** 技能目录名：单路径段即可（允许大小写）；拒穿越 / 分隔符 / 控制字符。 */
+export function isSafeSkillName(name: string): boolean {
+  if (!name || name.length > SKILL_NAME_MAX) return false;
+  if (name === "." || name === ".." || name.trim() !== name) return false;
+  if (name.includes("/") || name.includes("\\") || name.includes("\0")) return false;
+  for (let i = 0; i < name.length; i += 1) {
+    if (name.charCodeAt(i) < 32) return false;
+  }
+  return true;
+}
 
 export interface PackageIssue {
   path: string;
@@ -111,10 +122,13 @@ function validateSkills(files: Record<string, Uint8Array>, issues: PackageIssue[
     if (!frontmatter) continue;
     const name = frontmatter.name;
     const description = frontmatter.description;
-    if (typeof name !== "string" || !SKILL_NAME.test(name) || name.length > 64) {
-      issues.push(issue(filePath, "name 必须是 1–64 位小写字母、数字或单连字符"));
+    if (typeof name !== "string" || !isSafeSkillName(name)) {
+      issues.push(issue(filePath, "name 必须是 1–64 字符的合法目录名（禁止路径分隔与 ..）"));
     } else if (name !== directory) {
       issues.push(issue(filePath, `name 必须与父目录 ${directory} 一致`));
+    }
+    if (!isSafeSkillName(directory)) {
+      issues.push(issue(`skills/${directory}/`, "技能目录名非法（禁止路径分隔与 ..）"));
     }
     if (typeof description !== "string" || !description.trim() || description.length > 1024) {
       issues.push(issue(filePath, "description 必须是 1–1024 字符的非空文本"));

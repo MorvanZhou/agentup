@@ -1,10 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Visit } from "../../package/sync.js";
 import { listUserSkills } from "../../local/assistant/user-resources.js";
-
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+import { isSafeSkillName } from "../../package/validate.js";
+import type { Visit } from "../../package/sync.js";
 
 /** 当前会话可经 `/skill:name` 显式调用的 skill（仅 name + description）。 */
 export interface InvocableSkill {
@@ -27,7 +26,7 @@ export function listPackageSkills(skillsDir: string): InvocableSkill[] {
   if (!fs.existsSync(skillsDir) || !fs.statSync(skillsDir).isDirectory()) return [];
   const skills: InvocableSkill[] = [];
   for (const name of fs.readdirSync(skillsDir).sort()) {
-    if (!SKILL_NAME.test(name)) continue;
+    if (!isSafeSkillName(name)) continue;
     const file = path.join(skillsDir, name, "SKILL.md");
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
     skills.push({

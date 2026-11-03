@@ -5,7 +5,7 @@ import path from "node:path";
 import { t, type UiLocale } from "../../i18n/index.js";
 import { packageDigest } from "../../package/digest.js";
 import type { Visit } from "../../package/sync.js";
-import { validateAgentPackage } from "../../package/validate.js";
+import { isSafeSkillName, validateAgentPackage } from "../../package/validate.js";
 import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
 import { parseStoredProjectRoots } from "../../session/workspace/project-roots.js";
 import {
@@ -415,7 +415,7 @@ export function exportLocalAgentSkill(
   destination: string,
   locale: UiLocale = "zh",
 ): { path: string } {
-  if (!SKILL_DIR_NAME.test(skillName) || skillName.length > 64) {
+  if (!isSafeSkillName(skillName)) {
     throw new LocalAgentError(t("la.err.invalidRequest", locale));
   }
   if (!destination || typeof destination !== "string" || !path.isAbsolute(destination)) {
@@ -553,14 +553,12 @@ function writeAtomicText(file: string, content: string): void {
 
 const MCP_MAX_BYTES = 200_000;
 
-const SKILL_DIR_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
 function listPiSkills(root: string): string[] {
   const skillsDir = path.join(root, "cwd", ".pi", "skills");
   if (!fs.existsSync(skillsDir) || !fs.statSync(skillsDir).isDirectory()) return [];
   return fs
     .readdirSync(skillsDir)
-    .filter((name) => SKILL_DIR_NAME.test(name))
+    .filter((name) => isSafeSkillName(name))
     .filter((name) => fs.existsSync(path.join(skillsDir, name, "SKILL.md")))
     .sort();
 }
@@ -585,7 +583,7 @@ function clearPiMcp(cwd: string): void {
 }
 
 function removePiSkill(cwd: string, skillName: string, locale: UiLocale): void {
-  if (!SKILL_DIR_NAME.test(skillName) || skillName.length > 64) {
+  if (!isSafeSkillName(skillName)) {
     throw new LocalAgentError(t("la.err.invalidRequest", locale));
   }
   const skillsDir = path.resolve(cwd, ".pi", "skills");

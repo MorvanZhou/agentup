@@ -7,12 +7,26 @@
 import { findAttachmentRefs } from "./attachment-ref";
 import { findMentionRefs } from "./mention-text";
 
-const SKILL_NAME = "[a-z0-9]+(?:-[a-z0-9]+)*";
+/** 与 runtime isSafeSkillName 对齐：允许大小写 / 下划线；拒路径分隔。 */
+const SKILL_NAME = "[A-Za-z0-9_]+(?:[-.][A-Za-z0-9_]+)*";
+const SKILL_NAME_PARTIAL = "[A-Za-z0-9_.-]*";
 /** 完整引用：前界 + /name|/skill:name + 后界（空白/标点/行尾）。插入时默认补空格。 */
 const SKILL_REF_RE = new RegExp(
   `(^|[\\s([{（【])\\/(?:skill:)?(${SKILL_NAME})(?=$|[\\s,.;:!?，。；：！？)\\]}）】])`,
   "gi",
 );
+
+function resolveKnownSkillName(
+  raw: string,
+  knownNames?: ReadonlySet<string>,
+): string | undefined {
+  if (!knownNames) return raw;
+  const lower = raw.toLowerCase();
+  for (const name of knownNames) {
+    if (name.toLowerCase() === lower) return name;
+  }
+  return undefined;
+}
 
 export type ComposerSegment =
   | { type: "text"; value: string }
@@ -26,7 +40,9 @@ export function slashQueryAtCursor(
   cursor: number,
 ): { query: string; start: number; end: number } | null {
   const before = text.slice(0, Math.max(0, Math.min(cursor, text.length)));
-  const match = before.match(new RegExp(`(^|[\\s([{（【])\\/(?:skill:)?([a-z0-9-]*)$`, "i"));
+  const match = before.match(
+    new RegExp(`(^|[\\s([{（【])\\/(?:skill:)?(${SKILL_NAME_PARTIAL})$`, "i"),
+  );
   if (!match) return null;
   const token = match[0].slice(match[1].length);
   const start = before.length - token.length;
@@ -35,7 +51,7 @@ export function slashQueryAtCursor(
 
 /** 整段仅是 `/` 查询时。 */
 export function slashSkillQuery(text: string): string | null {
-  const match = text.match(new RegExp(`^\\/(?:skill:)?([a-z0-9-]*)$`, "i"));
+  const match = text.match(new RegExp(`^\\/(?:skill:)?(${SKILL_NAME_PARTIAL})$`, "i"));
   return match ? match[1].toLowerCase() : null;
 }
 
@@ -77,12 +93,12 @@ export function segmentComposerText(
   const re = new RegExp(SKILL_REF_RE.source, "gi");
   for (const match of text.matchAll(re)) {
     const boundary = match[1] ?? "";
-    const name = (match[2] ?? "").toLowerCase();
-    if (knownNames && !knownNames.has(name)) continue;
+    const resolved = resolveKnownSkillName(match[2] ?? "", knownNames);
+    if (resolved === undefined) continue;
     const index = match.index ?? 0;
     const start = index + boundary.length;
     const end = start + match[0].length - boundary.length;
-    hits.push({ kind: "skill", start, end, name });
+    hits.push({ kind: "skill", start, end, name: resolved });
   }
   for (const file of findAttachmentRefs(text)) {
     hits.push({
@@ -140,7 +156,7 @@ export function segmentDisplayMessage(text: string): ComposerSegment[] {
   const segments: ComposerSegment[] = [];
   for (const name of leading.skills) {
     const trimmed = name.trim();
-    if (trimmed) segments.push({ type: "skill", name: trimmed.toLowerCase() });
+    if (trimmed) segments.push({ type: "skill", name: trimmed });
   }
   const body = leading.body;
   if (!body) return mergeTextSegments(segments);
@@ -265,14 +281,15 @@ export function displaySkillMessage(text: string): { skills: string[]; body: str
   const names = [...leading.skills];
   const re = new RegExp(SKILL_REF_RE.source, "gi");
   for (const match of leading.body.matchAll(re)) {
-    const name = (match[2] ?? "").toLowerCase();
-    if (!names.includes(name)) names.push(name);
+    const name = match[2] ?? "";
+    if (!names.some((entry) => entry.toLowerCase() === name.toLowerCase())) names.push(name);
   }
   let body = leading.body;
   if (names.length) {
+    const lowerNames = new Set(names.map((entry) => entry.toLowerCase()));
     body = leading.body
       .replace(re, (full, boundary: string, name: string) => {
-        if (names.includes(name.toLowerCase())) return boundary ?? "";
+        if (lowerNames.has(name.toLowerCase())) return boundary ?? "";
         return full;
       })
       .replace(/[ \t]{2,}/g, " ")

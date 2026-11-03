@@ -2,7 +2,8 @@ import fs from "node:fs";
 
 import type { Skill } from "@earendil-works/pi-coding-agent";
 
-const SKILL_NAME = "[a-z0-9]+(?:-[a-z0-9]+)*";
+/** 与 isSafeSkillName 对齐的聊天引用段：允许大小写 / 下划线；仍拒路径分隔。 */
+const SKILL_NAME = "[A-Za-z0-9_]+(?:[-.][A-Za-z0-9_]+)*";
 /** 前界 + /name|/skill:name + 后界（空白/标点/行尾）。桌面插入时默认补空格。 */
 const SKILL_REF_RE = new RegExp(
   `(^|[\\s([{（【])\\/(?:skill:)?(${SKILL_NAME})(?=$|[\\s,.;:!?，。；：！？)\\]}）】])`,

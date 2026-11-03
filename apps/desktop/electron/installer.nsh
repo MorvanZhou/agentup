@@ -8,37 +8,34 @@
 ;   ".tgz"，避免 NSIS 再压一遍（白费 CPU，安装也不更快）
 ; - 若 tar 仍失败，Desktop 首次启动 ensure-runtime-modules 会再试一次
 ;
-; 两个 AgentUp.exe 从哪来（不是安装器「凭空」多开一份）
-; - 打包态 Desktop + runtime 都叫 AgentUp.exe（runtime = ELECTRON_RUN_AS_NODE）
-; - 完成页默认勾选「运行」时，安装器会 StartApp → 立刻出现这一对进程
-; - 若此时再跑一次 setup，就会撞上「无法关闭」；看起来像「装的时候启动的」
-; - 完成页「运行」默认不勾（MUI_FINISHPAGE_RUN_NOTCHECKED），避免装完马上又锁住目录
+; 覆盖更新（行业常见：整目录挪走 → 干净安装 → 后台删旧）
+; - 旧 Uninstall.exe 默认 atomicRMDir：对已展开的 node_modules 逐文件 Rename，极慢；
+;   任一文件被占用就 Abort，新安装器重试后弹出误导性的「无法关闭」
+; - 卸载器本身不会 StartApp；任务管理器里的 AgentUp 是旧实例/runtime，或杀进程失败残留
+; - 本脚本：强杀 → 把整个 $INSTDIR 一次 Rename 到旁路 $INSTDIR.__agentup_old__
+;   → 空目录装新版 → customInstall 里 start /b rmdir 后台删旧树
+; - customUnInstallCheck 置空：旧 Uninstall 因目录已挪走而找不到文件时，不中止新安装
+; - customRemoveFiles：本版 Uninstall 被下一版调用时，同样整目录挪走，不再走 atomicRMDir
 ;
-; 关进程（customCheckAppRunning + customInstall 展开前）
-; - electron-builder 默认软关 / 不带 /T，无窗 runtime 常关不掉
-; - 这里 taskkill /F /T（目录匹配 + 镜像名兜底），并多等一会儿放文件锁
+; 完成页「运行」默认不勾（MUI_FINISHPAGE_RUN_NOTCHECKED；勿用 $mui.FinishPage.Run，CI warning→error）
 ;
 ; 本机数据清理策略（与应用内 Erase All Local Data 无关）：
 ; - 安装 / 覆盖更新：从不提供清数据；更新卸旧版走 /S + --updated，一律保留
 ; - 手动卸载：欢迎页勾选「同时删除本机数据」，默认不勾 = 保留；勾选才清
 ; - 静默卸载（/S）：无 UI，默认保留
 ;
-; 注意：customUn* 写进本版 Uninstall.exe；改动能在「本版被卸 / 被下一版更新」时才生效。
-;
-; Var / Function un.* 必须：
-; 1) 包在 BUILD_UNINSTALLER（避免安装包编译 warning 6001/6020）
-; 2) Var 声明在 Function 之前（勿放 customHeader：insert 太晚，Pop 会报
-;    Usage: Pop $(user_var: output)）
+; 注意：customUn* / customRemoveFiles 写进本版 Uninstall.exe；
+;       「新安装器侧」整目录挪走在 customCheckAppRunning，对从任意旧版升级立即生效。
 
 !include "nsDialogs.nsh"
+
+!define AGENTUP_OLD_SUFFIX ".__agentup_old__"
 
 ; 强杀 UI + runtime（同名 AgentUp.exe 进程树）
 !macro agentupKillAppProcesses
   DetailPrint "Stopping ${PRODUCT_NAME} processes (UI + runtime)..."
-  ; 优先按安装目录（有 ExecutablePath 时），减少误伤其它路径同名程序
-  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [stringcomparison]::OrdinalIgnoreCase) } | ForEach-Object { & taskkill.exe /F /T /PID $$_.ProcessId 2>$$null | Out-Null }; exit 0"`
+  nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and ($$_.ExecutablePath.StartsWith('$INSTDIR', [stringcomparison]::OrdinalIgnoreCase) -or $$_.ExecutablePath.StartsWith('$INSTDIR${AGENTUP_OLD_SUFFIX}', [stringcomparison]::OrdinalIgnoreCase)) } | ForEach-Object { & taskkill.exe /F /T /PID $$_.ProcessId 2>$$null | Out-Null }; exit 0"`
   Pop $R0
-  ; 再按镜像名树杀：盖住 ExecutablePath 为空、PS 策略失败、无窗 runtime 孤儿
   nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"`
   Pop $R0
 !macroend
@@ -48,13 +45,42 @@
   Pop $R0
 !macroend
 
-; 覆盖默认 CHECK_APP_RUNNING
+; 整目录挪到旁路（同卷一次 Rename ≈ O(1)），供更新卸载 / 新安装器预清理共用
+!macro agentupMoveInstallAside
+  ${if} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    DetailPrint "Moving old install aside (fast upgrade)..."
+    IfFileExists "$INSTDIR${AGENTUP_OLD_SUFFIX}" 0 agentup_move_aside
+      ; 上次残留：先尽量清掉，避免 Rename 撞名
+      nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C rmdir /S /Q "$INSTDIR${AGENTUP_OLD_SUFFIX}"`
+      Pop $R0
+    agentup_move_aside:
+      ClearErrors
+      Rename "$INSTDIR" "$INSTDIR${AGENTUP_OLD_SUFFIX}"
+      IfErrors agentup_move_aside_fail
+        CreateDirectory "$INSTDIR"
+        DetailPrint "Old install at $INSTDIR${AGENTUP_OLD_SUFFIX}"
+        Goto agentup_move_aside_done
+      agentup_move_aside_fail:
+        DetailPrint "Could not move old install; fallback to uninstaller remove"
+    agentup_move_aside_done:
+  ${endif}
+!macroend
+
+!macro agentupDeleteStaleInBackground
+  IfFileExists "$INSTDIR${AGENTUP_OLD_SUFFIX}" 0 agentup_no_stale
+    DetailPrint "Deleting previous install in background..."
+    ; start /b：不阻塞完成页；旧树再大也不拖住「安装完成」
+    nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C start "" /b rmdir /S /Q "$INSTDIR${AGENTUP_OLD_SUFFIX}"`
+    Pop $R0
+  agentup_no_stale:
+!macroend
+
+; 覆盖默认 CHECK_APP_RUNNING：强杀 + 整目录挪走（不等旧 Uninstall 逐文件）
 !macro customCheckAppRunning
   StrCpy $R1 0
   agentup_stop_loop:
     IntOp $R1 $R1 + 1
     !insertmacro agentupKillAppProcesses
-    ; 等内核释放文件锁（杀进程后句柄常还要一会儿）
     Sleep 2500
     !insertmacro agentupAppStillRunning
     ${if} $R0 == 0
@@ -66,10 +92,32 @@
         Goto agentup_stop_loop
       ${endIf}
     ${endIf}
+
+  !insertmacro agentupMoveInstallAside
 !macroend
 
-; 完成页「运行」默认不勾（勿用 $mui.FinishPage.Run：NSIS warning 6000 在 CI 当 error）
-; 避免装完立刻 StartApp → 两个 AgentUp.exe 占目录，用户再跑 setup 就「无法关闭」
+; 旧目录已挪走时，旧 Uninstall 常找不到文件 / 返回非 0——不要弹失败中止
+!macro customUnInstallCheck
+  ClearErrors
+!macroend
+
+!macro customUnInstallCheckCurrentUser
+  ClearErrors
+!macroend
+
+; 本版 Uninstall 被下一版调用时：整目录挪走，禁止默认 atomicRMDir
+!macro customRemoveFiles
+  DetailPrint "Removing application files..."
+  SetOutPath $TEMP
+  ${if} ${isUpdated}
+    !insertmacro agentupMoveInstallAside
+    ; 旁路目录留给新安装器 customInstall 后台删；此处不再 RMDir /r 堵卸载
+  ${else}
+    RMDir /r "$INSTDIR"
+  ${endif}
+!macroend
+
+; 完成页「运行」默认不勾
 !macro customFinishPage
   Function AgentupStartApp
     ${if} ${isUpdated}
@@ -96,7 +144,6 @@
     ${NSD_CreateCheckbox} 120u -18u 100% 12u "Also delete all AgentUp local data"
     Pop $agentupDeleteDataCheckbox
     SetCtlColors $agentupDeleteDataCheckbox "" "${MUI_BGCOLOR}"
-    ; 默认不勾选 = 保留聊天 / 密钥 / 登录态等
   FunctionEnd
 
   Function un.AgentupUnWelcomeLeave
@@ -110,11 +157,9 @@
 !endif
 
 !macro customUnInit
-  ; 静默 / 未走过欢迎页 leave 时保持「不删」
   StrCpy $agentupDeleteData "0"
 !macroend
 
-; 卸载欢迎页底部勾选；默认不勾
 !macro customUnWelcomePage
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW un.AgentupUnWelcomeShow
   !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.AgentupUnWelcomeLeave
@@ -122,9 +167,8 @@
 !macroend
 
 !macro customInstall
-  ; 解压前再杀一次：防止完成页以外的路径又把旧实例拉起来占着 resources/
   !insertmacro agentupKillAppProcesses
-  Sleep 1500
+  Sleep 1000
 
   DetailPrint "Expanding runtime node_modules..."
   IfFileExists "$INSTDIR\resources\runtime\node_modules.tgz" 0 agentup_skip_runtime_tgz
@@ -137,10 +181,11 @@
     agentup_tgz_fail:
       DetailPrint "tar expand failed; app will expand on first launch"
   agentup_skip_runtime_tgz:
+
+  !insertmacro agentupDeleteStaleInBackground
 !macroend
 
 !macro customUnInstall
-  ; 更新链路（isUpdated）或未勾选：保留数据
   ${If} ${isUpdated}
     Goto agentup_keep_data
   ${EndIf}
@@ -151,7 +196,6 @@
     IfErrors agentup_wipe_default_root
       FileRead $R0 $R1
       FileClose $R0
-      ; FileRead 可能带尾部 CR/LF；内联去掉
       agentup_trim_loop:
         StrCpy $R2 $R1 1 -1
         StrCmp $R2 "$\r" agentup_trim_cut
