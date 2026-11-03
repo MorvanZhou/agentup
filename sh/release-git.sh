@@ -2,7 +2,12 @@
 # 一条龙：git add → commit → tag → push
 # 版本取自 apps/desktop/package.json，tag 形如 v0.1.12
 #
+# 在「带 Build Desktop workflow 的 GitHub 仓」上 push v* tag 后会：
+#   构建 mac/win → 创建/更新 GitHub Release（正文含 .github/release-install-notes.md）
+#   → 上传 R2 latest。勿在未同步 workflow 的私有仓误推同名 tag 当正式发版。
+#
 # 用法：
+#   # 先把 apps/desktop/package.json 的 version 改到目标版，再：
 #   sh sh/release-git.sh "提交说明"
 #   sh sh/release-git.sh "提交说明" "tag 说明"   # 可选；默认与提交说明相同
 #   sh sh/release-git.sh -h
@@ -18,6 +23,10 @@ usage() {
 
   commit-message  必填，传给 git commit -m
   tag-message     可选，传给 git tag -m；默认与 commit-message 相同
+
+发版前提：在已配置 .github/workflows/build-desktop.yml 的 GitHub 远程上执行
+（公共客户端仓）。push 成功的 v* tag 会触发 Actions：构建安装包、写 Release
+（固定安装说明见 .github/release-install-notes.md）、再同步 R2。
 EOF
 }
 
@@ -73,3 +82,6 @@ git push
 git push --tags
 
 echo "完成：commit 已推送，tag ${tag}"
+echo "若远程是公共客户端仓：GitHub Actions「Build Desktop」会构建并创建 Release。"
+echo "  查看: https://github.com/MorvanZhou/agentup/actions"
+echo "  Release: https://github.com/MorvanZhou/agentup/releases/tag/${tag}"

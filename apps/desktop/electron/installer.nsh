@@ -141,9 +141,10 @@
   Var agentupDeleteData
 
   Function un.AgentupUnWelcomeShow
+    ; 欢迎页底部：可选删除本机数据（默认不勾）
+    ; 勿 SetCtlColors … ${MUI_BGCOLOR}：未定义/空背景时整行涂成黑条，文案看不见
     ${NSD_CreateCheckbox} 120u -18u 100% 12u "Also delete all AgentUp local data"
     Pop $agentupDeleteDataCheckbox
-    SetCtlColors $agentupDeleteDataCheckbox "" "${MUI_BGCOLOR}"
   FunctionEnd
 
   Function un.AgentupUnWelcomeLeave

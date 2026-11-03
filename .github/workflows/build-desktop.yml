@@ -175,6 +175,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 读固定安装说明 .github/release-install-notes.md
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -190,6 +194,8 @@ jobs:
         with:
           files: release-assets/*
           fail_on_unmatched_files: true
+          # 固定安装注意事项；generate_release_notes 会追加本 tag 相对上一版的提交摘要
+          body_path: .github/release-install-notes.md
           # 若 Release 已存在（先建了 tag/Release），则只补传 Assets；否则自动创建
           generate_release_notes: true
 
