@@ -355,8 +355,13 @@ export function useConversationGroups() {
   }
 
   async function stop(): Promise<void> {
+    // 先收起 Dock；stop 完成后若 attention / 晚到 SSE 又推了同一问，再清一次避免锁死回弹
     clearHitl();
-    await mutateLive((token, userId, room) => api.stopGroup(token, userId, room.id));
+    try {
+      await mutateLive((token, userId, room) => api.stopGroup(token, userId, room.id));
+    } finally {
+      clearHitl();
+    }
   }
 
   async function clearWorkspace(includeWork: boolean): Promise<void> {

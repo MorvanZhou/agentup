@@ -1,7 +1,8 @@
 /** @vitest-environment happy-dom */
-import { computed, nextTick } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { expect, it, vi } from "vitest";
 
+import { desktopKey } from "../../src/app/desktop.js";
 import GroupDelegationBubble from "../../src/pages/conversation/components/chat-main/group/GroupDelegationBubble.vue";
 import {
   groupDelegationRuntimeKey,
@@ -29,9 +30,11 @@ function mount(
   waiting: string[] = [],
   runtime: { token: string; userId: string } = { token: "", userId: "" },
 ): HTMLElement {
+  // MarkdownText 预览链路会 useDesktop()；单测只喂 session，不启整棵桌面壳
   return mountView(GroupDelegationBubble, {
     props: { card: next },
     provide: [
+      [desktopKey, { session: ref({ token: runtime.token, userId: runtime.userId }) }],
       [groupWaitingTaskIdsKey, computed(() => waiting)],
       [groupDelegationRuntimeKey, computed(() => runtime)],
     ],

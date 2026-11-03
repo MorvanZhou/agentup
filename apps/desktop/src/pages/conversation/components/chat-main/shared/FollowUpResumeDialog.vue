@@ -3,7 +3,7 @@ import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import { t } from "../../../../../shared/model/ui/ui-locale";
 
 /**
- * 停止之后队列还在（docs/agent_cli §12.8.1）：问一次「还有 N 条，要继续吗」。
+ * 停止之后队列还在（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）：问一次「还有 N 条，要继续吗」。
  * 继续 = 通知 runtime 合并队列再开一轮；清空 = 撤掉队列。
  */
 const open = defineModel<boolean>("open", { required: true });

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld("agentUp", {
   openVisitDirectory: (directory) => ipcRenderer.invoke("agentup:open-visit-directory", directory),
   revealInFolder: (target) => ipcRenderer.invoke("agentup:reveal-in-folder", target),
   openPath: (target) => ipcRenderer.invoke("agentup:open-path", target),
+  /** 打开工作区外的本机绝对路径（敏感根仍拒；供聊天路径链化）。 */
+  openHostPath: (target) => ipcRenderer.invoke("agentup:open-host-path", target),
   openExternal: (url) => ipcRenderer.invoke("agentup:open-external", url),
   oauthLoopbackStart: (locale) => ipcRenderer.invoke("agentup:oauth-loopback-start", locale),
   oauthLoopbackWait: (timeoutMs) => ipcRenderer.invoke("agentup:oauth-loopback-wait", timeoutMs),

@@ -1,4 +1,4 @@
-/** provider.json 落盘结构版本；改动前先看 docs/agent_cli 的兼容要求（旧档必须还能读）。 */
+/** provider.json 落盘结构版本；改动前先看 .cursor/skills/agentup-sdk-adapter 的兼容要求（旧档必须还能读）。 */
 export const FILE_VERSION = 3 as const;
 
 /** 不需要密钥的服务商（Ollama 等）也要给 pi 一个非空 key。 */

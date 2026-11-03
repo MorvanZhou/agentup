@@ -180,7 +180,10 @@ test("已招募的会话会读回本机聊天记录，续聊不会并入上一�
   const bashCard = page.getByRole("button", { name: /^bash\b/i });
   await expect(bashCard).toBeVisible();
   await bashCard.click();
-  await expect(page.getByText('{"city":"上海"}')).toBeVisible();
+  // 展开体用 `$ ` 前缀，避开摘要行同名文案的 strict 命中
+  await expect(page.getByText("$ node check-weather.mjs 上海")).toBeVisible();
+  // 结果经 formatToolResult 美化，不保证单行紧凑串
+  await expect(page.getByText(/"city"\s*:\s*"上海"/)).toBeVisible();
   await expect(page.getByRole("textbox", { name: /^发送消息/ })).toBeDisabled();
 
   await syncAgent(page, "Weaty");
@@ -508,7 +511,7 @@ test("输出中发送新要求走插话（steer）：不停止当前轮，也不
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("button", { name: "停止回复" })).toBeVisible();
 
-  // 回合还在跑：发新要求应走 /steer，而不是 /abort + 重发（docs/agent_cli §12.8）
+  // 回合还在跑：发新要求应走 /steer，而不是 /abort + 重发（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）
   const aborts: string[] = [];
   page.on("request", (request) => {
     if (request.url().includes("/abort")) aborts.push(request.url());

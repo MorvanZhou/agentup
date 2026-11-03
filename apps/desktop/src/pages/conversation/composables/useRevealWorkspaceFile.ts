@@ -5,8 +5,10 @@ import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import type { WorkspaceScope } from "../../../shared/api/runtime/workspace";
 import { showToast } from "../../../shared/model/ui/toast";
 import { t } from "../../../shared/model/ui/ui-locale";
+import { injectChatSurface } from "../model/thread/chat-surface";
 import { injectThreadAgentId } from "../model/thread/thread-agent-id";
 import { injectThreadExtras } from "../model/thread/thread-extras";
+import { resolveWorkspaceAgentId } from "../model/workspace/workspace-agent-id";
 
 /** 将 cwd / project 相对路径在系统文件管理器中显示。 */
 export function useRevealWorkspaceFile(options?: { api?: DesktopApi; agentId?: Ref<string> }) {
@@ -14,7 +16,15 @@ export function useRevealWorkspaceFile(options?: { api?: DesktopApi; agentId?: R
   const { session } = useDesktop();
   const injectedAgentId = injectThreadAgentId();
   const extras = injectThreadExtras();
-  const agentId = computed(() => options?.agentId?.value || injectedAgentId);
+  const surface = injectChatSurface();
+  // 群聊 inject 为空时回落 group:<id>（与 preview / open 对齐）
+  const agentId = computed(() =>
+    resolveWorkspaceAgentId({
+      override: options?.agentId?.value,
+      injectedAgentId,
+      groupId: surface.value.groupId,
+    }),
+  );
   const personal = computed(() => extras.value.personal);
 
   async function revealWorkspaceFile(

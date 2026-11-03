@@ -150,7 +150,7 @@ function registerVolcengineArk(
 
 /**
  * 本地 Agent App：注册一个自定义 api 的 provider，把 `streamSimple` 顶掉，
- * 整个回合交给外部 agent 跑（docs/agent_cli §3.2）。
+ * 整个回合交给外部 agent 跑（.cursor/skills/agentup-sdk-adapter/references/overview.md §3.2）。
  * baseUrl 是注册的硬要求，实际不会被用到——我们从不发 HTTP。
  */
 function registerAgentSdk(

@@ -121,7 +121,7 @@ it("rejects answers whose length does not match questions", async () => {
   await expect(pending).resolves.toMatchObject({ kind: "answers" });
 });
 
-it("cancels when the abort signal fires", async () => {
+it("aborts the waiter when the abort signal fires (stop ≠ soft dismiss)", async () => {
   const broker = new AskUserBroker();
   const controller = new AbortController();
   const pending = broker.request(
@@ -140,7 +140,9 @@ it("cancels when the abort signal fires", async () => {
     controller.signal,
   );
   controller.abort();
-  await expect(pending).resolves.toEqual({ kind: "cancelled" });
+  // 停止回合必须硬中断：勿回 soft cancelled，否则模型会再 ask 一次形成锁死
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  expect(broker.listPending("u1")).toEqual([]);
 });
 
 it("accepts more than four questions in one ask_user call", async () => {

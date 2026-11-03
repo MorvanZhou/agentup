@@ -118,6 +118,17 @@ function optionTexts(host: HTMLElement): string[] {
   return [...host.querySelectorAll('[role="option"]')].map((el) => el.textContent ?? "");
 }
 
+/**
+ * 「启用服务」区也有供应商筛选下拉（同样 aria-haspopup）。
+ * 按「接入方式」标签找真正的接入下拉，避免点到第一个筛选器。
+ */
+function accessTrigger(host: HTMLElement): HTMLButtonElement {
+  const label = [...host.querySelectorAll("span")].find((el) => (el.textContent ?? "").trim() === "接入方式");
+  const trigger = label?.parentElement?.querySelector<HTMLButtonElement>("button[aria-haspopup='true']");
+  if (!trigger) throw new Error("缺少接入方式下拉");
+  return trigger;
+}
+
 /** 取某一行模型的整行文案（模型名 + 副标题都在里面）。 */
 function rowTextOf(host: HTMLElement, modelName: string): string {
   const row = [...host.querySelectorAll("li")].find((el) =>
@@ -146,9 +157,7 @@ it("下拉分两组，本地 App 的模型出现在「启用服务」里", async
   expect(host.querySelectorAll('[role="switch"]').length).toBeGreaterThan(0);
 
   // 打开下拉：应有两个分组标题
-  const trigger = host.querySelector<HTMLButtonElement>("button[aria-haspopup='true']");
-  if (!trigger) throw new Error("缺少接入方式下拉");
-  trigger.click();
+  accessTrigger(host).click();
   await nextTick();
   const groups = [...host.querySelectorAll('[role="presentation"]')].map(
     (el) => el.textContent ?? "",
@@ -222,9 +231,7 @@ it("还没装本地 App 时下拉里仍可选它，列表保持空态", async ()
   const host = mountProviderSettings(payload({ sdkReady: false }));
   await waitLoaded(host);
 
-  const trigger = host.querySelector<HTMLButtonElement>("button[aria-haspopup='true']");
-  if (!trigger) throw new Error("缺少接入方式下拉");
-  trigger.click();
+  accessTrigger(host).click();
   await nextTick();
 
   const labels = optionTexts(host);

@@ -134,6 +134,41 @@ export function parseMcpToolName(name: string): { server: string; tool: string }
   return { server, tool };
 }
 
+/**
+ * Cursor 元工具 `mcp` + `{ providerIdentifier, toolName, args }` → 与 CodeBuddy 同形名。
+ * 新会话应由 runtime `unwrapCursorMcpTool` 落盘；这里兜底旧 transcript / 漏解包。
+ */
+export function unwrapAgentUpMcpShell(
+  toolName: string,
+  args: unknown,
+): { toolName: string; args: Record<string, unknown> } {
+  const row =
+    args && typeof args === "object" && !Array.isArray(args)
+      ? (args as Record<string, unknown>)
+      : {};
+  if (toolName !== "mcp") return { toolName, args: row };
+
+  const nestedName = typeof row.toolName === "string" ? row.toolName.trim() : "";
+  if (!nestedName) return { toolName, args: row };
+  const provider =
+    typeof row.providerIdentifier === "string" ? row.providerIdentifier.trim() : "";
+  const inner =
+    row.args && typeof row.args === "object" && !Array.isArray(row.args)
+      ? (row.args as Record<string, unknown>)
+      : {};
+
+  if (nestedName === "agentup_ask_user") {
+    return {
+      toolName: "ask_user",
+      args: Object.keys(inner).length > 0 ? inner : row,
+    };
+  }
+  if (provider === "agentup") {
+    return { toolName: `mcp__agentup__${nestedName}`, args: inner };
+  }
+  return { toolName, args: row };
+}
+
 /** 从 args 里挑几个常见字符串字段拼成摘要。 */
 export function summarizeArgs(args: unknown, keys: readonly string[]): string {
   const parts: string[] = [];
@@ -307,17 +342,65 @@ export function formatToolErrorMessage(result: unknown, label = "Error"): string
   return formatToolResult(alreadyLabeled ? trimmed : `${label}: ${trimmed}`);
 }
 
-/** 结果预览：过长时截断。 */
-export function formatToolResult(result: unknown, maxChars = 2400): string {
-  let text: string;
-  if (typeof result === "string") text = result;
-  else {
+/**
+ * 解开 Cursor / 部分 MCP 工具结果外壳，抽出给人看的正文。
+ * 形如 `{status,value:{content:[{text:{text:"…"}}]}}` 或同构 JSON 字符串。
+ * CodeBuddy 已是纯文本时原样返回。
+ */
+export function unwrapSdkToolResultText(raw: unknown): string {
+  if (raw === undefined || raw === null) return "";
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return raw;
     try {
-      text = JSON.stringify(result, null, 2) ?? String(result);
+      return unwrapSdkToolResultText(JSON.parse(trimmed) as unknown) || raw;
     } catch {
-      text = String(result);
+      return raw;
     }
   }
+  if (typeof raw !== "object") return String(raw);
+
+  const row = raw as Record<string, unknown>;
+  // Cursor MCP：{ status, value: { content: [...], isError } }
+  if (row.value && typeof row.value === "object" && !Array.isArray(row.value)) {
+    const fromValue = unwrapSdkToolResultText(row.value);
+    if (fromValue) return fromValue;
+  }
+  // MCP content 块数组
+  if (Array.isArray(row.content)) {
+    const parts = row.content
+      .map((item) => unwrapContentBlock(item))
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join("\n");
+  }
+  // 单块 { type:"text", text:"…" } 或 Cursor 嵌套 { text: { text:"…" } }
+  const block = unwrapContentBlock(raw);
+  if (block) return block;
+
+  try {
+    return JSON.stringify(raw, null, 2) ?? String(raw);
+  } catch {
+    return String(raw);
+  }
+}
+
+function unwrapContentBlock(item: unknown): string {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object" || Array.isArray(item)) return "";
+  const row = item as Record<string, unknown>;
+  if (typeof row.text === "string") return row.text;
+  if (row.text && typeof row.text === "object" && !Array.isArray(row.text)) {
+    const nested = row.text as Record<string, unknown>;
+    if (typeof nested.text === "string") return nested.text;
+  }
+  if (typeof row.content === "string") return row.content;
+  return "";
+}
+
+/** 结果预览：先解 SDK/MCP 壳，过长时截断。 */
+export function formatToolResult(result: unknown, maxChars = 2400): string {
+  const text = unwrapSdkToolResultText(result);
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n…`;
 }

@@ -92,10 +92,19 @@ export type AskUserResolved = {
   resultText: string;
 };
 
+function askUserAbortError(): Error {
+  return Object.assign(new Error("aborted"), { name: "AbortError" });
+}
+
 export class AskUserBroker {
   private readonly pending = new Map<
     string,
-    { request: AskUserRequest; resolve: (answer: AskUserAnswer) => void; cleanup: () => void }
+    {
+      request: AskUserRequest;
+      resolve: (answer: AskUserAnswer) => void;
+      reject: (error: Error) => void;
+      cleanup: () => void;
+    }
   >();
   /** 进程重启后仍可回答的孤儿提问（无 Promise）。 */
   private readonly orphans = new Map<string, AskUserRequest>();
@@ -123,19 +132,20 @@ export class AskUserBroker {
   request(request: Omit<AskUserRequest, "id">, signal?: AbortSignal): Promise<AskUserAnswer> {
     const value = { ...request, id: randomUUID() };
     this.restoredUsers.add(value.userId);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      // 停止回合走 AbortError（硬中断）；Dock「取消」仍走 answer({cancelled}) 软退出。
       const abort = () => {
         this.pending.delete(value.id);
         this.persistUser(value.userId);
-        resolve({ kind: "cancelled" });
+        reject(askUserAbortError());
       };
       const cleanup = () => signal?.removeEventListener("abort", abort);
       if (signal?.aborted) {
-        resolve({ kind: "cancelled" });
+        reject(askUserAbortError());
         return;
       }
       signal?.addEventListener("abort", abort, { once: true });
-      this.pending.set(value.id, { request: value, resolve, cleanup });
+      this.pending.set(value.id, { request: value, resolve, reject, cleanup });
       this.persistUser(value.userId);
       for (const listener of this.listeners) listener(value);
     });

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { extractAssistAgents } from "../../src/pages/conversation/model/message/message-assistants";
+import {
+  extractAssistAgents,
+  parseDelegationResultText,
+} from "../../src/pages/conversation/model/message/message-assistants";
 
 describe("extractAssistAgents", () => {
   it("收录成功、进行中与失败的 delegate_to_agent，并按首次出现去重", () => {
@@ -74,6 +77,89 @@ describe("extractAssistAgents", () => {
       nameHint: "Weaty",
       status: "completed",
       taskId: "task-1",
+    });
+  });
+
+  it("Cursor MCP 结果 JSON 壳解开后写入协助 reply", () => {
+    const envelope = JSON.stringify({
+      status: "success",
+      value: {
+        content: [
+          {
+            text: {
+              text:
+                "task_id: 6CqQKObH\nstatus: completed\nagent: Weaty (hJsAC7Ph)\nresult: 深圳今天天气暂时查不到，系统繁忙，请稍后再试。",
+            },
+          },
+        ],
+        isError: false,
+      },
+    });
+    const assists = extractAssistAgents([
+      {
+        type: "tool-call",
+        toolName: "mcp__agentup__delegate_to_agent",
+        toolCallId: "d-json",
+        args: { agent_id: "hJsAC7Ph", brief: "查深圳天气" },
+        result: envelope,
+      },
+    ]);
+    expect(assists).toHaveLength(1);
+    expect(assists[0]).toMatchObject({
+      agentId: "hJsAC7Ph",
+      nameHint: "Weaty",
+      status: "completed",
+      taskId: "6CqQKObH",
+      reply: "深圳今天天气暂时查不到，系统繁忙，请稍后再试。",
+    });
+    expect(assists[0]?.reply).not.toContain('"status"');
+  });
+
+  it("parseDelegationResultText 兼容 result: 同行正文与 JSON 壳", () => {
+    expect(
+      parseDelegationResultText(
+        "agent: Weaty (hJsAC7Ph)\nresult: 晴，约 9°C",
+      ),
+    ).toEqual({ agentName: "Weaty", body: "晴，约 9°C" });
+    const wrapped = JSON.stringify({
+      status: "success",
+      value: {
+        content: [
+          {
+            text: {
+              text: "agent: Weaty (x)\nresult:\n## 摘要\n晴",
+            },
+          },
+        ],
+      },
+    });
+    expect(parseDelegationResultText(wrapped)).toEqual({
+      agentName: "Weaty",
+      body: "## 摘要\n晴",
+    });
+  });
+
+  it("Cursor 元工具 mcp + provider=agentup 也计入协助 tab", () => {
+    const assists = extractAssistAgents([
+      {
+        type: "tool-call",
+        toolName: "mcp",
+        toolCallId: "d-cursor",
+        args: {
+          providerIdentifier: "agentup",
+          toolName: "delegate_to_agent",
+          args: { agent_id: "hJsAC7Ph", brief: "查北京天气" },
+        },
+        result:
+          "Delegation completed.\ntask_id: task-c\nagent: Weaty (hJsAC7Ph)\nresult:\n晴",
+      },
+    ]);
+    expect(assists).toHaveLength(1);
+    expect(assists[0]).toMatchObject({
+      agentId: "hJsAC7Ph",
+      brief: "查北京天气",
+      status: "completed",
+      taskId: "task-c",
     });
   });
 

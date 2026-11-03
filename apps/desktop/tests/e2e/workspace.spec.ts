@@ -51,7 +51,9 @@ test("会话右侧可以浏览并编辑工作空间", async ({ page }) => {
   await page.getByRole("dialog").getByRole("button", { name: "保存" }).click();
   await expect(page.getByRole("button", { name: "记录.txt", exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "新建文件", exact: true }).click();
+  // 输出产物：新建收进顶栏 + 下拉；exact 避开侧栏「新建群」与「新建文件夹」
+  await page.getByRole("button", { name: "新建", exact: true }).click();
+  await page.getByRole("menuitem", { name: "新建文件", exact: true }).click();
   await page.getByRole("dialog").getByLabel("名称").fill("todo.txt");
   await page.getByRole("button", { name: "创建" }).click();
   await expect(page.getByRole("textbox", { name: "文件内容" })).toHaveValue("");
@@ -66,7 +68,8 @@ test("会话右侧可以浏览并编辑工作空间", async ({ page }) => {
   await page.getByRole("checkbox", { name: "选择 todo.txt" }).check();
   await page.getByRole("checkbox", { name: "选择 reports" }).check();
   await expect(page.getByText("已选 2 项")).toBeVisible();
-  await page.getByRole("button", { name: "删除所选" }).click();
+  await page.getByRole("button", { name: "工作空间操作" }).click();
+  await page.getByRole("menuitem", { name: "删除所选", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("已选的 2 项");
   await page.getByRole("dialog").getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: "todo.txt", exact: true })).toHaveCount(0);
@@ -77,8 +80,12 @@ test("会话右侧可以浏览并编辑工作空间", async ({ page }) => {
     "aria-pressed",
     "true",
   );
-  await expect(page.getByRole("button", { name: "新建文件", exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "我上传的", exact: true })).toBeVisible();
+  // 附件区无顶栏 + 新建入口；… 菜单也不再含新建
+  await expect(page.getByRole("button", { name: "新建", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "工作空间操作" }).click();
+  await expect(page.getByRole("menuitem", { name: "新建文件", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "工作空间", exact: true }).click();
   await expect(page.getByRole("button", { name: "工作空间", exact: true })).toHaveAttribute(

@@ -26,7 +26,7 @@ export type ProviderTemplateKind =
   | "custom-openai"
   | "ollama"
   | "volcengine-ark"
-  /** 本地 CLI / SDK 接入：执行外包给外部 agent，见 docs/agent_cli */
+  /** 本地 CLI / SDK 接入：执行外包给外部 agent，见 .cursor/skills/agentup-sdk-adapter */
   | "agent-sdk";
 
 /**
@@ -38,13 +38,18 @@ export type ProviderAccess = "api" | "agent-sdk";
 
 /** 本地 SDK 的静态描述；安装与登录在设置页按需触发，目录里只放描述。 */
 export interface AgentSdkProfile {
+  /**
+   * 实现契约的 adaptor id（与 templateId 解耦）。
+   * 见 .cursor/skills/agentup-sdk-adapter/references/directory.md §6。
+   */
+  driverId: "codebuddy" | "claude-code" | "cursor" | "codex" | (string & {});
   /** npm 包名，也用于定位安装目录内的包 */
   package: string;
   /** 安装 spec（含版本范围），避免装到不兼容的大版本 */
   spec: string;
   /** 安装体积提示，设置页提前告知，别让人以为卡死 */
   sizeHintMb: number;
-  loginGuide?: { command: string; docUrl?: string };
+  loginGuide?: { command?: string; docUrl?: string };
   /**
    * 方案 D：AgentUp `.pi/skills`（及私人助理已启用技能）投影到的**项目相对**路径。
    * 例：CodeBuddy / Workbuddy → `.codebuddy/skills`。
@@ -313,12 +318,80 @@ const TEMPLATE_DEFS: TemplateDef[] = [
       },
     ],
     agentSdk: {
+      driverId: "codebuddy",
       package: "@tencent-ai/agent-sdk",
       spec: "@tencent-ai/agent-sdk@0.3.295",
       sizeHintMb: 180,
       loginGuide: { command: "cbc login" },
       // 厂商项目技能目录；换其它 agent-sdk 模板时由 skills-project 换链
       skillsProjectRel: ".codebuddy/skills",
+    },
+  },
+  {
+    // Cursor 本地 Agent App：推理走 Cursor 托管模型，本机跑 agent loop / 读盘
+    id: "cursor-sdk",
+    vendorId: "cursor",
+    vendorLabel: "Cursor",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.cursor-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "cursor-sdk",
+    requiresApiKey: false,
+    defaultModelId: "default",
+    hint: { key: "provider.template.cursor-sdk.hint" },
+    models: [
+      {
+        id: "default",
+        name: "Cursor 默认模型",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+    ],
+    agentSdk: {
+      driverId: "cursor",
+      package: "@cursor/sdk",
+      // 钉版本：平台原生包与主包同号；升级时同步 optionalDependencies
+      spec: "@cursor/sdk@1.2.0",
+      sizeHintMb: 120,
+      loginGuide: {
+        command: "cursor-sdk login",
+        docUrl: "https://cursor.com/docs/sdk/typescript",
+      },
+      skillsProjectRel: ".cursor/skills",
+    },
+  },
+  {
+    // OpenAI Codex 本地 Agent App：ChatGPT 订阅登录；CLI 经 @openai/codex-sdk 拉起
+    id: "codex-sdk",
+    vendorId: "codex",
+    vendorLabel: "Codex",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.codex-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "codex-sdk",
+    requiresApiKey: false,
+    defaultModelId: "default",
+    hint: { key: "provider.template.codex-sdk.hint" },
+    models: [
+      {
+        id: "default",
+        name: "Codex 默认模型",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+    ],
+    agentSdk: {
+      driverId: "codex",
+      package: "@openai/codex-sdk",
+      // 钉版本：与捆绑 @openai/codex / 平台 optionalDeps 同号
+      spec: "@openai/codex-sdk@0.166.0",
+      // 含平台原生 CLI（约 350MB+）
+      sizeHintMb: 360,
+      loginGuide: {
+        command: "codex login",
+        docUrl: "https://learn.chatgpt.com/docs/codex-sdk",
+      },
+      skillsProjectRel: ".agents/skills",
     },
   },
   {

@@ -24,7 +24,7 @@ import type { TurnErrorPolicy, TurnHitlLabel } from "./turn-runner.js";
 import type { PromptSession } from "./types.js";
 
 /**
- * 外部 Agent（本地 Agent App / SDK）的回合驱动 —— docs/agent_cli §12.6 的「路 2」。
+ * 外部 Agent（本地 Agent App / SDK）的回合驱动 —— .cursor/skills/agentup-sdk-adapter/references/overview.md §3 的「路 2」。
  *
  * 与 `runObservedTurn` 同形：同样的 `write` / HITL 订阅 / 错误策略，桌面端零改动；
  * 区别只是事件来源不是 Pi 的 `session.subscribe`，而是外部 agent 的消息流经

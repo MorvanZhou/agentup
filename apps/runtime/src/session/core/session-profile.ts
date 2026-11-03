@@ -7,7 +7,7 @@ export type SessionProfileServices = {
   background?: boolean;
 };
 
-/** 三种会话共用一套拼装，差别只在这张表。群执掌和一对一能力相同，身份由 ConversationRef 区分。 */
+/** 三种会话共用一套拼装，差别只在这张表。群执掌与一对一均 continue（换人/清空仍 rm 目录），身份由 ConversationRef 区分。 */
 export type SessionProfile = {
   kind: SessionProfileKind;
   mode: ExecutionMode;
@@ -51,7 +51,9 @@ const PROFILE: Record<ExecutionMode, SessionProfile> = {
   "group-holder": {
     kind: "group-holder",
     mode: "group-holder",
-    session: "fresh",
+    // 留任跨轮续写；换人 / 清空仍由 start_holder / clearContext rm 目录。
+    // SDK 每轮 externalPromptFromSession → transcriptToPrompt（超长压缩），勿各 adaptor 自拼。
+    session: "continue",
     personalSkills: true,
     personalMcp: true,
     summary: true,
@@ -63,7 +65,7 @@ const PROFILE: Record<ExecutionMode, SessionProfile> = {
     completeGroupTask: false,
     projectRootsPrompt: false,
     collaborationPrompt: false,
-    healInterrupted: false,
+    healInterrupted: true,
     persistModelRef: false,
     delegationLabels: false,
   },

@@ -91,6 +91,9 @@ test("委托过程弹窗复用主 Agent 的工具卡 UI", async ({ page }) => {
   const bashCard = dialog.getByRole("button", { name: /^bash\b/i });
   await expect(bashCard).toBeVisible();
   await bashCard.click();
-  await expect(dialog.getByText('{"city":"上海","temp":25}')).toBeVisible();
+  // `$ ` 前缀避开摘要行；结果经 formatToolResult 美化，勿锁死单行紧凑 JSON
+  await expect(dialog.getByText("$ node check-weather.mjs")).toBeVisible();
+  await expect(dialog.getByText(/"city"\s*:\s*"上海"/)).toBeVisible();
+  await expect(dialog.getByText(/"temp"\s*:\s*25/)).toBeVisible();
   await expect(dialog.getByText("上海晴，25°C")).toBeVisible();
 });

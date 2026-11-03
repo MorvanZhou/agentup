@@ -356,7 +356,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
 
   /**
    * 插话（API / Pi 原生接入）：走 Pi 原生 steer，插到当前工具批次之后、下一次 LLM 调用之前，
-   * 保留已做的工作；不另起一条助手消息（docs/agent_cli §12.8）。
+   * 保留已做的工作；不另起一条助手消息（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
    * 会话没在跑或外部 agent 接入时返回 `steered: false`，桌面按「停止后重发」处理。
    */
   app.post("/agents/:agentId/steer", async (c) => {

@@ -50,6 +50,7 @@ function applicationMenuTemplate(options = {}) {
       { role: "windowMenu" },
     ];
   }
+  // Windows / Linux：About 与检查更新放在窗口 Help 菜单（左上角菜单栏）
   return [
     { role: "fileMenu" },
     { role: "editMenu" },
@@ -57,7 +58,7 @@ function applicationMenuTemplate(options = {}) {
     { role: "windowMenu" },
     {
       label: "Help",
-      submenu: [checkForUpdatesItem],
+      submenu: [{ role: "about" }, { type: "separator" }, checkForUpdatesItem],
     },
   ];
 }

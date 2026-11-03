@@ -60,10 +60,12 @@ export async function executeDelegationTask(
 
     const unmark = ctx.markNested(task.userId, task.fromAgentId, task.toAgentId);
     try {
+      // 排队期间 brief 可能被二次 delegate 改过；开跑前再读一次
+      const latestBrief = ctx.store.get(task.id)?.brief ?? task.brief;
       const outcome = await runDelegatedPrompt(
         visit,
         ctx.getModel(),
-        task.brief,
+        latestBrief,
         ctx.approvals,
         ctx.askUser,
         {

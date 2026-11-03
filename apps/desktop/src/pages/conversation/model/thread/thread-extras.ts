@@ -36,6 +36,7 @@ const empty: ThreadExtras = {
 };
 
 export function injectThreadExtras(): ComputedRef<ThreadExtras> {
-  const value = inject(threadExtrasKey);
+  // 显式 default：委托气泡等非完整线程树也会挂 Markdown 预览，勿再 Vue warn
+  const value = inject(threadExtrasKey, undefined);
   return computed(() => value?.value ?? empty);
 }

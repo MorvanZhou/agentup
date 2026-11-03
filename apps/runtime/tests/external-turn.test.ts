@@ -269,6 +269,37 @@ describe("回写会话", () => {
     expect(prompt).toContain("深圳天气");
   });
 
+  it("群执掌续写后：SDK 重拼 prompt 带上多轮历史（勿只剩最新一句）", () => {
+    const prompt = externalPromptFromSession(
+      {
+        sessionManager: {
+          getBranch: () => [
+            {
+              type: "message",
+              message: {
+                role: "user",
+                content: [{ type: "text", text: "用户：写一个寻路算法，用 python，dfs" }],
+                timestamp: 1,
+              },
+            },
+            {
+              type: "message",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: "Q1 选网格？推荐 A" }],
+                timestamp: 2,
+              },
+            },
+          ],
+        },
+      },
+      "按推荐",
+    );
+    expect(prompt).toContain("寻路算法");
+    expect(prompt).toContain("Q1");
+    expect(prompt).toContain("按推荐");
+  });
+
   it("结构化落盘：toolCall/toolResult + 总结正文，digest 不进可见文本", () => {
     const appended: unknown[] = [];
     const customs: unknown[] = [];

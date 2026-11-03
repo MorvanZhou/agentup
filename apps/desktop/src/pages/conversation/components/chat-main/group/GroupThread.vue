@@ -26,7 +26,13 @@ import {
   groupDelegationRuntimeKey,
   groupWaitingTaskIdsKey,
 } from "../../../model/group/group-delegation";
-import { groupLinesToUiMessages, pendingDelegationCards, withHolderAuthor } from "../../../model/group/group-ui-messages";
+import {
+  groupLinesToUiMessages,
+  pendingDelegationCards,
+  resolveGroupWakeLive,
+  uiMessagePlainText,
+} from "../../../model/group/group-ui-messages";
+import { lastUserMessageMatchingText } from "../../../model/thread/thread-insert-cue";
 import {
   roomHolder,
   roomMembers,
@@ -51,6 +57,11 @@ import { threadActionsKey, type ThreadActions } from "../../../model/thread/thre
 import { threadAgentIdKey } from "../../../model/thread/thread-agent-id";
 import { threadApprovalKey } from "../../../model/thread/thread-approval";
 import { threadAskUserKey } from "../../../model/thread/thread-ask-user";
+import {
+  createThreadInsertCueApi,
+  threadInsertCueKey,
+  type ThreadInsertCue,
+} from "../../../model/thread/thread-insert-cue";
 import {
   threadDelegationKey,
   type DelegationProcessTarget,
@@ -283,17 +294,79 @@ const liveAuthor = computed(() => {
     role: profile?.role,
   };
 });
-const live = computed(() => {
-  const message = props.liveMessage ?? null;
-  if (!message) return null;
-  const author = liveAuthor.value;
-  return author ? withHolderAuthor(message, author) : message;
-});
+
+/** 发送后、POST 落盘前先占位的用户正文；与历史行撞上就清掉，避免双气泡。 */
+const pendingUserText = ref("");
+/** 发出 pending 时已有的用户行 id；对账时跳过，避免同文命中旧行。 */
+const pendingPriorUserIds = ref<readonly string[]>([]);
+/**
+ * 发出时执掌者已经在说话 → 才是中途插入（需要滚到中段 + 闪）。
+ * 开局第一条 / 交回后再说的正常发言不闪。
+ */
+const pendingMidInsert = ref(false);
+/** 中途插入：从贴底乐观气泡落到历史中段时，滚过去并闪一下 */
+const insertCue = ref<ThreadInsertCue | null>(null);
+const insertCueApi = createThreadInsertCueApi(insertCue);
+provide(threadInsertCueKey, insertCueApi);
 
 const messages = computed(() => groupLinesToUiMessages(props.room, profileByAgent.value));
 const threadMessages = computed(
   () =>
     AISDKMessageConverter.toThreadMessages(messages.value, speaking.value) as ExternalThreadMessage[],
+);
+
+const wakeLive = computed(() =>
+  resolveGroupWakeLive({
+    speaking: speaking.value,
+    liveMessage: props.liveMessage ?? null,
+    author: liveAuthor.value,
+    pendingUserText: pendingUserText.value,
+  }),
+);
+
+// 历史已有同一条用户发言 → 撤掉乐观气泡；执掌中途插入时再 cue 高亮
+watch(
+  messages,
+  (list) => {
+    const pending = pendingUserText.value.trim();
+    if (!pending) return;
+    // 跳过发出前已有的同文行，再取最后一条新行
+    const hit = lastUserMessageMatchingText(
+      list,
+      pending,
+      uiMessagePlainText,
+      pendingPriorUserIds.value,
+    );
+    if (!hit) return;
+    const midInsert = pendingMidInsert.value;
+    pendingUserText.value = "";
+    pendingPriorUserIds.value = [];
+    pendingMidInsert.value = false;
+    // 仅中途插入闪缩；开局/空闲发言不闪
+    if (midInsert) insertCueApi.flashById(hit.id);
+  },
+);
+
+// 发送失败 / 未写入：busy 落下且仍对不上历史行，撤乐观占位
+watch(
+  () => props.busy,
+  (busy, wasBusy) => {
+    if (wasBusy !== true || busy) return;
+    const pending = pendingUserText.value.trim();
+    if (!pending) return;
+    if (
+      !lastUserMessageMatchingText(
+        messages.value,
+        pending,
+        uiMessagePlainText,
+        pendingPriorUserIds.value,
+      )
+    ) {
+      pendingUserText.value = "";
+      pendingPriorUserIds.value = [];
+      pendingMidInsert.value = false;
+    }
+  },
 );
 
 function appendText(message: AppendMessage): string {
@@ -328,7 +401,15 @@ const config = computed(() =>
       attachmentAdapter: groupImageAttachments,
       onNew: (message) => {
         const text = outgoingText(message);
-        if (text) emit("send", text);
+        if (!text) return;
+        // 先亮用户气泡，再等 mutateLive；避免 POST/首包前空白像没发出去
+        pendingPriorUserIds.value = messages.value
+          .filter((row) => row.role === "user")
+          .map((row) => row.id);
+        // 发出瞬间已在执掌中 → 中途插入；否则是开局/换人后的正常发言
+        pendingMidInsert.value = speaking.value;
+        pendingUserText.value = text;
+        emit("send", text);
       },
       onEdit: (message) => {
         const text = outgoingText(message);
@@ -407,15 +488,7 @@ provide(
 );
 /** 群聊执掌者回合：tool 执行中也默认折叠，避免大块输出占屏。 */
 provide(toolAutoExpandKey, readonlyToolAutoExpandRef());
-provide(
-  threadWakeLiveKey,
-  computed(() => ({
-    streaming: Boolean(live.value) && speaking.value,
-    message: live.value,
-    // 群发言本来就按行排队，不走 followUp 队列
-    userText: "",
-  })),
-);
+provide(threadWakeLiveKey, wakeLive);
 provide(chatMessageFooterKey, GroupMessageFooter);
 provide(chatDelegationMessageKey, GroupDelegationMessage);
 provide(chatDelegationTrailKey, GroupDelegationTrail);

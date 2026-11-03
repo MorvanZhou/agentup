@@ -10,8 +10,16 @@ import { WORKSPACE_POLICY, type WorkspacePolicy } from "../src/session/context/w
 
 /** 拦住本地 SDK 的动态 import：测试里换成可控的假 query。 */
 const { query } = vi.hoisted(() => ({ query: vi.fn() }));
+vi.mock("../src/session/external/sdk/adapters/codebuddy/load.js", () => ({
+  loadCodebuddyModule: async () => ({ query }),
+  loadAgentSdkModule: async () => ({ query }),
+  installedCliPath: () => "/tmp/fake-codebuddy",
+  withTimeout: <T>(promise: Promise<T>) => promise,
+}));
+/** 旧路径薄委托仍可能被其它模块引用，一并挡住。 */
 vi.mock("../src/config/providers/agent-sdk/loader.js", () => ({
   loadAgentSdkModule: async () => ({ query }),
+  loadCodebuddyModule: async () => ({ query }),
   installedCliPath: () => "/tmp/fake-codebuddy",
   withTimeout: <T>(promise: Promise<T>) => promise,
 }));
@@ -356,7 +364,7 @@ it("每轮都是全新对话：不把会话留在外部 CLI 的目录里", async
   const { streamOf } = await openStream();
   await collect(streamOf, [USER]);
   const passed = query.mock.calls[0]?.[0] as { options: Record<string, unknown> };
-  // 上下文由 runtime 拼接（docs/agent_cli §12.5）：不 resume，也不让它落第二份副本
+  // 上下文由 runtime 拼接（.cursor/skills/agentup-sdk-adapter/references/overview.md §3）：不 resume，也不让它落第二份副本
   expect(passed.options.persistSession).toBe(false);
 });
 
@@ -528,7 +536,7 @@ it("AskUserQuestion 走提问通道并把答案回填给 SDK，不进入工具�
         expect.objectContaining({ question: "还有什么要求？" }),
       ],
     }),
-    undefined,
+    expect.any(AbortSignal),
   );
   expect(verdict).toEqual({
     behavior: "allow",

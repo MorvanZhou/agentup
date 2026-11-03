@@ -17,7 +17,7 @@ import {
   writeWorkspaceText,
 } from "../src/local/workspace.js";
 
-it("lists and edits cwd files while hiding .pi/WORK and refusing escapes", () => {
+it("lists and edits cwd files while hiding .pi/WORK in root list, allowing WORK path access, refusing .pi/escapes", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-workspace-"));
   const cwd = path.join(root, "users", "patient-a", "agents", "weather", "cwd");
   fs.mkdirSync(path.join(cwd, ".pi"), { recursive: true });
@@ -39,16 +39,30 @@ it("lists and edits cwd files while hiding .pi/WORK and refusing escapes", () =>
     ".keep",
     "note.txt",
   ]);
-  expect(listed.entries.find((entry) => entry.name === "note.txt")).toMatchObject({ kind: "file", size: 5 });
+  expect(listed.entries.find((entry) => entry.name === "note.txt")).toMatchObject({
+    kind: "file",
+    size: 5,
+    mtimeMs: expect.any(Number),
+    birthtimeMs: expect.any(Number),
+  });
   expect(listed.entries.find((entry) => entry.name === "WORK")).toBeUndefined();
+  const noteTimes = listed.entries.find((entry) => entry.name === "note.txt");
+  expect(noteTimes?.mtimeMs).toBeGreaterThan(0);
+  expect(noteTimes?.birthtimeMs).toBeGreaterThan(0);
 
   expect(() => listWorkspace(cwd, ".pi")).toThrow(/路径无效/);
-  expect(() => listWorkspace(cwd, "WORK")).toThrow(/路径无效/);
+  // WORK 根列表仍隐藏，但路径可读可列（正文链化可点开）
+  expect(listWorkspace(cwd, "WORK").entries.map((entry) => entry.name)).toEqual(["draft.ts"]);
+  expect(readWorkspaceFile(cwd, "WORK/draft.ts")).toMatchObject({ kind: "text", text: "temp" });
   expect(() => listWorkspace(cwd, "../sessions")).toThrow(/路径无效/);
   expect(() => readWorkspaceFile(cwd, "escape")).toThrow(/路径无效/);
   expect(() => writeWorkspaceText(cwd, "../outside.txt", "no")).toThrow(/路径无效/);
   expect(() => createWorkspaceEntry(cwd, ".pi", "dir")).toThrow(/路径无效/);
-  expect(() => createWorkspaceEntry(cwd, "WORK", "dir")).toThrow(/路径无效/);
+  // 禁止在 cwd 根再建名为 WORK 的顶层项；WORK/ 下可写
+  expect(() => createWorkspaceEntry(cwd, "WORK", "dir")).toThrow(/名称无效/);
+  createWorkspaceEntry(cwd, "WORK/from-remy", "dir");
+  createWorkspaceEntry(cwd, "WORK/from-remy/brief.md", "file");
+  expect(readWorkspaceFile(cwd, "WORK/from-remy/brief.md")).toMatchObject({ kind: "text", text: "" });
 
   expect(readWorkspaceFile(cwd, "note.txt")).toMatchObject({ kind: "text", text: "hello" });
   writeWorkspaceText(cwd, "note.txt", "updated");
@@ -118,8 +132,18 @@ it("serves workspace routes for a recruited cwd and the personal assistant", asy
     expect(rootEntries).not.toContain(".pi");
     const escaped = await get(local.url, "/agents/weather/workspace/file?user_id=patient-a&path=.pi/SYSTEM.md", "token");
     expect(escaped.status).toBe(400);
-    const workHidden = await get(local.url, "/agents/weather/workspace?user_id=patient-a&path=WORK", "token");
-    expect(workHidden.status).toBe(400);
+    // 根列表不露 WORK；显式 path=WORK 可读（聊天正文链化）
+    fs.mkdirSync(path.join(cwd, "WORK", "from-remy"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "WORK", "from-remy", "brief.md"), "# hi");
+    const workListed = await get(local.url, "/agents/weather/workspace?user_id=patient-a&path=WORK", "token");
+    expect(workListed.status).toBe(200);
+    const workFile = await get(
+      local.url,
+      "/agents/weather/workspace/file?user_id=patient-a&path=WORK/from-remy/brief.md",
+      "token",
+    );
+    expect(workFile.status).toBe(200);
+    expect(workFile.body).toMatchObject({ kind: "text", text: "# hi" });
 
     const created = await post(
       local.url,

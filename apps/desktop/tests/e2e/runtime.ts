@@ -79,7 +79,7 @@ export async function installRuntime(
       | "sdk-process"
       /** 第一轮挂起（保持 busy），后续 prompt 一律 202 入队 */
       | "follow-up"
-      /** 同上，但第一轮 1.2s 就收：用来测队列被消费那一轮的顺序 */
+      /** 同上，但第一轮约 2.5s 就收：用来测队列被消费那一轮的顺序 */
       | "follow-up-drain";
     inspectError?: {
       error: string;
@@ -276,6 +276,20 @@ export async function installRuntime(
     supports_model_discovery: false,
     models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
   };
+  const codexSdkTemplate = {
+    id: "codex-sdk",
+    access: "agent-sdk",
+    vendor_id: "codex",
+    vendor_label: "Codex",
+    option_label: "本地 Agent App",
+    label: "Codex",
+    kind: "agent-sdk",
+    pi_provider_id: "codex-sdk",
+    requires_api_key: false,
+    default_model_id: "default",
+    supports_model_discovery: false,
+    models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
+  };
   type AgentSdkRow = {
     template_id: string;
     vendor_label: string;
@@ -354,7 +368,7 @@ export async function installRuntime(
       { id: "ollama", label: "Ollama", options: [ollamaTemplate] },
       { id: "deepseek", label: "DeepSeek", options: [deepseekTemplate] },
     ],
-    templates: [ollamaTemplate, deepseekTemplate, codebuddySdkTemplate],
+    templates: [ollamaTemplate, deepseekTemplate, codebuddySdkTemplate, codexSdkTemplate],
     agent_sdks: [
       {
         template_id: "codebuddy-sdk",
@@ -365,6 +379,21 @@ export async function installRuntime(
         package: "@tencent-ai/agent-sdk",
         size_hint_mb: 180,
         login_guide: { command: "cbc login", doc_url: null },
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        account_label: null,
+        models: [],
+      },
+      {
+        template_id: "codex-sdk",
+        vendor_label: "Codex",
+        option_label: "本地 Agent App",
+        label: "Codex",
+        hint: "用你的 ChatGPT 订阅在本机跑 Codex Agent",
+        package: "@openai/codex-sdk",
+        size_hint_mb: 360,
+        login_guide: { command: "codex login", doc_url: "https://learn.chatgpt.com/docs/codex-sdk" },
         state: "not_installed",
         installed_version: null,
         last_error: null,
@@ -507,6 +536,8 @@ export async function installRuntime(
    * 仍发同一条，保证晚连上的客户端也先看到用户那条。
    */
   let drainedEcho: string | null = null;
+  /** 首轮 SSE 常被 reload 打断；允许再回放 1 次给观察者抓到，随后挂住防风暴。 */
+  let drainReplayCount = 0;
   /** 队列被消费后发的那一轮：先 echo 用户那条，再出助手正文（顺序 = 用户 → 助手）。 */
   function followUpDrainSse(): string {
     if (drainedEcho === null) {
@@ -524,6 +555,33 @@ export async function installRuntime(
       { type: "finish-step" },
       { type: "finish" },
     ]);
+  }
+  async function holdTurnStream(
+    route: { fulfill: (r: { status: number; body: string }) => Promise<unknown> },
+  ): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 120_000));
+    try {
+      await route.fulfill({ status: 204, body: "" });
+    } catch {
+      /* 页面关了 */
+    }
+  }
+  function fulfillDrain(route: {
+    fulfill: (r: {
+      status: number;
+      headers: Record<string, string>;
+      body: string;
+    }) => Promise<unknown>;
+  }) {
+    return route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "x-vercel-ai-ui-message-stream": "v1",
+        "cache-control": "no-cache",
+      },
+      body: followUpDrainSse(),
+    });
   }
   await page.route(/^https?:\/\/[^/]+\/runtime(?:\/|$)/, async (route) => {
     const request = route.request();
@@ -610,7 +668,7 @@ export async function installRuntime(
     if (request.method() === "GET" && path === "/settings/provider") {
       return json(route, 200, providerSettings);
     }
-    // ── 本地 Agent App：安装 / 登录 / 登出 / 模型 / 卸载（docs/agent_cli） ──
+    // ── 本地 Agent App：安装 / 登录 / 登出 / 模型 / 卸载（.cursor/skills/agentup-sdk-adapter） ──
     const sdkAgent = path.match(/^\/settings\/provider\/agents\/([^/]+)(.*)$/);
     if (sdkAgent) {
       const templateId = decodeURIComponent(sdkAgent[1]!);
@@ -1595,7 +1653,7 @@ export async function installRuntime(
         package_digest: agent.latest_digest,
       });
     }
-    // ── followUp 队列 mock（本地 Agent App 接入，见 docs/agent_cli §12.8） ──
+    // ── followUp 队列 mock（本地 Agent App 接入，见 .cursor/skills/agentup-sdk-adapter/references/follow-up.md） ──
     if (path === "/follow-ups") {
       if (request.method() === "GET") return json(route, 200, { queue: followUpQueue });
       if (request.method() === "POST") {
@@ -1633,27 +1691,30 @@ export async function installRuntime(
       }
     }
 
-    // 队列被消费的那一轮：桌面连 /turn-stream 看直播（docs/agent_cli §12.8.1）。
+    // 队列被消费的那一轮：桌面连 /turn-stream 看直播（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
     // runtime 的顺序是先 echo 拼好的用户那条，再出助手正文——错的那个版本反过来。
     if (request.method() === "GET" && path === "/turn-stream") {
       if (options?.prompt !== "follow-up-drain") return json(route, 404, { error: "本场景没有旁路流" });
+      // 已播过：立即回放至多 1 次（首轮常被 reload 掐断）；再多就挂住，勿空等 15s
+      if (drainedEcho !== null) {
+        if (drainReplayCount >= 1) return holdTurnStream(route);
+        drainReplayCount += 1;
+        return fulfillDrain(route);
+      }
       // 等第一轮收完、队列里真有东西，再发消费轮
       const deadline = Date.now() + 15_000;
       while (!(firstDrainTurnServed && followUpQueue.length > 0) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      return route.fulfill({
-        status: 200,
-        headers: {
-          "content-type": "text/event-stream; charset=utf-8",
-          "x-vercel-ai-ui-message-stream": "v1",
-          "cache-control": "no-cache",
-        },
-        body: followUpDrainSse(),
-      });
+      if (drainedEcho !== null) {
+        if (drainReplayCount >= 1) return holdTurnStream(route);
+        drainReplayCount += 1;
+        return fulfillDrain(route);
+      }
+      return fulfillDrain(route);
     }
 
-    // 插话：API / Pi 原生接入走 runtime 的 Pi 原生 steer（docs/agent_cli §12.8）。
+    // 插话：API / Pi 原生接入走 runtime 的 Pi 原生 steer（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
     // `interruptible-fallback` 场景 = runtime 没接住（会话没在跑等）→ 退回停止后重发。
     const steerMatch = path.match(/^\/agents\/([^/]+)\/steer$/);
     if (steerMatch && request.method() === "POST") {
@@ -1667,12 +1728,12 @@ export async function installRuntime(
     if (request.method() === "POST" && promptMatch) {
       if (options?.prompt === "missing-model") return json(route, 503, { error: "打开会话前请先在设置中配置本地模型" });
       // 第一轮挂起（保持 busy）；之后的 prompt 一律 202 入队，模拟 SDK 接入没有 steer。
-      // `follow-up-drain` 只挂 1.2s 就收，用来测「队列被消费那一轮」的收发顺序。
+      // `follow-up-drain` 挂 2.5s：够塞队列；消费轮靠下方 pulse 标 busy，勿再等 12s 空闲拍。
       if (options?.prompt === "follow-up" || options?.prompt === "follow-up-drain") {
         followUpPrompts += 1;
         if (followUpPrompts === 1) {
           await new Promise((resolve) =>
-            setTimeout(resolve, options?.prompt === "follow-up-drain" ? 6_000 : 20_000),
+            setTimeout(resolve, options?.prompt === "follow-up-drain" ? 2_500 : 20_000),
           );
           try {
             return await route.fulfill({
@@ -1861,16 +1922,25 @@ export async function installRuntime(
         firstDrainTurnServed &&
         (drainWake || followUpQueue.length > 0);
       if (drainTurn) drainWake = true;
+      const recruitedIds = agents.filter((item) => item.recruited).map((item) => item.agent_id);
+      // drain 场景整段标 busy：否则空闲 12s 一拍，消费轮要干等下一拍才启动（这两条曾各 ~22s）
+      const drainScenarioBusy = options?.prompt === "follow-up-drain";
       const wakeTurns = drainTurn
-        ? agents.filter((item) => item.recruited).map((item) => ({
-            agent_id: item.agent_id,
+        ? recruitedIds.map((agentId) => ({
+            agent_id: agentId,
             phase: "wake",
             sources: [],
           }))
-        : [];
+        : drainScenarioBusy
+          ? recruitedIds.map((agentId) => ({
+              agent_id: agentId,
+              phase: "prompt",
+              sources: [],
+            }))
+          : [];
       return json(route, 200, {
         attention: {
-          busy_agent_ids: [],
+          busy_agent_ids: drainScenarioBusy ? recruitedIds : [],
           busy_turns: wakeTurns,
           approvals: [],
           ask_users: [],

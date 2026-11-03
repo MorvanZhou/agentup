@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { composerRunActions } from "../../src/pages/conversation/model/composer/composer-actions";
+import {
+  composerRunActions,
+  composerUsesFollowUpQueue,
+} from "../../src/pages/conversation/model/composer/composer-actions";
+
+describe("composerUsesFollowUpQueue", () => {
+  it("单聊 SDK 才入队；群聊即使模型是 SDK 也不走 followUp", () => {
+    expect(composerUsesFollowUpQueue({ followUp: true })).toBe(true);
+    expect(composerUsesFollowUpQueue({ followUp: false })).toBe(false);
+    expect(composerUsesFollowUpQueue({ followUp: true, groupId: "g1" })).toBe(false);
+    expect(composerUsesFollowUpQueue({ followUp: false, groupId: "g1" })).toBe(false);
+  });
+});
 
 describe("composerRunActions", () => {
   it("shows only stop while a reply is streaming and the composer is empty", () => {

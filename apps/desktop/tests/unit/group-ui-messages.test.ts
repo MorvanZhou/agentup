@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { groupDelegationPhase } from "../../src/pages/conversation/model/group/group-delegation";
 import {
+  GROUP_HOLDER_PENDING_LIVE_ID,
   groupLinesToUiMessages,
   pendingDelegationCards,
+  resolveGroupWakeLive,
   withHolderAuthor,
 } from "../../src/pages/conversation/model/group/group-ui-messages";
 import { AISDKMessageConverter } from "../../src/pages/conversation/model/thread/ui-to-thread-messages";
@@ -279,5 +281,54 @@ describe("groupLinesToUiMessages", () => {
     const messages = groupLinesToUiMessages(room);
     const agent = messages.find((message) => message.id === "l3");
     expect(agent?.parts).toEqual([{ type: "text", text: "好的", state: "done" }]);
+  });
+});
+
+describe("resolveGroupWakeLive", () => {
+  const author = { id: "pm", name: "产品经理", role: "产品负责人" };
+
+  it("keeps only the optimistic user bubble before the holder starts speaking", () => {
+    const wake = resolveGroupWakeLive({
+      speaking: false,
+      liveMessage: null,
+      author,
+      pendingUserText: "  @产品经理 做登录  ",
+    });
+    expect(wake).toEqual({
+      streaming: false,
+      message: null,
+      userText: "@产品经理 做登录",
+    });
+  });
+
+  it("uses an empty pending assistant bubble while speaking without a stream chunk", () => {
+    const wake = resolveGroupWakeLive({
+      speaking: true,
+      liveMessage: null,
+      author,
+      pendingUserText: "",
+    });
+    expect(wake.streaming).toBe(true);
+    expect(wake.message?.id).toBe(GROUP_HOLDER_PENDING_LIVE_ID);
+    expect(wake.message?.parts).toEqual([]);
+    expect(wake.message?.metadata).toMatchObject({
+      custom: { groupLineRole: "agent", author: { id: "pm", name: "产品经理" } },
+    });
+  });
+
+  it("prefers the real live message over the pending placeholder", () => {
+    const live = {
+      id: "live-1",
+      role: "assistant" as const,
+      parts: [{ type: "text" as const, text: "正在画迷宫", state: "streaming" as const }],
+    };
+    const wake = resolveGroupWakeLive({
+      speaking: true,
+      liveMessage: live,
+      author,
+      pendingUserText: "",
+    });
+    expect(wake.message?.id).toBe("live-1");
+    expect(wake.streaming).toBe(true);
   });
 });

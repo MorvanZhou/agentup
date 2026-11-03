@@ -4,7 +4,7 @@ import type { Api, AssistantMessage } from "@earendil-works/pi-ai";
 /**
  * 外部 Agent（本地 Agent App / SDK）的消息 → Pi `AgentSessionEvent`。
  *
- * 目的：路 2（docs/agent_cli §12.6）绕开 Pi 的 agent 循环，自己驱动外部 agent，
+ * 目的：路 2（.cursor/skills/agentup-sdk-adapter/references/overview.md §3）绕开 Pi 的 agent 循环，自己驱动外部 agent，
  * 但仍复用唯一的投影层 `PiUIMessageProjector`——桌面端因此零改动。
  *
  * 两条红线：

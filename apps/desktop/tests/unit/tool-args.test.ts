@@ -13,6 +13,8 @@ import {
   shortPath,
   summarizeArgs,
   summarizeGenericToolArgs,
+  unwrapAgentUpMcpShell,
+  unwrapSdkToolResultText,
 } from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/shared/tool-args.js";
 
 it("reads string args and shortens paths", () => {
@@ -54,6 +56,46 @@ it("parses mcp tool names and summarizes args", () => {
     "hospital · b/note.md",
   );
   expect(summarizeArgs({ cursor: "page-2" }, ["server", "uri", "cursor"])).toBe("page-2");
+});
+
+it("解开 Cursor MCP 工具结果 JSON 壳", () => {
+  const envelope = {
+    status: "success",
+    value: {
+      content: [{ text: { text: "task_id: t1\nresult: 晴" } }],
+      isError: false,
+    },
+  };
+  expect(unwrapSdkToolResultText(envelope)).toBe("task_id: t1\nresult: 晴");
+  expect(unwrapSdkToolResultText(JSON.stringify(envelope))).toBe(
+    "task_id: t1\nresult: 晴",
+  );
+  expect(formatToolResult(envelope)).toBe("task_id: t1\nresult: 晴");
+  expect(unwrapSdkToolResultText("纯文本结果")).toBe("纯文本结果");
+});
+
+it("Cursor mcp 壳解成 mcp__agentup__* / ask_user", () => {
+  expect(
+    unwrapAgentUpMcpShell("mcp", {
+      providerIdentifier: "agentup",
+      toolName: "delegate_to_agent",
+      args: { agent_id: "a1", brief: "查天气" },
+    }),
+  ).toEqual({
+    toolName: "mcp__agentup__delegate_to_agent",
+    args: { agent_id: "a1", brief: "查天气" },
+  });
+  expect(
+    unwrapAgentUpMcpShell("mcp", {
+      providerIdentifier: "custom-user-tools",
+      toolName: "agentup_ask_user",
+      args: { questions: [] },
+    }),
+  ).toEqual({ toolName: "ask_user", args: { questions: [] } });
+  expect(unwrapAgentUpMcpShell("mcp__agentup__agent_search", { query: "x" })).toEqual({
+    toolName: "mcp__agentup__agent_search",
+    args: { query: "x" },
+  });
 });
 
 it("GenericTool 摘要认 SDK ToolSearch / DeferExecuteTool 参数形", () => {

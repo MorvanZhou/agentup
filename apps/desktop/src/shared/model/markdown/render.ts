@@ -1,6 +1,9 @@
 import MarkdownIt, { type Token } from "markdown-it";
 import hljs from "highlight.js/lib/common";
 
+import { injectLocalPathMarkdownLinks, parseLocalPathHref } from "./local-path";
+import { localPathIconHtml } from "./path-icon";
+
 /** Lucide copy / check 的精简 path，供 fence HTML 内联（v-html 无法挂 Vue 组件）。 */
 const COPY_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16V4a2 2 0 0 1 2-2h12"/></svg>';
@@ -41,6 +44,12 @@ function setTokenAttr(token: Token, name: string, value: string): void {
   else if (token.attrs) token.attrs[i][1] = value;
 }
 
+function removeTokenAttr(token: Token, name: string): void {
+  const i = token.attrIndex(name);
+  if (i < 0 || !token.attrs) return;
+  token.attrs.splice(i, 1);
+}
+
 function appendTokenClass(token: Token, className: string): void {
   const classIndex = token.attrIndex("class");
   if (classIndex < 0) {
@@ -56,6 +65,19 @@ function appendTokenClass(token: Token, className: string): void {
 
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
+  const hrefRaw = token.attrGet("href");
+  const href = typeof hrefRaw === "string" ? hrefRaw : "";
+  const local = parseLocalPathHref(href);
+  if (local) {
+    // 本地路径：应用内打开，勿 target=_blank；链内前置文件类型 icon（Lucide path）
+    removeTokenAttr(token, "target");
+    removeTokenAttr(token, "rel");
+    appendTokenClass(token, "aui-md-a");
+    appendTokenClass(token, "aui-md-path");
+    setTokenAttr(token, "data-local-kind", local.kind);
+    setTokenAttr(token, "data-local-path", local.path);
+    return `${defaultLinkOpen(tokens, idx, options, env, self)}${localPathIconHtml(local.path)}`;
+  }
   setTokenAttr(token, "target", "_blank");
   setTokenAttr(token, "rel", "noopener noreferrer");
   appendTokenClass(token, "aui-md-a");
@@ -103,7 +125,13 @@ md.renderer.rules.fence = (tokens, idx, options) => {
   ].join("");
 };
 
-export function renderMarkdown(source: string): string {
+export type RenderMarkdownOptions = {
+  /** 流结束后开启：启发式把本地路径渲成可点链接（不做 FS 校验）。 */
+  linkLocalPaths?: boolean;
+};
+
+export function renderMarkdown(source: string, options?: RenderMarkdownOptions): string {
   if (!source) return "";
-  return md.render(source);
+  const input = options?.linkLocalPaths ? injectLocalPathMarkdownLinks(source) : source;
+  return md.render(input);
 }

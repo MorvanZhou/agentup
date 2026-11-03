@@ -16,7 +16,7 @@ import { resolveAllowedRoots } from "../workspace/project-roots.js";
  * 独立于 `session/context/prompt-policy.ts`：那份是给 Pi 写的，里面全是 Pi 的工具名与路径规矩，
  * 喂给外部 agent 只会误导它。这一层只读磁盘 + 目录策略，产出中立形状，再由各 SDK 的 adapter
  * 转成自己的 options（`systemPrompt.append` / `additionalDirectories` / `mcpServers`）。
- * 背景见 docs/agent_cli §12.2 与 external-sdk-context-and-approvals.md。
+ * 背景见 .cursor/skills/agentup-sdk-adapter/references/context-and-approvals.md 与 context-and-approvals.md（skill references）。
  */
 
 /** AGENTS.md 上限：与 CodeBuddy CLI 自己的 `AGENTS.md` 记忆上限对齐（4e4）。 */

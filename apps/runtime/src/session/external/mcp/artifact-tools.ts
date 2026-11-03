@@ -12,7 +12,7 @@ import type { McpTool } from "./server.js";
 /**
  * 外部 SDK 委托子会话的产物确认工具。
  * 与 Pi 侧 `deliver_artifacts` / `complete_group_task` 同语义，写同一份 `DeliverArtifactsState`；
- * 模型侧全名带 `mcp__agentup__` 前缀（见 docs/agent_cli/external-sdk-context-and-approvals.md §4）。
+ * 模型侧全名带 `mcp__agentup__` 前缀（见 .cursor/skills/agentup-sdk-adapter/references/context-and-approvals.md §4）。
  */
 
 export type ArtifactMcpKind = "deliver_artifacts" | "complete_group_task";

@@ -478,6 +478,7 @@ export class DelegationService {
         note: item.brief,
       });
       if (!outcome.queued && outcome.reason === "not_started") {
+        // 专员会话还没挂上 steerer（排队/刚启动）：先改 brief，开跑时 execute 会读最新 brief。
         const revised = this.store.update(current.id, { brief: item.brief }) ?? outcome.task;
         planned.push({ item, existing: revised });
         continue;
@@ -485,7 +486,9 @@ export class DelegationService {
       if (!outcome.queued) {
         throw new DelegationError(reuseBlockedMessage(outcome.reason, outcome.task.id));
       }
-      planned.push({ item, existing: outcome.task });
+      // 已插入专员回合：同步改 brief，避免 check_delegation 仍显示旧需求
+      const revised = this.store.update(current.id, { brief: item.brief }) ?? outcome.task;
+      planned.push({ item, existing: revised });
     }
 
     const steeredTaskIds = planned.flatMap((slot) => (slot.existing ? [slot.existing.id] : []));

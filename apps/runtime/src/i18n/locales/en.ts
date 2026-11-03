@@ -30,6 +30,12 @@ export const en: Record<string, string> = {
 
   "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
   "provider.template.codebuddy-sdk.hint": "Runs tasks with your local Workbuddy / CodeBuddy subscription",
+  "provider.template.cursor-sdk.label": "Cursor",
+  "provider.template.cursor-sdk.hint":
+    "Runs a local agent with your Cursor subscription",
+  "provider.template.codex-sdk.label": "Codex - ChatGPT",
+  "provider.template.codex-sdk.hint":
+    "Runs a local Codex agent with your ChatGPT subscription",
 
   "agentSdk.fail.noDetail": "unknown reason",
   "agentSdk.fail.not_installed":

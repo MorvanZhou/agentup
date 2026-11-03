@@ -40,6 +40,8 @@ interface Window {
     revealInFolder(target: string): Promise<void>;
     /** 用系统默认应用打开本机工作文件（cwd 内）。 */
     openPath(target: string): Promise<void>;
+    /** 打开工作区外绝对路径（存在且非敏感根；聊天 Markdown 链化用）。 */
+    openHostPath?(target: string): Promise<void>;
     /** 用系统浏览器打开 http(s) 链接（OAuth 等）。 */
     openExternal?(url: string): Promise<void>;
     oauthLoopbackStart?(locale?: "zh" | "en"): Promise<{ loopbackUri: string; port: number }>;

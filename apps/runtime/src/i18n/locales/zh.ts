@@ -30,6 +30,12 @@ export const zh: Record<string, string> = {
 
   "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
   "provider.template.codebuddy-sdk.hint": "用你本机的 Workbuddy / CodeBuddy 订阅执行任务",
+  "provider.template.cursor-sdk.label": "Cursor",
+  "provider.template.cursor-sdk.hint":
+    "用你的 Cursor 订阅在本机跑 Agent",
+  "provider.template.codex-sdk.label": "Codex - ChatGPT",
+  "provider.template.codex-sdk.hint":
+    "用你的 ChatGPT 订阅在本机跑 Codex Agent",
 
   "agentSdk.fail.noDetail": "未知原因",
   "agentSdk.fail.not_installed":

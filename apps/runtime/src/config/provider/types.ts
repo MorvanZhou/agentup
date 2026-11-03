@@ -43,7 +43,7 @@ export interface AvailableModelView {
 }
 
 /**
- * 本地 SDK 的安装/登录状态机（见 docs/agent_cli §2.2）。
+ * 本地 SDK 的安装/登录状态机（见 .cursor/skills/agentup-sdk-adapter/references/overview.md §2）。
  * 阶段 0 只会是 not_installed；阶段 1 起由安装与登录流程推进。
  */
 export type AgentSdkState =
@@ -85,7 +85,7 @@ export interface AgentSdkView {
   hint?: string;
   package: string;
   sizeHintMb: number;
-  loginGuide?: { command: string; docUrl?: string };
+  loginGuide?: { command?: string; docUrl?: string };
   state: AgentSdkState;
   installedVersion?: string;
   lastError?: string;

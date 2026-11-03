@@ -300,7 +300,8 @@ it("starts a holder that was left speaking with no session", () => {
 it("opens the holder directory and streams the reply text", async () => {
   const holderDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-holder-session-"));
   const prompts: string[] = [];
-  const cues: string[] = [];
+  const steered: string[] = [];
+  const customDeliveries: Array<{ content: string; deliverAs?: string }> = [];
   let release: () => void = () => undefined;
   let opened = "";
   const session: PromptSession = {
@@ -317,8 +318,16 @@ it("opens the holder directory and streams the reply text", async () => {
         release = resolve;
       });
     },
-    sendCustomMessage: async (message) => {
-      cues.push(typeof message.content === "string" ? message.content : "");
+    // API/Pi 中途插入必须走 steer；nextTurn custom 在本轮 prompt 内永不 flush
+    steer: async (text) => {
+      steered.push(text);
+      return "queued";
+    },
+    sendCustomMessage: async (message, options) => {
+      customDeliveries.push({
+        content: typeof message.content === "string" ? message.content : "",
+        deliverAs: options?.deliverAs,
+      });
     },
     abort: async () => undefined,
     dispose() {},
@@ -357,12 +366,64 @@ it("opens the holder directory and streams the reply text", async () => {
   });
   await vi.waitFor(() => expect(handle).toBeTruthy());
   await handle!.inject("再加一扇门");
-  expect(cues).toEqual(["再加一扇门"]);
+  expect(steered).toEqual(["再加一扇门"]);
+  expect(customDeliveries).toEqual([]);
   expect(opened).toBe(holderDir);
   expect(prompts).toEqual(["用户：做迷宫"]);
   expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
   release();
   await expect(pending).resolves.toMatchObject({ text: "迷宫好了" });
+});
+
+it("API holder 无 steer 时 inject 兜底 deliverAs:steer，禁止 nextTurn", async () => {
+  const holderDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-holder-pi-fallback-"));
+  const deliveries: Array<{ content: string; deliverAs?: string }> = [];
+  let release: () => void = () => undefined;
+  const session: PromptSession = {
+    subscribe: () => () => undefined,
+    prompt: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    sendCustomMessage: async (message, options) => {
+      deliveries.push({
+        content: typeof message.content === "string" ? message.content : "",
+        deliverAs: options?.deliverAs,
+      });
+    },
+    abort: async () => undefined,
+    dispose() {},
+  };
+  const driver = createHolderTurnDriver({
+    resolveVisit: () =>
+      ({
+        userId: "u1",
+        agentId: "pm",
+        root: holderDir,
+        packageDigest: "x",
+        projectTrust: "granted",
+      }) as Visit,
+    resolveModel: () => ({}) as ModelConfig,
+    open: async () => session,
+  });
+  let handle: GroupTurnHandle | undefined;
+  const pending = driver.start({
+    userId: "u1",
+    groupId: "g1",
+    agentId: "pm",
+    prompt: "用户：做迷宫",
+    sessionDir: holderDir,
+    signal: new AbortController().signal,
+    onChunk: () => undefined,
+    onReady: (next) => {
+      handle = next;
+    },
+  });
+  await vi.waitFor(() => expect(handle).toBeTruthy());
+  await handle!.inject("改成 A*");
+  expect(deliveries).toEqual([{ content: "改成 A*", deliverAs: "steer" }]);
+  release();
+  await pending;
 });
 
 it("SDK holder 走直连事件通道，不退回只返回最终文本的 prompt 通道", async () => {
@@ -411,6 +472,84 @@ it("SDK holder 走直连事件通道，不退回只返回最终文本的 prompt 
   expect(prompt).not.toHaveBeenCalled();
   expect(result.text).toBe("SDK 完成");
   expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(true);
+});
+
+it("SDK holder 中途 inject 会打断本轮并 Host 重拼续轮", async () => {
+  const holderDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-holder-sdk-inject-"));
+  const cues: string[] = [];
+  let firstController: AbortController | undefined;
+  const externalQuery = vi.fn(async (_prompt: string) => {
+    if (externalQuery.mock.calls.length === 1) {
+      const controller = new AbortController();
+      firstController = controller;
+      return {
+        controller,
+        iterable: (async function* () {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "先做一半" }] } };
+          await new Promise<void>((resolve) => {
+            if (controller.signal.aborted) {
+              resolve();
+              return;
+            }
+            controller.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        })(),
+        timeoutMs: 30_000,
+      };
+    }
+    return {
+      controller: new AbortController(),
+      iterable: (async function* () {
+        yield { type: "result", subtype: "success", result: "已改成 A*" };
+      })(),
+      timeoutMs: 1_000,
+    };
+  });
+  const session = {
+    subscribe: () => () => undefined,
+    prompt: vi.fn(async () => undefined),
+    externalQuery,
+    sendCustomMessage: async (message: { content?: unknown }) => {
+      cues.push(typeof message.content === "string" ? message.content : "");
+    },
+    abort: async () => undefined,
+    dispose() {},
+  } as unknown as PromptSession;
+  const driver = createHolderTurnDriver({
+    resolveVisit: () =>
+      ({
+        userId: "u1",
+        agentId: "pm",
+        root: holderDir,
+        packageDigest: "x",
+        projectTrust: "granted",
+      }) as Visit,
+    resolveModel: () => ({}) as ModelConfig,
+    open: async () => session,
+  });
+  let handle: GroupTurnHandle | undefined;
+  const pending = driver.start({
+    userId: "u1",
+    groupId: "g1",
+    agentId: "pm",
+    prompt: "用户：做 DFS",
+    sessionDir: holderDir,
+    signal: new AbortController().signal,
+    onChunk: () => undefined,
+    onReady: (next) => {
+      handle = next;
+    },
+  });
+  await vi.waitFor(() => expect(handle).toBeTruthy());
+  await vi.waitFor(() => expect(firstController).toBeTruthy());
+  await handle!.inject("改成 A* 寻路");
+  expect(cues).toEqual(["改成 A* 寻路"]);
+  const result = await pending;
+  expect(externalQuery).toHaveBeenCalledTimes(2);
+  const secondPrompt = String(externalQuery.mock.calls[1]?.[0] ?? "");
+  expect(secondPrompt).toContain("做 DFS");
+  expect(secondPrompt).toContain("改成 A* 寻路");
+  expect(result.text).toContain("已改成 A*");
 });
 
 it("projects group HITL onto the holder stream and skips the one-to-one request", async () => {

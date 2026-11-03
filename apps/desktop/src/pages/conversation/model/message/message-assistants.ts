@@ -114,13 +114,31 @@ export function extractAssistAgents(parts: readonly unknown[]): AssistAgentRef[]
 function asDelegatePart(raw: unknown): ToolLikePart | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const part = raw as ToolLikePart;
-  const toolName = part.toolName ?? "";
-  // API 裸名 + SDK MCP 全名
-  if (toolName !== "delegate_to_agent" && toolName !== "mcp__agentup__delegate_to_agent") {
-    return undefined;
+  // API 裸名 + SDK MCP 全名；Cursor 旧壳 mcp{provider:agentup,toolName:delegate_to_agent}
+  const projected = projectDelegateTool(part.toolName ?? "", part.args ?? part.input);
+  if (!projected) return undefined;
+  if (part.type !== "tool-call" && part.type !== "dynamic-tool") return undefined;
+  return { ...part, toolName: projected.toolName, args: projected.args };
+}
+
+function projectDelegateTool(
+  toolName: string,
+  args: unknown,
+): { toolName: string; args: Record<string, unknown> } | undefined {
+  if (toolName === "delegate_to_agent" || toolName === "mcp__agentup__delegate_to_agent") {
+    return { toolName, args: asRecord(args) };
   }
-  if (part.type === "tool-call" || part.type === "dynamic-tool") return part;
-  return undefined;
+  if (toolName !== "mcp") return undefined;
+  const row = asRecord(args);
+  const nested =
+    typeof row.toolName === "string" ? row.toolName.trim() : "";
+  const provider =
+    typeof row.providerIdentifier === "string" ? row.providerIdentifier.trim() : "";
+  if (provider !== "agentup" || nested !== "delegate_to_agent") return undefined;
+  return {
+    toolName: "mcp__agentup__delegate_to_agent",
+    args: asRecord(row.args),
+  };
 }
 
 function readPartTiming(part: ToolLikePart): {
@@ -149,14 +167,51 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function toolResultText(part: ToolLikePart): string {
-  const value = part.result ?? part.output;
-  if (typeof value === "string") return value.trim();
-  if (value && typeof value === "object") {
+  return unwrapDelegationResultPayload(part.result ?? part.output).trim();
+}
+
+/** Cursor MCP 壳 / 纯文本 → 委托结果正文（与 tool-args.unwrapSdkToolResultText 同形）。 */
+function unwrapDelegationResultPayload(raw: unknown): string {
+  if (raw === undefined || raw === null) return "";
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return raw;
     try {
-      return JSON.stringify(value);
+      return unwrapDelegationResultPayload(JSON.parse(trimmed) as unknown) || raw;
     } catch {
-      return "";
+      return raw;
     }
+  }
+  if (typeof raw !== "object") return String(raw);
+  const row = raw as Record<string, unknown>;
+  if (row.value && typeof row.value === "object" && !Array.isArray(row.value)) {
+    const inner = unwrapDelegationResultPayload(row.value);
+    if (inner) return inner;
+  }
+  if (Array.isArray(row.content)) {
+    const parts = row.content
+      .map((item) => unwrapDelegationContentBlock(item))
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join("\n");
+  }
+  const block = unwrapDelegationContentBlock(raw);
+  if (block) return block;
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return "";
+  }
+}
+
+function unwrapDelegationContentBlock(item: unknown): string {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object" || Array.isArray(item)) return "";
+  const row = item as Record<string, unknown>;
+  if (typeof row.text === "string") return row.text;
+  if (row.text && typeof row.text === "object" && !Array.isArray(row.text)) {
+    const nested = row.text as Record<string, unknown>;
+    if (typeof nested.text === "string") return nested.text;
   }
   return "";
 }
@@ -205,7 +260,8 @@ export function parseDelegationResultText(raw: string): {
   agentName: string;
   body: string;
 } {
-  const text = raw?.trim() ?? "";
+  // 先解 Cursor/MCP JSON 壳，再抽 result:/partial:（CodeBuddy 纯文本同样走过）
+  const text = unwrapDelegationResultPayload(raw).trim();
   if (!text) return { agentName: "", body: "" };
 
   let agentName = "";
@@ -216,11 +272,12 @@ export function parseDelegationResultText(raw: string): {
     agentName = (named?.[1] ?? label).trim();
   }
 
-  const resultMarker = text.match(/(?:^|\n)result:\s*\n([\s\S]*)$/i);
+  // 兼容 `result:\n正文` 与 `result: 正文`（Cursor / CodeBuddy 都见过）
+  const resultMarker = text.match(/(?:^|\n)result:\s*\n?([\s\S]*)$/i);
   if (resultMarker?.[1]?.trim()) {
     return { agentName, body: resultMarker[1].trim() };
   }
-  const partialMarker = text.match(/(?:^|\n)partial:\s*\n([\s\S]*)$/i);
+  const partialMarker = text.match(/(?:^|\n)partial:\s*\n?([\s\S]*)$/i);
   if (partialMarker?.[1]?.trim()) {
     return { agentName, body: partialMarker[1].trim() };
   }

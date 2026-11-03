@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { CheckIcon, ChevronDownIcon, LogOutIcon, Trash2Icon } from "@lucide/vue";
+import { ChevronDownIcon, LogOutIcon, Trash2Icon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
+import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import AppSelect from "../../../../../shared/components/AppSelect.vue";
 import ProviderLogo from "../../../../../shared/components/ProviderLogo.vue";
 import UiSkeleton from "../../../../../shared/components/UiSkeleton.vue";
 import type { AgentSdkOption } from "../../../../../shared/model/runtime/runtime";
+import { showToast } from "../../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useProviderSettings } from "../../../composables/useProviderSettings";
 
@@ -14,12 +16,14 @@ const MODEL_PREVIEW_COUNT = 5;
 const {
   connections,
   filteredModels,
+  modelProviderFilterOptions,
   overridden,
   busy,
   draftTemplateId,
   draftBaseUrl,
   draftApiKey,
   modelFilter,
+  modelProviderFilter,
   apiTemplates,
   templates,
   agentSdks,
@@ -37,9 +41,11 @@ const {
   loaded,
   sdkBusy,
   sdkPhase,
+  sdkLoginDeviceCode,
   startAgentSdkInstall,
   loginAgentSdk,
   checkAgentSdkLogin,
+  cancelAgentSdkLogin,
   logoutAgentSdk,
   uninstallAgentSdk,
   refreshAgentSdkModels,
@@ -59,7 +65,7 @@ const addTargetOptions = computed(() =>
   })),
 );
 
-/** 状态机 → 状态标签词条（见 docs/agent_cli §2.2） */
+/** 状态机 → 状态标签词条（见 .cursor/skills/agentup-sdk-adapter/references/overview.md §2） */
 const SDK_STATE_KEYS: Record<string, string> = {
   not_installed: "providerSdkStateNotInstalled",
   installing: "providerSdkStateInstalling",
@@ -84,6 +90,28 @@ const busyState = (state: string): boolean => ["installing", "logging_in"].inclu
 /** 已登录（或残留登录态）才谈得上登出；登出只清登录态，SDK 还留着 */
 const canLogout = (state: string): boolean => sdkReady(state) || state === "error";
 
+/** 设备验证码弹窗：码出现时强制弹出一次，关掉后卡片上仍保留同一份码 */
+const deviceCodeDialogOpen = ref(false);
+
+watch(sdkLoginDeviceCode, (code) => {
+  if (code) {
+    deviceCodeDialogOpen.value = true;
+    return;
+  }
+  deviceCodeDialogOpen.value = false;
+});
+
+async function copyDeviceCode(): Promise<void> {
+  const code = sdkLoginDeviceCode.value?.trim();
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+    showToast(t("providerSdkDeviceCodeCopied"), "success");
+  } catch {
+    /* Electron 下极少失败；失败时用户仍可手动选中弹窗里的码 */
+  }
+}
+
 /** 当前选中 SDK 的安装阶段：登录不进 sdkPhase，只看状态机（见 composable §安装与登录） */
 const installPhase = computed(() =>
   selectedSdk.value && sdkPhase.value?.templateId === selectedSdk.value.templateId
@@ -100,46 +128,30 @@ function statePillClass(state: string): string {
   return "border-rule bg-background text-muted-foreground";
 }
 
-/** 两步接入轨的步骤态：done 打勾 / active 橙 / todo 中性 */
-type SdkStepState = "done" | "active" | "todo";
-
-/**
- * 本地 App 接入是「装 SDK → 浏览器登录」两步。
- * 用一条步骤轨把状态摊平，用户一眼知道现在该做什么，而不是读状态词猜。
- */
-const sdkSteps = computed<{ key: string; labelKey: string; state: SdkStepState }[]>(() => {
-  const state = selectedSdk.value?.state ?? "not_installed";
-  const installing = Boolean(installPhase.value) || state === "installing";
-  const installed = !["not_installed", "installing", "install_failed"].includes(state);
-  return [
-    {
-      key: "install",
-      labelKey: "providerSdkStepInstall",
-      state: installing ? "active" : installed ? "done" : "todo",
-    },
-    {
-      key: "login",
-      labelKey: "providerSdkStepLogin",
-      state: state === "logging_in" ? "active" : sdkReady(state) ? "done" : "todo",
-    },
-  ];
-});
-
-function stepDotClass(state: SdkStepState): string {
-  if (state === "done") return "border-transparent bg-success-soft text-success-foreground";
-  if (state === "active") return "border-accent bg-accent text-white";
-  return "border-rule bg-background text-muted-foreground";
-}
-
-function stepTextClass(state: SdkStepState): string {
-  return state === "active" ? "font-medium text-foreground" : "text-muted-foreground";
-}
-
 /** 进行中文案：安装阶段优先用 runtime 回传的 detail，登录阶段回落到状态机标签 */
 function progressLabel(sdk: AgentSdkOption): string {
   const phase = installPhase.value;
   if (phase) return phase.detail ?? t("providerSdkInstall");
   return sdkStateLabel(sdk.state);
+}
+
+/** 主钮文案跟状态机走：可用→刷模型；已装未登→登录；其余→开始接入 */
+function sdkPrimaryLabel(state: string): string {
+  if (sdkReady(state)) return t("providerRefreshModels");
+  if (needsLogin(state)) return t("providerSdkLogin");
+  return t("providerSdkStart");
+}
+
+function runSdkPrimary(sdk: AgentSdkOption): void {
+  if (sdkReady(sdk.state)) {
+    void refreshAgentSdkModels(sdk.templateId);
+    return;
+  }
+  if (needsLogin(sdk.state)) {
+    void loginAgentSdk(sdk.templateId);
+    return;
+  }
+  void startAgentSdkInstall(sdk.templateId);
 }
 
 /** 连接服务商为次要操作，默认折叠；选了本地 App 就摊开（要看到安装按钮） */
@@ -185,9 +197,23 @@ const entryOptions = computed(() => [
   })),
 ]);
 
-watch(modelFilter, () => {
+watch([modelFilter, modelProviderFilter], () => {
   modelsExpanded.value = false;
 });
+
+/** 悬停：厂商 + 接入方式 + 稳定 modelId（同名模型靠它区分） */
+function modelRowTitle(model: {
+  vendorLabel: string;
+  optionLabel: string;
+  modelId: string;
+  name: string;
+}): string {
+  const source =
+    model.optionLabel !== model.vendorLabel
+      ? `${model.vendorLabel} · ${model.optionLabel}`
+      : model.vendorLabel;
+  return model.modelId !== model.name ? `${source} · ${model.modelId}` : source;
+}
 </script>
 
 <template>
@@ -240,16 +266,27 @@ watch(modelFilter, () => {
         </div>
 
         <template v-else>
-          <label class="mt-3 grid gap-1.5 text-sm font-medium text-foreground">
-            <span class="sr-only">{{ t("providerSearchModels") }}</span>
-            <input
-              v-model="modelFilter"
-              type="search"
+          <!-- 供应商下拉 + 搜索：先按已存在供应商收窄，再按关键字搜 -->
+          <div
+            class="mt-3 grid gap-2 sm:grid-cols-[minmax(10rem,13rem)_minmax(0,1fr)] sm:items-end"
+          >
+            <AppSelect
+              v-model="modelProviderFilter"
+              :label="t('providerFilterVendor')"
+              :options="modelProviderFilterOptions"
               :disabled="busy"
-              :placeholder="t('providerSearchModels')"
-              class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
             />
-          </label>
+            <label class="grid gap-1.5 text-sm font-medium text-foreground">
+              <span>{{ t("providerSearchModels") }}</span>
+              <input
+                v-model="modelFilter"
+                type="search"
+                :disabled="busy"
+                :placeholder="t('providerSearchModels')"
+                class="min-h-9 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm font-normal text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+              />
+            </label>
+          </div>
 
           <!-- 手动添加：默认折叠；箭头 + 实线边框示意可展开 -->
           <details
@@ -309,16 +346,21 @@ watch(modelFilter, () => {
               v-for="model in visibleModels"
               :key="`${model.templateId}::${model.modelId}`"
               class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 transition duration-150 hover:bg-paper"
-              :title="
-                model.optionLabel !== model.vendorLabel
-                  ? `${model.vendorLabel} · ${model.optionLabel}`
-                  : model.vendorLabel
-              "
+              :title="modelRowTitle(model)"
             >
               <ProviderLogo size="md" :vendor-id="model.vendorId" :label="model.vendorLabel" />
-              <p class="m-0 min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                {{ model.name }}
-              </p>
+              <!-- 主名 + modelId：同显示名（如 Cursor 两个 Auto）靠 id 区分 -->
+              <div class="min-w-0 flex-1">
+                <p class="m-0 truncate text-sm font-medium text-foreground">
+                  {{ model.name }}
+                </p>
+                <p
+                  v-if="model.modelId !== model.name"
+                  class="mb-0 mt-0.5 truncate font-mono text-xs text-muted-foreground"
+                >
+                  {{ model.modelId }}
+                </p>
+              </div>
               <!-- credit 倍率：本地 App 才有；0 也显示，不能靠 falsy -->
               <span
                 v-if="model.credits !== undefined"
@@ -428,112 +470,136 @@ watch(modelFilter, () => {
               :active-hint="t('providerConfiguredActive')"
             />
 
-            <!-- 本地 Agent App：装 SDK → 浏览器登录两步，没有密钥可填 -->
-            <section v-if="sdkSelected && selectedSdk" class="overflow-hidden rounded-xl border border-rule bg-paper">
-              <!-- 头部：身份 + 状态徽标（配色随状态，不只靠文字） -->
-              <header class="flex items-start justify-between gap-3 px-3.5 py-3">
-                <div class="flex min-w-0 items-start gap-2.5">
-                  <ProviderLogo
-                    class="mt-0.5"
-                    size="lg"
-                    :vendor-id="selectedTemplate?.vendorId"
-                    :label="selectedSdk.label"
-                  />
-                  <div class="min-w-0">
-                    <p class="mb-0 mt-0 text-sm font-semibold tracking-tight text-foreground">{{ selectedSdk.label }}</p>
-                    <p class="mb-0 mt-0.5 truncate text-xs text-muted-foreground">{{ selectedSdk.optionLabel }}</p>
-                  </div>
-                </div>
-                <span
-                  class="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium"
-                  :class="statePillClass(selectedSdk.state)"
-                >
-                  <span
-                    v-if="busyState(selectedSdk.state)"
-                    class="size-1.5 animate-breathe rounded-full bg-current motion-reduce:animate-none"
-                    aria-hidden="true"
-                  />
-                  {{ sdkStateLabel(selectedSdk.state) }}
-                </span>
-              </header>
-
-              <!-- 两步接入轨：当前步 accent，已完成打勾，连接线跟着进度走 -->
-              <ol class="m-0 flex list-none items-center gap-2 border-t border-rule bg-paper-deep/40 px-3.5 py-2.5">
-                <template v-for="(step, index) in sdkSteps" :key="step.key">
-                  <li class="flex min-w-0 items-center gap-2">
+            <!-- 本地 Agent App：单层扁平面（身份 → 说明 → 操作），状态与主钮已表达下一步，不再套步骤轨 -->
+            <section
+              v-if="sdkSelected && selectedSdk"
+              class="grid gap-3 rounded-xl border border-rule bg-paper p-3.5"
+            >
+              <!-- 身份 + 状态同一行 -->
+              <div class="flex items-start gap-2.5">
+                <ProviderLogo
+                  class="mt-0.5"
+                  size="lg"
+                  :vendor-id="selectedTemplate?.vendorId"
+                  :label="selectedSdk.label"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <p class="m-0 text-sm font-semibold tracking-tight text-foreground">
+                      {{ selectedSdk.label }}
+                    </p>
                     <span
-                      class="grid size-5 shrink-0 place-items-center rounded-full border text-xs leading-none"
-                      :class="stepDotClass(step.state)"
+                      class="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium"
+                      :class="statePillClass(selectedSdk.state)"
                     >
-                      <CheckIcon v-if="step.state === 'done'" class="size-3" aria-hidden="true" />
-                      <template v-else>{{ index + 1 }}</template>
+                      <span
+                        v-if="busyState(selectedSdk.state)"
+                        class="size-1.5 animate-breathe rounded-full bg-current motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                      {{ sdkStateLabel(selectedSdk.state) }}
                     </span>
-                    <span class="truncate text-xs" :class="stepTextClass(step.state)">
-                      {{ t(step.labelKey) }}
-                    </span>
-                  </li>
-                  <li
-                    v-if="index < sdkSteps.length - 1"
-                    class="h-px min-w-3 flex-1"
-                    :class="step.state === 'done' ? 'bg-accent/40' : 'bg-rule'"
-                    aria-hidden="true"
-                  />
-                </template>
-              </ol>
+                  </div>
+                  <p class="mb-0 mt-0.5 truncate text-xs text-muted-foreground">
+                    {{ selectedSdk.optionLabel }}
+                  </p>
+                </div>
+              </div>
 
-              <!-- 说明与元信息：元信息并成一行，不再堆成段落 -->
-              <div class="px-3.5 py-3">
+              <!-- 说明：hint / 信任提示 / 元信息同层，信任提示不再套内框 -->
+              <div class="grid gap-1.5">
                 <p class="m-0 max-w-xl text-xs leading-relaxed text-muted-foreground">
                   {{ selectedSdk.hint ?? t("providerSdkLead") }}
                 </p>
-                <!-- SDK 信任模式：选此模板即默认放行工具，须明示风险（不按厂商定制 HITL） -->
-                <p
-                  class="mb-0 mt-2 rounded-lg border border-rule bg-background px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground"
-                  role="note"
-                >
+                <!-- SDK 信任模式：选此模板即默认放行工具，须明示风险 -->
+                <p class="m-0 max-w-xl text-xs leading-relaxed text-muted-foreground" role="note">
                   {{ tf("providerSdkTrustNotice", { label: selectedSdk.label }) }}
                 </p>
-                <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <!-- 登录账号：只显示各家给的昵称，token 从不进配置；登出后 runtime 会清掉 -->
-                  <span v-if="selectedSdk.accountLabel && canLogout(selectedSdk.state)" class="font-medium">
+                <p
+                  v-if="
+                    (selectedSdk.accountLabel && canLogout(selectedSdk.state)) ||
+                    selectedSdk.models.length ||
+                    selectedSdk.installedVersion
+                  "
+                  class="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+                >
+                  <!-- 登录账号：只显示各家给的昵称，token 从不进配置 -->
+                  <span
+                    v-if="selectedSdk.accountLabel && canLogout(selectedSdk.state)"
+                    class="font-medium text-foreground"
+                  >
                     {{ tf("providerSdkAccount", { label: selectedSdk.accountLabel }) }}
                   </span>
                   <span v-if="selectedSdk.models.length">
                     {{ tf("providerSdkModelsCount", { count: selectedSdk.models.length }) }}
                   </span>
-                  <span v-if="selectedSdk.installedVersion" class="font-mono">v{{ selectedSdk.installedVersion }}</span>
-                </div>
-                <!-- 失败原因：独立告警条，不与说明混排 -->
+                  <span v-if="selectedSdk.installedVersion" class="font-mono">
+                    v{{ selectedSdk.installedVersion }}
+                  </span>
+                </p>
                 <p
                   v-if="selectedSdk.lastError"
-                  class="mb-0 mt-2 rounded-lg border border-destructive/30 bg-danger-soft px-2.5 py-1.5 text-xs text-destructive"
+                  class="m-0 rounded-lg border border-destructive/30 bg-danger-soft px-2.5 py-1.5 text-xs text-destructive"
                 >
                   {{ selectedSdk.lastError }}
                 </p>
               </div>
 
-              <!-- 安装 / 登录中：操作区整条换成进度条 + 阶段文案 -->
-              <div v-if="installPhase || busyState(selectedSdk.state)" class="border-t border-rule px-3.5 py-3">
+              <!-- 进度：安装 / 登录中（含 sdkBusy 尚未 reload 成 logging_in）仍展示；验证码必须可见 -->
+              <div
+                v-if="installPhase || busyState(selectedSdk.state) || (!!sdkLoginDeviceCode && sdkBusy)"
+                class="grid gap-2 border-t border-rule pt-3"
+              >
                 <div class="h-1 w-full overflow-hidden rounded-md bg-muted">
                   <div class="h-full w-1/3 animate-breathe rounded-md bg-accent motion-reduce:animate-none" />
                 </div>
-                <p class="m-0 mt-1.5 text-xs text-muted-foreground" role="status" aria-live="polite">
+                <p class="m-0 text-xs text-muted-foreground" role="status" aria-live="polite">
                   {{ progressLabel(selectedSdk) }}
                 </p>
                 <!-- 登录轮询期才提示浏览器，安装时不显示 -->
-                <p v-if="!installPhase" class="mb-0 mt-0.5 text-xs text-muted-foreground">
+                <p v-if="!installPhase" class="m-0 text-xs text-muted-foreground">
                   {{ t("providerSdkBrowserHint") }}
                 </p>
+                <!-- Codex device-auth：码来自 CLI stdout，填到网页 XXXX-XXXXX -->
+                <div
+                  v-if="!installPhase && sdkLoginDeviceCode"
+                  class="grid gap-1 rounded-lg border border-rule bg-paper px-2.5 py-2"
+                >
+                  <p class="m-0 text-xs text-muted-foreground">
+                    {{ t("providerSdkDeviceCodeHint") }}
+                  </p>
+                  <p
+                    class="m-0 font-mono text-base font-semibold tracking-wider text-foreground"
+                    data-testid="sdk-device-code"
+                  >
+                    {{ tf("providerSdkDeviceCode", { code: sdkLoginDeviceCode }) }}
+                  </p>
+                </div>
+                <div
+                  v-if="selectedSdk.state === 'logging_in' || (!installPhase && sdkBusy)"
+                  class="flex flex-wrap items-center gap-1.5"
+                >
+                  <button
+                    type="button"
+                    class="min-h-8 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper"
+                    @click="cancelAgentSdkLogin(selectedSdk.templateId)"
+                  >
+                    {{ t("providerSdkCancelLogin") }}
+                  </button>
+                </div>
               </div>
 
-              <!-- 操作条：次要操作靠左，主操作靠右，不再各占一行 -->
-              <footer v-else class="flex flex-wrap items-center justify-between gap-2 border-t border-rule px-3.5 py-2.5">
+              <!-- 操作：次要靠左、主操作靠右 -->
+              <div
+                v-else
+                class="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-3"
+              >
                 <div class="flex flex-wrap items-center gap-1.5">
                   <button
                     v-if="needsLogin(selectedSdk.state)"
                     type="button"
                     :disabled="busy || sdkBusy"
-                    class="min-h-8 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium transition duration-200 hover:bg-background disabled:opacity-50"
+                    class="min-h-8 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper disabled:opacity-50"
                     @click="checkAgentSdkLogin(selectedSdk.templateId)"
                   >
                     {{ t("providerSdkCheck") }}
@@ -542,7 +608,7 @@ watch(modelFilter, () => {
                     v-if="canLogout(selectedSdk.state)"
                     type="button"
                     :disabled="busy || sdkBusy"
-                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium transition duration-200 hover:bg-background disabled:opacity-50"
+                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper disabled:opacity-50"
                     @click="logoutAgentSdk(selectedSdk.templateId)"
                   >
                     <LogOutIcon class="size-3.5" aria-hidden="true" />
@@ -552,7 +618,7 @@ watch(modelFilter, () => {
                     v-if="selectedSdk.state !== 'not_installed'"
                     type="button"
                     :disabled="busy || sdkBusy"
-                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule px-2.5 text-xs font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
+                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
                     @click="uninstallAgentSdk(selectedSdk.templateId)"
                   >
                     <Trash2Icon class="size-3.5" aria-hidden="true" />
@@ -563,23 +629,11 @@ watch(modelFilter, () => {
                   type="button"
                   :disabled="busy || sdkBusy"
                   class="min-h-8 shrink-0 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-                  @click="
-                    sdkReady(selectedSdk.state)
-                      ? refreshAgentSdkModels(selectedSdk.templateId)
-                      : needsLogin(selectedSdk.state)
-                        ? loginAgentSdk(selectedSdk.templateId)
-                        : startAgentSdkInstall(selectedSdk.templateId)
-                  "
+                  @click="runSdkPrimary(selectedSdk)"
                 >
-                  {{
-                    sdkReady(selectedSdk.state)
-                      ? t("providerRefreshModels")
-                      : needsLogin(selectedSdk.state)
-                        ? t("providerSdkLogin")
-                        : t("providerSdkStart")
-                  }}
+                  {{ sdkPrimaryLabel(selectedSdk.state) }}
                 </button>
-              </footer>
+              </div>
             </section>
 
             <!-- API Key 接入：填地址与密钥 -->
@@ -649,5 +703,42 @@ watch(modelFilter, () => {
         </div>
       </details>
     </div>
+
+    <!-- Codex device-auth：验证码强化弹窗（与登录卡片内联展示并存） -->
+    <AppDialog
+      :open="deviceCodeDialogOpen"
+      :title="t('providerSdkDeviceCodeDialogTitle')"
+      :description="t('providerSdkDeviceCodeDialogBody')"
+      align="center"
+      @update:open="deviceCodeDialogOpen = $event"
+    >
+      <div
+        v-if="sdkLoginDeviceCode"
+        class="grid justify-items-center gap-2 rounded-xl border border-rule bg-background px-4 py-5"
+      >
+        <p
+          class="m-0 select-all font-mono text-2xl font-semibold tracking-[0.2em] text-foreground"
+          data-testid="sdk-device-code-dialog"
+        >
+          {{ sdkLoginDeviceCode }}
+        </p>
+      </div>
+      <template #footer>
+        <button
+          type="button"
+          class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background focus-visible:ring-2 focus-visible:ring-accent/15 focus-visible:outline-none"
+          @click="copyDeviceCode"
+        >
+          {{ t("providerSdkDeviceCodeCopy") }}
+        </button>
+        <button
+          type="button"
+          class="min-h-8 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:ring-2 focus-visible:ring-accent/15 focus-visible:outline-none"
+          @click="deviceCodeDialogOpen = false"
+        >
+          {{ t("providerSdkDeviceCodeDialogGotIt") }}
+        </button>
+      </template>
+    </AppDialog>
   </main>
 </template>

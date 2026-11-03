@@ -5,7 +5,7 @@ import { createAdaptorServer } from "@hono/node-server";
 import { Hono } from "hono";
 
 /**
- * 给外部 agent（本地 Agent App / SDK）用的 MCP server —— docs/agent_cli §12.7 / §12.9。
+ * 给外部 agent（本地 Agent App / SDK）用的 MCP server —— .cursor/skills/agentup-sdk-adapter/references/context-and-approvals.md §4.2。
  *
  * 为什么不走 SDK 自带的 `createSdkMcpServer` + `tool()`：那套要 Zod raw shape，
  * 会给 runtime 引入新依赖；而委托与技能工具的实现都在本进程里（DelegationService 在内存），

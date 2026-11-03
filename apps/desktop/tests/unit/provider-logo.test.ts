@@ -21,6 +21,14 @@ it("本地 App 的 codebuddy 使用 WorkBuddy 标形", () => {
   expect(host.querySelector("svg")).not.toBeNull();
 });
 
+it("本地 App 的 cursor 使用 Lobe Icons Cursor 标形", () => {
+  expect(resolveProviderMarkId("cursor")).toBe("cursor");
+  const host = mountView(ProviderLogo, {
+    props: { vendorId: "cursor", label: "Cursor", size: "md" },
+  });
+  expect(host.querySelector("svg")).not.toBeNull();
+});
+
 it("已知厂商渲染单色 SVG 标，无色底磁贴", () => {
   const host = mountView(ProviderLogo, {
     props: { vendorId: "openai", label: "OpenAI", size: "md" },

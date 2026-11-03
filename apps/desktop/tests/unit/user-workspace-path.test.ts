@@ -4,10 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
-const { isUnderManagedWorkspace, resolveUserWorkspacePath } = createRequire(import.meta.url)(
-  "../../electron/user-workspace-path.cjs",
-) as {
+const { isUnderManagedWorkspace, resolveHostOpenPath, resolveUserWorkspacePath } = createRequire(
+  import.meta.url,
+)("../../electron/user-workspace-path.cjs") as {
   isUnderManagedWorkspace(dataRootReal: string, targetReal: string): boolean;
+  resolveHostOpenPath(targetPath: string, deniedMessage: string): Promise<string>;
   resolveUserWorkspacePath(
     targetPath: string,
     dataRoot: string,
@@ -98,6 +99,13 @@ it("放行 instance.json 里已挂载的 project_roots", async () => {
   } finally {
     await fs.rm(project, { recursive: true, force: true });
   }
+});
+
+it("resolveHostOpenPath 放行工作区外真实文件，拒绝缺失与敏感根", async () => {
+  const outside = path.join(root, "outside.txt");
+  await expect(resolveHostOpenPath(outside, "拒")).resolves.toBe(await fs.realpath(outside));
+  await expect(resolveHostOpenPath(path.join(root, "missing.txt"), "拒")).rejects.toThrow("拒");
+  await expect(resolveHostOpenPath("relative/nope.txt", "拒")).rejects.toThrow("路径无效");
 });
 
 it("isUnderManagedWorkspace 按工作区根判定，不把 cwd 前缀误判为合法", () => {

@@ -33,7 +33,7 @@ export interface PromptSession {
   sendCustomMessage?: AgentSession["sendCustomMessage"];
   /**
    * Pi 原生 steer：把新消息插到"当前工具批次跑完、下一次 LLM 调用之前"，保留已做的工作
-   * （docs/agent_cli §12.8）。只有 API / Pi 原生接入会用到；SDK 接入没有它，走 followUp 队列。
+   * （.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。只有 API / Pi 原生接入会用到；SDK 接入没有它，走 followUp 队列。
    */
   steer?: AgentSession["steer"];
   /** 本地 Agent App 的直连事件流；存在时绕开 Pi agent loop，保留 SDK 工具过程与结果。 */

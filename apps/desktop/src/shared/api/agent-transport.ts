@@ -45,7 +45,7 @@ export function createAgentUpTransport(options: {
       await abortBusyTurn();
       response = await baseFetch(input, init);
     }
-    // 202=已进 followUp 队列（本地 Agent App 接入，见 docs/agent_cli §12.8）：
+    // 202=已进 followUp 队列（本地 Agent App 接入，见 .cursor/skills/agentup-sdk-adapter/references/follow-up.md）：
     // 响应体是 JSON 不是 SSE，别让 AI SDK 当流解析；队列由 FollowUpQueueStrip 拉取展示。
     if (response.status === 202) {
       await response.text().catch(() => "");

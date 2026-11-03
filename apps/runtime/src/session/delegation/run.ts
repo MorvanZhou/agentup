@@ -17,6 +17,7 @@ import { AskUserBroker, type StagedArtifact } from "../tools/index.js";
 import { groupTaskDirName } from "../tools/deliver-artifacts.js";
 import type { DelegationProgressHub } from "./progress.js";
 import { runExternalSessionTurn } from "../turn/external-turn.js";
+import { createSdkInterruptQueue, linkTurnSignal } from "../turn/sdk-interrupt.js";
 import type { PromptSession } from "../turn/types.js";
 
 export type DelegationRunOutcome = {
@@ -125,14 +126,22 @@ export async function runDelegatedPrompt(
   });
 
   let releaseSteer: (() => void) | undefined;
+  /** SDK 无 Pi.steer：note 入队后只打断本轮 external query，再开续轮（勿动任务级 cancel signal）。 */
+  const sdkSteerNotes: string[] = [];
+  let turnGate = new AbortController();
   try {
-    // SDK 直连没有原生 steer；不要登记一个只会写进 Pi 队列、却到不了外部 agent 的假通道。
-    releaseSteer = (session as PromptSession).externalQuery
-      ? undefined
-      : options.bindSteer?.(async (text) => {
-          const disposition = await session.steer(text);
-          if (disposition !== "queued") throw new Error("steering was not queued");
-        });
+    const isExternal = Boolean((session as PromptSession).externalQuery);
+    releaseSteer = options.bindSteer?.(
+      isExternal
+        ? createSdkInterruptQueue({
+            notes: sdkSteerNotes,
+            interrupt: () => turnGate.abort(),
+          })
+        : async (text) => {
+            const disposition = await session.steer?.(text);
+            if (disposition !== "queued") throw new Error("steering was not queued");
+          },
+    );
     const toolSurface: DiscoverToolSurface =
       getProviderTemplate(model.templateId)?.kind === "agent-sdk" ? "external" : "pi";
     const promptText = formatDelegationPrompt(brief, Boolean(options.groupId), options.taskId, options.toAgentName, {
@@ -140,36 +149,62 @@ export async function runDelegatedPrompt(
     });
     // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
     // ARTIFACT 确认由 createDeliverArtifactsExtension 在 before_settle 强制续写。
-    const external = await runExternalSessionTurn({
-      session,
-      text: promptText,
-      userText: promptText,
-      ...(signal ? { signal } : {}),
-      write: (chunks) => progress?.write(options.taskId, chunks),
-      errorPolicy: "propagate",
-      hitl: {
-        accept: (request) =>
-          request.userId === visit.userId &&
-          request.agentId === visit.agentId &&
-          request.taskId === options.taskId,
-        approvals,
-        askUser,
-      },
-    });
-    if (!external) await session.prompt(promptText);
-    const text = external?.visibleText.trim() || texts.join("").trim() || collectBranchText(sessionManager);
-    if (signal?.aborted) {
-      const message = "用户已取消";
-      if (progress && !external) progress.write(options.taskId, projector.finish(message));
-      return { text, error: message, ...artifactsResult() };
+    let activePrompt = promptText;
+    let lastExternal: Awaited<ReturnType<typeof runExternalSessionTurn>> = null;
+    for (;;) {
+      if (!turnGate.signal.aborted) {
+        /* keep */
+      } else {
+        turnGate = new AbortController();
+      }
+      const turnSignal = linkTurnSignal(signal, turnGate.signal);
+      try {
+        lastExternal = await runExternalSessionTurn({
+          session,
+          text: activePrompt,
+          userText: activePrompt,
+          signal: turnSignal,
+          write: (chunks) => progress?.write(options.taskId, chunks),
+          errorPolicy: "propagate",
+          hitl: {
+            accept: (request) =>
+              request.userId === visit.userId &&
+              request.agentId === visit.agentId &&
+              request.taskId === options.taskId,
+            approvals,
+            askUser,
+          },
+        });
+        if (!lastExternal) await session.prompt(activePrompt, { expandPromptTemplates: false });
+      } finally {
+        turnSignal.dispose();
+      }
+
+      if (signal?.aborted) {
+        const message = "用户已取消";
+        const text =
+          lastExternal?.visibleText.trim() || texts.join("").trim() || collectBranchText(sessionManager);
+        if (progress && !lastExternal) progress.write(options.taskId, projector.finish(message));
+        return { text, error: message, ...artifactsResult() };
+      }
+
+      // SDK steer：打断本轮后带上原文 brief + 插入说明再开一轮（Host 重拼，不 resume 厂商 session）
+      if (isExternal && sdkSteerNotes.length > 0) {
+        const notes = sdkSteerNotes.splice(0).join("\n\n");
+        activePrompt = [`## Original task`, promptText, "", notes].join("\n");
+        continue;
+      }
+
+      const text =
+        lastExternal?.visibleText.trim() || texts.join("").trim() || collectBranchText(sessionManager);
+      if (!text) {
+        const message = resolveEmptyAssistantError(sessionManager);
+        if (progress && !lastExternal) progress.write(options.taskId, projector.finish(message));
+        return { text: "", error: message, ...artifactsResult() };
+      }
+      if (progress && !lastExternal) progress.write(options.taskId, projector.finish());
+      return { text, ...artifactsResult() };
     }
-    if (!text) {
-      const message = resolveEmptyAssistantError(sessionManager);
-      if (progress && !external) progress.write(options.taskId, projector.finish(message));
-      return { text: "", error: message, ...artifactsResult() };
-    }
-    if (progress && !external) progress.write(options.taskId, projector.finish());
-    return { text, ...artifactsResult() };
   } catch (error) {
     const message = signal?.aborted
       ? "用户已取消"
@@ -189,6 +224,10 @@ export async function runDelegatedPrompt(
     session.dispose();
   }
 }
+
+/** @deprecated 用 turn/sdk-interrupt；保留别名以免旧测/导入断裂。 */
+export const createSdkDelegationSteerer = createSdkInterruptQueue;
+export { linkTurnSignal } from "../turn/sdk-interrupt.js";
 
 /** 委托子会话的用户消息。面向模型，英文。 */
 export function formatDelegationPrompt(

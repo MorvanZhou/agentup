@@ -3,13 +3,16 @@ import path from "node:path";
 
 /** 用户上传（Composer staging / @ 引用）。 */
 export const ATTACHMENTS_DIR = "ATTACHMENTS";
-/** Agent 过程与临时文件；用户默认不感知。 */
+/** Agent 过程与临时文件；侧栏根列表默认不展示，但正文路径可点开读。 */
 export const WORK_DIR = "WORK";
 /** 给用户的最终产物。 */
 export const ARTIFACT_DIR = "ARTIFACT";
 
-/** 工作空间列表与路径校验时隐藏的 cwd 顶层名（与 `.pi` 同类）。 */
+/** 工作空间根列表隐藏的 cwd 顶层名（不出现在侧栏根目录）。 */
 export const HIDDEN_WORKSPACE_TOP_LEVEL = new Set([WORK_DIR, ".pi"]);
+
+/** 路径 API 一律拒绝的顶层（系统态）；不含 WORK——聊天链化需可读可开。 */
+export const BLOCKED_WORKSPACE_TOP_LEVEL = new Set([".pi"]);
 
 /** 确保 cwd 三分目录存在；幂等。 */
 export function ensureCwdLayout(cwd: string): void {

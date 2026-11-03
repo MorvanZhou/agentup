@@ -4,8 +4,10 @@ import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import { showToast } from "../../../shared/model/ui/toast";
 import { t } from "../../../shared/model/ui/ui-locale";
+import { injectChatSurface } from "../model/thread/chat-surface";
 import { injectThreadAgentId } from "../model/thread/thread-agent-id";
 import { injectThreadExtras } from "../model/thread/thread-extras";
+import { resolveWorkspaceAgentId } from "../model/workspace/workspace-agent-id";
 import {
   isHtmlWorkspacePath,
   isMarkdownWorkspacePath,
@@ -21,7 +23,15 @@ export function usePreviewWorkspaceFile(options?: { api?: DesktopApi; agentId?: 
   const { session } = useDesktop();
   const injectedAgentId = injectThreadAgentId();
   const extras = injectThreadExtras();
-  const agentId = computed(() => options?.agentId?.value || injectedAgentId);
+  const surface = injectChatSurface();
+  // 群聊 inject 为空：与 open/reveal 一样回落 group:<id>，否则 auth 会 toast「读取工作空间失败」
+  const agentId = computed(() =>
+    resolveWorkspaceAgentId({
+      override: options?.agentId?.value,
+      injectedAgentId,
+      groupId: surface.value.groupId,
+    }),
+  );
   const personal = computed(() => extras.value.personal);
   const { openWorkspaceFile } = useOpenWorkspaceFile(options);
 

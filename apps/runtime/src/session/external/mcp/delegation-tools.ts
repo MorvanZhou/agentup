@@ -16,7 +16,7 @@ import {
 import type { McpTool } from "./server.js";
 
 /**
- * 外部 agent 的委托工具（docs/agent_cli §12.7）。
+ * 外部 agent 的委托工具（.cursor/skills/agentup-sdk-adapter/references/context-and-approvals.md §4.2）。
  *
  * 只依赖 `DelegationService` 的最小面，避免本模块把整个委托服务拖进来（那会和 run 互相引用）。
  * 语义与 Pi 侧 `ROOM_DELEGATION_TOOLS`（+ 单聊 `agent_search`）对齐；

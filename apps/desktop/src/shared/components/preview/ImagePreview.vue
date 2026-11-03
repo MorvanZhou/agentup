@@ -151,7 +151,6 @@ onUnmounted(() => {
     :title="chromeTitle"
     close-on-backdrop
     :show-reveal="Boolean(revealPath)"
-    stage-class="max-h-[min(92dvh,calc(100vh-2rem))]"
     body-class="image-preview-body"
     @wheel="onWheel"
     @reveal="emit('reveal')"
@@ -174,7 +173,7 @@ onUnmounted(() => {
         <img
           :src="src"
           :alt="previewAlt"
-          class="block h-auto max-h-[min(70dvh,calc(100vh-12rem))] w-auto max-w-[min(90vw,68rem)] select-none object-contain"
+          class="block h-auto max-h-full w-auto max-w-full select-none object-contain"
           draggable="false"
           @dragstart.prevent
         />

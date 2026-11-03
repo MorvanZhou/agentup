@@ -1,0 +1,25 @@
+/** 多 SDK adaptor 层入口。文档：.cursor/skills/agentup-sdk-adapter/references/ */
+export type {
+  ExternalDriver,
+  ExternalDriverCapabilities,
+  ExternalDriverId,
+  ExternalTurnRequest,
+  ExternalTurnHandle,
+  WorkerResult,
+} from "./contract.js";
+export {
+  getExternalDriver,
+  driverIdOfTemplate,
+  listExternalDriverIds,
+  installedCliPathFor,
+} from "./registry.js";
+export { queryExternalAgent } from "./host/turn-factory.js";
+export { createAgentSdkStreamSimple } from "./host/stream-bridge.js";
+export { transcriptToPrompt } from "./host/prompt.js";
+export { resultFromSdkMessage } from "./host/result.js";
+export {
+  AGENT_SDK_API,
+  AGENT_SDK_TURN_TIMEOUT_MS,
+  type AgentSdkStreamContext,
+  type ExternalAgentQuery,
+} from "./host/types.js";

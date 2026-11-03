@@ -1,3 +1,14 @@
+/**
+ * 单聊 SDK 才走 runtime followUp 队列；群聊用 post + inject，不接该队列。
+ * GroupThread.enqueueFollowUp 是空实现——若 Composer 仍入队，流中发送会被静默吞掉。
+ */
+export function composerUsesFollowUpQueue(input: {
+  followUp: boolean;
+  groupId?: string;
+}): boolean {
+  return input.followUp === true && !input.groupId;
+}
+
 /** 一轮回复进行时，输入框露出哪些动作（停止 / 发送互斥，只留一个）。 */
 export function composerRunActions(input: {
   /** 助手正在流式输出。有文字时发送会停下这一轮，并另起一条助手消息。 */

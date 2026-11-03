@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 
+import type { NormalizedLocalPath } from "../../model/markdown/local-path";
 import { renderMarkdown } from "../../model/markdown/render";
 import { renderMermaidIn } from "../../model/markdown/mermaid";
 import { t } from "../../model/ui/ui-locale";
@@ -12,15 +13,26 @@ const props = withDefaults(
     source: string;
     /** 次要信息：更小字号、muted 色（如推理过程） */
     secondary?: boolean;
+    /**
+     * 启发式链化本地路径（流结束后 / 历史消息开启）。
+     * 不做 FS 存在性校验；点击由父级打开。
+     */
+    linkLocalPaths?: boolean;
   }>(),
-  { secondary: false },
+  { secondary: false, linkLocalPaths: false },
 );
+
+const emit = defineEmits<{
+  "open-local-path": [target: NormalizedLocalPath];
+}>();
 
 const rootEl = ref<HTMLElement | null>(null);
 const previewOpen = ref(false);
 const previewSrc = ref("");
 const previewAlt = ref(t("msgImagePreview"));
-const html = computed(() => renderMarkdown(props.source));
+const html = computed(() =>
+  renderMarkdown(props.source, { linkLocalPaths: props.linkLocalPaths }),
+);
 
 let mermaidGen = 0;
 watch(
@@ -63,6 +75,12 @@ function openImagePreview(img: HTMLImageElement): void {
   }, 0);
 }
 
+function findLocalPathAnchor(from: Element | null): HTMLAnchorElement | null {
+  if (!from) return null;
+  const anchor = from.closest("a.aui-md-path[data-local-path]");
+  return anchor instanceof HTMLAnchorElement ? anchor : null;
+}
+
 async function onRootClick(event: MouseEvent): Promise<void> {
   const target = clickElement(event.target);
 
@@ -74,6 +92,20 @@ async function onRootClick(event: MouseEvent): Promise<void> {
   }
 
   if (!target) return;
+
+  // 本地路径链：仅在开启 linkLocalPaths 时出现；父级负责 preview / 系统打开
+  const pathAnchor = findLocalPathAnchor(target);
+  if (pathAnchor) {
+    event.preventDefault();
+    event.stopPropagation();
+    const kind = pathAnchor.dataset.localKind;
+    const pathValue = pathAnchor.dataset.localPath ?? "";
+    if ((kind === "relative" || kind === "absolute") && pathValue) {
+      emit("open-local-path", { kind, path: pathValue });
+    }
+    return;
+  }
+
   const btn = target.closest(".aui-code-copy");
   if (!(btn instanceof HTMLButtonElement)) return;
   const block = btn.closest(".aui-code-block");
@@ -256,6 +288,22 @@ function onRootKeydown(event: KeyboardEvent): void {
 
 .aui-md :deep(a.aui-md-a:hover) {
   color: var(--color-accent-deep);
+}
+
+/* 本地路径链：等宽 + 类型 icon，仍走 accent 链接色 */
+.aui-md :deep(a.aui-md-path) {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  word-break: break-all;
+}
+
+.aui-md :deep(a.aui-md-path .aui-md-path-icon) {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.3em;
+  vertical-align: -0.12em;
+  flex-shrink: 0;
 }
 
 .aui-md :deep(s),

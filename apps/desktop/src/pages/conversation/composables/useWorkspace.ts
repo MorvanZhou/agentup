@@ -470,6 +470,28 @@ export function useWorkspace(options: {
     await revealByPath(previewPath.value);
   }
 
+  /** 图标视图缩略图：只返回可内联的图片；失败 / 过大 / 非图返回 null。 */
+  async function loadThumbnail(
+    relativePath: string,
+  ): Promise<{ mediaType: string; dataBase64: string } | null> {
+    const path = relativePath.replace(/^@/, "").trim();
+    if (!path) return null;
+    try {
+      const result = await api.readWorkspaceFile(
+        options.token.value,
+        options.userId.value,
+        options.agentId.value,
+        options.personal.value,
+        path,
+        workspaceScope.value,
+      );
+      if (result.kind !== "image") return null;
+      return { mediaType: result.mediaType, dataBase64: result.dataBase64 };
+    } catch {
+      return null;
+    }
+  }
+
   /** 文件 / 文件夹一键插进 Composer（@ATTACHMENTS 芯片）；挂载列表根忽略。 */
   async function attachToChat(entry: WorkspaceEntry): Promise<void> {
     if (atProjectList.value) return;
@@ -551,6 +573,7 @@ export function useWorkspace(options: {
     removeMany,
     reveal,
     revealPreview,
+    loadThumbnail,
     attachToChat,
     addProject,
   };

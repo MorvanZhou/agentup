@@ -6,7 +6,7 @@ import { VisitChats } from "../src/session/turn/visit-chats.js";
 import type { PromptSession } from "../src/session/turn/types.js";
 
 /**
- * 主会话的插话语义（docs/agent_cli §12.8）：
+ * 主会话的插话语义（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）：
  * API / Pi 原生 → Pi 原生 steer（保留已做的工作）；本地 Agent App（SDK）→ followUp 队列。
  */
 

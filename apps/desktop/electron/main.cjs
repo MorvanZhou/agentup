@@ -16,7 +16,7 @@ const {
   resolveAgentDataRoot,
   writeDataRootMarker,
 } = require("./erase-local-data.cjs");
-const { resolveUserWorkspacePath } = require("./user-workspace-path.cjs");
+const { resolveHostOpenPath, resolveUserWorkspacePath } = require("./user-workspace-path.cjs");
 const { applicationMenuTemplate } = require("./menu.cjs");
 const {
   CHECK_INTERVAL_MS,
@@ -227,7 +227,8 @@ function createWindow() {
     backgroundColor: "#191919",
     title: "AgentUp",
     icon: appIconPath,
-    autoHideMenuBar: true,
+    // Windows 常显窗口菜单（File / Help…）；macOS 应用菜单在系统顶栏，autoHide 无影响
+    autoHideMenuBar: darwin,
     titleBarStyle: darwin ? "hiddenInset" : "default",
     // 72px 轨：灯组约 52×12，左右各 ~10px；y 与渲染层 --app-titlebar-inset 对齐
     trafficLightPosition: darwin ? { x: 10, y: 18 } : undefined,
@@ -414,6 +415,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("agentup:open-path", async (_event, targetPath) => {
     const target = await resolveUserWorkspacePath(targetPath, dataRoot(), "只能打开本机工作文件");
+    const failure = await shell.openPath(target);
+    if (failure) throw new Error(failure);
+  });
+  // 聊天 Markdown 链化的工作区外绝对路径：存在且非敏感根才系统打开
+  ipcMain.handle("agentup:open-host-path", async (_event, targetPath) => {
+    const target = await resolveHostOpenPath(targetPath, "无法打开该文件");
     const failure = await shell.openPath(target);
     if (failure) throw new Error(failure);
   });

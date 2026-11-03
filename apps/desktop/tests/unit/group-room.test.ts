@@ -106,6 +106,26 @@ describe("group room", () => {
     expect(host.textContent).not.toContain("tool:read");
   });
 
+  it("shows a working holder bubble while speaking before the first stream chunk", () => {
+    // 首包前 liveMessage 仍为空：不能整段空白，否则像没发出去
+    const host = mountRoom({
+      room: {
+        ...full,
+        lines: [full.lines[1]],
+        holderSpeaking: true,
+        taskIds: [],
+        queue: [],
+      },
+      token: "t",
+      userId: "u",
+      liveMessage: null,
+    });
+    const bubble = host.querySelector("[data-testid='wake-live-message']");
+    expect(bubble).not.toBeNull();
+    expect(bubble?.textContent).toContain("工作中");
+    expect(host.textContent).toContain("产品经理");
+  });
+
   it("clears artifacts unless the confirm checkbox also includes the work directory", async () => {
     const cleared: boolean[] = [];
     const host = mountRoom({

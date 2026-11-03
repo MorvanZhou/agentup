@@ -3,7 +3,7 @@ import type { RuntimeHttp } from "./http";
 
 /**
  * followUp 队列：本地 Agent App（SDK）接入下，回合进行中用户新发消息不再 409，
- * 而是进 runtime 的队列，本轮结束后合并成一条再开一轮（docs/agent_cli §12.8）。
+ * 而是进 runtime 的队列，本轮结束后合并成一条再开一轮（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
  */
 
 export type FollowUpItem = {

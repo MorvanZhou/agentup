@@ -49,6 +49,8 @@
 
   --animate-rise: rise 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
   --animate-breathe: breathe 1.6s ease-in-out infinite;
+  /* 群聊中途插入：滚到插入点后 accent 描边连闪（约 2.8s，比浅橙气泡底更抢眼） */
+  --animate-thread-insert-flash: thread-insert-flash 2.8s ease-in-out 1 both;
 
   @keyframes rise {
     from {
@@ -68,6 +70,41 @@
     }
     50% {
       opacity: 1;
+    }
+  }
+
+  @keyframes thread-insert-flash {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 0 transparent,
+        0 1px 2px rgb(0 0 0 / 0.06);
+      filter: brightness(1);
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+    }
+    12%,
+    37%,
+    62%,
+    87% {
+      /* 实色 accent 环 + 外晕，压过 primary 浅橙底 */
+      box-shadow:
+        0 0 0 3px var(--color-accent),
+        0 0 0 8px color-mix(in oklab, var(--color-accent) 35%, transparent),
+        0 0 18px color-mix(in oklab, var(--color-accent) 45%, transparent);
+      filter: brightness(1.12);
+      outline: 2px solid var(--color-accent-deep);
+      outline-offset: 2px;
+    }
+    25%,
+    50%,
+    75% {
+      box-shadow:
+        0 0 0 2px color-mix(in oklab, var(--color-accent) 70%, white),
+        0 0 0 6px color-mix(in oklab, var(--color-accent) 22%, transparent);
+      filter: brightness(1.04);
+      outline: 2px solid color-mix(in oklab, var(--color-accent) 55%, transparent);
+      outline-offset: 3px;
     }
   }
 }

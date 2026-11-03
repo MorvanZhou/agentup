@@ -201,6 +201,8 @@ export interface AgentSdkLoginResult {
   authUrl: string | null;
   state: "logging_in" | "ready" | "not_logged_in";
   accountLabel?: string;
+  /** Codex device-auth 等：网页里要填的一次性码 */
+  deviceCode?: string;
 }
 
 export async function installAgentSdk(
@@ -252,6 +254,23 @@ export async function cancelAgentSdkInstall(
   );
 }
 
+function parseAgentSdkLoginResult(payload: {
+  auth_url?: unknown;
+  state?: unknown;
+  account_label?: unknown;
+  device_code?: unknown;
+}): AgentSdkLoginResult {
+  return {
+    authUrl: typeof payload.auth_url === "string" ? payload.auth_url : null,
+    state:
+      payload.state === "ready" || payload.state === "logging_in" ? payload.state : "not_logged_in",
+    ...(typeof payload.account_label === "string" ? { accountLabel: payload.account_label } : {}),
+    ...(typeof payload.device_code === "string" && payload.device_code.trim()
+      ? { deviceCode: payload.device_code.trim() }
+      : {}),
+  };
+}
+
 export async function loginAgentSdk(
   http: RuntimeHttp,
   token: string,
@@ -261,13 +280,13 @@ export async function loginAgentSdk(
     `/settings/provider/agents/${encodeURIComponent(templateId)}/login`,
     token,
     {},
-  )) as { auth_url?: unknown; state?: unknown; account_label?: unknown };
-  return {
-    authUrl: typeof payload.auth_url === "string" ? payload.auth_url : null,
-    state:
-      payload.state === "ready" || payload.state === "logging_in" ? payload.state : "not_logged_in",
-    ...(typeof payload.account_label === "string" ? { accountLabel: payload.account_label } : {}),
+  )) as {
+    auth_url?: unknown;
+    state?: unknown;
+    account_label?: unknown;
+    device_code?: unknown;
   };
+  return parseAgentSdkLoginResult(payload);
 }
 
 export async function checkAgentSdkLogin(
@@ -279,13 +298,13 @@ export async function checkAgentSdkLogin(
     `/settings/provider/agents/${encodeURIComponent(templateId)}/login-check`,
     token,
     {},
-  )) as { auth_url?: unknown; state?: unknown; account_label?: unknown };
-  return {
-    authUrl: typeof payload.auth_url === "string" ? payload.auth_url : null,
-    state:
-      payload.state === "ready" || payload.state === "logging_in" ? payload.state : "not_logged_in",
-    ...(typeof payload.account_label === "string" ? { accountLabel: payload.account_label } : {}),
+  )) as {
+    auth_url?: unknown;
+    state?: unknown;
+    account_label?: unknown;
+    device_code?: unknown;
   };
+  return parseAgentSdkLoginResult(payload);
 }
 
 /** 登出：token 在 CLI 手里，runtime 代调 logout 后回整份设置（状态与模型目录都会变） */

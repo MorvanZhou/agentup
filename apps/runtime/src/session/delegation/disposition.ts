@@ -65,6 +65,25 @@ export function formatDelegationDispositionPrompt(taskIds: readonly string[]): s
   ].join("\n");
 }
 
+/**
+ * 非本回合 open 清单上的 task_id：说明拒因，并给可执行下一步（模型常在完成后仍 keep）。
+ */
+export function formatNotOpenDelegationError(
+  taskId: string,
+  openTaskIds: readonly string[],
+): string {
+  const openLine =
+    openTaskIds.length > 0
+      ? `Open task_id this turn (call ${RESOLVE_DELEGATION_UPDATE_TOOL} only for these): ${openTaskIds.join(", ")}.`
+      : `No in-progress delegations are open this turn — there is nothing to dispose with ${RESOLVE_DELEGATION_UPDATE_TOOL}.`;
+  return [
+    `task_id is not an in-progress delegation this turn: ${taskId}`,
+    "Why: only tasks that were still running / pending_auth at the start of this user message can be disposed. Finished, cancelled, unknown, other-agent, or mid-turn newly created tasks are not in that list (wake/completion turns usually have an empty list).",
+    openLine,
+    "What to do: do not retry resolve_delegation_update for this task_id. If the specialist already completed or failed, skip this tool and reply to the user (use check_delegation only if you still need status). To start different work, call delegate_to_agent. To change or stop a task that is still listed as open above, call resolve_delegation_update on that open task_id (steer / keep / cancel / new_task).",
+  ].join("\n");
+}
+
 export function parseDelegationDisposition(input: {
   taskId: string;
   action: string;
@@ -77,7 +96,7 @@ export function parseDelegationDisposition(input: {
   const taskId = input.taskId.trim();
   if (!taskId) return { ok: false, error: "task_id required" };
   if (!input.openTaskIds.includes(taskId)) {
-    return { ok: false, error: `task_id is not an in-progress delegation this turn: ${taskId}` };
+    return { ok: false, error: formatNotOpenDelegationError(taskId, input.openTaskIds) };
   }
   if (!ACTIONS.has(input.action as DelegationDispositionAction)) {
     return { ok: false, error: "action must be steer, keep, cancel, or new_task" };

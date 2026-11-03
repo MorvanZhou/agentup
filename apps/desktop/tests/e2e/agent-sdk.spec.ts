@@ -47,6 +47,8 @@ test("下拉分两组：选本地 App 见信任说明，切回 API Key 仍能改
   await page.getByRole("button", { name: "接入方式" }).click();
   await expect(page.getByRole("presentation").filter({ hasText: "API Key 接入" })).toBeVisible();
   await expect(page.getByRole("presentation").filter({ hasText: "本地 Agent App 接入" })).toBeVisible();
+  // Codex 与 CodeBuddy 同组出现（新接入厂商入口回归）
+  await expect(page.getByRole("option", { name: /^Codex/ })).toBeVisible();
   await page.getByRole("option", { name: /Workbuddy \/ CodeBuddy/ }).click();
 
   await expect(page.getByRole("note")).toContainText("信任模式");
@@ -63,6 +65,19 @@ test("下拉分两组：选本地 App 见信任说明，切回 API Key 仍能改
   await expect(page.getByRole("button", { name: "开始接入" })).toHaveCount(0);
 });
 
+test("选 Codex：见信任说明与开始接入（入口在本地 App 组）", async ({ page }) => {
+  await installRuntime(page);
+  await signIn(page);
+  await openProviderSettings(page);
+  await expandProviderConnect(page);
+  await page.getByRole("button", { name: "接入方式" }).click();
+  await page.getByRole("option", { name: /^Codex/ }).click();
+  await expect(page.getByRole("note")).toContainText("信任模式");
+  await expect(page.getByRole("note")).toContainText("Codex");
+  await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
+  await expect(page.getByText("未安装", { exact: true })).toBeVisible();
+});
+
 test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在会话里选中", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
@@ -75,7 +90,8 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   });
   await page.getByRole("button", { name: "开始接入" }).click();
   await installStarted;
-  await expect(page.getByRole("status")).toHaveText("接入完成");
+  // toast 与接入进度都是 role=status；裸 getByRole 会跟「安装中/登录中」撞 strict mode
+  await expect(page.getByRole("status").filter({ hasText: "接入完成" })).toBeVisible();
   await expect(page.getByText("未登录", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
 
@@ -83,15 +99,25 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
     if (request.method() !== "POST") return false;
     return new URL(request.url()).pathname.endsWith("/settings/provider/agents/codebuddy-sdk/login");
   });
+  // 轮询落 ready 的那一下；先挂上再点，避免快路径漏等
+  const loginChecked = page.waitForResponse((response) => {
+    if (response.request().method() !== "POST") return false;
+    return new URL(response.url()).pathname.endsWith(
+      "/settings/provider/agents/codebuddy-sdk/login-check",
+    );
+  });
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await loginStarted;
   await expect
     .poll(async () => page.evaluate(() => (window as { openedExternal?: string }).openedExternal ?? ""))
     .toBe("https://example.com/codebuddy-login");
-  await expect(page.getByRole("status")).toHaveText("已登录");
+  await loginChecked;
+  // 产品态优先；toast「已登录」同样要 filter，避免与进度「登录中」并存时 strict 误伤
   await expect(page.getByText("可用", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "已登录" })).toBeVisible();
   await expect(page.getByText("账号 mock-sdk-user")).toBeVisible();
-  await expect(page.getByText("Claude-Sonnet-5")).toBeVisible();
+  // exact：同名 modelId（claude-sonnet-5）也会被不区分大小写的 getByText 命中
+  await expect(page.getByText("Claude-Sonnet-5", { exact: true })).toBeVisible();
   await expect(page.getByText("1.33x")).toBeVisible();
 
   const enabled = page.waitForRequest((request) => {
@@ -118,7 +144,7 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   });
   await page.getByRole("button", { name: "刷新模型" }).first().click();
   await refreshed;
-  await expect(page.getByText("Claude-Opus-4")).toBeVisible();
+  await expect(page.getByText("Claude-Opus-4", { exact: true })).toBeVisible();
 
   await messagesNav(page).click();
   await startAgent(page, "呼吸科医生");

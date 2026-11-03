@@ -351,5 +351,7 @@ it("resolve_delegation_update：cancel / keep 走通；非进行中任务拒绝"
     arguments: { task_id: "t-1", action: "cancel" },
   });
   expect(rejected.result?.isError).toBe(true);
-  expect(rejected.result?.content?.[0]?.text).toContain("not an in-progress delegation");
+  const rejectedText = String(rejected.result?.content?.[0]?.text ?? "");
+  expect(rejectedText).toContain("not an in-progress delegation");
+  expect(rejectedText).toMatch(/do not call|skip|check_delegation|delegate_to_agent/i);
 });

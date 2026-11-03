@@ -392,7 +392,7 @@ export async function abortTurn(
 }
 
 /**
- * 插话（API / Pi 原生接入，docs/agent_cli §12.8）：走 runtime 的 Pi 原生 steer，
+ * 插话（API / Pi 原生接入，.cursor/skills/agentup-sdk-adapter/references/follow-up.md）：走 runtime 的 Pi 原生 steer，
  * 插到当前工具批次之后，保留已做的工作。会话没在跑或外部 agent 接入时返回 false
  * —— 调用方改走「停止后重发」。
  */

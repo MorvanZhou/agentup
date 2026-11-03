@@ -5,7 +5,7 @@ import { installRuntime } from "./runtime";
 
 /**
  * 本地 Agent App（SDK）接入：回合进行中的新消息不再 409，而是进 followUp 队列，
- * 本轮结束后合并成一条再开一轮（docs/agent_cli §12.8 / §12.8.1）。
+ * 本轮结束后合并成一条再开一轮（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
  */
 test("回合中发的新消息进队列，可置顶 / 编辑 / 删除 / 清空", async ({ page }) => {
   await installRuntime(page, {
@@ -139,6 +139,28 @@ test("队列被消费时：先出 user message，assistant 才在它下面流式
   await conversationItem(page, "Weaty").click();
 
   const composer = page.getByRole("textbox", { name: /^发送消息/ });
+
+  // 必须在入队前就位：第一轮只挂 2.5s，消费轮窗口极短；轮询 innerText 兼顾原地改文案
+  await page.evaluate(() => {
+    const holder = window as unknown as {
+      __followUpOrder?: string[];
+      __followUpTimer?: number;
+    };
+    holder.__followUpOrder = [];
+    holder.__followUpTimer = window.setInterval(() => {
+      const text = document.body.innerText;
+      const user = text.indexOf("只要北京\n再看看上海");
+      const assistant = text.indexOf("已收到，正在查");
+      if (user >= 0 && assistant >= 0) {
+        holder.__followUpOrder?.push(user <= assistant ? "user-first" : "assistant-first");
+      } else if (user >= 0) {
+        holder.__followUpOrder?.push("user");
+      } else if (assistant >= 0) {
+        holder.__followUpOrder?.push("assistant");
+      }
+    }, 16);
+  });
+
   await composer.fill("先查全国");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("先查全国")).toBeVisible();
@@ -166,45 +188,28 @@ test("队列被消费时：先出 user message，assistant 才在它下面流式
   await queued;
   await expect(page.getByRole("status", { name: /已排队/ })).toContainText("已排队 2 条");
 
-  // 直播窗口很短（流结束后历史会重挂线程）：用 MutationObserver 记下「谁先出现」
-  await page.evaluate(() => {
-    const holder = window as unknown as { __followUpOrder?: string[] };
-    holder.__followUpOrder = [];
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        for (const node of Array.from(record.addedNodes)) {
-          const text = node.textContent ?? "";
-          // 拼好的整串只会出现在用户气泡里（队列条是分开的两条）
-          const user = text.indexOf("只要北京\n再看看上海");
-          const assistant = text.indexOf("已收到，正在查");
-          if (user >= 0 && assistant >= 0) {
-            holder.__followUpOrder?.push(user <= assistant ? "user-first" : "assistant-first");
-          } else if (user >= 0) {
-            holder.__followUpOrder?.push("user");
-          } else if (assistant >= 0) {
-            holder.__followUpOrder?.push("assistant");
-          }
-        }
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  });
-
   // 第一轮结束后 runtime 消费队列：先出用户那条（整串），助手正文在它之后
   await page.waitForFunction(
-    () => ((window as unknown as { __followUpOrder?: string[] }).__followUpOrder?.length ?? 0) > 0,
+    () =>
+      ((window as unknown as { __followUpOrder?: string[] }).__followUpOrder ?? []).some(
+        (entry) => entry === "user-first" || entry === "assistant-first" || entry === "assistant",
+      ),
     undefined,
     { timeout: 20_000 },
   );
-  const order = await page.evaluate(
-    () => (window as unknown as { __followUpOrder?: string[] }).__followUpOrder ?? [],
-  );
+  const order = await page.evaluate(() => {
+    const holder = window as unknown as {
+      __followUpOrder?: string[];
+      __followUpTimer?: number;
+    };
+    if (holder.__followUpTimer) window.clearInterval(holder.__followUpTimer);
+    return holder.__followUpOrder ?? [];
+  });
   const verdict =
     order.find((entry) => entry === "user-first" || entry === "assistant-first") ??
     (order.indexOf("user") >= 0 && order.indexOf("user") < order.indexOf("assistant")
       ? "user-first"
       : "assistant-first");
-  expect(order).toContain("assistant");
   expect(verdict).toBe("user-first");
 });
 
@@ -218,6 +223,21 @@ test("消费轮进行中还能继续排队：发送按钮可见，消息进队�
   await conversationItem(page, "Weaty").click();
 
   const composer = page.getByRole("textbox", { name: /^发送消息/ });
+
+  // 入队前就轮询：消费轮窗口短，childList 观察容易漏
+  await page.evaluate(() => {
+    const holder = window as unknown as {
+      __drainSeen?: string[];
+      __drainTimer?: number;
+    };
+    holder.__drainSeen = [];
+    holder.__drainTimer = window.setInterval(() => {
+      const text = document.body.innerText;
+      if (text.includes("只要北京")) holder.__drainSeen?.push("user");
+      if (text.includes("已收到，正在查")) holder.__drainSeen?.push("assistant");
+    }, 16);
+  });
+
   await composer.fill("先查全国");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("先查全国")).toBeVisible();
@@ -233,23 +253,6 @@ test("消费轮进行中还能继续排队：发送按钮可见，消息进队�
   await page.getByRole("button", { name: "发送" }).click();
   await firstQueued;
 
-  // 直播窗口很短（流结束历史重挂线程）：在第一轮收尾前就装好 MutationObserver，
-  // 记下「消费轮确实跑过」（用户那条 + 助手正文）
-  await page.evaluate(() => {
-    const holder = window as unknown as { __drainSeen?: string[] };
-    holder.__drainSeen = [];
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        for (const node of Array.from(record.addedNodes)) {
-          const text = node.textContent ?? "";
-          if (text.includes("只要北京")) holder.__drainSeen?.push("user");
-          if (text.includes("已收到，正在查")) holder.__drainSeen?.push("assistant");
-        }
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  });
-
   // 等第一轮收完：历史里出现「旧回复」，队列随后被 runtime 消费（条子撤掉）
   await expect(page.getByText("旧回复").last()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("status", { name: /已排队/ })).toHaveCount(0, { timeout: 20_000 });
@@ -259,6 +262,10 @@ test("消费轮进行中还能继续排队：发送按钮可见，消息进队�
     undefined,
     { timeout: 20_000 },
   );
+  await page.evaluate(() => {
+    const holder = window as unknown as { __drainTimer?: number };
+    if (holder.__drainTimer) window.clearInterval(holder.__drainTimer);
+  });
 
   // 消费轮跑过之后 wake busy 仍持续（desktop-pulse 保持 busy_turns）：composer 处于第二轮状态。
   // 此时 composer 只亮「停止」是 bug——SDK 接入下发送仍是入队语义，应能继续排队。

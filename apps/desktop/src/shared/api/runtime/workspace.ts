@@ -5,6 +5,10 @@ export interface WorkspaceEntry {
   name: string;
   kind: "file" | "dir";
   size: number;
+  /** 最后修改时间（epoch ms）；旧 runtime 可能缺。 */
+  mtimeMs?: number;
+  /** 创建时间（epoch ms）；旧 runtime 可能缺。 */
+  birthtimeMs?: number;
 }
 
 export type WorkspaceFile =
@@ -178,6 +182,8 @@ function readEntry(value: unknown): WorkspaceEntry {
     name: entry.name,
     kind: entry.kind,
     size: typeof entry.size === "number" ? entry.size : 0,
+    ...(typeof entry.mtimeMs === "number" ? { mtimeMs: entry.mtimeMs } : {}),
+    ...(typeof entry.birthtimeMs === "number" ? { birthtimeMs: entry.birthtimeMs } : {}),
   };
 }
 

@@ -46,6 +46,7 @@ import {
   threadRevealConsumedKey,
   threadRevealEarlierKey,
 } from "../../../../model/thread/thread-earlier";
+import { injectThreadInsertCue } from "../../../../model/thread/thread-insert-cue";
 import { injectThreadWakeLive } from "../../../../model/thread/thread-wake-live";
 import AssistantMessage from "./assistant-ui/AssistantMessage.vue";
 import ContextResetMessage from "./ContextResetMessage.vue";
@@ -79,6 +80,7 @@ const extras = injectThreadExtras();
 const surface = injectChatSurface();
 const delegationTrail = injectChatDelegationTrail();
 const wakeLive = injectThreadWakeLive();
+const insertCue = injectThreadInsertCue();
 const wakeLiveMessage = computed(() => wakeLive?.value.message ?? null);
 const wakeLiveStreaming = computed(() => Boolean(wakeLive?.value.streaming));
 /** 队列消费时先亮出来的用户那条（空则不占位）。 */
@@ -94,6 +96,13 @@ const threadNav = ref<HTMLElement | null>(null);
 const scrollingToPreviousUser = ref(false);
 /** 补历史时关掉贴底跟随。重挂载揭示从关闭开始，避免新视口把阅读位置拉回最新消息。 */
 const followLatest = ref(revealOnMount === 0);
+// 中途插入滚到中段时：先停贴底，否则流式 chunk 会立刻把视口拽回底部
+watch(
+  () => insertCue?.cue.value?.token,
+  (token) => {
+    if (token) followLatest.value = false;
+  },
+);
 let earlierObserver: IntersectionObserver | null = null;
 let rearmFrame = 0;
 /** 刚补上一页后先关掉自动加载；哨兵离开视口才重新打开。重挂载揭示时从关闭开始。 */
@@ -408,9 +417,9 @@ async function scrollToPreviousUserMessage(): Promise<void> {
             </li>
           </template>
         </ul>
-        <!-- wake 旁路直播：与 /prompt 同形 UIMessage，结束后再并入历史 -->
+        <!-- wake 旁路直播：用户乐观气泡和/或助手流式；结束后再并入历史 -->
         <WakeLiveMessage
-          v-if="wakeLiveMessage"
+          v-if="wakeLiveMessage || wakeLiveUserText"
           :message="wakeLiveMessage"
           :streaming="wakeLiveStreaming"
           :user-text="wakeLiveUserText"

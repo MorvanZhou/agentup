@@ -4,6 +4,7 @@
  */
 
 const fsp = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 
 /** @param {string} root @param {string} target */
@@ -138,9 +139,62 @@ async function resolveUserWorkspacePath(targetPath, dataRoot, deniedMessage, io 
   throw new Error(deniedMessage);
 }
 
+/**
+ * 与 runtime `isBlockedPath` 对齐的敏感根（~/.ssh、/etc 等）。
+ * @param {string} homeDir
+ */
+function blockedHostRoots(homeDir = os.homedir()) {
+  const home = path.resolve(homeDir);
+  const list = [
+    path.join(home, ".ssh"),
+    path.join(home, ".gnupg"),
+    path.join(home, ".aws"),
+    path.join(home, ".config", "gcloud"),
+    "/etc",
+    "/System",
+    "/private/etc",
+    "/boot",
+    "/root",
+  ];
+  if (process.platform === "win32") {
+    list.push("C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)");
+  }
+  return list.map((item) => path.resolve(item));
+}
+
+/** @param {string} targetReal @param {string[]} [roots] */
+function isBlockedHostPath(targetReal, roots = blockedHostRoots()) {
+  return roots.some((root) => targetReal === root || targetReal.startsWith(`${root}${path.sep}`));
+}
+
+/**
+ * 聊天正文链化的工作区外绝对路径：须真实存在，且不在敏感根内。
+ * 不放宽 reveal-in-folder / open-path 的工作区门禁。
+ *
+ * @param {string} targetPath
+ * @param {string} deniedMessage
+ * @param {{ realpath?: typeof fsp.realpath }} [io]
+ */
+async function resolveHostOpenPath(targetPath, deniedMessage, io = {}) {
+  if (typeof targetPath !== "string" || !targetPath.trim()) throw new Error("路径无效");
+  if (!path.isAbsolute(targetPath.trim())) throw new Error("路径无效");
+  const realpath = io.realpath ?? fsp.realpath;
+  let target;
+  try {
+    target = await realpath(targetPath.trim());
+  } catch {
+    throw new Error(deniedMessage);
+  }
+  if (isBlockedHostPath(target)) throw new Error(deniedMessage);
+  return target;
+}
+
 module.exports = {
   isInside,
   isUnderManagedWorkspace,
   isUnderMountedProjectRoot,
   resolveUserWorkspacePath,
+  blockedHostRoots,
+  isBlockedHostPath,
+  resolveHostOpenPath,
 };

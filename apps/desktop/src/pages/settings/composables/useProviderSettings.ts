@@ -27,6 +27,8 @@ export function useProviderSettings(api = new DesktopApi()) {
   const draftBaseUrl = ref("");
   const draftApiKey = ref("");
   const modelFilter = ref("");
+  /** 启用服务列表按供应商收窄；空串 = 已存在的全部供应商。 */
+  const modelProviderFilter = ref("");
   /** 手动追加模型 ID（仅 Ollama / 自定义 OpenAI 兼容可在运行时注册）。 */
   const draftCustomModelId = ref("");
   const draftAddTemplateId = ref("");
@@ -71,10 +73,38 @@ export function useProviderSettings(api = new DesktopApi()) {
   /** 任意已连接服务商均可手动追加模型 ID（runtime 会对内置目录外的 id 按同端点动态注册）。 */
   const customModelTargets = computed(() => connections.value);
   const canAddCustomModel = computed(() => customModelTargets.value.length > 0);
+  /**
+   * 搜索框前的供应商下拉：从当前可用模型里去重 templateId。
+   * 含 API 连接与已登录本地 App；默认项「全部」value 为空串。
+   */
+  const modelProviderFilterOptions = computed(() => {
+    const seen = new Map<string, { value: string; label: string; icon?: string }>();
+    for (const model of availableModels.value) {
+      if (seen.has(model.templateId)) continue;
+      const connection = connections.value.find((item) => item.templateId === model.templateId);
+      const sdk = agentSdks.value.find((item) => item.templateId === model.templateId);
+      const label =
+        connection?.label ??
+        sdk?.label ??
+        (model.optionLabel !== model.vendorLabel
+          ? `${model.vendorLabel} · ${model.optionLabel}`
+          : model.vendorLabel);
+      seen.set(model.templateId, {
+        value: model.templateId,
+        label,
+        icon: model.vendorId,
+      });
+    }
+    return [{ value: "", label: t("providerFilterAll") }, ...seen.values()];
+  });
   const filteredModels = computed(() => {
+    const providerId = modelProviderFilter.value;
+    const scoped = providerId
+      ? availableModels.value.filter((model) => model.templateId === providerId)
+      : availableModels.value;
     const q = modelFilter.value.trim().toLowerCase();
-    if (!q) return availableModels.value;
-    return availableModels.value.filter(
+    if (!q) return scoped;
+    return scoped.filter(
       (model) =>
         model.name.toLowerCase().includes(q) ||
         model.modelId.toLowerCase().includes(q) ||
@@ -110,6 +140,13 @@ export function useProviderSettings(api = new DesktopApi()) {
   watch(draftTemplateId, (templateId) => {
     const template = templates.value.find((item) => item.id === templateId);
     if (template) applyTemplateDefaults(template);
+  });
+
+  /** 供应商从列表消失（卸掉 / 登出）时，下拉回落到「全部」 */
+  watch(modelProviderFilterOptions, (options) => {
+    if (!options.some((item) => item.value === modelProviderFilter.value)) {
+      modelProviderFilter.value = "";
+    }
   });
 
   watch(
@@ -410,6 +447,10 @@ export function useProviderSettings(api = new DesktopApi()) {
   /** CLI / SDK 接入：安装与登录（阶段 1） */
   const sdkBusy = ref(false);
   const sdkPhase = ref<{ templateId: string; phase: string; detail?: string } | null>(null);
+  /** Codex device-auth 等：登录中展示的一次性验证码 */
+  const sdkLoginDeviceCode = ref<string | null>(null);
+  /** 取消进行中的登录轮询（含卡在 logging_in） */
+  let sdkLoginAbort: AbortController | null = null;
 
   async function reload(): Promise<void> {
     if (!session.value) return;
@@ -455,8 +496,13 @@ export function useProviderSettings(api = new DesktopApi()) {
   async function loginAgentSdk(templateId: string): Promise<void> {
     if (!session.value || sdkBusy.value) return;
     sdkBusy.value = true;
+    sdkLoginAbort = new AbortController();
+    const signal = sdkLoginAbort.signal;
     try {
       const started = await api.loginAgentSdk(session.value.token, templateId);
+      // 先展示验证码再开浏览器，避免用户盯着网页却不知道码在哪
+      if (started.deviceCode) sdkLoginDeviceCode.value = started.deviceCode;
+      await reload().catch(() => undefined);
       if (started.authUrl) {
         const open = window.agentUp?.openExternal;
         if (!open) {
@@ -466,27 +512,47 @@ export function useProviderSettings(api = new DesktopApi()) {
         await open(started.authUrl);
       }
       if (started.state === "ready") {
+        sdkLoginDeviceCode.value = null;
         await reload();
         showToast(t("providerSdkLoginDone"), "success");
         return;
       }
-      // 用户在浏览器里完成登录后，回来轮询直到状态落定
-      const deadline = Date.now() + 3 * 60 * 1000;
+      // 用户在浏览器里完成登录（含填 device code）后，回来轮询直到状态落定
+      const deadline = Date.now() + 15 * 60 * 1000;
       while (Date.now() < deadline) {
+        if (signal.aborted) break;
         const result = await api.checkAgentSdkLogin(session.value.token, templateId);
+        if (result.deviceCode) sdkLoginDeviceCode.value = result.deviceCode;
         if (result.state === "ready") {
+          sdkLoginDeviceCode.value = null;
           await reload();
           showToast(t("providerSdkLoginDone"), "success");
           return;
         }
-        if (result.state === "not_logged_in" && !started.authUrl) break;
+        if (result.state === "not_logged_in") break;
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-      await reload();
+      if (signal.aborted) {
+        // cancelAgentSdkLogin 已调过 logout
+        await reload();
+        return;
+      }
+      // 超时：清掉 logging_in，避免操作区被永久藏起
+      try {
+        settings.value = await api.logoutAgentSdk(session.value.token, templateId, locale());
+        notifyProviderConfigChanged();
+      } catch {
+        await reload();
+      }
+      showToast(t("providerSdkLoginTimedOut"), "error");
     } catch (caught) {
       showToast(messageOf(caught), "error");
+      await reload().catch(() => undefined);
     } finally {
       sdkBusy.value = false;
+      sdkLoginAbort = null;
+      // 轮询结束（成功 / 取消 / 超时）都清掉验证码，避免卡片残留
+      sdkLoginDeviceCode.value = null;
     }
   }
 
@@ -495,12 +561,32 @@ export function useProviderSettings(api = new DesktopApi()) {
     sdkBusy.value = true;
     try {
       const result = await api.checkAgentSdkLogin(session.value.token, templateId);
+      if (result.deviceCode) sdkLoginDeviceCode.value = result.deviceCode;
+      if (result.state === "ready") sdkLoginDeviceCode.value = null;
       await reload();
       showToast(result.state === "ready" ? t("providerSdkLoginDone") : t("providerSdkLoginPending"), result.state === "ready" ? "success" : "error");
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
       sdkBusy.value = false;
+    }
+  }
+
+  /**
+   * 取消进行中的登录：即使 sdkBusy 也可点（否则登录轮询期间登出按钮被锁死）。
+   * 杀 CLI 子进程 + 状态打回 not_logged_in。
+   */
+  async function cancelAgentSdkLogin(templateId: string): Promise<void> {
+    if (!session.value) return;
+    sdkLoginAbort?.abort();
+    sdkLoginDeviceCode.value = null;
+    try {
+      settings.value = await api.logoutAgentSdk(session.value.token, templateId, locale());
+      notifyProviderConfigChanged();
+      showToast(t("providerSdkLoginCancelled"), "success");
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+      await reload().catch(() => undefined);
     }
   }
 
@@ -512,6 +598,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     if (!session.value || sdkBusy.value) return;
     sdkBusy.value = true;
     try {
+      sdkLoginDeviceCode.value = null;
       settings.value = await api.logoutAgentSdk(session.value.token, templateId, locale());
       notifyProviderConfigChanged();
       showToast(t("providerSdkLogoutDone"), "success");
@@ -548,6 +635,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     connections,
     availableModels,
     filteredModels,
+    modelProviderFilterOptions,
     configured,
     overridden,
     agentSdks,
@@ -557,6 +645,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     draftBaseUrl,
     draftApiKey,
     modelFilter,
+    modelProviderFilter,
     draftCustomModelId,
     draftAddTemplateId,
     customModelTargets,
@@ -570,11 +659,13 @@ export function useProviderSettings(api = new DesktopApi()) {
     canRefreshModels,
     sdkBusy,
     sdkPhase,
+    sdkLoginDeviceCode,
     load,
     startAgentSdkInstall,
     cancelAgentSdkInstall,
     loginAgentSdk,
     checkAgentSdkLogin,
+    cancelAgentSdkLogin,
     logoutAgentSdk,
     uninstallAgentSdk,
     refreshAgentSdkModels,

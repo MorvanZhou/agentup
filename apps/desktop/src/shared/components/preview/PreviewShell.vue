@@ -99,7 +99,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <div
       v-if="open"
-      class="app-no-drag pointer-events-auto fixed inset-0 z-[100] flex items-stretch justify-center bg-black/55 p-4 backdrop-blur-md"
+      class="app-no-drag pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-6 backdrop-blur-md"
       :data-testid="testId"
       role="dialog"
       aria-modal="true"
@@ -108,8 +108,9 @@ onUnmounted(() => {
       @click.self="onBackdropClick"
       @wheel="emit('wheel', $event)"
     >
+      <!-- 舞台约占主窗口 85%，四周留遮罩 -->
       <div
-        class="flex min-h-0 w-full max-w-[min(96vw,72rem)] flex-1 flex-col overflow-hidden rounded-xl border border-white/10 bg-paper shadow-md"
+        class="flex h-[85dvh] min-h-0 w-[85vw] max-w-[85vw] flex-col overflow-hidden rounded-xl border border-white/10 bg-paper shadow-md"
         :class="stageClass"
         @click.stop
       >

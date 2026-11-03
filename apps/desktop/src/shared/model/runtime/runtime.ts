@@ -92,7 +92,7 @@ export interface ProviderTemplateModel {
 /** 顶层分组：API Key 接入 / CLI 与 SDK 接入 */
 export type ProviderAccess = "api" | "agent-sdk";
 
-/** 本地 SDK 状态机，见 docs/agent_cli §2.2 */
+/** 本地 SDK 状态机，见 .cursor/skills/agentup-sdk-adapter/references/overview.md §2 */
 export type AgentSdkState =
   | "not_installed"
   | "installing"

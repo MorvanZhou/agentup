@@ -8,7 +8,7 @@ import { t } from "../../../../../shared/model/ui/ui-locale";
 
 /**
  * followUp 队列：本地 Agent App（SDK）接入下，回合进行中用户新发的消息会进 runtime 队列，
- * 本轮结束后合并成一条再开一轮（docs/agent_cli §12.8 / §12.8.1）。
+ * 本轮结束后合并成一条再开一轮（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
  * 只在队列非空时占位：不占历史、不进消息流。
  */
 const props = defineProps<{

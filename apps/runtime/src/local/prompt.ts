@@ -37,7 +37,7 @@ export async function streamPrompt(
   res.once("close", onClientGone);
   try {
     // 本地 Agent App（SDK）没有原生 steer：回合进行中不再 409，改为进 followUp 队列
-    // （docs/agent_cli §12.8）。纯附件的消息仍走原路径，队列这版只收文本。
+    // （.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。纯附件的消息仍走原路径，队列这版只收文本。
     if (
       text.trim() &&
       chats.usesFollowUpQueue(model) &&

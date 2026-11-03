@@ -3,9 +3,10 @@ import { computed, type Ref } from "vue";
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import { showToast } from "../../../shared/model/ui/toast";
+import { injectChatSurface } from "../model/thread/chat-surface";
 import { injectThreadAgentId } from "../model/thread/thread-agent-id";
 import { injectThreadExtras } from "../model/thread/thread-extras";
-import { injectChatSurface } from "../model/thread/chat-surface";
+import { resolveWorkspaceAgentId } from "../model/workspace/workspace-agent-id";
 
 /** 将 cwd 相对路径用系统默认应用打开（Electron shell.openPath）。 */
 export function useOpenWorkspaceFile(options?: { api?: DesktopApi; agentId?: Ref<string> }) {
@@ -15,11 +16,12 @@ export function useOpenWorkspaceFile(options?: { api?: DesktopApi; agentId?: Ref
   const extras = injectThreadExtras();
   const surface = injectChatSurface();
   // 群聊消息树 injectThreadAgentId 为空串（Composer 靠 mention 路由）：群附件用共享工作区归属
-  const agentId = computed(
-    () =>
-      options?.agentId?.value ||
-      injectedAgentId ||
-      (surface.value.groupId ? `group:${surface.value.groupId}` : ""),
+  const agentId = computed(() =>
+    resolveWorkspaceAgentId({
+      override: options?.agentId?.value,
+      injectedAgentId,
+      groupId: surface.value.groupId,
+    }),
   );
   const personal = computed(() => extras.value.personal);
 

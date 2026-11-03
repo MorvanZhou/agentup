@@ -164,6 +164,55 @@ export function withHolderAuthor(message: UIMessage, author: GroupUiAuthor): UIM
   };
 }
 
+/** 执掌者已开工、首个 stream chunk 未到时的占位气泡 id（不进落盘）。 */
+export const GROUP_HOLDER_PENDING_LIVE_ID = "group-holder-pending";
+
+/** 空 parts + streaming：AssistantMessage 左下角「工作中」，避免 1–2s 空白。 */
+export function holderPendingLiveMessage(author: GroupUiAuthor): UIMessage {
+  return withHolderAuthor(
+    {
+      id: GROUP_HOLDER_PENDING_LIVE_ID,
+      role: "assistant",
+      parts: [],
+    } as UIMessage,
+    author,
+  );
+}
+
+/** 用户气泡纯文本，用来对上乐观发送与落盘行。 */
+export function uiMessagePlainText(message: UIMessage): string {
+  if (!Array.isArray(message.parts)) return "";
+  return message.parts
+    .map((part) => (part.type === "text" && typeof part.text === "string" ? part.text : ""))
+    .join("")
+    .trim();
+}
+
+/**
+ * 群聊 wake 旁路：有 live 用真流；speaking 尚无 chunk 用占位；
+ * pendingUserText 在 POST 返回前先亮用户气泡。
+ */
+export function resolveGroupWakeLive(input: {
+  speaking: boolean;
+  liveMessage: UIMessage | null;
+  author: GroupUiAuthor | null;
+  pendingUserText: string;
+}): { streaming: boolean; message: UIMessage | null; userText: string } {
+  const pendingUserText = input.pendingUserText.trim();
+  const author = input.author;
+  let message: UIMessage | null = null;
+  if (input.liveMessage) {
+    message = author ? withHolderAuthor(input.liveMessage, author) : input.liveMessage;
+  } else if (input.speaking && author) {
+    message = holderPendingLiveMessage(author);
+  }
+  return {
+    streaming: input.speaking && Boolean(message),
+    message,
+    userText: pendingUserText,
+  };
+}
+
 /** 可见群记录 → UIMessage。工具行不进入；未挂到用户消息的排队卡单独成条。 */
 export function groupLinesToUiMessages(
   room: GroupRoomView,

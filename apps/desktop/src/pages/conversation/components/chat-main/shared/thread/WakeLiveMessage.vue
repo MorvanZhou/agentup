@@ -21,25 +21,26 @@ import AssistantMessage from "./assistant-ui/AssistantMessage.vue";
 
 const props = withDefaults(
   defineProps<{
-    message: UIMessage;
+    /** 助手直播；仅乐观用户气泡时可为 null。 */
+    message?: UIMessage | null;
     streaming?: boolean;
-    /** followUp 被消费时先亮出来的用户那条；排在助手气泡之上。 */
+    /** followUp / 群发送乐观：用户那条先亮，排在助手气泡之上。 */
     userText?: string;
   }>(),
-  { streaming: true, userText: "" },
+  { message: null, streaming: true, userText: "" },
 );
 
 const { session } = useDesktop();
 
-const threadMessages = computed(
-  () =>
-    AISDKMessageConverter.toThreadMessages(
-      [props.message],
-      props.streaming,
-    ) as ExternalThreadMessage[],
-);
+const threadMessages = computed(() => {
+  if (!props.message) return [] as ExternalThreadMessage[];
+  return AISDKMessageConverter.toThreadMessages(
+    [props.message],
+    props.streaming,
+  ) as ExternalThreadMessage[];
+});
 
-const providerKey = computed(() => props.message.id || "wake-live");
+const providerKey = computed(() => props.message?.id || "wake-live-user");
 
 const config = computed(() =>
   AuiConfig({
@@ -74,8 +75,12 @@ const AssistantScope = defineComponent({
 <template>
   <!-- wake 直播：与主线程同形气泡，不写入 AISDKChat（结束后再刷历史） -->
   <AuiProvider :key="providerKey" :config="config" :extends="null">
-    <div class="mb-4 flex min-w-0 flex-col gap-y-4" data-testid="wake-live-message" aria-live="polite">
-      <!-- 队列消费：用户这条先出，助手气泡在它下面流式输出 -->
+    <div
+      class="mb-4 flex min-w-0 flex-col gap-y-4"
+      data-testid="wake-live-message"
+      aria-live="polite"
+    >
+      <!-- 队列消费 / 群乐观发送：用户这条先出，助手气泡在它下面流式输出 -->
       <div v-if="props.userText" data-testid="wake-live-user">
         <ChatBubble side="user">
           <template #avatar>
@@ -88,7 +93,7 @@ const AssistantScope = defineComponent({
           <span class="inline whitespace-pre-wrap">{{ props.userText }}</span>
         </ChatBubble>
       </div>
-      <AssistantScope />
+      <AssistantScope v-if="props.message" />
     </div>
   </AuiProvider>
 </template>

@@ -9,7 +9,23 @@ const { query, load } = vi.hoisted(() => ({
   query: vi.fn(),
   load: { error: "" as string, hasQuery: true },
 }));
+vi.mock("../src/session/external/sdk/adapters/codebuddy/load.js", () => ({
+  loadCodebuddyModule: async () => {
+    if (load.error) throw new Error(load.error);
+    return load.hasQuery ? { query } : {};
+  },
+  loadAgentSdkModule: async () => {
+    if (load.error) throw new Error(load.error);
+    return load.hasQuery ? { query } : {};
+  },
+  installedCliPath: () => "/tmp/fake-codebuddy",
+  withTimeout: <T>(promise: Promise<T>) => promise,
+}));
 vi.mock("../src/config/providers/agent-sdk/loader.js", () => ({
+  loadCodebuddyModule: async () => {
+    if (load.error) throw new Error(load.error);
+    return load.hasQuery ? { query } : {};
+  },
   loadAgentSdkModule: async () => {
     if (load.error) throw new Error(load.error);
     return load.hasQuery ? { query } : {};
@@ -93,6 +109,11 @@ it("分类：原始错误文本 → 可执行的原因码", () => {
     classifyAgentSdkFailure("400 model [claude-sonnet-5] is only available for authorized users"),
   ).toBe("model_unavailable");
   expect(classifyAgentSdkFailure("本地 Agent App 不支持 query()")).toBe("incompatible");
+  expect(
+    classifyAgentSdkFailure(
+      "[invalid_argument] Custom system prompt is not enabled for this account.",
+    ),
+  ).toBe("incompatible");
   expect(classifyAgentSdkFailure("something weird")).toBe("unknown");
 });
 

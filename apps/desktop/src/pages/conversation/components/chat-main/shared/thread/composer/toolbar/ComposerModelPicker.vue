@@ -129,7 +129,16 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer, 
             :vendor-id="model.vendorId"
             :label="model.vendorLabel"
           />
-          <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ model.name }}</span>
+          <!-- 同显示名（如 Cursor Auto）时靠 modelId 区分 -->
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-medium">{{ model.name }}</span>
+            <span
+              v-if="model.modelId !== model.name"
+              class="mt-0.5 block truncate font-mono text-xs text-muted-foreground"
+            >
+              {{ model.modelId }}
+            </span>
+          </span>
           <!-- credit 倍率：本地 App 才有；0 也要显示 -->
           <span
             v-if="model.credits !== undefined"

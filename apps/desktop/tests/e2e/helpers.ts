@@ -126,6 +126,9 @@ export async function mockAgentUp(
         openPath: async (target) => {
           window.openedVisit = target;
         },
+        openHostPath: async (target) => {
+          window.openedVisit = target;
+        },
         // Web 登录 / OAuth / SDK 浏览器授权：不真开浏览器，记下 URL 供 e2e 断言
         openExternal: async (url: string) => {
           window.openedExternal = url;

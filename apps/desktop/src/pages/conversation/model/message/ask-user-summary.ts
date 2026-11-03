@@ -8,15 +8,26 @@
 export function isOpenAskUserPart(part: {
   type?: string;
   toolName?: string;
+  args?: unknown;
   result?: unknown;
   output?: unknown;
   state?: string;
 }): boolean {
-  if (part.toolName !== "ask_user" && part.toolName !== "AskUserQuestion") return false;
+  if (!isAskUserToolName(part.toolName, part.args)) return false;
   if (part.result != null) return false;
   if (part.output != null) return false;
   if (part.state === "output-available" || part.state === "output-error") return false;
   return true;
+}
+
+/** Pi / CodeBuddy 原名；Cursor 旧壳 mcp + agentup_ask_user。 */
+function isAskUserToolName(toolName: string | undefined, args: unknown): boolean {
+  if (toolName === "ask_user" || toolName === "AskUserQuestion") return true;
+  if (toolName !== "mcp" || !args || typeof args !== "object" || Array.isArray(args)) {
+    return false;
+  }
+  const row = args as Record<string, unknown>;
+  return row.toolName === "agentup_ask_user";
 }
 
 export type AskUserSummaryRow = {

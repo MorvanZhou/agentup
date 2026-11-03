@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 
 import { sessionProfile } from "../src/session/core/session-profile.js";
 
-it("keeps one-to-one capabilities and opens a group holder as a fresh projection", () => {
+it("keeps one-to-one capabilities and continues a group holder across turns", () => {
   const services = { delegation: true, background: true };
   const interactive = sessionProfile("interactive", services);
   const holder = sessionProfile("group-holder", services);
@@ -12,7 +12,9 @@ it("keeps one-to-one capabilities and opens a group holder as a fresh projection
   expect(interactive.completeGroupTask).toBe(false);
   expect(interactive.deliverArtifacts).toBe(false);
   expect(holder.mode).toBe("group-holder");
-  expect(holder.session).toBe("fresh");
+  // 留任跨轮续写 holder session；Host 每轮 transcriptToPrompt 重拼上文（含压缩）
+  expect(holder.session).toBe("continue");
+  expect(holder.healInterrupted).toBe(true);
   expect(holder.projectRootsPrompt).toBe(false);
   expect(holder.deliverArtifacts).toBe(false);
   expect(holder.completeGroupTask).toBe(false);

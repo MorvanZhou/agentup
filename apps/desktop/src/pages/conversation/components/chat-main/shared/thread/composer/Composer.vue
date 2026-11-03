@@ -24,7 +24,10 @@ import {
 import { useComposerMentions } from "../../../../../composables/useComposerMentions";
 import { useComposerSkills } from "../../../../../composables/useComposerSkills";
 import { useSessionModel } from "../../../../../composables/useSessionModel";
-import { composerRunActions } from "../../../../../model/composer/composer-actions";
+import {
+  composerRunActions,
+  composerUsesFollowUpQueue,
+} from "../../../../../model/composer/composer-actions";
 import { rememberComposerDraft, takeComposerDraft } from "../../../../../model/composer/composer-draft";
 import { insertEmojiAt } from "../../../../../model/composer/emoji-data";
 import { firstMentionedMemberId } from "../../../../../model/composer/mention-text";
@@ -87,8 +90,15 @@ const {
   select: selectSessionModel,
   state: sessionModelState,
 } = useSessionModel(modelAgentId);
-/** 会话当前模型就是本地 Agent App（SDK）接入：回合中的发送一律进队列，不中断当前轮。 */
+/** 会话当前模型就是本地 Agent App（SDK）接入：单聊回合中发送进 followUp 队列。 */
 const sdkAccess = computed(() => sessionModelState.value?.followUp === true);
+/** 群不接 followUp 队列（走 post+inject）；误入队会被 GroupThread 空实现吞掉。 */
+const useFollowUpQueue = computed(() =>
+  composerUsesFollowUpQueue({
+    followUp: sdkAccess.value,
+    groupId: surface.value.groupId,
+  }),
+);
 const cursor = ref(0);
 const caretRect = ref<CaretClientRect | null>(null);
 
@@ -211,7 +221,7 @@ const steerBlocked = computed(() => hitlPending.value || Boolean(wakeBusy.value)
  * 不能被 steerBlocked 封死成「只有停止」。AskUser/审批仍只停不发。
  */
 const queueWhileBusy = computed(
-  () => sdkAccess.value && Boolean(wakeBusy.value) && !hitlPending.value,
+  () => useFollowUpQueue.value && Boolean(wakeBusy.value) && !hitlPending.value,
 );
 const runActions = computed(() =>
   composerRunActions({
@@ -259,8 +269,8 @@ function prepareSend() {
 
 async function trySend(): Promise<void> {
   prepareSend();
-  // 本地 Agent App（SDK）接入且这一轮还在跑（含消费轮 wake）：走队列，不打扰当前回合
-  if (sdkAccess.value && (isRunning.value || queueWhileBusy.value)) {
+  // 单聊 SDK 且这一轮还在跑（含消费轮 wake）：走队列。群聊不进此分支。
+  if (useFollowUpQueue.value && (isRunning.value || queueWhileBusy.value)) {
     const text = aui.composer.getState().text.trim();
     if (!text) return;
     await enqueueFollowUp(text);
@@ -327,14 +337,19 @@ async function interruptAndSend(): Promise<void> {
   prepareSend();
   const text = aui.composer.getState().text.trim();
   if (!text) return;
-  // 本地 Agent App（SDK）接入没有 steer：回合中的新消息直接进 runtime 的 followUp 队列，
-  // 不中断当前轮（docs/agent_cli §12.8）。
-  if (sdkAccess.value) {
+  // 群：流中发送 = 落盘用户行 + inject 进当前执掌回合，不停、不进单聊 followUp。
+  if (surface.value.groupId) {
+    void aui.composer.send();
+    return;
+  }
+  // 单聊 SDK：回合中的新消息进 runtime followUp 队列，不中断当前轮。
+  if (useFollowUpQueue.value) {
     await enqueueFollowUp(text);
     return;
   }
   // API / Pi 原生：先试 Pi 原生 steer——插到当前工具批次之后，保留已做的工作（§12.8）。
   // 插不上（会话其实没在跑）才退回「停止 + 重发」。
+  // 闪缩高亮只做群聊中途插入（GroupThread）；单聊 steer 不闪，避免每条新消息都晃眼。
   if (await actions?.value.steerTurn?.(text)) {
     aui.composer.setText("");
     return;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 /**
  * followUp 队列：本地 Agent App（SDK）接入下，回合进行中用户新发消息的落点。
- * 背景见 docs/agent_cli §12.8 / §12.8.1：SDK 没有原生 steer（只有 interrupt），
+ * 背景见 .cursor/skills/agentup-sdk-adapter/references/follow-up.md：SDK 没有原生 steer（只有 interrupt），
  * 所以这类接入固定用「排队，本轮结束后合并成一条再开一轮」，不再返回 409 ChatBusy。
  *
  * 纯数据结构：不碰会话、不发 HTTP，方便单测覆盖排序与上限。

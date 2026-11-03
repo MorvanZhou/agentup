@@ -9,7 +9,7 @@ import {
 } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 import { CheckIcon, CopyIcon, PencilIcon } from "@lucide/vue";
-import { ref } from "vue";
+import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import { useDesktop } from "../../../../../../../app/desktop";
 import UserAvatar from "../../../../../../../shared/components/avatar/UserAvatar.vue";
@@ -21,6 +21,10 @@ import {
   type RollbackFileImpact,
 } from "../../../../../model/message/edit-resend-confirm";
 import { injectChatMessageFooter, injectChatSurface } from "../../../../../model/thread/chat-surface";
+import {
+  injectThreadInsertCue,
+  matchesInsertCue,
+} from "../../../../../model/thread/thread-insert-cue";
 import ImageAttachmentPreview from "../composer/chips/ImageAttachmentPreview.vue";
 import ChatBubble from "../../ChatBubble.vue";
 import EditResendConfirmDialog from "./EditResendConfirmDialog.vue";
@@ -31,10 +35,66 @@ const aui = useAui();
 const { session, skipEditResendConfirm, setSkipEditResendConfirm } = useDesktop();
 const surface = injectChatSurface();
 const messageFooter = injectChatMessageFooter();
+const insertCue = injectThreadInsertCue();
 const editing = useAuiState((s) => s.composer.isEditing);
 const copied = useAuiState((s) => s.message.isCopied);
 const messageId = useAuiState((s) => s.message.id);
 const threadMessages = useAuiState((s) => s.thread.messages);
+/** 中途插入命中后闪一下；滚到本气泡（常在列表中段）。 */
+const flashing = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
+let flashTimer = 0;
+let handledCueToken = 0;
+
+function messagePlainText(): string {
+  return sanitizeCopiedText(aui.message.getCopyText()).trim();
+}
+
+function tryFlashInsertCue(): void {
+  const pending = insertCue?.cue.value;
+  if (!pending || pending.token === handledCueToken) return;
+  const threadUserIds = threadMessages.value
+    .filter((message) => message.role === "user")
+    .map((message) => message.id);
+  if (
+    !matchesInsertCue(pending, {
+      messageId: messageId.value,
+      text: messagePlainText(),
+      threadUserIds,
+    })
+  ) {
+    return;
+  }
+  handledCueToken = pending.token;
+  flashing.value = true;
+  void nextTick(() => {
+    rootEl.value?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  window.clearTimeout(flashTimer);
+  // 与 main.css --animate-thread-insert-flash 时长对齐（约 2.8s）
+  flashTimer = window.setTimeout(() => {
+    flashing.value = false;
+    insertCue?.consume(pending.token);
+  }, 2900);
+}
+
+watch(
+  () =>
+    [
+      insertCue?.cue.value?.token,
+      messageId.value,
+      // 新用户气泡进线程后要再试（steer 后 id 才出现）
+      threadMessages.value.filter((message) => message.role === "user").map((message) => message.id).join("\0"),
+    ] as const,
+  () => {
+    tryFlashInsertCue();
+  },
+  { flush: "post" },
+);
+
+onBeforeUnmount(() => {
+  window.clearTimeout(flashTimer);
+});
 const hasAttachments = useAuiState((s) => {
   if (s.message.role !== "user") return false;
   const list = s.message.submission?.attachments ?? s.message.attachments;
@@ -98,7 +158,9 @@ async function confirmResend(): Promise<void> {
 </script>
 
 <template>
-  <ChatBubble side="user" :surface="!editing" @copy="onBubbleCopy">
+  <!-- 中途插入：整行可被 scrollIntoView 对准 -->
+  <div ref="rootEl" class="min-w-0">
+  <ChatBubble side="user" :surface="!editing" :flash="flashing" @copy="onBubbleCopy">
     <template #avatar>
       <UserAvatar :name="sessionDisplayNickname(session)" :avatar-url="session?.avatarUrl" size="lg" />
     </template>
@@ -152,4 +214,5 @@ async function confirmResend(): Promise<void> {
     :files="rollbackFiles"
     @confirm="confirmResend"
   />
+  </div>
 </template>

@@ -126,7 +126,7 @@ export class VisitChats {
 
   /**
    * 本地 Agent App（SDK）接入没有原生 steer，只能用 followUp 队列；
-   * API Key / Pi 原生走 Pi 自己的 steer，不排队（docs/agent_cli §12.8）。
+   * API Key / Pi 原生走 Pi 自己的 steer，不排队（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
    */
   usesFollowUpQueue(model: ModelConfig): boolean {
     return getProviderTemplate(model.templateId)?.kind === "agent-sdk";
@@ -832,7 +832,7 @@ export class VisitChats {
 
   /**
    * 一次性消费 followUp 队列：按排队顺序用 `\n` 拼成**一条**消息，只开一轮
-   * （用户改的语义：一串连贯意图不该被切成好几轮，见 docs/agent_cli §12.8.1）。
+   * （用户改的语义：一串连贯意图不该被切成好几轮，见 .cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
    * 这一轮没有 HTTP 消费者，输出走 turnStreams 旁路，桌面连 /turn-stream 就能看到。
    */
   private async drainFollowUps(visit: Visit, model: ModelConfig): Promise<void> {

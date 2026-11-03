@@ -81,11 +81,12 @@ function revealMarkdown(): void {
 <template>
   <!-- 本回合 ARTIFACT 差分：单行紧凑卡片 + 分页；可预览类型走 shared preview -->
   <div class="flex w-full min-w-0 flex-col gap-1.5" data-slot="aui_artifacts" :aria-label="t('tabArtifacts')">
-    <ul class="m-0 grid list-none gap-1 p-0">
-      <li v-for="file in page.items" :key="`${file.kind}:${file.path}`">
+    <!-- grid/li 默认 min-width:auto，长路径会撑破父宽；整条链补 min-w-0 + 按钮 overflow-hidden -->
+    <ul class="m-0 grid min-w-0 list-none gap-1 p-0">
+      <li v-for="file in page.items" :key="`${file.kind}:${file.path}`" class="min-w-0">
         <button
           type="button"
-          class="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-rule/80 bg-paper px-2 py-1 text-left transition duration-200 outline-none focus-visible:ring-2 focus-visible:ring-accent/15"
+          class="flex w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-rule/80 bg-paper px-2 py-1 text-left transition duration-200 outline-none focus-visible:ring-2 focus-visible:ring-accent/15"
           :class="
             file.kind === 'deleted'
               ? 'cursor-default opacity-70'
@@ -110,6 +111,7 @@ function revealMarkdown(): void {
             class="size-3 shrink-0 text-muted-foreground"
             aria-hidden="true"
           />
+          <!-- 文件名优先展示，过长再截；路径吃剩余宽度并 truncate -->
           <span
             class="min-w-0 shrink truncate text-xs font-medium text-foreground"
             :class="file.kind === 'deleted' ? 'line-through text-muted-foreground' : ''"

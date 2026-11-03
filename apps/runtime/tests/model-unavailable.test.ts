@@ -16,6 +16,7 @@ const TOKENHUB_QUOTA_402 =
 it("detects connection / ollama failures as model unavailable", () => {
   expect(isModelServiceUnavailable("Connection error.")).toBe(true);
   expect(isModelServiceUnavailable("fetch failed")).toBe(true);
+  expect(isModelServiceUnavailable("Network request failed")).toBe(true);
   expect(isModelServiceUnavailable("ECONNREFUSED")).toBe(true);
   expect(isModelServiceUnavailable("This operation was aborted")).toBe(false);
   expect(isModelServiceUnavailable("用户已取消")).toBe(false);

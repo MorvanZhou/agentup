@@ -9,6 +9,7 @@ import {
   cancelAgentSdkInstall,
   readInstallJob,
   readInstalledSdk,
+  resolveNpmRunner,
   startAgentSdkInstall,
   uninstallAgentSdk,
 } from "../src/config/providers/agent-sdk/installer.js";
@@ -181,6 +182,33 @@ async function waitJob(jobId: string, timeoutMs = 60_000): Promise<string> {
   }
   return "timeout";
 }
+
+it("Windows 从 PATH 反查 npm-cli.js，绝不把 npm.cmd 当作 spawn command", () => {
+  // 不用盘符路径：本机若是 darwin，PATH 按 `:` 分割会把 `C:` 拆碎
+  const nodeDir = path.join("/fake", "nodejs");
+  const execPath = path.join("/fake", "AgentUp", "AgentUp.exe");
+  const npmCli = path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
+  const files = new Set([path.join(nodeDir, "node.exe"), path.join(nodeDir, "npm.cmd"), npmCli]);
+  const runner = resolveNpmRunner({
+    platform: "win32",
+    execPath,
+    env: { PATH: nodeDir },
+    existsSync: (filePath) => files.has(filePath),
+  });
+  expect(runner).toEqual({ command: execPath, args: [npmCli] });
+  expect(runner?.command.toLowerCase().endsWith(".cmd")).toBe(false);
+});
+
+it("Windows 仅有 npm.cmd、找不到 npm-cli.js 时返回 null（避免 spawn EINVAL）", () => {
+  const nodeDir = path.join("/fake", "tools");
+  const runner = resolveNpmRunner({
+    platform: "win32",
+    execPath: path.join("/fake", "AgentUp", "AgentUp.exe"),
+    env: { PATH: nodeDir },
+    existsSync: (filePath) => filePath === path.join(nodeDir, "npm.cmd"),
+  });
+  expect(runner).toBeNull();
+});
 
 it(
   "installs a package into the managed directory and records the version",

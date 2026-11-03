@@ -16,7 +16,7 @@ import { FollowUpQueueFull } from "../../session/turn/follow-up-queue.js";
 
 /**
  * followUp 队列：本地 Agent App（SDK）接入下，回合进行中用户新发消息的落点。
- * 桌面用它渲染「已排队 N 条」并支持删除 / 编辑 / 插队（docs/agent_cli §12.8.1）。
+ * 桌面用它渲染「已排队 N 条」并支持删除 / 编辑 / 插队（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。
  * agent_id 省略或为私人助理 id 时，操作私人助理的队列。
  */
 export function registerFollowUpRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {

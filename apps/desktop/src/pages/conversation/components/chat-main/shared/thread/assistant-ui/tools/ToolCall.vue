@@ -28,10 +28,9 @@ import TodoTool from "./session/TodoTool.vue";
 import WebFetchTool from "./web/WebFetchTool.vue";
 import WebSearchTool from "./web/WebSearchTool.vue";
 import WriteTool from "./files/WriteTool.vue";
+import { unwrapAgentUpMcpShell } from "./shared/tool-args";
 
-const toolName = useAuiState((s) =>
-  s.part.type === "tool-call" ? s.part.toolName : "",
-);
+const toolPart = useAuiState((s) => (s.part.type === "tool-call" ? s.part : null));
 
 /** SDK MCP 名 `mcp__agentup__X` 与 API 裸名 `X` 走同一张专用卡。 */
 function agentUpToolName(name: string): string {
@@ -40,7 +39,12 @@ function agentUpToolName(name: string): string {
 }
 
 const component = computed(() => {
-  const raw = toolName.value;
+  // Cursor 元工具 mcp 壳先解成 mcp__agentup__* / ask_user（与 runtime unwrap 对齐）
+  const projected = unwrapAgentUpMcpShell(
+    toolPart.value?.toolName ?? "",
+    toolPart.value?.args ?? {},
+  );
+  const raw = projected.toolName;
   // 非 AgentUp 的第三方 MCP 仍用通用卡
   if (raw.startsWith("mcp__") && !raw.startsWith("mcp__agentup__")) return McpTool;
   const name = agentUpToolName(raw);

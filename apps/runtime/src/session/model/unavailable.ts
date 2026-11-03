@@ -14,6 +14,7 @@ export function isModelServiceUnavailable(error: string): boolean {
     /enotfound/i.test(lower) ||
     /fetch failed/i.test(lower) ||
     /network\s*error/i.test(lower) ||
+    /network request failed/i.test(lower) ||
     /socket hang up/i.test(lower) ||
     /und_err_connect/i.test(lower) ||
     /connect\s*timeout/i.test(lower) ||

@@ -10,6 +10,7 @@ import {
   isInterruptedToolOutput,
   isToolFailureOutput,
   isToolProgressActive,
+  unwrapAgentUpMcpShell,
 } from "./tool-args";
 
 export function useToolPart() {
@@ -19,7 +20,11 @@ export function useToolPart() {
   const pendingAskUserToolCallId = injectPendingAskUserToolCallId();
   const statusType = computed(() => part.value?.status?.type ?? "complete");
   const isRunning = computed(() => statusType.value === "running");
-  const args = computed(() => part.value?.args ?? {});
+  // Cursor 旧壳 mcp{provider,toolName,args} → 与 CodeBuddy 同形，专用卡才能读到 agent_id/brief
+  const projected = computed(() =>
+    unwrapAgentUpMcpShell(part.value?.toolName ?? "", part.value?.args ?? {}),
+  );
+  const args = computed(() => projected.value.args);
   const argsText = computed(() => part.value?.argsText ?? "");
   const result = computed(() => part.value?.result);
   const resultText = computed(() =>
@@ -86,7 +91,7 @@ export function useToolPart() {
       awaitingApproval: awaitingApproval.value || awaitingAskUser.value,
     }),
   );
-  const toolName = computed(() => part.value?.toolName ?? "");
+  const toolName = computed(() => projected.value.toolName);
 
   const duration = computed(() => {
     const timing = part.value?.timing;

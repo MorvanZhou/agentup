@@ -1,13 +1,26 @@
 <script setup lang="ts">
 import {
+  CheckIcon,
   ChevronLeftIcon,
+  EllipsisIcon,
   FilePlusIcon,
   FolderPlusIcon,
-  FolderInputIcon,
+  LayoutGridIcon,
+  ListIcon,
+  PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
   XIcon,
 } from "@lucide/vue";
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuPortal,
+  DropdownMenuRoot,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "reka-ui";
 import { computed, ref, toRef, watch } from "vue";
 
 import AppDialog from "../../../../../../shared/components/AppDialog.vue";
@@ -17,6 +30,15 @@ import { t, tf } from "../../../../../../shared/model/ui/ui-locale";
 import { useWorkspace } from "../../../../composables/useWorkspace";
 import { joinWorkspacePath } from "../../../../model/workspace/workspace-path";
 import { WORKSPACE_TABS, workspaceTabLabel } from "../../../../model/workspace/workspace-roots";
+import {
+  readWorkspaceSortBy,
+  readWorkspaceViewMode,
+  sortWorkspaceEntries,
+  writeWorkspaceSortBy,
+  writeWorkspaceViewMode,
+  type WorkspaceSortBy,
+  type WorkspaceViewMode,
+} from "../../../../model/workspace/workspace-sort";
 import WorkspaceBrowser from "./WorkspaceBrowser.vue";
 import WorkspacePreview from "./WorkspacePreview.vue";
 
@@ -61,6 +83,7 @@ const {
   removeMany,
   reveal,
   revealPreview,
+  loadThumbnail,
   attachToChat,
   addProject,
 } = useWorkspace({
@@ -79,9 +102,16 @@ const renameEntry = ref<WorkspaceEntry | null>(null);
 const renameDraft = ref("");
 const deleteTargets = ref<string[]>([]);
 const selected = ref<string[]>([]);
+const sortBy = ref<WorkspaceSortBy>(readWorkspaceSortBy());
+const viewMode = ref<WorkspaceViewMode>(readWorkspaceViewMode());
+const actionsOpen = ref(false);
+const createOpen = ref(false);
 
 const showTreeTools = computed(() => !previewing.value);
 const showCreateTools = computed(() => showTreeTools.value && canCreate.value);
+/** 排序 / 刷新 / 批量删除仍在 … 菜单；新建与挂载提到外层 + */
+const showActionsMenu = computed(() => showTreeTools.value);
+const sortedEntries = computed(() => sortWorkspaceEntries(entries.value, sortBy.value));
 const deleteDescription = computed(() => {
   const targets = deleteTargets.value;
   if (targets.length === 0) return "";
@@ -110,7 +140,19 @@ watch(entries, (list) => {
   selected.value = selected.value.filter((name) => names.has(name));
 });
 
+function setSortBy(next: WorkspaceSortBy): void {
+  sortBy.value = next;
+  writeWorkspaceSortBy(next);
+}
+
+function setViewMode(next: WorkspaceViewMode): void {
+  viewMode.value = next;
+  writeWorkspaceViewMode(next);
+}
+
 function openCreate(kind: "file" | "dir"): void {
+  createOpen.value = false;
+  actionsOpen.value = false;
   nameKind.value = kind;
   nameTitle.value = kind === "file" ? t("wsNewFile") : t("wsNewFolder");
   nameDraft.value = "";
@@ -139,6 +181,7 @@ function askRemove(entry: WorkspaceEntry): void {
 }
 
 function askRemoveSelected(): void {
+  actionsOpen.value = false;
   if (!selected.value.length) return;
   deleteTargets.value = selected.value.map((name) => joinWorkspacePath(directory.value, name));
 }
@@ -162,6 +205,16 @@ async function confirmRemove(): Promise<void> {
   if (!targets.length) return;
   const ok = await removeMany(targets);
   if (ok) selected.value = [];
+}
+
+function onRefresh(): void {
+  actionsOpen.value = false;
+  refresh();
+}
+
+function onAddProject(): void {
+  actionsOpen.value = false;
+  void addProject();
 }
 </script>
 
@@ -197,54 +250,149 @@ async function confirmRemove(): Promise<void> {
         <ChevronLeftIcon class="size-4" />
       </button>
       <h2 class="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{{ title }}</h2>
-      <button
-        v-if="showTreeTools && batchSelected"
-        type="button"
-        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-destructive disabled:opacity-50"
-        :aria-label="t('wsDeleteSelected')"
-        :disabled="busy"
-        @click="askRemoveSelected"
-      >
-        <Trash2Icon class="size-3.5" />
-      </button>
-      <button
+      <!-- 列表 / 图标视图切换 -->
+      <div
         v-if="showTreeTools"
-        type="button"
-        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground disabled:opacity-50"
-        :aria-label="t('wsRefresh')"
-        :disabled="loading"
-        @click="refresh"
+        class="flex shrink-0 items-center rounded-lg border border-rule bg-paper p-0.5"
+        role="group"
+        :aria-label="t('wsViewMode')"
       >
-        <RefreshCwIcon class="size-3.5" />
-      </button>
-      <button
-        v-if="showCreateTools"
-        type="button"
-        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground"
-        :aria-label="t('wsNewFile')"
-        @click="openCreate('file')"
-      >
-        <FilePlusIcon class="size-3.5" />
-      </button>
-      <button
-        v-if="showCreateTools"
-        type="button"
-        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground"
-        :aria-label="t('wsNewFolder')"
-        @click="openCreate('dir')"
-      >
-        <FolderPlusIcon class="size-3.5" />
-      </button>
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded-md transition duration-200"
+          :class="
+            viewMode === 'list'
+              ? 'bg-paper-deep text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          :aria-label="t('wsViewList')"
+          :aria-pressed="viewMode === 'list'"
+          @click="setViewMode('list')"
+        >
+          <ListIcon class="size-3.5" />
+        </button>
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded-md transition duration-200"
+          :class="
+            viewMode === 'icons'
+              ? 'bg-paper-deep text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          :aria-label="t('wsViewIcons')"
+          :aria-pressed="viewMode === 'icons'"
+          @click="setViewMode('icons')"
+        >
+          <LayoutGridIcon class="size-3.5" />
+        </button>
+      </div>
+      <!-- 挂载目录：外层 + 直接添加项目目录 -->
       <button
         v-if="canAddProject"
         type="button"
-        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground disabled:opacity-50"
+        class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
         :aria-label="t('wsAddProject')"
         :disabled="busy"
-        @click="addProject"
+        @click="onAddProject"
       >
-        <FolderInputIcon class="size-3.5" />
+        <PlusIcon class="size-4" />
       </button>
+      <!-- 输出产物 / 已进挂载目录：+ 下拉新建文件或文件夹 -->
+      <DropdownMenuRoot v-if="showCreateTools" v-model:open="createOpen">
+        <DropdownMenuTrigger as-child>
+          <button
+            type="button"
+            class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
+            :aria-label="t('wsNewActions')"
+          >
+            <PlusIcon class="size-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
+          <DropdownMenuContent
+            align="end"
+            :side-offset="6"
+            class="app-no-drag z-50 min-w-40 rounded-lg border border-rule bg-paper p-1 text-foreground shadow-md"
+          >
+            <DropdownMenuItem
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
+              @select="openCreate('file')"
+            >
+              <FilePlusIcon class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">{{ t("wsNewFile") }}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
+              @select="openCreate('dir')"
+            >
+              <FolderPlusIcon class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">{{ t("wsNewFolder") }}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuPortal>
+      </DropdownMenuRoot>
+      <!-- 排序 / 刷新 / 批量删除收进 … 菜单 -->
+      <DropdownMenuRoot v-if="showActionsMenu" v-model:open="actionsOpen">
+        <DropdownMenuTrigger as-child>
+          <button
+            type="button"
+            class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
+            :aria-label="t('wsActions')"
+          >
+            <EllipsisIcon class="size-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
+          <DropdownMenuContent
+            align="end"
+            :side-offset="6"
+            class="app-no-drag z-50 min-w-44 rounded-lg border border-rule bg-paper p-1 text-foreground shadow-md"
+          >
+            <DropdownMenuLabel class="px-2 py-1.5 text-xs text-muted-foreground">
+              {{ t("wsSortBy") }}
+            </DropdownMenuLabel>
+            <DropdownMenuItem
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
+              @select="setSortBy('name')"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ t("wsSortByName") }}</span>
+              <CheckIcon v-if="sortBy === 'name'" class="size-3.5 shrink-0 text-accent" aria-hidden="true" />
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
+              @select="setSortBy('updated')"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ t("wsSortByUpdated") }}</span>
+              <CheckIcon v-if="sortBy === 'updated'" class="size-3.5 shrink-0 text-accent" aria-hidden="true" />
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep"
+              @select="setSortBy('created')"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ t("wsSortByCreated") }}</span>
+              <CheckIcon v-if="sortBy === 'created'" class="size-3.5 shrink-0 text-accent" aria-hidden="true" />
+            </DropdownMenuItem>
+            <DropdownMenuSeparator class="my-1 h-px bg-rule" />
+            <DropdownMenuItem
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none data-[highlighted]:bg-paper-deep data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+              :disabled="loading"
+              @select="onRefresh"
+            >
+              <RefreshCwIcon class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">{{ t("wsRefresh") }}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              v-if="batchSelected"
+              class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-destructive outline-none data-[highlighted]:bg-danger-soft data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+              :disabled="busy"
+              @select="askRemoveSelected"
+            >
+              <Trash2Icon class="size-3.5 shrink-0" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">{{ t("wsDeleteSelected") }}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuPortal>
+      </DropdownMenuRoot>
       <button
         v-if="dirty"
         type="button"
@@ -275,11 +423,14 @@ async function confirmRemove(): Promise<void> {
     </header>
     <WorkspaceBrowser
       v-if="!previewing"
-      :entries="entries"
+      :entries="sortedEntries"
+      :directory="directory"
       :loading="loading"
       :error="error"
       :selected="selected"
+      :view-mode="viewMode"
       :allow-attach="!atProjectList"
+      :load-thumbnail="loadThumbnail"
       @update:selected="selected = $event"
       @open="openEntry"
       @rename="openRename"

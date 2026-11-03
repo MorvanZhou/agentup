@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { ATTACHMENTS_DIR, ensureCwdLayout, HIDDEN_WORKSPACE_TOP_LEVEL } from "../session/workspace/cwd-layout.js";
+import {
+  ATTACHMENTS_DIR,
+  BLOCKED_WORKSPACE_TOP_LEVEL,
+  ensureCwdLayout,
+  HIDDEN_WORKSPACE_TOP_LEVEL,
+} from "../session/workspace/cwd-layout.js";
 import {
   IMAGE_PREVIEW_LIMIT,
   TEXT_EXTENSIONS,
@@ -31,6 +36,10 @@ export interface WorkspaceEntry {
   name: string;
   kind: "file" | "dir";
   size: number;
+  /** 最后修改时间（epoch ms）。 */
+  mtimeMs: number;
+  /** 创建时间（epoch ms；不可用时回落到 mtime）。 */
+  birthtimeMs: number;
 }
 
 export type WorkspaceFile =
@@ -39,17 +48,17 @@ export type WorkspaceFile =
   | { path: string; kind: "binary"; size: number }
   | { path: string; kind: "too-large"; size: number; media: "text" | "image" };
 
-/** 空字符串表示 cwd 根。拒绝绝对路径、`..`、顶层 `.pi` 与 `WORK`。 */
+/** 空字符串表示 cwd 根。拒绝绝对路径、`..`、以及 blocked 顶层（默认仅 `.pi`；WORK 可读）。 */
 export function normalizeRelative(
   input: string,
-  hiddenTopLevel: ReadonlySet<string> = HIDDEN_WORKSPACE_TOP_LEVEL,
+  blockedTopLevel: ReadonlySet<string> = BLOCKED_WORKSPACE_TOP_LEVEL,
 ): string {
   if (input.includes("\0") || input.includes("\\") || input.startsWith("/")) {
     throw new WorkspaceError("路径无效", 400);
   }
   const parts = input.split("/").filter((part) => part.length > 0);
   if (parts.some((part) => part === "." || part === "..")) throw new WorkspaceError("路径无效", 400);
-  if (parts[0] && hiddenTopLevel.has(parts[0])) throw new WorkspaceError("路径无效", 400);
+  if (parts[0] && blockedTopLevel.has(parts[0])) throw new WorkspaceError("路径无效", 400);
   return parts.join("/");
 }
 
@@ -72,7 +81,10 @@ export function personalWorkspaceCwd(userDataRoot: string, userId: string): stri
 
 type WorkspaceRootOptions = {
   ensureLayout?: boolean;
+  /** 根列表隐藏（默认 WORK + .pi）。 */
   hiddenTopLevel?: ReadonlySet<string>;
+  /** 路径解析拒绝（默认仅 .pi）；与 hidden 分离以便 WORK 可点开。 */
+  blockedTopLevel?: ReadonlySet<string>;
   readOnlyTopLevel?: ReadonlySet<string>;
 };
 
@@ -96,18 +108,28 @@ export function listWorkspace(
       const real = realOrUndefined(child);
       if (!real || !isInside(root, real)) continue;
       const followed = fs.statSync(real);
-      if (followed.isDirectory()) entries.push({ name, kind: "dir", size: 0 });
-      else if (followed.isFile()) entries.push({ name, kind: "file", size: followed.size });
+      const times = entryTimes(followed);
+      if (followed.isDirectory()) entries.push({ name, kind: "dir", size: 0, ...times });
+      else if (followed.isFile()) entries.push({ name, kind: "file", size: followed.size, ...times });
       continue;
     }
-    if (stat.isDirectory()) entries.push({ name, kind: "dir", size: 0 });
-    else if (stat.isFile()) entries.push({ name, kind: "file", size: stat.size });
+    const times = entryTimes(stat);
+    if (stat.isDirectory()) entries.push({ name, kind: "dir", size: 0, ...times });
+    else if (stat.isFile()) entries.push({ name, kind: "file", size: stat.size, ...times });
   }
+  // 默认按名称；桌面端可按 mtime / birthtime 重排。
   entries.sort((left, right) => {
     if (left.kind !== right.kind) return left.kind === "dir" ? -1 : 1;
     return left.name.localeCompare(right.name, "zh");
   });
   return { path: located.relative, entries };
+}
+
+function entryTimes(stat: fs.Stats): { mtimeMs: number; birthtimeMs: number } {
+  const mtimeMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0;
+  const birth =
+    Number.isFinite(stat.birthtimeMs) && stat.birthtimeMs > 0 ? stat.birthtimeMs : mtimeMs;
+  return { mtimeMs, birthtimeMs: birth };
 }
 
 export function readWorkspaceFile(
@@ -160,7 +182,7 @@ export function createWorkspaceEntry(
   kind: "file" | "dir",
   options?: WorkspaceRootOptions,
 ): { path: string } {
-  const rel = normalizeRelative(relative, options?.hiddenTopLevel ?? HIDDEN_WORKSPACE_TOP_LEVEL);
+  const rel = normalizeRelative(relative, options?.blockedTopLevel ?? BLOCKED_WORKSPACE_TOP_LEVEL);
   assertWritable(rel, options);
   if (!rel) throw new WorkspaceError("名称无效", 400);
   const parent = parentRelative(rel);
@@ -231,7 +253,7 @@ function locate(
   relative: string,
   options?: WorkspaceRootOptions & { allowMissing?: boolean },
 ): Located {
-  const rel = normalizeRelative(relative, options?.hiddenTopLevel ?? HIDDEN_WORKSPACE_TOP_LEVEL);
+  const rel = normalizeRelative(relative, options?.blockedTopLevel ?? BLOCKED_WORKSPACE_TOP_LEVEL);
   const root = cwdReal(cwd, { ensureLayout: options?.ensureLayout });
   const lexical = rel ? path.resolve(root, rel) : root;
   if (!isInside(root, lexical)) throw new WorkspaceError("路径无效", 400);

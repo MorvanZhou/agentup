@@ -8,8 +8,10 @@ withDefaults(
     /** false 时正文不套气泡色，用于单聊编辑态。 */
     surface?: boolean;
     padded?: boolean;
+    /** 中途插入高亮：accent 描边闪两下（见 main.css thread-insert-flash）。 */
+    flash?: boolean;
   }>(),
-  { tag: "div", surface: true, padded: true },
+  { tag: "div", surface: true, padded: true, flash: false },
 );
 
 /** 挂在正文列（含 footer）：拖选越出色块仍能拦截 copy。 */
@@ -55,6 +57,9 @@ defineExpose({ surfaceEl });
             ? 'rounded-lg rounded-tr-sm bg-primary font-medium leading-snug text-on-primary'
             : 'w-full rounded-lg rounded-tl-sm bg-muted leading-relaxed text-foreground',
           padded ? 'px-3 py-3' : '',
+          flash
+            ? 'relative z-[1] animate-thread-insert-flash motion-reduce:animate-none motion-reduce:outline motion-reduce:outline-2 motion-reduce:outline-offset-2 motion-reduce:outline-accent motion-reduce:ring-4 motion-reduce:ring-accent/40'
+            : '',
         ]"
         v-bind="$attrs"
       >

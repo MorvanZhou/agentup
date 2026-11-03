@@ -299,7 +299,7 @@ const threadActions = computed<ThreadActions>(() => ({
     if (!props.dismiss) return;
     await props.dismiss();
   },
-  /** 本地 Agent App（SDK）接入：回合中的新消息进 runtime 的 followUp 队列（docs/agent_cli §12.8）。 */
+  /** 本地 Agent App（SDK）接入：回合中的新消息进 runtime 的 followUp 队列（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。 */
   async enqueueFollowUp(text: string) {
     await runtimeApi.enqueueFollowUp(props.token, props.userId, props.agentId, text);
   },

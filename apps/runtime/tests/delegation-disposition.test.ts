@@ -50,15 +50,35 @@ it("forces another turn until each open task is resolved, then stops", () => {
 });
 
 it("rejects a disposition that does not name an open task or omits steer note", () => {
-  expect(
-    parseDelegationDisposition({
-      taskId: "missing",
-      action: "keep",
-      note: "",
-      reason: "unrelated",
-      openTaskIds: open,
-    }),
-  ).toEqual({ ok: false, error: "task_id is not an in-progress delegation this turn: missing" });
+  const missing = parseDelegationDisposition({
+    taskId: "missing",
+    action: "keep",
+    note: "",
+    reason: "unrelated",
+    openTaskIds: open,
+  });
+  expect(missing.ok).toBe(false);
+  if (missing.ok) throw new Error("expected reject");
+  // 拒因：不在本回合进行中清单；并提示可对哪些 id 调、完成后别再 resolve
+  expect(missing.error).toContain("missing");
+  expect(missing.error).toContain("not an in-progress delegation");
+  expect(missing.error).toMatch(/task-a.*task-b|task-b.*task-a/);
+  expect(missing.error.toLowerCase()).toMatch(/already (finished|completed)|not running|wake|completed/);
+  expect(missing.error).toMatch(/do not call|skip|check_delegation|delegate_to_agent/i);
+
+  const noneOpen = parseDelegationDisposition({
+    taskId: "done-task",
+    action: "keep",
+    note: "",
+    reason: "sync",
+    openTaskIds: [],
+  });
+  expect(noneOpen.ok).toBe(false);
+  if (noneOpen.ok) throw new Error("expected reject");
+  expect(noneOpen.error).toContain("done-task");
+  expect(noneOpen.error).toMatch(/no in-progress|none open|empty/i);
+  expect(noneOpen.error).toMatch(/do not call|skip|check_delegation|delegate_to_agent/i);
+
   expect(
     parseDelegationDisposition({
       taskId: "task-a",
