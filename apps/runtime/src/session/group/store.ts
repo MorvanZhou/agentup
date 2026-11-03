@@ -54,6 +54,30 @@ export class GroupStore {
     return room;
   }
 
+  /**
+   * 云端恢复：用既有 group_id 建空群壳。
+   * 本机已有同 id → 不覆盖（本机 title/members/会话优先）。
+   */
+  createWithId(input: {
+    id: string;
+    userId: string;
+    title: string;
+    members: GroupMember[];
+  }): GroupRoom {
+    assertId(input.id);
+    if (this.readIndex(input.userId, input.id)) {
+      return this.peek(input.userId, input.id);
+    }
+    const room = createGroupRoom({
+      id: input.id,
+      userId: input.userId,
+      title: input.title,
+      members: input.members,
+    });
+    this.save(room);
+    return room;
+  }
+
   get(userId: string, groupId: string, scope: "all" | "current" = "all"): GroupRoom {
     const index = this.loadIndex(userId, groupId);
     const ids = scope === "current" ? [index.currentSessionId] : index.sessionIds;

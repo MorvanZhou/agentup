@@ -8,6 +8,12 @@
 ;   ".tgz"，避免 NSIS 再压一遍（白费 CPU，安装也不更快）
 ; - 若 tar 仍失败，Desktop 首次启动 ensure-runtime-modules 会再试一次
 ;
+; 覆盖更新关进程（customCheckAppRunning）：
+; - 打包态 Desktop + runtime 都是 AgentUp.exe（runtime 用 ELECTRON_RUN_AS_NODE）
+; - 安装器并不会「新开」这两个进程；任务管理器里看到的是旧实例（有窗 UI + 无窗 runtime）
+; - electron-builder 默认软关 / Stop-Process 不带 /T，无窗 runtime 与孤儿子进程常关不掉
+;   → 弹出「无法关闭，请手动关闭…」；这里 taskkill /F /T（目录匹配 + 镜像名兜底）
+;
 ; 本机数据清理策略（与应用内 Erase All Local Data 无关）：
 ; - 安装 / 覆盖更新：从不提供清数据；更新卸旧版走 /S + --updated，一律保留
 ; - 手动卸载：欢迎页勾选「同时删除本机数据」，默认不勾 = 保留；勾选才清
@@ -21,6 +27,32 @@
 ;    Usage: Pop $(user_var: output)）
 
 !include "nsDialogs.nsh"
+
+; 覆盖默认 CHECK_APP_RUNNING：强杀 AgentUp.exe 进程树（UI + runtime）
+!macro customCheckAppRunning
+  DetailPrint "Stopping ${PRODUCT_NAME} (UI + runtime)..."
+  StrCpy $R1 0
+  agentup_stop_loop:
+    IntOp $R1 $R1 + 1
+    ; 优先按安装目录（有 ExecutablePath 时），减少误伤其它路径同名程序
+    nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [stringcomparison]::OrdinalIgnoreCase) } | ForEach-Object { & taskkill.exe /F /T /PID $$_.ProcessId 2>$$null | Out-Null }; exit 0"`
+    Pop $R0
+    ; 再按镜像名树杀：盖住 ExecutablePath 为空、PS 策略失败、无窗 runtime 孤儿
+    nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"`
+    Pop $R0
+    Sleep 1000
+    nsExec::Exec `"$SYSDIR\cmd.exe" /C tasklist /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FO CSV /NH | "$SYSDIR\findstr.exe" /B /I /C:"\"${APP_EXECUTABLE_FILENAME}\""`
+    Pop $R0
+    ${if} $R0 == 0
+      ${if} $R1 >= 3
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY agentup_stop_loop
+        Quit
+      ${else}
+        Sleep 1500
+        Goto agentup_stop_loop
+      ${endIf}
+    ${endIf}
+!macroend
 
 !ifdef BUILD_UNINSTALLER
   Var agentupDeleteDataCheckbox

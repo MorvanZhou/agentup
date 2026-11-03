@@ -68,6 +68,16 @@ export class GroupRooms {
     return this.store.create(input);
   }
 
+  /** 云端元数据下拉：本机已有同 id 时不覆盖。 */
+  ensureFromCloud(input: {
+    id: string;
+    userId: string;
+    title: string;
+    members: GroupMember[];
+  }): GroupRoom {
+    return this.store.createWithId(input);
+  }
+
   rename(userId: string, groupId: string, title: string): GroupRoom {
     return this.store.rename(userId, groupId, title);
   }

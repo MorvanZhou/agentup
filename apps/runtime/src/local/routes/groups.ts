@@ -9,12 +9,8 @@ import { clearGroupWorkspace, ensureGroupWorkspace } from "../../session/group/w
 import { pageItems, parseTranscriptPageQuery, TRANSCRIPT_PAGE_SIZE } from "../../session/transcript-page.js";
 import type { GroupRoom } from "../../session/group/types.js";
 import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
-import {
-  backfillMissingGroups,
-  pushGroupDelete,
-  pushGroupMeta,
-  pushGroupTitle,
-} from "../group-cloud.js";
+import { reconcileGroups, pushGroupDelete, pushGroupMeta, pushGroupTitle } from "../group-cloud.js";
+import { resolveGroupMembers } from "../group-member-names.js";
 import {
   bearer,
   json,
@@ -32,9 +28,17 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
   app.get("/groups", async (c) => {
     const token = bearer(c);
     const userId = requireUserId(c.req.query("user_id") ?? "");
+    const localRooms = deps.groupTurns.list(userId);
+    // 云端↔本机元数据 reconcile：缺壳则下拉；本机有云端无则补传；游客 401 跳过
+    await reconcileGroups(deps.config.backendUrl, token, localRooms, (cloud) => {
+      deps.groups.ensureFromCloud({
+        id: cloud.groupId,
+        userId,
+        title: cloud.title,
+        members: resolveGroupMembers(deps.config.userDataRoot, userId, cloud.members),
+      });
+    });
     const rooms = deps.groupTurns.list(userId);
-    // 已有本机群补传到控制面（游客 401 跳过）
-    await backfillMissingGroups(deps.config.backendUrl, token, rooms);
     return json(c, 200, {
       groups: rooms.map((room) => {
         const page = deps.groupTurns.linePage(userId, room.id, { limit: TRANSCRIPT_PAGE_SIZE });
