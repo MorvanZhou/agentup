@@ -15,32 +15,17 @@
 ;
 ; 注意：customUn* 写进本版 Uninstall.exe；改动能在「本版被卸 / 被下一版更新」时才生效。
 ;
-; Var / Function un.* 必须包在 BUILD_UNINSTALLER 内：
-; - 安装包编译阶段否则会 warning 6001（未引用 Var）或 6020（有 un. 代码但无 WriteUninstaller），
-;   electron-builder 将 warning 当错误。
+; Var / Function un.* 必须：
+; 1) 包在 BUILD_UNINSTALLER（避免安装包编译 warning 6001/6020）
+; 2) Var 声明在 Function 之前（勿放 customHeader：insert 太晚，Pop 会报
+;    Usage: Pop $(user_var: output)）
 
 !include "nsDialogs.nsh"
 
-!macro customHeader
-  !ifdef BUILD_UNINSTALLER
-    Var agentupDeleteDataCheckbox
-    Var agentupDeleteData
-  !endif
-!macroend
-
-!macro customUnInit
-  ; 静默 / 未走过欢迎页 leave 时保持「不删」
-  StrCpy $agentupDeleteData "0"
-!macroend
-
-; 卸载欢迎页底部勾选；默认不勾
-!macro customUnWelcomePage
-  !define MUI_PAGE_CUSTOMFUNCTION_SHOW un.AgentupUnWelcomeShow
-  !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.AgentupUnWelcomeLeave
-  !insertmacro MUI_UNPAGE_WELCOME
-!macroend
-
 !ifdef BUILD_UNINSTALLER
+  Var agentupDeleteDataCheckbox
+  Var agentupDeleteData
+
   Function un.AgentupUnWelcomeShow
     ${NSD_CreateCheckbox} 120u -18u 100% 12u "Also delete all AgentUp local data"
     Pop $agentupDeleteDataCheckbox
@@ -57,6 +42,18 @@
     ${EndIf}
   FunctionEnd
 !endif
+
+!macro customUnInit
+  ; 静默 / 未走过欢迎页 leave 时保持「不删」
+  StrCpy $agentupDeleteData "0"
+!macroend
+
+; 卸载欢迎页底部勾选；默认不勾
+!macro customUnWelcomePage
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW un.AgentupUnWelcomeShow
+  !define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.AgentupUnWelcomeLeave
+  !insertmacro MUI_UNPAGE_WELCOME
+!macroend
 
 !macro customInstall
   DetailPrint "Expanding runtime node_modules..."
