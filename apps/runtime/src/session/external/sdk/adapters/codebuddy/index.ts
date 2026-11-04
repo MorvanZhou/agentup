@@ -14,6 +14,7 @@ export {
   checkAgentSdkLogin,
   logoutAgentSdk,
   type LoginResult,
+  type CodebuddyLoginOptions,
 } from "./login-impl.js";
 export {
   fetchAgentSdkModels,

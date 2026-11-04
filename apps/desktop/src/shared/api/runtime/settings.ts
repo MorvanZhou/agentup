@@ -275,11 +275,12 @@ export async function loginAgentSdk(
   http: RuntimeHttp,
   token: string,
   templateId: string,
+  options: { environment?: "internal" | "external" } = {},
 ): Promise<AgentSdkLoginResult> {
   const payload = (await http.request(
     `/settings/provider/agents/${encodeURIComponent(templateId)}/login`,
     token,
-    {},
+    options.environment ? { environment: options.environment } : {},
   )) as {
     auth_url?: unknown;
     state?: unknown;
@@ -293,11 +294,12 @@ export async function checkAgentSdkLogin(
   http: RuntimeHttp,
   token: string,
   templateId: string,
+  options: { environment?: "internal" | "external" } = {},
 ): Promise<AgentSdkLoginResult> {
   const payload = (await http.request(
     `/settings/provider/agents/${encodeURIComponent(templateId)}/login-check`,
     token,
-    {},
+    options.environment ? { environment: options.environment } : {},
   )) as {
     auth_url?: unknown;
     state?: unknown;

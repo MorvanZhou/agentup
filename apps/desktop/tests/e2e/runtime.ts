@@ -304,6 +304,8 @@ export async function installRuntime(
     last_error: string | null;
     account_label: string | null;
     models: Array<{ id: string; name: string; credits: number | null }>;
+    auth_environments: Array<"internal" | "external"> | null;
+    auth_environment: "internal" | "external" | null;
   };
   const defaultSdkModels: AgentSdkRow["models"] = [
     { id: "claude-sonnet-5", name: "Claude-Sonnet-5", credits: 1.33 },
@@ -384,6 +386,8 @@ export async function installRuntime(
         last_error: null,
         account_label: null,
         models: [],
+        auth_environments: ["internal", "external"],
+        auth_environment: null,
       },
       {
         template_id: "codex-sdk",
@@ -399,6 +403,8 @@ export async function installRuntime(
         last_error: null,
         account_label: null,
         models: [],
+        auth_environments: null,
+        auth_environment: null,
       },
     ] as AgentSdkRow[],
   };
@@ -710,6 +716,11 @@ export async function installRuntime(
       if (request.method() === "POST" && rest === "/login") {
         if (sdkRow().state === "not_installed") {
           return json(route, 400, { error: "尚未安装，请先开始接入" });
+        }
+        // 记住站点偏好：中国站 internal / 国际站 external
+        const body = (request.postDataJSON() ?? {}) as { environment?: string };
+        if (body.environment === "internal" || body.environment === "external") {
+          sdkRow().auth_environment = body.environment;
         }
         sdkRow().state = "logging_in";
         return json(route, 200, {

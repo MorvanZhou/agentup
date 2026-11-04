@@ -493,13 +493,17 @@ export function useProviderSettings(api = new DesktopApi()) {
   }
 
   /** 登录：拿到 authUrl 就交系统浏览器，之后轮询登录态直到 ready。 */
-  async function loginAgentSdk(templateId: string): Promise<void> {
+  async function loginAgentSdk(
+    templateId: string,
+    options: { environment?: "internal" | "external" } = {},
+  ): Promise<void> {
     if (!session.value || sdkBusy.value) return;
     sdkBusy.value = true;
     sdkLoginAbort = new AbortController();
     const signal = sdkLoginAbort.signal;
+    const loginOpts = options.environment ? { environment: options.environment } : {};
     try {
-      const started = await api.loginAgentSdk(session.value.token, templateId);
+      const started = await api.loginAgentSdk(session.value.token, templateId, loginOpts);
       // 先展示验证码再开浏览器，避免用户盯着网页却不知道码在哪
       if (started.deviceCode) sdkLoginDeviceCode.value = started.deviceCode;
       await reload().catch(() => undefined);
@@ -521,7 +525,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       const deadline = Date.now() + 15 * 60 * 1000;
       while (Date.now() < deadline) {
         if (signal.aborted) break;
-        const result = await api.checkAgentSdkLogin(session.value.token, templateId);
+        const result = await api.checkAgentSdkLogin(session.value.token, templateId, loginOpts);
         if (result.deviceCode) sdkLoginDeviceCode.value = result.deviceCode;
         if (result.state === "ready") {
           sdkLoginDeviceCode.value = null;

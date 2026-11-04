@@ -200,7 +200,14 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
     bearer(c);
     const templateId = c.req.param("templateId");
     try {
-      const result = await startAgentSdkLogin(config.userDataRoot, templateId);
+      // CodeBuddy：body.environment = internal|external；其它 driver 忽略
+      const body = await readJson(c);
+      const environment = optionalText(body, "environment");
+      const result = await startAgentSdkLogin(config.userDataRoot, templateId, {
+        ...(environment === "internal" || environment === "external"
+          ? { environment }
+          : {}),
+      });
       // 登录刚成功时顺手补一次模型目录，设置页的「启用服务」才有东西可选
       if (result.state === "ready") {
         await ensureAgentSdkModels(config.userDataRoot, templateId);
@@ -216,7 +223,13 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
     bearer(c);
     const templateId = c.req.param("templateId");
     try {
-      const result = await checkAgentSdkLogin(config.userDataRoot, templateId);
+      const body = await readJson(c);
+      const environment = optionalText(body, "environment");
+      const result = await checkAgentSdkLogin(config.userDataRoot, templateId, {
+        ...(environment === "internal" || environment === "external"
+          ? { environment }
+          : {}),
+      });
       if (result.state === "ready") {
         await ensureAgentSdkModels(config.userDataRoot, templateId);
       }

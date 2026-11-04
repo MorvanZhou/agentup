@@ -2,6 +2,7 @@ import { ConfigError } from "../load.js";
 import { getProviderTemplate } from "../provider-templates.js";
 import { MAX_AGENT_SDK_MODELS, MAX_DISCOVERED_MODELS } from "./constants.js";
 import type {
+  AgentSdkAuthEnvironment,
   AgentSdkModel,
   AgentSdkRecord,
   AgentSdkState,
@@ -21,6 +22,16 @@ const AGENT_SDK_STATES: readonly AgentSdkState[] = [
   "ready",
   "error",
 ];
+
+const AGENT_SDK_AUTH_ENVIRONMENTS: readonly AgentSdkAuthEnvironment[] = ["internal", "external"];
+
+/** 登录站点：只认 internal / external，其它一律丢掉。 */
+export function normalizeAgentSdkAuthEnvironment(value: unknown): AgentSdkAuthEnvironment | undefined {
+  return typeof value === "string" &&
+    (AGENT_SDK_AUTH_ENVIRONMENTS as readonly string[]).includes(value)
+    ? (value as AgentSdkAuthEnvironment)
+    : undefined;
+}
 
 /** 连接落盘前的形状校验：补全默认地址、裁掉脏 id、丢掉空字段。 */
 export function validateConnection(value: ProviderConnection): ProviderConnection {
@@ -99,6 +110,7 @@ export function validateAgentSdkRecord(value: AgentSdkRecord): AgentSdkRecord | 
   if (!templateId || !getProviderTemplate(templateId)) return null;
   if (!AGENT_SDK_STATES.includes(value?.state)) return null;
   const models = normalizeAgentSdkModels(value?.models);
+  const authEnvironment = normalizeAgentSdkAuthEnvironment(value?.authEnvironment);
   return {
     templateId,
     state: value.state,
@@ -106,6 +118,7 @@ export function validateAgentSdkRecord(value: AgentSdkRecord): AgentSdkRecord | 
     ...(clean(value.lastError) ? { lastError: clean(value.lastError) } : {}),
     ...(clean(value.accountLabel) ? { accountLabel: clean(value.accountLabel) } : {}),
     ...(models.length ? { models } : {}),
+    ...(authEnvironment ? { authEnvironment } : {}),
   };
 }
 

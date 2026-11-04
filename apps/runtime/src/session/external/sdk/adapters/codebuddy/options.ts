@@ -1,3 +1,4 @@
+import { agentSdkAuthEnvironment } from "../../../../../config/provider/index.js";
 import type { ExternalTurnRequest } from "../../contract.js";
 import type {
   AskUserAnswer,
@@ -10,6 +11,8 @@ import type {
  */
 export function codebuddyOptionsOf(input: ExternalTurnRequest): Record<string, unknown> {
   const model = input.modelId ? { model: input.modelId } : {};
+  // 与登录时同一 environment，否则 token 对不上站点
+  const environment = agentSdkAuthEnvironment(input.userDataRoot, input.templateId);
   return {
     abortController: input.abortController,
     cwd: input.cwd,
@@ -23,6 +26,7 @@ export function codebuddyOptionsOf(input: ExternalTurnRequest): Record<string, u
     ...model,
     ...(input.cliPath ? { pathToCodebuddyCode: input.cliPath } : {}),
     ...(input.mcpServer ? { mcpServers: { agentup: input.mcpServer } } : {}),
+    ...(environment ? { environment } : {}),
   };
 }
 

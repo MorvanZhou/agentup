@@ -298,12 +298,17 @@ export class DesktopApi {
   loginAgentSdk(
     token: string,
     templateId: string,
+    options?: { environment?: "internal" | "external" },
   ): Promise<settingsApi.AgentSdkLoginResult> {
-    return settingsApi.loginAgentSdk(this.http, token, templateId);
+    return settingsApi.loginAgentSdk(this.http, token, templateId, options);
   }
 
-  checkAgentSdkLogin(token: string, templateId: string): Promise<settingsApi.AgentSdkLoginResult> {
-    return settingsApi.checkAgentSdkLogin(this.http, token, templateId);
+  checkAgentSdkLogin(
+    token: string,
+    templateId: string,
+    options?: { environment?: "internal" | "external" },
+  ): Promise<settingsApi.AgentSdkLoginResult> {
+    return settingsApi.checkAgentSdkLogin(this.http, token, templateId, options);
   }
 
   /** 登出本地 App：回到「已安装 / 未登录」，可以再登录别的账号 */

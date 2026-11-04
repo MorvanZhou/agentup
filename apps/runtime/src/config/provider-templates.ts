@@ -56,6 +56,11 @@ export interface AgentSdkProfile {
    * 切 provider 时按各模板此字段拆旧链、建新链；未声明则不投影。
    */
   skillsProjectRel?: string;
+  /**
+   * 登录前可选站点（CodeBuddy：中国站 internal / 国际站 external）。
+   * 未声明则设置页不展示站点选择；其它 driver 忽略。
+   */
+  authEnvironments?: ReadonlyArray<"internal" | "external">;
 }
 
 /** 专有名用 string；需翻译用 catalog key。 */
@@ -325,6 +330,8 @@ const TEMPLATE_DEFS: TemplateDef[] = [
       loginGuide: { command: "cbc login" },
       // 厂商项目技能目录；换其它 agent-sdk 模板时由 skills-project 换链
       skillsProjectRel: ".codebuddy/skills",
+      // 登录前选中国站 / 国际站 → unstable_v2_authenticate({ environment })
+      authEnvironments: ["internal", "external"],
     },
   },
   {

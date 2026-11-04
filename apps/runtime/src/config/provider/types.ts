@@ -64,6 +64,9 @@ export interface AgentSdkModel {
   credits?: number;
 }
 
+/** CodeBuddy 登录站点：internal=中国站，external=国际站。 */
+export type AgentSdkAuthEnvironment = "internal" | "external";
+
 /** 落盘记录：只存状态与版本，绝不存 token（登录态归各家 CLI 自己管）。 */
 export interface AgentSdkRecord {
   templateId: string;
@@ -74,6 +77,11 @@ export interface AgentSdkRecord {
   accountLabel?: string;
   /** 登录后向本地 SDK 查到的可用模型；未查到时回落到模板默认项 */
   models?: AgentSdkModel[];
+  /**
+   * 最近一次选用的登录站点（CodeBuddy）；登出保留，方便下次同站再登。
+   * token 仍在各家 CLI，这里只记 environment。
+   */
+  authEnvironment?: AgentSdkAuthEnvironment;
 }
 
 /** 设置页卡片视图 = 模板静态描述 + 本机状态。 */
@@ -92,6 +100,10 @@ export interface AgentSdkView {
   /** 登录账号展示名；登出后清掉 */
   accountLabel?: string;
   models?: AgentSdkModel[];
+  /** 模板声明的可选登录站点；空 = 设置页不展示选择 */
+  authEnvironments?: AgentSdkAuthEnvironment[];
+  /** 本机已选 / 上次登录站点；未选过为 undefined */
+  authEnvironment?: AgentSdkAuthEnvironment;
 }
 
 export interface ProviderSettingsView {

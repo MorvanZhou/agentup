@@ -52,8 +52,35 @@ it("reads the CLI / SDK group with its local state", () => {
       lastError: null,
       accountLabel: null,
       models: [],
+      authEnvironments: [],
+      authEnvironment: null,
     },
   ]);
+});
+
+it("reads CodeBuddy auth site options and the remembered choice", () => {
+  const settings = readProviderSettings(
+    payload([
+      {
+        template_id: "codebuddy-sdk",
+        vendor_label: "CodeBuddy",
+        option_label: "本地 Agent App",
+        label: "Workbuddy / CodeBuddy",
+        hint: null,
+        package: "@tencent-ai/agent-sdk",
+        size_hint_mb: 180,
+        login_guide: null,
+        state: "not_logged_in",
+        installed_version: "0.3.295",
+        last_error: null,
+        models: [],
+        auth_environments: ["internal", "external", "bogus"],
+        auth_environment: "internal",
+      },
+    ]),
+  );
+  expect(settings.agentSdks[0]?.authEnvironments).toEqual(["internal", "external"]);
+  expect(settings.agentSdks[0]?.authEnvironment).toBe("internal");
 });
 
 it("reads the model catalog a local app reported", () => {

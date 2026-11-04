@@ -1,16 +1,25 @@
 import type { UiLocale } from "../../i18n/index.js";
 import { ConfigError } from "../load.js";
 import { getProviderTemplate, listAgentSdkTemplates } from "../provider-templates.js";
-import type { AgentSdkModel, AgentSdkRecord, AgentSdkState, AgentSdkView } from "./types.js";
+import type {
+  AgentSdkAuthEnvironment,
+  AgentSdkModel,
+  AgentSdkRecord,
+  AgentSdkState,
+  AgentSdkView,
+} from "./types.js";
 import { patchStored, readStored } from "./store.js";
 import { clean } from "./util.js";
-import { normalizeAgentSdkModels } from "./validate.js";
+import { normalizeAgentSdkAuthEnvironment, normalizeAgentSdkModels } from "./validate.js";
 
 /** 目录（模板）+ 本机状态；没记录的模板一律 not_installed。 */
 export function buildAgentSdkViews(records: AgentSdkRecord[], locale: UiLocale): AgentSdkView[] {
   const byId = new Map(records.map((item) => [item.templateId, item]));
   return listAgentSdkTemplates(locale).map((template) => {
     const record = byId.get(template.id);
+    const authEnvironments = template.agentSdk?.authEnvironments?.length
+      ? [...template.agentSdk.authEnvironments]
+      : undefined;
     return {
       templateId: template.id,
       vendorLabel: template.vendorLabel,
@@ -25,6 +34,8 @@ export function buildAgentSdkViews(records: AgentSdkRecord[], locale: UiLocale):
       lastError: record?.lastError,
       accountLabel: record?.accountLabel,
       models: record?.models,
+      ...(authEnvironments ? { authEnvironments } : {}),
+      ...(record?.authEnvironment ? { authEnvironment: record.authEnvironment } : {}),
     };
   });
 }
@@ -53,6 +64,8 @@ export function setAgentSdkState(
     ...(extra.lastError ? { lastError: extra.lastError } : {}),
     ...(previous?.accountLabel ? { accountLabel: previous.accountLabel } : {}),
     ...(previous?.models?.length ? { models: previous.models } : {}),
+    // 站点偏好跟账号/目录一样：推进状态时保留，换站走 setAgentSdkAuthEnvironment
+    ...(previous?.authEnvironment ? { authEnvironment: previous.authEnvironment } : {}),
   });
   patchStored(userDataRoot, stored, { agentSdks: records });
 }
@@ -108,6 +121,36 @@ export function agentSdkAccountLabel(userDataRoot: string, templateId: string): 
   const id = clean(templateId);
   if (!id) return undefined;
   return readStored(userDataRoot).agentSdks.find((item) => item.templateId === id)?.accountLabel;
+}
+
+/**
+ * 记住登录站点（CodeBuddy environment）。登出不清，方便同站再登。
+ * 没有安装记录时不凭空建状态。
+ */
+export function setAgentSdkAuthEnvironment(
+  userDataRoot: string,
+  templateId: string,
+  environment: AgentSdkAuthEnvironment | null,
+): void {
+  const id = clean(templateId);
+  if (!id) return;
+  const next = environment ? normalizeAgentSdkAuthEnvironment(environment) : null;
+  mutateAgentSdkRecords(userDataRoot, id, (item) => {
+    const record: AgentSdkRecord = { ...item };
+    delete record.authEnvironment;
+    if (next) record.authEnvironment = next;
+    return record;
+  });
+}
+
+/** 本机已选登录站点；老配置 / 未选过 → undefined。 */
+export function agentSdkAuthEnvironment(
+  userDataRoot: string,
+  templateId: string,
+): AgentSdkAuthEnvironment | undefined {
+  const id = clean(templateId);
+  if (!id) return undefined;
+  return readStored(userDataRoot).agentSdks.find((item) => item.templateId === id)?.authEnvironment;
 }
 
 /**

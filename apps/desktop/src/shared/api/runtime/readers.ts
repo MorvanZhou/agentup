@@ -1,5 +1,6 @@
 import {
   AGENT_SDK_STATES,
+  type AgentSdkAuthEnvironment,
   type AgentSdkModelOption,
   type AgentSdkOption,
   type AgentSdkState,
@@ -289,7 +290,23 @@ function readAgentSdkOption(value: unknown): AgentSdkOption {
     lastError: typeof payload.last_error === "string" ? payload.last_error : null,
     accountLabel: typeof payload.account_label === "string" ? payload.account_label : null,
     models: readAgentSdkModels(payload.models),
+    authEnvironments: readAgentSdkAuthEnvironments(payload.auth_environments),
+    authEnvironment: readAgentSdkAuthEnvironment(payload.auth_environment),
   };
+}
+
+function readAgentSdkAuthEnvironment(value: unknown): AgentSdkAuthEnvironment | null {
+  return value === "internal" || value === "external" ? value : null;
+}
+
+function readAgentSdkAuthEnvironments(value: unknown): AgentSdkAuthEnvironment[] {
+  if (!Array.isArray(value)) return [];
+  const out: AgentSdkAuthEnvironment[] = [];
+  for (const item of value) {
+    const env = readAgentSdkAuthEnvironment(item);
+    if (env && !out.includes(env)) out.push(env);
+  }
+  return out;
 }
 
 /** 模型目录缺省为空：没登录 / 没查过时列表就该是空的，不抛错。 */

@@ -154,6 +154,9 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
         name: model.name,
         credits: model.credits ?? null,
       })),
+      // CodeBuddy 站点：模板可选列表 + 本机已选；无声明时两端都省略
+      auth_environments: sdk.authEnvironments ?? null,
+      auth_environment: sdk.authEnvironment ?? null,
     })),
     templates: settings.templates.map((template) => ({
       id: template.id,

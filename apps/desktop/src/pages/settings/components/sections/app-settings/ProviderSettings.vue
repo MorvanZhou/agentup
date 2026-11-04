@@ -6,9 +6,12 @@ import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import AppSelect from "../../../../../shared/components/AppSelect.vue";
 import ProviderLogo from "../../../../../shared/components/ProviderLogo.vue";
 import UiSkeleton from "../../../../../shared/components/UiSkeleton.vue";
-import type { AgentSdkOption } from "../../../../../shared/model/runtime/runtime";
+import type {
+  AgentSdkAuthEnvironment,
+  AgentSdkOption,
+} from "../../../../../shared/model/runtime/runtime";
 import { showToast } from "../../../../../shared/model/ui/toast";
-import { t, tf } from "../../../../../shared/model/ui/ui-locale";
+import { readUiLocale, t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useProviderSettings } from "../../../composables/useProviderSettings";
 
 const MODEL_PREVIEW_COUNT = 5;
@@ -142,13 +145,53 @@ function sdkPrimaryLabel(state: string): string {
   return t("providerSdkStart");
 }
 
+/**
+ * CodeBuddy 登录站点：分段选择 + 单一登录主钮（对齐 ApprovalScopePicker）。
+ * 界面语言 zh 默认中国站，其它默认国际站；本机已有偏好则跟偏好。
+ */
+const draftAuthEnvironment = ref<AgentSdkAuthEnvironment>("external");
+
+function defaultAuthEnvironment(): AgentSdkAuthEnvironment {
+  return readUiLocale() === "zh" ? "internal" : "external";
+}
+
+watch(
+  selectedSdk,
+  (sdk) => {
+    if (!sdk?.authEnvironments.length) return;
+    draftAuthEnvironment.value =
+      sdk.authEnvironment && sdk.authEnvironments.includes(sdk.authEnvironment)
+        ? sdk.authEnvironment
+        : defaultAuthEnvironment();
+  },
+  { immediate: true },
+);
+
+const showAuthEnvironmentPicker = computed(
+  () =>
+    Boolean(selectedSdk.value?.authEnvironments.length) &&
+    (needsLogin(selectedSdk.value?.state ?? "") || sdkReady(selectedSdk.value?.state ?? "")),
+);
+
+const authEnvironmentOptions = computed(() => {
+  const envs = selectedSdk.value?.authEnvironments ?? [];
+  return envs.map((value) => ({
+    value,
+    label:
+      value === "internal" ? t("providerSdkAuthEnvInternal") : t("providerSdkAuthEnvExternal"),
+  }));
+});
+
 function runSdkPrimary(sdk: AgentSdkOption): void {
   if (sdkReady(sdk.state)) {
     void refreshAgentSdkModels(sdk.templateId);
     return;
   }
   if (needsLogin(sdk.state)) {
-    void loginAgentSdk(sdk.templateId);
+    void loginAgentSdk(
+      sdk.templateId,
+      sdk.authEnvironments.length ? { environment: draftAuthEnvironment.value } : {},
+    );
     return;
   }
   void startAgentSdkInstall(sdk.templateId);
@@ -589,17 +632,80 @@ function modelRowTitle(model: {
                 </div>
               </div>
 
-              <!-- 操作：次要靠左、主操作靠右 -->
-              <div
-                v-else
-                class="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-3"
-              >
-                <div class="flex flex-wrap items-center gap-1.5">
+              <!-- 操作：登录主区块单列叠放（无左右空洞）；次要动作沉底安静一排 -->
+              <div v-else class="grid gap-2.5 border-t border-rule pt-3">
+                <!-- 主路径：标签+短 hint 同行 → 站点分段 → 全宽登录；无左右掏空 -->
+                <div class="grid gap-1.5">
+                  <div
+                    v-if="showAuthEnvironmentPicker"
+                    class="flex items-baseline justify-between gap-3"
+                  >
+                    <p
+                      id="sdk-auth-env-label"
+                      class="m-0 shrink-0 text-xs font-medium text-foreground"
+                    >
+                      {{ t("providerSdkAuthEnvLabel") }}
+                    </p>
+                    <p
+                      class="m-0 truncate text-right text-[11px] leading-none text-muted-foreground"
+                    >
+                      {{
+                        sdkReady(selectedSdk.state)
+                          ? t("providerSdkAuthEnvLockedHint")
+                          : t("providerSdkAuthEnvHint")
+                      }}
+                    </p>
+                  </div>
+                  <div
+                    v-if="showAuthEnvironmentPicker"
+                    class="grid gap-0.5 rounded-lg border border-rule bg-muted/40 p-0.5"
+                    :style="{
+                      gridTemplateColumns: `repeat(${authEnvironmentOptions.length}, minmax(0, 1fr))`,
+                    }"
+                    role="radiogroup"
+                    aria-labelledby="sdk-auth-env-label"
+                  >
+                    <button
+                      v-for="option in authEnvironmentOptions"
+                      :key="option.value"
+                      type="button"
+                      role="radio"
+                      class="min-h-8 rounded-md px-2 text-xs font-medium leading-tight transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
+                      :class="
+                        draftAuthEnvironment === option.value
+                          ? 'bg-paper text-foreground shadow-sm ring-1 ring-accent/35'
+                          : 'text-muted-foreground hover:bg-paper/70 hover:text-foreground'
+                      "
+                      :aria-checked="draftAuthEnvironment === option.value"
+                      :disabled="busy || sdkBusy || sdkReady(selectedSdk.state)"
+                      @click="draftAuthEnvironment = option.value"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    :disabled="busy || sdkBusy"
+                    class="min-h-8 w-full rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
+                    @click="runSdkPrimary(selectedSdk)"
+                  >
+                    {{ sdkPrimaryLabel(selectedSdk.state) }}
+                  </button>
+                </div>
+                <!-- 次要：检查 / 登出 / 卸载 — 弱视觉底栏，不与主 CTA 抢横向空间 -->
+                <div
+                  v-if="
+                    needsLogin(selectedSdk.state) ||
+                    canLogout(selectedSdk.state) ||
+                    selectedSdk.state !== 'not_installed'
+                  "
+                  class="flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-rule/70 pt-2"
+                >
                   <button
                     v-if="needsLogin(selectedSdk.state)"
                     type="button"
                     :disabled="busy || sdkBusy"
-                    class="min-h-8 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper disabled:opacity-50"
+                    class="min-h-7 rounded-md px-2 text-xs font-medium text-muted-foreground transition duration-150 hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
                     @click="checkAgentSdkLogin(selectedSdk.templateId)"
                   >
                     {{ t("providerSdkCheck") }}
@@ -608,7 +714,7 @@ function modelRowTitle(model: {
                     v-if="canLogout(selectedSdk.state)"
                     type="button"
                     :disabled="busy || sdkBusy"
-                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper disabled:opacity-50"
+                    class="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition duration-150 hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
                     @click="logoutAgentSdk(selectedSdk.templateId)"
                   >
                     <LogOutIcon class="size-3.5" aria-hidden="true" />
@@ -618,21 +724,13 @@ function modelRowTitle(model: {
                     v-if="selectedSdk.state !== 'not_installed'"
                     type="button"
                     :disabled="busy || sdkBusy"
-                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
+                    class="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-destructive/90 transition duration-150 hover:bg-danger-soft disabled:opacity-50"
                     @click="uninstallAgentSdk(selectedSdk.templateId)"
                   >
                     <Trash2Icon class="size-3.5" aria-hidden="true" />
                     {{ t("providerSdkUninstall") }}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  :disabled="busy || sdkBusy"
-                  class="min-h-8 shrink-0 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-                  @click="runSdkPrimary(selectedSdk)"
-                >
-                  {{ sdkPrimaryLabel(selectedSdk.state) }}
-                </button>
               </div>
             </section>
 

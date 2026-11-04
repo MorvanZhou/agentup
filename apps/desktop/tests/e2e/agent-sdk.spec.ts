@@ -94,10 +94,18 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   await expect(page.getByRole("status").filter({ hasText: "接入完成" })).toBeVisible();
   await expect(page.getByText("未登录", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
+  // 登录前选站点：中文界面默认中国站；点国际站再登录，请求要带 environment
+  await expect(page.getByRole("radiogroup", { name: "登录站点" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "中国站" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("radio", { name: "国际站" }).click();
 
   const loginStarted = page.waitForRequest((request) => {
     if (request.method() !== "POST") return false;
-    return new URL(request.url()).pathname.endsWith("/settings/provider/agents/codebuddy-sdk/login");
+    if (!new URL(request.url()).pathname.endsWith("/settings/provider/agents/codebuddy-sdk/login")) {
+      return false;
+    }
+    const body = request.postDataJSON() as { environment?: string };
+    return body.environment === "external";
   });
   // 轮询落 ready 的那一下；先挂上再点，避免快路径漏等
   const loginChecked = page.waitForResponse((response) => {

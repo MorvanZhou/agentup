@@ -123,6 +123,9 @@ export interface AgentSdkModelOption {
   credits?: number;
 }
 
+/** CodeBuddy 登录站点：中国站 / 国际站 */
+export type AgentSdkAuthEnvironment = "internal" | "external";
+
 /** CLI / SDK 接入卡片：模板静态描述 + 本机状态 */
 export interface AgentSdkOption {
   templateId: string;
@@ -140,6 +143,10 @@ export interface AgentSdkOption {
   accountLabel: string | null;
   /** 登录后从本地 SDK 查到的模型目录；没查到时为空 */
   models: AgentSdkModelOption[];
+  /** 模板声明的可选登录站点；空 = 不展示站点选择 */
+  authEnvironments: AgentSdkAuthEnvironment[];
+  /** 本机已选 / 上次登录站点；未选过为 null */
+  authEnvironment: AgentSdkAuthEnvironment | null;
 }
 
 export interface ProviderTemplate {

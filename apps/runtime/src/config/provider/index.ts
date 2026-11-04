@@ -21,6 +21,7 @@
 export { supportsModelDiscovery } from "../discover-models.js";
 
 export type {
+  AgentSdkAuthEnvironment,
   AgentSdkModel,
   AgentSdkRecord,
   AgentSdkState,
@@ -43,9 +44,11 @@ export { readProviderSettings } from "./settings-view.js";
 
 export {
   agentSdkAccountLabel,
+  agentSdkAuthEnvironment,
   agentSdkModels,
   agentSdkStateOf,
   setAgentSdkAccountLabel,
+  setAgentSdkAuthEnvironment,
   setAgentSdkModels,
   setAgentSdkState,
 } from "./agent-sdk-state.js";

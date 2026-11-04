@@ -104,7 +104,7 @@ function fakeModelModule(
 }
 
 /** 假 SDK：登录直接成功并回账号名，登出什么都不做（token 从不经过我们）。 */
-function fakeLoginModule(root: string): void {
+function fakeLoginModule(root: string, marker?: string): void {
   fakeInstalled(root);
   const entry = path.join(
     root,
@@ -116,10 +116,19 @@ function fakeLoginModule(root: string): void {
     "lib",
     "index.js",
   );
+  // marker：把 authenticate / logout 收到的 options 落盘，断言 environment 透传
+  const writeMark = marker
+    ? `require("node:fs").writeFileSync(${JSON.stringify(marker)}, JSON.stringify(opts ?? {}));`
+    : "";
   fs.writeFileSync(
     entry,
-    `exports.unstable_v2_authenticate = async () => ({ userinfo: { userNickname: "morvanzhou" } });
-exports.unstable_v2_logout = async () => {};
+    `exports.unstable_v2_authenticate = async (opts) => {
+  ${writeMark}
+  return { userinfo: { userNickname: "morvanzhou" } };
+};
+exports.unstable_v2_logout = async (opts) => {
+  ${writeMark}
+};
 `,
   );
 }
@@ -363,6 +372,25 @@ it("remembers the signed-in account on both login entry points", async () => {
   const checked = await checkAgentSdkLogin(other, "codebuddy-sdk");
   expect(checked.account_label).toBe("morvanzhou");
   expect(sdkOf(other)?.accountLabel).toBe("morvanzhou");
+});
+
+it("passes and remembers CodeBuddy auth environment on login", async () => {
+  const root = tempRoot();
+  const mark = path.join(root, "auth-opts.json");
+  fakeLoginModule(root, mark);
+  setAgentSdkState(root, "codebuddy-sdk", "installed", { installedVersion: "0.3.295" });
+
+  const started = await startAgentSdkLogin(root, "codebuddy-sdk", { environment: "internal" });
+  expect(started.state).toBe("ready");
+  expect(sdkOf(root)?.authEnvironment).toBe("internal");
+  expect(JSON.parse(fs.readFileSync(mark, "utf8")).environment).toBe("internal");
+  // CLI 自开浏览器靠 BROWSER；须传空操作，避免与 Desktop openExternal 双开
+  expect(JSON.parse(fs.readFileSync(mark, "utf8")).env?.BROWSER).toBeTruthy();
+
+  // 登出保留站点偏好，logout 也要带同一 environment
+  await logoutAgentSdk(root, "codebuddy-sdk");
+  expect(sdkOf(root)?.authEnvironment).toBe("internal");
+  expect(JSON.parse(fs.readFileSync(mark, "utf8")).environment).toBe("internal");
 });
 
 it("clears the remembered account on logout", async () => {

@@ -3,6 +3,7 @@
  */
 import { ConfigError } from "../../load.js";
 import { getProviderTemplate } from "../../provider-templates.js";
+import type { AgentSdkAuthEnvironment } from "../../provider/types.js";
 import {
   checkAgentSdkLogin as checkCodebuddyLogin,
   logoutAgentSdk as logoutCodebuddy,
@@ -22,6 +23,11 @@ import {
 
 export type { LoginResult };
 
+export interface AgentSdkLoginRequest {
+  /** CodeBuddy：中国站 internal / 国际站 external；其它 driver 忽略 */
+  environment?: AgentSdkAuthEnvironment;
+}
+
 function driverIdOf(templateId: string): string {
   const profile = getProviderTemplate(templateId)?.agentSdk;
   if (!profile?.driverId) throw new ConfigError("该接入方式不支持本地调用");
@@ -31,22 +37,32 @@ function driverIdOf(templateId: string): string {
 export async function startAgentSdkLogin(
   userDataRoot: string,
   templateId: string,
+  request: AgentSdkLoginRequest = {},
 ): Promise<LoginResult> {
   const driverId = driverIdOf(templateId);
   if (driverId === "cursor") return startCursorLogin(userDataRoot, templateId);
   if (driverId === "codex") return startCodexLogin(userDataRoot, templateId);
-  if (driverId === "codebuddy") return startCodebuddyLogin(userDataRoot, templateId);
+  if (driverId === "codebuddy") {
+    return startCodebuddyLogin(userDataRoot, templateId, {
+      environment: request.environment,
+    });
+  }
   throw new ConfigError(`尚未实现 ${driverId} 的登录`);
 }
 
 export async function checkAgentSdkLogin(
   userDataRoot: string,
   templateId: string,
+  request: AgentSdkLoginRequest = {},
 ): Promise<LoginResult> {
   const driverId = driverIdOf(templateId);
   if (driverId === "cursor") return checkCursorLogin(userDataRoot, templateId);
   if (driverId === "codex") return checkCodexLogin(userDataRoot, templateId);
-  if (driverId === "codebuddy") return checkCodebuddyLogin(userDataRoot, templateId);
+  if (driverId === "codebuddy") {
+    return checkCodebuddyLogin(userDataRoot, templateId, {
+      environment: request.environment,
+    });
+  }
   throw new ConfigError(`尚未实现 ${driverId} 的登录探测`);
 }
 
