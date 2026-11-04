@@ -13,7 +13,7 @@ const { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSy
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const { pipeline } = require("node:stream/promises");
-const { execFileSync } = require("node:child_process");
+const { loadTar } = require("./pack-runtime-modules.cjs");
 
 /** 与 Electron 38 / Node 22 兼容；升级时同步改 INTEGRITY */
 const NPM_VERSION = "10.9.2";
@@ -46,10 +46,15 @@ async function downloadTarball(url, destFile) {
   await pipeline(res.body, createWriteStream(destFile));
 }
 
-function extractTarball(tgzPath, extractDir) {
+/**
+ * 用 Node `tar` 解压，勿 spawn 系统 tar：
+ * Windows CI 上 PATH 常先命中 Git MSYS 的 GNU tar，会把 `C:\...` 当成
+ * `host:path` →「Cannot connect to C: resolve failed」。
+ */
+async function extractTarball(tgzPath, extractDir) {
   mkdirSync(extractDir, { recursive: true });
-  // mac/linux 有 tar；Windows 打包机用 tar.exe（Win10+）
-  execFileSync("tar", ["-xzf", tgzPath, "-C", extractDir], { stdio: "inherit" });
+  const tar = loadTar(path.join(__dirname, ".."));
+  await tar.x({ file: tgzPath, cwd: extractDir });
 }
 
 function prepareFromExtract(packageDir) {
@@ -90,7 +95,7 @@ async function main() {
       throw new Error(`npm@${NPM_VERSION} 完整性校验失败（sha512）`);
     }
     console.log(`→ 解压到 ${destRoot}`);
-    extractTarball(tgz, extractDir);
+    await extractTarball(tgz, extractDir);
     const packageDir = path.join(extractDir, "package");
     if (!existsSync(packageDir)) {
       throw new Error(`npm tarball 布局异常，缺少 package/：${extractDir}`);
