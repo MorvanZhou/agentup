@@ -11,6 +11,7 @@ export type ExternalDriverId =
   | "claude-code"
   | "cursor"
   | "codex"
+  | "opencode"
   | (string & {});
 
 /**

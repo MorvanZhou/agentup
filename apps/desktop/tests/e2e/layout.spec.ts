@@ -31,7 +31,10 @@ test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) 
   await expect(page.getByRole("heading", { name: "外观" })).toBeVisible();
   await page.getByRole("button", { name: "AI 服务配置" }).click();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /保存连接|更新配置/ })).toBeVisible();
+  // 默认落到本地 Agent App：级联两列 + SDK 主钮（API 表单的保存/更新要先切接入方式）
+  await expect(page.getByRole("button", { name: "接入方式" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "接入商" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
   await expect(messagesNav(page)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });

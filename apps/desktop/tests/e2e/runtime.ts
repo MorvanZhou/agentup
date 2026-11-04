@@ -290,6 +290,20 @@ export async function installRuntime(
     supports_model_discovery: false,
     models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
   };
+  const opencodeSdkTemplate = {
+    id: "opencode-sdk",
+    access: "agent-sdk",
+    vendor_id: "opencode",
+    vendor_label: "OpenCode",
+    option_label: "本地 Agent App",
+    label: "OpenCode",
+    kind: "agent-sdk",
+    pi_provider_id: "opencode-sdk",
+    requires_api_key: false,
+    default_model_id: "default",
+    supports_model_discovery: false,
+    models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
+  };
   type AgentSdkRow = {
     template_id: string;
     vendor_label: string;
@@ -370,7 +384,13 @@ export async function installRuntime(
       { id: "ollama", label: "Ollama", options: [ollamaTemplate] },
       { id: "deepseek", label: "DeepSeek", options: [deepseekTemplate] },
     ],
-    templates: [ollamaTemplate, deepseekTemplate, codebuddySdkTemplate, codexSdkTemplate],
+    templates: [
+      ollamaTemplate,
+      deepseekTemplate,
+      codebuddySdkTemplate,
+      codexSdkTemplate,
+      opencodeSdkTemplate,
+    ],
     agent_sdks: [
       {
         template_id: "codebuddy-sdk",
@@ -398,6 +418,23 @@ export async function installRuntime(
         package: "@openai/codex-sdk",
         size_hint_mb: 360,
         login_guide: { command: "codex login", doc_url: "https://learn.chatgpt.com/docs/codex-sdk" },
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        account_label: null,
+        models: [],
+        auth_environments: null,
+        auth_environment: null,
+      },
+      {
+        template_id: "opencode-sdk",
+        vendor_label: "OpenCode",
+        option_label: "本地 Agent App",
+        label: "OpenCode",
+        hint: "用你的 OpenCode 官方账号在本机跑 Agent",
+        package: "opencode-ai",
+        size_hint_mb: 180,
+        login_guide: { command: "opencode auth login opencode", doc_url: "https://opencode.ai/auth" },
         state: "not_installed",
         installed_version: null,
         last_error: null,
@@ -699,7 +736,7 @@ export async function installRuntime(
             job_id: jobId,
             template_id: templateId,
             phase: "downloading",
-            detail: "正在下载本地 Agent App…",
+            detail: "正在下载接入组件…",
           });
         }
         sdkRow().state = "not_logged_in";
@@ -715,7 +752,7 @@ export async function installRuntime(
       }
       if (request.method() === "POST" && rest === "/login") {
         if (sdkRow().state === "not_installed") {
-          return json(route, 400, { error: "尚未安装，请先开始接入" });
+          return json(route, 400, { error: "尚未接入，请先开始接入" });
         }
         // 记住站点偏好：中国站 internal / 国际站 external
         const body = (request.postDataJSON() ?? {}) as { environment?: string };

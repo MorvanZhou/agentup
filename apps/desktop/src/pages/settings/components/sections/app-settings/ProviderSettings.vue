@@ -45,9 +45,12 @@ const {
   sdkBusy,
   sdkPhase,
   sdkLoginDeviceCode,
+  sdkLoginNeedsApiKey,
+  sdkLoginApiKeyDraft,
   startAgentSdkInstall,
   loginAgentSdk,
   checkAgentSdkLogin,
+  submitAgentSdkApiKey,
   cancelAgentSdkLogin,
   logoutAgentSdk,
   uninstallAgentSdk,
@@ -86,12 +89,15 @@ function sdkStateLabel(state: string): string {
 
 /** 只有 ready 才算可用；其余状态走「开始接入 / 登录」 */
 const sdkReady = (state: string): boolean => state === "ready";
-/** 已装未登录 → 登录；没装或装失败 → 装 */
+/** 已接入未登录 → 登录；未接入或接入失败 → 开始接入 */
 const needsLogin = (state: string): boolean =>
   ["installed", "not_logged_in", "error"].includes(state);
 const busyState = (state: string): boolean => ["installing", "logging_in"].includes(state);
-/** 已登录（或残留登录态）才谈得上登出；登出只清登录态，SDK 还留着 */
+/** 已登录（或残留登录态）才谈得上登出；登出只清登录态，接入组件还留着 */
 const canLogout = (state: string): boolean => sdkReady(state) || state === "error";
+/** 待接入 / 接入失败：专治「已装桌面版为何仍提示未接入」的误解 */
+const showDesktopMyth = (state: string): boolean =>
+  state === "not_installed" || state === "install_failed";
 
 /** 设备验证码弹窗：码出现时强制弹出一次，关掉后卡片上仍保留同一份码 */
 const deviceCodeDialogOpen = ref(false);
@@ -218,8 +224,8 @@ const connectedTemplateIds = computed(
 );
 
 /**
- * 一个下拉分两组：API Key 接入（填密钥）/ 本地 Agent App 接入（装 SDK + 登录）。
- * 选中后下方表单整体切换，不再用顶层 tab 分开两套页面。
+ * 级联下拉用：group = 接入方式，value = 接入商。
+ * Agent App 在前，便于默认落到本地接入；选中后下方表单整体切换。
  */
 const entryOptions = computed(() => [
   ...agentSdks.value.map((sdk) => ({
@@ -239,6 +245,13 @@ const entryOptions = computed(() => [
     icon: item.vendorId,
   })),
 ]);
+
+/** 仅 API Key 接入商多，给右侧下拉开搜索；本地 App / 其它下拉保持默认无搜索 */
+const draftTemplateSearchable = computed(
+  () =>
+    entryOptions.value.find((item) => item.value === draftTemplateId.value)?.group ===
+    t("providerAccessApi"),
+);
 
 watch([modelFilter, modelProviderFilter], () => {
   modelsExpanded.value = false;
@@ -309,24 +322,25 @@ function modelRowTitle(model: {
         </div>
 
         <template v-else>
-          <!-- 供应商下拉 + 搜索：先按已存在供应商收窄，再按关键字搜 -->
+          <!-- 供应商下拉 + 搜索：先按已存在供应商收窄，再按关键字搜；两列都 min-w-0 防长名撑破叠遮 -->
           <div
-            class="mt-3 grid gap-2 sm:grid-cols-[minmax(10rem,13rem)_minmax(0,1fr)] sm:items-end"
+            class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] sm:items-end"
           >
             <AppSelect
               v-model="modelProviderFilter"
+              class="min-w-0"
               :label="t('providerFilterVendor')"
               :options="modelProviderFilterOptions"
               :disabled="busy"
             />
-            <label class="grid gap-1.5 text-sm font-medium text-foreground">
+            <label class="grid min-w-0 gap-1.5 text-sm font-medium text-foreground">
               <span>{{ t("providerSearchModels") }}</span>
               <input
                 v-model="modelFilter"
                 type="search"
                 :disabled="busy"
                 :placeholder="t('providerSearchModels')"
-                class="min-h-9 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm font-normal text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                class="min-h-9 w-full min-w-0 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm font-normal text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
               />
             </label>
           </div>
@@ -468,7 +482,7 @@ function modelRowTitle(model: {
         </div>
       </article>
 
-      <!-- 次区：添加服务。下拉分「API Key 接入」与「本地 Agent App 接入」两组 -->
+      <!-- 次区：添加服务。级联：左接入方式（默认 Agent App）· 右接入商 -->
       <details
         class="mt-3 rounded-xl border border-rule bg-background shadow-sm open:shadow-sm"
         :open="providerOpen || !connections.length || sdkSelected"
@@ -489,7 +503,7 @@ function modelRowTitle(model: {
         </summary>
 
         <div class="border-t border-rule px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
-          <!-- 骨架：连目录都还没到，先把下拉与表单的位置占住 -->
+          <!-- 骨架：级联两列下拉 + 表单占位 -->
           <div
             v-if="!loaded"
             class="grid gap-3"
@@ -497,9 +511,15 @@ function modelRowTitle(model: {
             aria-busy="true"
             :aria-label="t('providerLoading')"
           >
-            <div class="grid gap-1.5">
-              <UiSkeleton rounded="md" class="h-3 w-16" />
-              <UiSkeleton rounded="lg" class="h-8 w-full" />
+            <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+              <div class="grid gap-1.5">
+                <UiSkeleton rounded="md" class="h-3 w-16" />
+                <UiSkeleton rounded="lg" class="h-8 w-full" />
+              </div>
+              <div class="grid gap-1.5">
+                <UiSkeleton rounded="md" class="h-3 w-16" />
+                <UiSkeleton rounded="lg" class="h-8 w-full" />
+              </div>
             </div>
             <UiSkeleton rounded="lg" class="h-8 w-full" />
           </div>
@@ -507,18 +527,24 @@ function modelRowTitle(model: {
           <div v-else class="grid gap-3">
             <AppSelect
               v-model="draftTemplateId"
-              :label="t('providerAccessKicker')"
+              cascade
+              :searchable="draftTemplateSearchable"
+              :group-label="t('providerAccessKicker')"
+              :label="t('providerAccessVendor')"
+              :default-group="t('providerAccessSdk')"
               :options="entryOptions"
               :disabled="busy"
               :active-hint="t('providerConfiguredActive')"
+              :search-placeholder="t('providerSelectSearch')"
+              :search-empty="t('providerSelectSearchEmpty')"
             />
 
-            <!-- 本地 Agent App：单层扁平面（身份 → 说明 → 操作），状态与主钮已表达下一步，不再套步骤轨 -->
+            <!-- 本地 Agent App：单层扁平面（身份主名+副行 → 说明 → 操作），状态与主钮已表达下一步 -->
             <section
               v-if="sdkSelected && selectedSdk"
               class="grid gap-3 rounded-xl border border-rule bg-paper p-3.5"
             >
-              <!-- 身份 + 状态同一行 -->
+              <!-- 身份：主名 + 状态；说明文案不塞进副行，避免与下方重点句重复 -->
               <div class="flex items-start gap-2.5">
                 <ProviderLogo
                   class="mt-0.5"
@@ -543,20 +569,24 @@ function modelRowTitle(model: {
                       {{ sdkStateLabel(selectedSdk.state) }}
                     </span>
                   </div>
-                  <p class="mb-0 mt-0.5 truncate text-xs text-muted-foreground">
-                    {{ selectedSdk.optionLabel }}
-                  </p>
                 </div>
               </div>
 
-              <!-- 说明：hint / 信任提示 / 元信息同层，信任提示不再套内框 -->
+              <!-- 说明：待接入只留「排雷一句 + 短信任」；可用后短信任 + 账号元信息；不再叠 hint/副行 -->
               <div class="grid gap-1.5">
-                <p class="m-0 max-w-xl text-xs leading-relaxed text-muted-foreground">
-                  {{ selectedSdk.hint ?? t("providerSdkLead") }}
+                <p
+                  v-if="showDesktopMyth(selectedSdk.state)"
+                  class="m-0 max-w-xl text-xs leading-relaxed text-foreground"
+                >
+                  {{ t("providerSdkDesktopMyth") }}
                 </p>
                 <!-- SDK 信任模式：选此模板即默认放行工具，须明示风险 -->
                 <p class="m-0 max-w-xl text-xs leading-relaxed text-muted-foreground" role="note">
-                  {{ tf("providerSdkTrustNotice", { label: selectedSdk.label }) }}
+                  {{
+                    sdkReady(selectedSdk.state)
+                      ? t("providerSdkTrustNoticeReady")
+                      : t("providerSdkTrustNotice")
+                  }}
                 </p>
                 <p
                   v-if="
@@ -588,20 +618,32 @@ function modelRowTitle(model: {
                 </p>
               </div>
 
-              <!-- 进度：安装 / 登录中（含 sdkBusy 尚未 reload 成 logging_in）仍展示；验证码必须可见 -->
+              <!-- 进度：安装 / 登录中（含 sdkBusy 尚未 reload 成 logging_in）仍展示；验证码 / Key 粘贴必须可见 -->
               <div
-                v-if="installPhase || busyState(selectedSdk.state) || (!!sdkLoginDeviceCode && sdkBusy)"
+                v-if="installPhase || busyState(selectedSdk.state) || (!!sdkLoginDeviceCode && sdkBusy) || sdkLoginNeedsApiKey"
                 class="grid gap-2 border-t border-rule pt-3"
               >
-                <div class="h-1 w-full overflow-hidden rounded-md bg-muted">
+                <div
+                  v-if="!sdkLoginNeedsApiKey"
+                  class="h-1 w-full overflow-hidden rounded-md bg-muted"
+                >
                   <div class="h-full w-1/3 animate-breathe rounded-md bg-accent motion-reduce:animate-none" />
                 </div>
-                <p class="m-0 text-xs text-muted-foreground" role="status" aria-live="polite">
+                <p
+                  v-if="!sdkLoginNeedsApiKey"
+                  class="m-0 text-xs text-muted-foreground"
+                  role="status"
+                  aria-live="polite"
+                >
                   {{ progressLabel(selectedSdk) }}
                 </p>
                 <!-- 登录轮询期才提示浏览器，安装时不显示 -->
                 <p v-if="!installPhase" class="m-0 text-xs text-muted-foreground">
-                  {{ t("providerSdkBrowserHint") }}
+                  {{
+                    sdkLoginNeedsApiKey
+                      ? t("providerSdkApiKeyHint")
+                      : t("providerSdkBrowserHint")
+                  }}
                 </p>
                 <!-- Codex device-auth：码来自 CLI stdout，填到网页 XXXX-XXXXX -->
                 <div
@@ -618,8 +660,44 @@ function modelRowTitle(model: {
                     {{ tf("providerSdkDeviceCode", { code: sdkLoginDeviceCode }) }}
                   </p>
                 </div>
+                <!-- OpenCode Zen：官网复制 Key 后粘贴写入隔离目录 -->
                 <div
-                  v-if="selectedSdk.state === 'logging_in' || (!installPhase && sdkBusy)"
+                  v-if="!installPhase && sdkLoginNeedsApiKey"
+                  class="grid gap-1.5"
+                  data-testid="sdk-api-key-paste"
+                >
+                  <label class="m-0 text-xs font-medium text-foreground" for="sdk-opencode-api-key">
+                    {{ t("providerSdkApiKeyLabel") }}
+                  </label>
+                  <input
+                    id="sdk-opencode-api-key"
+                    v-model="sdkLoginApiKeyDraft"
+                    type="password"
+                    autocomplete="off"
+                    class="min-h-8 w-full rounded-lg border border-rule bg-paper px-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/15"
+                    :placeholder="t('providerSdkApiKeyPlaceholder')"
+                    @keydown.enter.prevent="submitAgentSdkApiKey(selectedSdk.templateId)"
+                  />
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      class="min-h-8 rounded-lg bg-accent px-2.5 text-xs font-medium text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
+                      :disabled="sdkBusy && !sdkLoginApiKeyDraft.trim()"
+                      @click="submitAgentSdkApiKey(selectedSdk.templateId)"
+                    >
+                      {{ t("providerSdkApiKeySubmit") }}
+                    </button>
+                    <button
+                      type="button"
+                      class="min-h-8 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper"
+                      @click="cancelAgentSdkLogin(selectedSdk.templateId)"
+                    >
+                      {{ t("providerSdkCancelLogin") }}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  v-else-if="selectedSdk.state === 'logging_in' || (!installPhase && sdkBusy)"
                   class="flex flex-wrap items-center gap-1.5"
                 >
                   <button
@@ -692,7 +770,7 @@ function modelRowTitle(model: {
                     {{ sdkPrimaryLabel(selectedSdk.state) }}
                   </button>
                 </div>
-                <!-- 次要：检查 / 登出 / 卸载 — 弱视觉底栏，不与主 CTA 抢横向空间 -->
+                <!-- 次要：检查 / 登出 / 移除接入 — 弱视觉底栏，不与主 CTA 抢横向空间 -->
                 <div
                   v-if="
                     needsLogin(selectedSdk.state) ||

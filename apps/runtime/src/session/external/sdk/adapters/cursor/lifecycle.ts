@@ -59,7 +59,7 @@ export async function startCursorLogin(
   const installed = template?.agentSdk
     ? readInstalledSdk(agentSdkDir(userDataRoot, templateId), template.agentSdk.package)
     : null;
-  if (!installed) throw new ConfigError("尚未安装，请先开始接入");
+  if (!installed) throw new ConfigError("尚未接入，请先开始接入");
 
   const sdk = await loadCursorModule(userDataRoot, templateId);
   // 自管 store：不依赖 SDK 是否导出 FileCredentialStore 构造器

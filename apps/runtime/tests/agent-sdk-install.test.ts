@@ -250,7 +250,7 @@ it("reports install_failed and rolls back when npm cannot resolve the spec", asy
 it("refuses a second install and cleans up on uninstall", () => {
   const root = tempRoot();
   fakeInstalled(root);
-  expect(() => startAgentSdkInstall(root, "codebuddy-sdk")).toThrow(/已经安装/);
+  expect(() => startAgentSdkInstall(root, "codebuddy-sdk")).toThrow(/已经接入/);
 
   uninstallAgentSdk(root, "codebuddy-sdk");
   expect(fs.existsSync(agentSdkDir(root, "codebuddy-sdk"))).toBe(false);
@@ -279,12 +279,12 @@ it("cancels a running install without leaving the temp directory", () => {
 
 it("cannot log in before the SDK is installed", async () => {
   const root = tempRoot();
-  await expect(checkAgentSdkLogin(root, "codebuddy-sdk")).rejects.toThrow(/尚未安装/);
+  await expect(checkAgentSdkLogin(root, "codebuddy-sdk")).rejects.toThrow(/尚未接入/);
 });
 
 it("cannot log out before the SDK is installed", async () => {
   const root = tempRoot();
-  await expect(logoutAgentSdk(root, "codebuddy-sdk")).rejects.toThrow(/尚未安装/);
+  await expect(logoutAgentSdk(root, "codebuddy-sdk")).rejects.toThrow(/尚未接入/);
 });
 
 it("logs out through the SDK and drops back to not_logged_in with models cleared", async () => {

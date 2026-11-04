@@ -48,6 +48,11 @@ it("下拉行：单色标、倍率、当前项打勾", async () => {
   expect(options[0]?.querySelector(".text-success-foreground")).not.toBeNull();
   expect(options[1]?.getAttribute("aria-selected")).toBe("false");
   expect(options[1]?.textContent).not.toContain("x");
+
+  // 列表底部恒有去 Provider 设置的次要入口（疑问时能跳转配置）
+  const settingsLink = host.querySelector<HTMLAnchorElement>('a[href*="settings"]');
+  expect(settingsLink).not.toBeNull();
+  expect(settingsLink?.getAttribute("href")).toContain("section=provider");
 });
 
 it("没有可用模型时回落到设置入口，不炸渲染", () => {

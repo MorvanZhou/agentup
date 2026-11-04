@@ -85,15 +85,36 @@ export function createExternalTranslator(): ExternalTranslator {
   };
 
   const startTool = (id: string, name: string, args: Record<string, unknown>): AgentSessionEvent[] => {
-    if (!id || announced.has(id)) return [];
+    if (!id) return [];
     // 厂商壳：ToolSearch 不进时间线；DeferExecute 有底层名则展开，否则跳过空壳。
     if (name === "ToolSearch") {
-      toolDigest.push(truncate(`${name}(${JSON.stringify(args)})`, DIGEST_CHARS));
+      if (!announced.has(id)) {
+        toolDigest.push(truncate(`${name}(${JSON.stringify(args)})`, DIGEST_CHARS));
+      }
       return [];
     }
     const projected = projectVendorTool(name, args);
     if (!projected) {
-      toolDigest.push(truncate(`${name}(${JSON.stringify(args)})`, DIGEST_CHARS));
+      if (!announced.has(id)) {
+        toolDigest.push(truncate(`${name}(${JSON.stringify(args)})`, DIGEST_CHARS));
+      }
+      return [];
+    }
+    // 已 announce：OpenCode 等可能先空壳后补参；只补 trail，避免协助卡丢 agent_id。
+    if (announced.has(id)) {
+      const item = trail.find(
+        (entry): entry is Extract<ExternalTrailItem, { kind: "tool" }> =>
+          entry.kind === "tool" && entry.id === id,
+      );
+      if (
+        item &&
+        Object.keys(item.args).length === 0 &&
+        Object.keys(projected.args).length > 0
+      ) {
+        item.args = projected.args;
+        item.name = projected.name;
+        names.set(id, projected.name);
+      }
       return [];
     }
     announced.add(id);

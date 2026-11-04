@@ -11,6 +11,8 @@ export const en: Record<string, string> = {
   "provider.option.localService": "Local service",
   "provider.option.moonshotIntl": "Moonshot International",
   "provider.option.moonshotCn": "Moonshot China",
+  "provider.option.minimaxIntl": "International",
+  "provider.option.minimaxCn": "China",
   "provider.option.qwenTokenPlanCn": "Qwen Token Plan China",
   "provider.option.volcengineArk": "Volcengine Ark",
   "provider.option.openaiCompatible": "OpenAI-compatible API",
@@ -18,6 +20,10 @@ export const en: Record<string, string> = {
 
   "provider.template.ollama.label": "Ollama (local)",
   "provider.template.ollama.hint": "After saving we fetch locally installed models; toggle them in the list above",
+  "provider.template.openrouter.hint": "One key for many models — paste your OpenRouter API key",
+  "provider.template.huggingface.hint": "Use a Hugging Face token (HF_TOKEN)",
+  "provider.template.opencode.hint": "OpenCode Zen model gateway — API key (not the local agent app)",
+  "provider.template.opencode-go.hint": "OpenCode Go model gateway — API key (not the local agent app)",
   "provider.template.kimi-coding.hint": "Coding plan endpoint",
   "provider.template.zai-coding-cn.hint": "China coding endpoint",
   "provider.template.volcengine-ark.label": "ByteDance · Volcengine Ark",
@@ -29,17 +35,20 @@ export const en: Record<string, string> = {
   "provider.template.custom-openai.label": "Custom OpenAI Compatible",
 
   "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
-  "provider.template.codebuddy-sdk.hint": "Runs tasks with your local Workbuddy / CodeBuddy subscription",
+  "provider.template.codebuddy-sdk.hint": "Runs tasks with your Workbuddy / CodeBuddy subscription — no API key",
   "provider.template.cursor-sdk.label": "Cursor",
   "provider.template.cursor-sdk.hint":
-    "Runs a local agent with your Cursor subscription",
+    "Runs a local agent with your Cursor subscription — no API key",
   "provider.template.codex-sdk.label": "Codex - ChatGPT",
   "provider.template.codex-sdk.hint":
-    "Runs a local Codex agent with your ChatGPT subscription",
+    "Runs a local Codex agent with your ChatGPT subscription — no API key",
+  "provider.template.opencode-sdk.label": "OpenCode",
+  "provider.template.opencode-sdk.hint":
+    "Runs a local agent with your official OpenCode account — no model API key required",
 
   "agentSdk.fail.noDetail": "unknown reason",
   "agentSdk.fail.not_installed":
-    "The local agent app is not installed ({detail}). Reinstall Workbuddy / CodeBuddy in Settings → Local agent apps, then retry.",
+    "The local agent app is not connected ({detail}). Open Settings → Local agent apps, click Connect, then retry.",
   "agentSdk.fail.not_logged_in":
     "The local agent app is no longer signed in ({detail}). Sign in to Workbuddy / CodeBuddy again in Settings, then retry.",
   "agentSdk.fail.model_unavailable":
@@ -51,9 +60,9 @@ export const en: Record<string, string> = {
   "agentSdk.fail.timeout":
     "The local agent app produced no result within {detail}. It may still be running; retry, or check its terminal for progress.",
   "agentSdk.fail.incompatible":
-    "The installed local agent app cannot be called by AgentUp ({detail}). Uninstall it in Settings and reinstall.",
+    "The connected local agent app cannot be called by AgentUp ({detail}). Remove the connection in Settings and connect again.",
   "agentSdk.fail.unknown":
-    "The local agent app failed ({detail}). Sign in again or reinstall it in Settings, then retry.",
+    "The local agent app failed ({detail}). Sign in again, or remove the connection and connect again in Settings.",
 
   "identity.systemTemplate": "You are {name}. Role: {role}.\n\n{background}",
   "identity.err.nameLength": "Name must be 1–40 characters",

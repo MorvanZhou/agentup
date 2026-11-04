@@ -12,10 +12,10 @@
   --font-display: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
-  /* light：暖灰导航轨 · 奶油纸面 */
-  --color-ink: #efe9e0;
+  /* light：近白导航轨 · 奶油纸面（轨面略浅于纯白，避免刺眼） */
+  --color-ink: #f5f5f5;
   --color-shell-foreground: #1a1a1a;
-  --color-shell-muted: #8a8278;
+  --color-shell-muted: #8a8a8a;
   /* 列表 / 侧栏（奶油白，呼应 logo 体色） */
   --color-paper: #fffdf9;
   --color-paper-deep: #efe6da;
@@ -110,10 +110,10 @@
 }
 
 .dark {
-  /* 导航轨近 logo 黑 · 炭灰列表 · 更深主区 */
-  --color-ink: #0c0c0c;
+  /* 导航轨近黑略浅 · 炭灰列表 · 更深主区 */
+  --color-ink: #141414;
   --color-shell-foreground: #f7f2ea;
-  --color-shell-muted: #9a938a;
+  --color-shell-muted: #9a9a9a;
   --color-paper: #1a1a1a;
   --color-paper-deep: #242424;
   --color-rule: #2e2e2e;
@@ -210,11 +210,11 @@ body:has([data-dismissable-layer]) .app-drag {
   app-region: no-drag;
 }
 
-/* Electron：红绿灯下方内容起点（与 main.cjs trafficLightPosition 同步） */
-.electron {
+/* 仅 macOS hiddenInset：红绿灯下方内容起点（与 main.cjs trafficLightPosition 同步） */
+.electron.darwin {
   --app-titlebar-inset: 50px;
 }
 
-.electron .app-titlebar-pad {
+.electron.darwin .app-titlebar-pad {
   padding-top: var(--app-titlebar-inset);
 }

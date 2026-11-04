@@ -70,7 +70,10 @@ export function classifyAgentSdkFailure(raw: string, state?: string | null): Age
   }
   const text = (raw ?? "").trim();
   if (!text) return "unknown";
-  if (/尚未安装|未安装|not installed|ENOENT/i.test(text)) return "not_installed";
+  // 产品面说「接入」；旧错误仍可能带「安装」，两边都认
+  if (/尚未接入|未接入|尚未安装|未安装|not connected|not installed|ENOENT/i.test(text)) {
+    return "not_installed";
+  }
   if (
     /不支持\s*query|缺少\s*query|is not a function|incompatible|custom system prompt is not enabled|system prompt is not enabled/i.test(
       text,

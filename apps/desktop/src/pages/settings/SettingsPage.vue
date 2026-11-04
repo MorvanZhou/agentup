@@ -3,13 +3,14 @@ import { computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import SettingsSidebar from "./components/SettingsSidebar.vue";
+import AboutSettings from "./components/sections/app-settings/AboutSettings.vue";
 import AccountSettings from "./components/sections/app-settings/AccountSettings.vue";
 import AppearanceSettings from "./components/sections/app-settings/AppearanceSettings.vue";
 import ProviderSettings from "./components/sections/app-settings/ProviderSettings.vue";
 
-type SectionId = "account" | "appearance" | "provider";
+type SectionId = "account" | "appearance" | "provider" | "about";
 
-const SECTIONS = new Set<SectionId>(["account", "appearance", "provider"]);
+const SECTIONS = new Set<SectionId>(["account", "appearance", "provider", "about"]);
 const MOVED_TO_AGENTS = new Set(["assistant", "skills", "rules", "mcp"]);
 
 const route = useRoute();
@@ -50,6 +51,7 @@ const section = computed<SectionId>({
 
     <AccountSettings v-if="section === 'account'" />
     <ProviderSettings v-else-if="section === 'provider'" />
+    <AboutSettings v-else-if="section === 'about'" />
     <AppearanceSettings v-else />
   </div>
 </template>

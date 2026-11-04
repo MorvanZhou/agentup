@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, ChevronDownIcon } from "@lucide/vue";
+import { CheckIcon, ChevronDownIcon, SettingsIcon } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
@@ -105,57 +105,69 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer, 
       {{ t("composerModelSetup") }}
     </RouterLink>
 
-    <!-- 模型菜单：单色标 · 名称 · 倍率 · 勾选，对齐参考下拉 -->
-    <ul
+    <!-- 模型菜单：列表可滚 · 底部恒显设置入口 -->
+    <div
       v-if="open && hasModels"
-      class="absolute bottom-full right-0 z-20 mb-1 max-h-72 min-w-[18rem] list-none overflow-auto rounded-xl border border-rule bg-paper p-1.5 shadow-sm"
-      role="listbox"
+      class="absolute bottom-full right-0 z-20 mb-1 flex max-h-72 min-w-[18rem] flex-col overflow-hidden rounded-xl border border-rule bg-paper shadow-sm"
     >
-      <li v-for="model in models" :key="`${model.templateId}::${model.modelId}`" class="m-0 p-0">
-        <button
-          type="button"
-          class="flex w-full items-center gap-2.5 rounded-lg border-0 px-2.5 py-2.5 text-left transition duration-150"
-          :class="
-            isSelected(model)
-              ? 'bg-muted text-foreground'
-              : 'bg-transparent text-foreground hover:bg-muted/70'
-          "
-          role="option"
-          :aria-selected="isSelected(model)"
-          @click="onSelect(model)"
-        >
-          <ProviderLogo
-            size="md"
-            :vendor-id="model.vendorId"
-            :label="model.vendorLabel"
-          />
-          <!-- 同显示名（如 Cursor Auto）时靠 modelId 区分 -->
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-sm font-medium">{{ model.name }}</span>
-            <span
-              v-if="model.modelId !== model.name"
-              class="mt-0.5 block truncate font-mono text-xs text-muted-foreground"
-            >
-              {{ model.modelId }}
-            </span>
-          </span>
-          <!-- credit 倍率：本地 App 才有；0 也要显示 -->
-          <span
-            v-if="model.credits !== undefined"
-            class="shrink-0 tabular-nums text-xs text-muted-foreground"
-            :title="t('providerModelCreditsHint')"
+      <ul class="m-0 list-none overflow-auto p-1.5" role="listbox">
+        <li v-for="model in models" :key="`${model.templateId}::${model.modelId}`" class="m-0 p-0">
+          <button
+            type="button"
+            class="flex w-full items-center gap-2.5 rounded-lg border-0 px-2.5 py-2.5 text-left transition duration-150"
+            :class="
+              isSelected(model)
+                ? 'bg-muted text-foreground'
+                : 'bg-transparent text-foreground hover:bg-muted/70'
+            "
+            role="option"
+            :aria-selected="isSelected(model)"
+            @click="onSelect(model)"
           >
-            {{ creditsLabel(model.credits) }}
-          </span>
-          <span class="grid size-4 shrink-0 place-items-center">
-            <CheckIcon
-              v-if="isSelected(model)"
-              class="size-4 text-success-foreground"
-              aria-hidden="true"
+            <ProviderLogo
+              size="md"
+              :vendor-id="model.vendorId"
+              :label="model.vendorLabel"
             />
-          </span>
-        </button>
-      </li>
-    </ul>
+            <!-- 同显示名（如 Cursor Auto）时靠 modelId 区分 -->
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium">{{ model.name }}</span>
+              <span
+                v-if="model.modelId !== model.name"
+                class="mt-0.5 block truncate font-mono text-xs text-muted-foreground"
+              >
+                {{ model.modelId }}
+              </span>
+            </span>
+            <!-- credit 倍率：本地 App 才有；0 也要显示 -->
+            <span
+              v-if="model.credits !== undefined"
+              class="shrink-0 tabular-nums text-xs text-muted-foreground"
+              :title="t('providerModelCreditsHint')"
+            >
+              {{ creditsLabel(model.credits) }}
+            </span>
+            <span class="grid size-4 shrink-0 place-items-center">
+              <CheckIcon
+                v-if="isSelected(model)"
+                class="size-4 text-success-foreground"
+                aria-hidden="true"
+              />
+            </span>
+          </button>
+        </li>
+      </ul>
+      <!-- 次要入口：疑惑模型从哪来 / 怎么启用时跳到 Provider 设置 -->
+      <div class="shrink-0 border-t border-rule px-1.5 py-1">
+        <RouterLink
+          :to="{ name: 'settings', query: { section: 'provider' } }"
+          class="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground no-underline transition duration-150 hover:bg-muted/70 hover:text-foreground"
+          @click="close"
+        >
+          <SettingsIcon class="size-3.5 shrink-0" aria-hidden="true" />
+          <span class="truncate">{{ t("composerModelManageSettings") }}</span>
+        </RouterLink>
+      </div>
+    </div>
   </div>
 </template>

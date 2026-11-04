@@ -97,6 +97,8 @@ async function errorMessageOf(streamOf: (messages: Message[]) => Promise<Stream>
 }
 
 it("分类：原始错误文本 → 可执行的原因码", () => {
+  expect(classifyAgentSdkFailure("尚未接入，请先开始接入")).toBe("not_installed");
+  // 旧措辞仍归同一类，避免历史错误串误判
   expect(classifyAgentSdkFailure("尚未安装，请先开始接入")).toBe("not_installed");
   expect(classifyAgentSdkFailure("登录态已失效，请重新登录")).toBe("not_logged_in");
   // 真机那条：429 但原因是额度，不是限流
@@ -142,7 +144,7 @@ it("文案：去标记 + 中英成对，且带下一步动作", () => {
 });
 
 it("路由：本地 App 的失败走自己的文案，不被通用「检查 API Key」覆盖", () => {
-  const marked = markAgentSdkFailure("not_installed", "尚未安装");
+  const marked = markAgentSdkFailure("not_installed", "尚未接入");
   expect(assistantFailureNotice(marked, "zh")).toBe(agentSdkFailureNotice(marked, "zh"));
   expect(assistantFailureNotice(marked, "zh")).not.toContain("API Key");
 });
@@ -169,7 +171,7 @@ it("没装 / 没登录：不等外部 agent，直接给出下一步", async () =
   const { streamOf } = await openStream({ userDataRoot: root });
   const message = await errorMessageOf(streamOf);
   expect(query).not.toHaveBeenCalled();
-  expect(agentSdkFailureNotice(message, "zh")).toContain("未安装");
+  expect(agentSdkFailureNotice(message, "zh")).toContain("尚未接入");
 
   setAgentSdkState(root, "codebuddy-sdk", "not_logged_in");
   const again = await openStream({ userDataRoot: root });
@@ -180,11 +182,11 @@ it("没装 / 没登录：不等外部 agent，直接给出下一步", async () =
 it("加载失败也能分类", async () => {
   const root = tempRoot();
   setAgentSdkState(root, "codebuddy-sdk", "ready");
-  load.error = "尚未安装，请先开始接入";
+  load.error = "尚未接入，请先开始接入";
   try {
     const { streamOf } = await openStream({ userDataRoot: root });
     const message = await errorMessageOf(streamOf);
-    expect(agentSdkFailureNotice(message, "zh")).toContain("未安装");
+    expect(agentSdkFailureNotice(message, "zh")).toContain("尚未接入");
   } finally {
     load.error = "";
   }

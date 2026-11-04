@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld("agentUp", {
   oauthLoopbackCancelWait: () => ipcRenderer.invoke("agentup:oauth-loopback-cancel-wait"),
   oauthLoopbackStop: () => ipcRenderer.invoke("agentup:oauth-loopback-stop"),
   webUrl: () => ipcRenderer.invoke("agentup:web-url"),
+  /** 产品名与版本（与系统 About 同源，非 Electron 自身版本） */
+  getAppAbout: () => ipcRenderer.invoke("agentup:app-about"),
   setThemeSource: (mode) => ipcRenderer.invoke("agentup:set-theme-source", mode),
   setAppBadge: (count) => ipcRenderer.invoke("agentup:set-app-badge", count),
   setMenuBarUnread: (count) => ipcRenderer.invoke("agentup:set-menu-bar-unread", count),

@@ -114,6 +114,11 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
   await expect(page.getByText("AgentUp 平台 AI")).toBeVisible();
   await expect(page.getByText("后续开放")).toBeVisible();
 
+  // 默认接入方式是本地 Agent App；配 Ollama 要先切到 API Key（左列），再落到 Ollama 表单
+  await page.getByRole("button", { name: "接入方式" }).click();
+  await page.getByRole("option", { name: "API Key 接入", exact: true }).click();
+  await expect(page.getByRole("button", { name: "接入商" })).toContainText("Ollama");
+
   await expect(page.getByLabel("服务地址")).toHaveValue("http://localhost:11434/v1");
   await page.getByLabel("服务地址").fill("http://127.0.0.1:11434/v1/");
   const saved = page.waitForRequest((request) => {
@@ -181,6 +186,57 @@ test("手动添加模型 ID 到已连接服务商", async ({ page }) => {
   await removed;
   await expect(page.getByRole("status")).toHaveText("已移除 glm-4.7-flash");
   await expect(page.getByRole("switch", { name: "停用 glm-4.7-flash" })).toHaveCount(0);
+});
+
+test("设置关于页展示版本并可检查更新", async ({ page }) => {
+  await installRuntime(page);
+  await signIn(page);
+  await openUserMenu(page);
+  await page.getByRole("menuitem", { name: "设置" }).click();
+  await page.getByRole("button", { name: "关于 AgentUp" }).click();
+
+  await expect(page).toHaveURL(/section=about/);
+  await expect(page.getByRole("heading", { name: "关于 AgentUp" })).toBeVisible();
+  await expect(page.getByText("版本 0.1.13-e2e")).toBeVisible();
+  const websiteBtn = page.getByRole("button", { name: /官网/ });
+  const downloadBtn = page.getByRole("button", { name: /下载页/ });
+  await expect(websiteBtn).toBeVisible();
+  await expect(downloadBtn).toBeVisible();
+  await expect(websiteBtn).toContainText("http://127.0.0.1:3000/zh");
+  await expect(downloadBtn).toContainText("http://127.0.0.1:3000/zh/download");
+
+  await websiteBtn.click();
+  expect(await page.evaluate(() => window.openedExternal)).toMatch(/127\.0\.0\.1:3000\/zh$/);
+
+  const updates = page.getByRole("region", { name: "检查更新" });
+  await updates.getByRole("button", { name: "检查更新" }).click();
+  // 全局 toast 也有同文案 status，断言收在关于页更新区
+  await expect(updates.getByText("已是最新版本")).toBeVisible();
+
+  // 有新版本：页内下载 + mac xattr 提示
+  await page.evaluate(() => {
+    const bridge = window.agentUp;
+    if (!bridge) return;
+    bridge.checkForUpdates = async () => {
+      const bag = window as unknown as { __agentUpUpdateListeners?: Array<(p: unknown) => void> };
+      for (const listener of bag.__agentUpUpdateListeners ?? []) {
+        listener({ status: "checking" });
+        listener({
+          status: "available",
+          latestVersion: "9.9.9",
+          currentVersion: "0.1.13-e2e",
+          downloadUrl: "https://downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg",
+        });
+      }
+    };
+  });
+  await updates.getByRole("button", { name: "检查更新" }).click();
+  await expect(updates.getByText("有新版本 9.9.9")).toBeVisible();
+  await expect(updates.getByText("xattr -cr /Applications/AgentUp.app")).toBeVisible();
+  await updates.getByRole("button", { name: "下载安装包" }).click();
+  expect(await page.evaluate(() => window.openedExternal)).toContain(
+    "downloads.agentup.me/desktop/mac/latest/AgentUp-arm64.dmg",
+  );
 });
 
 test("配置私人助理 Skills、工作规则与外部工具", async ({ page }) => {

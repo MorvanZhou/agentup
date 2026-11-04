@@ -26,12 +26,29 @@ async function expandProviderConnect(page: Parameters<typeof signIn>[0]): Promis
   await expect(trigger).toBeVisible();
 }
 
-/** 接入方式下拉：选本地 Agent App（Workbuddy / CodeBuddy）。 */
+/** 级联左列：选接入方式（API Key / 本地 Agent App）。 */
+async function selectAccessGroup(
+  page: Parameters<typeof signIn>[0],
+  group: "API Key 接入" | "本地 Agent App 接入",
+): Promise<void> {
+  await page.getByRole("button", { name: "接入方式" }).click();
+  await page.getByRole("option", { name: group, exact: true }).click();
+}
+
+/** 级联右列：选接入商（当前接入方式下的厂商）。 */
+async function selectAccessVendor(
+  page: Parameters<typeof signIn>[0],
+  vendor: RegExp,
+): Promise<void> {
+  await page.getByRole("button", { name: "接入商" }).click();
+  await page.getByRole("option", { name: vendor }).click();
+}
+
+/** 级联：选本地 Agent App → Workbuddy / CodeBuddy。 */
 async function selectLocalAgentApp(page: Parameters<typeof signIn>[0]): Promise<void> {
   await expandProviderConnect(page);
-  await page.getByRole("button", { name: "接入方式" }).click();
-  await expect(page.getByRole("presentation").filter({ hasText: "本地 Agent App 接入" })).toBeVisible();
-  await page.getByRole("option", { name: /Workbuddy \/ CodeBuddy/ }).click();
+  await selectAccessGroup(page, "本地 Agent App 接入");
+  await selectAccessVendor(page, /Workbuddy \/ CodeBuddy/);
 }
 
 /**
@@ -44,21 +61,26 @@ test("下拉分两组：选本地 App 见信任说明，切回 API Key 仍能改
   await openProviderSettings(page);
   await expandProviderConnect(page);
 
+  // 左列是接入方式（组名作 option，不再是单列 presentation 标题）
   await page.getByRole("button", { name: "接入方式" }).click();
-  await expect(page.getByRole("presentation").filter({ hasText: "API Key 接入" })).toBeVisible();
-  await expect(page.getByRole("presentation").filter({ hasText: "本地 Agent App 接入" })).toBeVisible();
-  // Codex 与 CodeBuddy 同组出现（新接入厂商入口回归）
+  await expect(page.getByRole("option", { name: "API Key 接入", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "本地 Agent App 接入", exact: true })).toBeVisible();
+  await page.getByRole("option", { name: "本地 Agent App 接入", exact: true }).click();
+
+  // 右列才是接入商；Codex 与 CodeBuddy 同组
+  await page.getByRole("button", { name: "接入商" }).click();
   await expect(page.getByRole("option", { name: /^Codex/ })).toBeVisible();
   await page.getByRole("option", { name: /Workbuddy \/ CodeBuddy/ }).click();
 
   await expect(page.getByRole("note")).toContainText("信任模式");
-  await expect(page.getByRole("note")).toContainText("Workbuddy / CodeBuddy");
   await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
-  await expect(page.getByText("未安装", { exact: true })).toBeVisible();
+  await expect(page.getByText("待接入", { exact: true })).toBeVisible();
+  // 待接入只留一句排雷，不重复品牌名
+  await expect(page.getByText(/不需要先装桌面版/)).toBeVisible();
 
-  // 旧路径：切回 API Key 组的 Ollama，表单仍是地址 + 保存（不要被 SDK 卡片顶掉）
-  await page.getByRole("button", { name: "接入方式" }).click();
-  await page.getByRole("option", { name: /^Ollama/ }).click();
+  // 旧路径：切到 API Key 组再选 Ollama，表单仍是地址 + 保存（不要被 SDK 卡片顶掉）
+  await selectAccessGroup(page, "API Key 接入");
+  await selectAccessVendor(page, /^Ollama/);
   await expect(page.getByLabel("服务地址")).toBeVisible();
   // 已有连接时主按钮是「更新配置」（新建才是「保存连接」）
   await expect(page.getByRole("button", { name: "更新配置" })).toBeVisible();
@@ -70,12 +92,12 @@ test("选 Codex：见信任说明与开始接入（入口在本地 App 组）", 
   await signIn(page);
   await openProviderSettings(page);
   await expandProviderConnect(page);
-  await page.getByRole("button", { name: "接入方式" }).click();
-  await page.getByRole("option", { name: /^Codex/ }).click();
+  await selectAccessGroup(page, "本地 Agent App 接入");
+  await selectAccessVendor(page, /^Codex/);
   await expect(page.getByRole("note")).toContainText("信任模式");
-  await expect(page.getByRole("note")).toContainText("Codex");
   await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
-  await expect(page.getByText("未安装", { exact: true })).toBeVisible();
+  await expect(page.getByText("待接入", { exact: true })).toBeVisible();
+  await expect(page.getByText(/不需要先装桌面版/)).toBeVisible();
 });
 
 test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在会话里选中", async ({ page }) => {
@@ -95,7 +117,7 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   await expect(page.getByText("未登录", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
   // 登录前选站点：中文界面默认中国站；点国际站再登录，请求要带 environment
-  await expect(page.getByRole("radiogroup", { name: "登录站点" })).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "登录方式" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "中国站" })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("radio", { name: "国际站" }).click();
 
@@ -170,7 +192,7 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   );
 });
 
-test("登出清登录态与模型，卸载回到未安装", async ({ page }) => {
+test("登出清登录态与模型，移除接入回到待接入", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
   await openProviderSettings(page);
@@ -195,15 +217,15 @@ test("登出清登录态与模型，卸载回到未安装", async ({ page }) => 
   await expect(page.getByText("账号 mock-sdk-user")).toHaveCount(0);
   await expect(page.getByRole("switch", { name: /Claude-Sonnet-5/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "登出" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "卸载" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "移除接入" })).toBeVisible();
 
   const uninstalled = page.waitForRequest((request) => {
     if (request.method() !== "DELETE") return false;
     return new URL(request.url()).pathname.endsWith("/settings/provider/agents/codebuddy-sdk");
   });
-  await page.getByRole("button", { name: "卸载" }).click();
+  await page.getByRole("button", { name: "移除接入" }).click();
   await uninstalled;
-  await expect(page.getByText("未安装", { exact: true })).toBeVisible();
+  await expect(page.getByText("待接入", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "卸载" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "移除接入" })).toHaveCount(0);
 });

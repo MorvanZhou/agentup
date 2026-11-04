@@ -42,7 +42,7 @@ export function loadCodebuddyModule(userDataRoot: string, templateId: string): P
   if (!template || !profile) throw new ConfigError("该接入方式不支持本地调用");
   const dir = agentSdkDir(userDataRoot, templateId);
   const installed = readInstalledSdk(dir, profile.package);
-  if (!installed) throw new ConfigError("尚未安装，请先开始接入");
+  if (!installed) throw new ConfigError("尚未接入，请先开始接入");
   try {
     const require = createRequire(path.join(dir, "agentup-require.cjs"));
     const entry = require.resolve(profile.package);

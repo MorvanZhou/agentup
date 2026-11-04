@@ -11,6 +11,8 @@ export const zh: Record<string, string> = {
   "provider.option.localService": "本机服务",
   "provider.option.moonshotIntl": "Moonshot 国际",
   "provider.option.moonshotCn": "Moonshot 国内",
+  "provider.option.minimaxIntl": "国际",
+  "provider.option.minimaxCn": "国内",
   "provider.option.qwenTokenPlanCn": "Qwen Token Plan 国内",
   "provider.option.volcengineArk": "火山方舟",
   "provider.option.openaiCompatible": "OpenAI 兼容接口",
@@ -18,6 +20,10 @@ export const zh: Record<string, string> = {
 
   "provider.template.ollama.label": "Ollama（本机）",
   "provider.template.ollama.hint": "保存后自动拉取本机已下载的模型，在上方列表里开关即可",
+  "provider.template.openrouter.hint": "一把钥匙聚合多家模型；填 OpenRouter API Key 即可",
+  "provider.template.huggingface.hint": "使用 Hugging Face Token（HF_TOKEN）",
+  "provider.template.opencode.hint": "OpenCode Zen 模型网关；填 API Key（不是本地 Agent App）",
+  "provider.template.opencode-go.hint": "OpenCode Go 模型网关；填 API Key（不是本地 Agent App）",
   "provider.template.kimi-coding.hint": "编程套餐端点",
   "provider.template.zai-coding-cn.hint": "国内 Coding 端点",
   "provider.template.volcengine-ark.label": "字节 · 火山方舟",
@@ -29,17 +35,20 @@ export const zh: Record<string, string> = {
   "provider.template.custom-openai.label": "自定义 OpenAI Compatible",
 
   "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
-  "provider.template.codebuddy-sdk.hint": "用你本机的 Workbuddy / CodeBuddy 订阅执行任务",
+  "provider.template.codebuddy-sdk.hint": "用你的 Workbuddy / CodeBuddy 订阅执行任务（无需 API Key）",
   "provider.template.cursor-sdk.label": "Cursor",
   "provider.template.cursor-sdk.hint":
-    "用你的 Cursor 订阅在本机跑 Agent",
+    "用你的 Cursor 订阅在本机跑 Agent（无需 API Key）",
   "provider.template.codex-sdk.label": "Codex - ChatGPT",
   "provider.template.codex-sdk.hint":
-    "用你的 ChatGPT 订阅在本机跑 Codex Agent",
+    "用你的 ChatGPT 订阅在本机跑 Codex Agent（无需 API Key）",
+  "provider.template.opencode-sdk.label": "OpenCode",
+  "provider.template.opencode-sdk.hint":
+    "用你的 OpenCode 官方账号在本机跑 Agent（无需自备模型 API Key）",
 
   "agentSdk.fail.noDetail": "未知原因",
   "agentSdk.fail.not_installed":
-    "本地 Agent App 未安装（{detail}）。请到「设置 → 本地 Agent App 接入」重新安装 Workbuddy / CodeBuddy 后重试。",
+    "本地 Agent App 尚未接入（{detail}）。请到「设置 → 本地 Agent App 接入」点「开始接入」后重试。",
   "agentSdk.fail.not_logged_in":
     "本地 Agent App 的登录态已失效（{detail}）。请在设置里重新登录 Workbuddy / CodeBuddy 后重试。",
   "agentSdk.fail.model_unavailable":
@@ -51,9 +60,9 @@ export const zh: Record<string, string> = {
   "agentSdk.fail.timeout":
     "本地 Agent App 超过 {detail} 没有给出结果。它可能还在跑；可以重试，或到它的终端看进度。",
   "agentSdk.fail.incompatible":
-    "本机安装的本地 Agent App 不能被 AgentUp 调用（{detail}）。请在设置里卸载后重新安装。",
+    "本机接入的本地 Agent App 不能被 AgentUp 调用（{detail}）。请在设置里移除接入后重新接入。",
   "agentSdk.fail.unknown":
-    "本地 Agent App 执行失败（{detail}）。可在设置里重新登录或重装后重试。",
+    "本地 Agent App 执行失败（{detail}）。可在设置里重新登录，或移除接入后重新接入。",
 
   "identity.systemTemplate": "你是{name}。岗位：{role}。\n\n{background}",
   "identity.err.nameLength": "名称须为 1–40 个字符",

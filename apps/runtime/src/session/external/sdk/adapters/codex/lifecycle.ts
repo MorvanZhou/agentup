@@ -86,7 +86,7 @@ export async function startCodexLogin(
   const installed = template?.agentSdk
     ? readInstalledSdk(agentSdkDir(userDataRoot, templateId), template.agentSdk.package)
     : null;
-  if (!installed) throw new ConfigError("尚未安装，请先开始接入");
+  if (!installed) throw new ConfigError("尚未接入，请先开始接入");
 
   const cli = resolveCodexCliPath(userDataRoot, templateId);
   if (!cli) throw new ConfigError("找不到 Codex CLI，请重新安装");

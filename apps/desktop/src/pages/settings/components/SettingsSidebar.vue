@@ -3,12 +3,13 @@ import { computed } from "vue";
 
 import { t } from "../../../shared/model/ui/ui-locale";
 
-type SectionId = "account" | "provider" | "appearance";
+type SectionId = "account" | "provider" | "appearance" | "about";
 
 const items = computed(() => [
   { id: "appearance" as const, label: t("settingsAppearance") },
   { id: "provider" as const, label: t("settingsProvider") },
   { id: "account" as const, label: t("settingsAccount") },
+  { id: "about" as const, label: t("settingsAbout") },
 ]);
 
 defineProps<{ active: SectionId }>();

@@ -5,6 +5,7 @@ import { ref } from "vue";
 import { describe, expect, it } from "vitest";
 
 import { desktopKey } from "../../src/app/desktop";
+import AgentSidebar from "../../src/pages/conversation/components/agent-sidebar/AgentSidebar.vue";
 import GroupSidebarItem from "../../src/pages/conversation/components/agent-sidebar/GroupSidebarItem.vue";
 import { buildConversationRows } from "../../src/pages/conversation/model/sidebar/conversation-row.js";
 import {
@@ -16,7 +17,7 @@ import {
   groupSidebarPreviewLabel,
   groupUnreadKey,
   groupUnreadLabel,
-  mergeSidebarSlots,
+  buildSidebarSections,
   shouldBumpGroupUnread,
   type GroupSidebarRow,
 } from "../../src/pages/conversation/model/sidebar/group-sidebar.js";
@@ -28,6 +29,13 @@ function mountGroupItem(props: { row: GroupSidebarRow; avatars?: Record<string, 
   return mountView(GroupSidebarItem, {
     props,
     provide: [[desktopKey, { session: ref(null) }]],
+  });
+}
+
+function mountSidebar(props: Record<string, unknown>) {
+  return mountView(AgentSidebar, {
+    props,
+    provide: [[desktopKey, { session: ref(null), unread: ref({}) }]],
   });
 }
 
@@ -65,7 +73,7 @@ function room(partial: Partial<GroupRoom> & Pick<GroupRoom, "id">): GroupRoom {
 }
 
 describe("sidebar groups", () => {
-  it("pins the personal assistant and mixes groups with direct chats by last message", () => {
+  it("sections groups above direct chats; personal stays first inside directs", () => {
     const rows = buildConversationRows({
       conversations: [
         card({ agentId: "pa", name: "助理", kind: "personal" }),
@@ -77,7 +85,7 @@ describe("sidebar groups", () => {
       busyAgent: "",
       unread: {},
     });
-    const slots = mergeSidebarSlots(
+    const sections = buildSidebarSections(
       rows,
       [
         room({
@@ -95,14 +103,10 @@ describe("sidebar groups", () => {
       ],
       "",
     );
-    expect(slots.map((slot) => (slot.kind === "agent" ? slot.row.agent.agentId : slot.row.room.id))).toEqual([
-      "pa",
-      "g1",
-      "dev",
-    ]);
-    expect(
-      groupSidebarPreview(slots[1] && slots[1].kind === "group" ? slots[1].row.room : room({ id: "x" })),
-    ).toBe("做登录");
+    // 群与私聊分区，不再按最近消息混排
+    expect(sections.groups.map((row) => row.room.id)).toEqual(["g1"]);
+    expect(sections.agents.map((row) => row.agent.agentId)).toEqual(["pa", "dev"]);
+    expect(groupSidebarPreview(sections.groups[0]!.room)).toBe("做登录");
   });
 
   it("marks holding/task groups as working and surfaces group HITL ahead of idle chats", () => {
@@ -129,7 +133,7 @@ describe("sidebar groups", () => {
       busyAgent: "",
       unread: {},
     });
-    const slots = mergeSidebarSlots(
+    const sections = buildSidebarSections(
       rows,
       [
         room({
@@ -149,17 +153,13 @@ describe("sidebar groups", () => {
       "",
       { attention },
     );
-    // HITL 群置顶；其余仍按最近活跃（dev 比忙着的群更新）
-    expect(slots.map((slot) => (slot.kind === "agent" ? slot.row.agent.agentId : slot.row.room.id))).toEqual([
-      "pa",
-      "g-hitl",
-      "dev",
-      "g-work",
-    ]);
-    const hitl = slots.find((slot) => slot.kind === "group" && slot.row.room.id === "g-hitl");
-    const work = slots.find((slot) => slot.kind === "group" && slot.row.room.id === "g-work");
-    expect(hitl?.kind === "group" && hitl.row.awaitingApproval).toBe(true);
-    expect(work?.kind === "group" && work.row.working).toBe(true);
+    // 群区内 HITL 置顶；私聊区仍按区独立排序（dev 不插进群）
+    expect(sections.groups.map((row) => row.room.id)).toEqual(["g-hitl", "g-work"]);
+    expect(sections.agents.map((row) => row.agent.agentId)).toEqual(["pa", "dev"]);
+    const hitl = sections.groups.find((row) => row.room.id === "g-hitl");
+    const work = sections.groups.find((row) => row.room.id === "g-work");
+    expect(hitl?.awaitingApproval).toBe(true);
+    expect(work?.working).toBe(true);
     expect(groupUnreadLabel(buildGroupSidebarRow({ room: room({ id: "g-hitl" }), selected: false, attention }))).toBe(
       "1",
     );
@@ -174,6 +174,47 @@ describe("sidebar groups", () => {
         }),
       ),
     ).toBe("");
+  });
+
+  it("renders group/direct sections with create entry on the group header", () => {
+    const rows = buildConversationRows({
+      conversations: [
+        card({ agentId: "pa", name: "助理", kind: "personal" }),
+        card({ agentId: "dev", name: "开发" }),
+      ],
+      previews: {},
+      lastActiveAt: { pa: 1, dev: 10 },
+      selectedId: "dev",
+      busyAgent: "",
+      unread: {},
+    });
+    const full = mountSidebar({
+      rows,
+      groups: [
+        room({
+          id: "g1",
+          title: "产品群",
+          members: [{ agentId: "dev", name: "开发" }],
+          lines: [{ id: "a", role: "user", authorId: "user", text: "做登录", at: 1 }],
+        }),
+      ],
+    });
+    expect(full.textContent).toMatch(/群组|Groups/);
+    expect(full.textContent).toMatch(/私聊|Direct/);
+    expect(full.textContent).toContain("产品群");
+    expect(full.textContent).toContain("开发");
+    expect(full.querySelector("button[aria-label='新建群'], button[aria-label='New group']")).not.toBeNull();
+    expect(full.textContent).not.toMatch(/还没有群|No groups yet/);
+
+    const empty = mountSidebar({ rows: [], groups: [] });
+    expect(empty.textContent).toMatch(/群组|Groups/);
+    expect(empty.textContent).toMatch(/还没有群|No groups yet/);
+    // 无群时标题旁小钮收起，空态次钮承担建群入口
+    expect(empty.querySelector("button[aria-label='新建群'], button[aria-label='New group']")).toBeNull();
+    const emptyCta = [...empty.querySelectorAll("button")].find((btn) =>
+      /建群|New group/.test(btn.textContent ?? ""),
+    );
+    expect(emptyCta).toBeTruthy();
   });
 
   it("renders a group row and stays quiet when members are missing", () => {
@@ -276,7 +317,7 @@ describe("sidebar groups", () => {
       busyAgent: "",
       unread: {},
     });
-    const slots = mergeSidebarSlots(
+    const sections = buildSidebarSections(
       rows,
       [
         room({
@@ -289,11 +330,9 @@ describe("sidebar groups", () => {
       "",
       { unread },
     );
-    expect(slots.map((slot) => (slot.kind === "agent" ? slot.row.agent.agentId : slot.row.room.id))).toEqual([
-      "pa",
-      "g-unread",
-      "dev",
-    ]);
+    // 未读群在群区内置顶，不挤进私聊序
+    expect(sections.groups.map((row) => row.room.id)).toEqual(["g-unread"]);
+    expect(sections.agents.map((row) => row.agent.agentId)).toEqual(["pa", "dev"]);
     const row = buildGroupSidebarRow({
       room: room({ id: "g-unread" }),
       selected: false,

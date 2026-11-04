@@ -110,7 +110,7 @@ export async function startAgentSdkLogin(
   const template = getProviderTemplate(templateId);
   const dir = agentSdkDir(userDataRoot, templateId);
   const installed = template?.agentSdk ? readInstalledSdk(dir, template.agentSdk.package) : null;
-  if (!installed) throw new ConfigError("尚未安装，请先开始接入");
+  if (!installed) throw new ConfigError("尚未接入，请先开始接入");
 
   const sdk = await loadCodebuddyModule(userDataRoot, templateId);
   const authenticate = sdk.unstable_v2_authenticate;

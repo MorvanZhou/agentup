@@ -21,6 +21,7 @@ import {
   checkAgentSdkLogin,
   logoutAgentSdk,
   startAgentSdkLogin,
+  submitAgentSdkApiKey,
 } from "../../config/providers/agent-sdk/login.js";
 import {
   ensureAgentSdkModels,
@@ -230,6 +231,25 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
           ? { environment }
           : {}),
       });
+      if (result.state === "ready") {
+        await ensureAgentSdkModels(config.userDataRoot, templateId);
+      }
+      return json(c, 200, result);
+    } catch (error) {
+      if (error instanceof ConfigError) throw new LocalError(error.message, 400);
+      throw error;
+    }
+  });
+
+  // OpenCode Zen 等：官网复制 Key 后粘贴写入隔离目录（非 API Key 接入组）
+  app.post("/settings/provider/agents/:templateId/login-key", async (c) => {
+    bearer(c);
+    const templateId = c.req.param("templateId");
+    try {
+      const body = await readJson(c);
+      const apiKey = optionalText(body, "api_key") ?? optionalText(body, "apiKey");
+      if (!apiKey) throw new LocalError("请输入 API Key", 400);
+      const result = await submitAgentSdkApiKey(config.userDataRoot, templateId, apiKey);
       if (result.state === "ready") {
         await ensureAgentSdkModels(config.userDataRoot, templateId);
       }

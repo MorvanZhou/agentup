@@ -20,6 +20,12 @@ import {
   logoutCursor,
   startCursorLogin,
 } from "../../../session/external/sdk/adapters/cursor/index.js";
+import {
+  checkOpencodeLogin,
+  logoutOpencode,
+  startOpencodeLogin,
+  submitOpencodeApiKey,
+} from "../../../session/external/sdk/adapters/opencode/index.js";
 
 export type { LoginResult };
 
@@ -42,6 +48,7 @@ export async function startAgentSdkLogin(
   const driverId = driverIdOf(templateId);
   if (driverId === "cursor") return startCursorLogin(userDataRoot, templateId);
   if (driverId === "codex") return startCodexLogin(userDataRoot, templateId);
+  if (driverId === "opencode") return startOpencodeLogin(userDataRoot, templateId);
   if (driverId === "codebuddy") {
     return startCodebuddyLogin(userDataRoot, templateId, {
       environment: request.environment,
@@ -58,12 +65,26 @@ export async function checkAgentSdkLogin(
   const driverId = driverIdOf(templateId);
   if (driverId === "cursor") return checkCursorLogin(userDataRoot, templateId);
   if (driverId === "codex") return checkCodexLogin(userDataRoot, templateId);
+  if (driverId === "opencode") return checkOpencodeLogin(userDataRoot, templateId);
   if (driverId === "codebuddy") {
     return checkCodebuddyLogin(userDataRoot, templateId, {
       environment: request.environment,
     });
   }
   throw new ConfigError(`尚未实现 ${driverId} 的登录探测`);
+}
+
+/** OpenCode Zen Key 回落：写入隔离 home；其它 driver 拒绝。 */
+export async function submitAgentSdkApiKey(
+  userDataRoot: string,
+  templateId: string,
+  apiKey: string,
+): Promise<LoginResult> {
+  const driverId = driverIdOf(templateId);
+  if (driverId === "opencode") {
+    return submitOpencodeApiKey(userDataRoot, templateId, apiKey);
+  }
+  throw new ConfigError(`该接入方式不支持粘贴 API Key 登录`);
 }
 
 export async function logoutAgentSdk(userDataRoot: string, templateId: string): Promise<void> {
@@ -74,6 +95,10 @@ export async function logoutAgentSdk(userDataRoot: string, templateId: string): 
   }
   if (driverId === "codex") {
     await logoutCodex(userDataRoot, templateId);
+    return;
+  }
+  if (driverId === "opencode") {
+    await logoutOpencode(userDataRoot, templateId);
     return;
   }
   if (driverId === "codebuddy") {

@@ -120,13 +120,21 @@ function optionTexts(host: HTMLElement): string[] {
 
 /**
  * 「启用服务」区也有供应商筛选下拉（同样 aria-haspopup）。
- * 按「接入方式」标签找真正的接入下拉，避免点到第一个筛选器。
+ * 级联：左「接入方式」· 右「接入商」；按标签找，避免点到筛选器。
  */
-function accessTrigger(host: HTMLElement): HTMLButtonElement {
-  const label = [...host.querySelectorAll("span")].find((el) => (el.textContent ?? "").trim() === "接入方式");
+function labeledTrigger(host: HTMLElement, labelText: string): HTMLButtonElement {
+  const label = [...host.querySelectorAll("span")].find((el) => (el.textContent ?? "").trim() === labelText);
   const trigger = label?.parentElement?.querySelector<HTMLButtonElement>("button[aria-haspopup='true']");
-  if (!trigger) throw new Error("缺少接入方式下拉");
+  if (!trigger) throw new Error(`缺少「${labelText}」下拉`);
   return trigger;
+}
+
+function accessTrigger(host: HTMLElement): HTMLButtonElement {
+  return labeledTrigger(host, "接入方式");
+}
+
+function vendorTrigger(host: HTMLElement): HTMLButtonElement {
+  return labeledTrigger(host, "接入商");
 }
 
 /** 取某一行模型的整行文案（模型名 + 副标题都在里面）。 */
@@ -144,7 +152,7 @@ function buttonByText(host: HTMLElement, text: string): HTMLButtonElement | null
   );
 }
 
-it("下拉分两组，本地 App 的模型出现在「启用服务」里", async () => {
+it("级联下拉默认 Agent App，本地 App 的模型出现在「启用服务」里", async () => {
   const host = mountProviderSettings(payload());
   await waitLoaded(host);
 
@@ -156,17 +164,40 @@ it("下拉分两组，本地 App 的模型出现在「启用服务」里", async
   expect(modelRow?.getAttribute("title")).toContain("CodeBuddy");
   expect(host.querySelectorAll('[role="switch"]').length).toBeGreaterThan(0);
 
-  // 打开下拉：应有两个分组标题
+  // 左：两种接入方式；默认本地 Agent App
+  expect(accessTrigger(host).textContent).toContain("本地 Agent App 接入");
   accessTrigger(host).click();
   await nextTick();
-  const groups = [...host.querySelectorAll('[role="presentation"]')].map(
-    (el) => el.textContent ?? "",
+  const accessLabels = optionTexts(host);
+  expect(accessLabels.some((text) => text.includes("本地 Agent App 接入"))).toBe(true);
+  expect(accessLabels.some((text) => text.includes("API Key 接入"))).toBe(true);
+
+  // 关左开右：当前组只有本地 App 接入商
+  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  await nextTick();
+  vendorTrigger(host).click();
+  await nextTick();
+  const sdkVendors = optionTexts(host);
+  expect(sdkVendors.some((text) => text.includes("Workbuddy / CodeBuddy"))).toBe(true);
+  expect(sdkVendors.some((text) => text.includes("OpenAI"))).toBe(false);
+
+  // 切到 API Key 后，右侧换成 API 接入商
+  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  await nextTick();
+  accessTrigger(host).click();
+  await nextTick();
+  const apiOption = [...host.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((el) =>
+    (el.textContent ?? "").includes("API Key 接入"),
   );
-  expect(groups.filter((text) => text.includes("API Key 接入")).length).toBe(1);
-  expect(groups.filter((text) => text.includes("本地 Agent App 接入")).length).toBe(1);
-  const labels = optionTexts(host);
-  expect(labels.some((text) => text.includes("Workbuddy / CodeBuddy"))).toBe(true);
-  expect(labels.some((text) => text.includes("OpenAI"))).toBe(true);
+  if (!apiOption) throw new Error("缺少 API Key 接入选项");
+  apiOption.click();
+  await nextTick();
+  await nextTick();
+  vendorTrigger(host).click();
+  await nextTick();
+  const apiVendors = optionTexts(host);
+  expect(apiVendors.some((text) => text.includes("OpenAI"))).toBe(true);
+  expect(apiVendors.some((text) => text.includes("Workbuddy / CodeBuddy"))).toBe(false);
   vi.restoreAllMocks();
 });
 
@@ -192,6 +223,9 @@ it("已登录的本地 App 在卡片上显示账号，没登录就不显示", as
   const host = mountProviderSettings(payload({ sdkOnly: true, sdkAccount: "morvanzhou" }));
   await waitLoaded(host);
   expect(host.textContent).toContain("账号 morvanzhou");
+  // 可用后收掉待接入排雷，只留短信任条
+  expect(host.textContent).toContain("信任模式已开启");
+  expect(host.textContent).not.toContain("不需要先装桌面版");
 
   // 没登录（account_label 为 null）不该留一个空的「账号」标签
   const plain = mountProviderSettings(payload({ sdkOnly: true, sdkAccount: null }));
@@ -212,26 +246,33 @@ it("已登录的本地 App 能登出：按钮打到 runtime 登出口，状态�
   if (!button) throw new Error("缺少登出按钮");
   button.click();
   await vi.waitFor(() => expect(spy.mock.calls[0]?.[1]).toBe("codebuddy-sdk"));
-  // 回到未登录后登出入口就该收起（SDK 还装着的，卸载仍在）
+  // 回到未登录后登出入口就该收起（SDK 还装着的，移除接入仍在）
   await vi.waitFor(() => expect(buttonByText(host, "登出")).toBeNull());
-  expect(buttonByText(host, "卸载")).not.toBeNull();
+  expect(buttonByText(host, "移除接入")).not.toBeNull();
   vi.restoreAllMocks();
 });
 
 it("没登录的本地 App 不显示登出", async () => {
   const host = mountProviderSettings(payload({ sdkOnly: true, sdkState: "not_logged_in" }));
   await waitLoaded(host);
-  // 卡片已渲染（卸载在），但没登录就没有登出可言
-  expect(buttonByText(host, "卸载")).not.toBeNull();
+  // 卡片已渲染（移除接入在），但没登录就没有登出可言
+  expect(buttonByText(host, "移除接入")).not.toBeNull();
   expect(buttonByText(host, "登出")).toBeNull();
   vi.restoreAllMocks();
 });
 
-it("还没装本地 App 时下拉里仍可选它，列表保持空态", async () => {
+it("还没装本地 App 时接入商下拉里仍可选它，列表保持空态", async () => {
   const host = mountProviderSettings(payload({ sdkReady: false }));
   await waitLoaded(host);
 
-  accessTrigger(host).click();
+  // 默认接入方式是 Agent App，右侧列本地接入商
+  expect(accessTrigger(host).textContent).toContain("本地 Agent App 接入");
+  // 待接入：一句排雷 + 短信任，不叠 hint/副行
+  expect(host.textContent).toContain("待接入");
+  expect(host.textContent).toContain("不需要先装桌面版");
+  expect(host.textContent).toContain("信任模式");
+  expect(buttonByText(host, "移除接入")).toBeNull();
+  vendorTrigger(host).click();
   await nextTick();
 
   const labels = optionTexts(host);

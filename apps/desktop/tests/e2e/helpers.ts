@@ -138,6 +138,52 @@ export async function mockAgentUp(
         oauthLoopbackTakePending: async () => null,
         oauthLoopbackStop: async () => undefined,
         webUrl: async () => "http://127.0.0.1:3000",
+        // 关于页：与系统 About 同源的产品信息（e2e 固定版本）
+        getAppAbout: async () => ({ name: "AgentUp", version: "0.1.13-e2e" }),
+        // 检查更新：默认「已是最新」；用例可覆盖 window.agentUp.checkForUpdates
+        checkForUpdates: async () => {
+          type UpdatePayload = {
+            status: string;
+            latestVersion?: string;
+            currentVersion?: string;
+            downloadUrl?: string;
+          };
+          const bag = window as unknown as {
+            __agentUpUpdateListeners?: Array<(p: UpdatePayload) => void>;
+          };
+          for (const listener of bag.__agentUpUpdateListeners ?? []) {
+            listener({ status: "checking" });
+            listener({
+              status: "up-to-date",
+              latestVersion: "0.1.13-e2e",
+              currentVersion: "0.1.13-e2e",
+            });
+          }
+        },
+        openUpdateDownload: async (url: string) => {
+          window.openedExternal = url;
+        },
+        onUpdateCheckResult: (listener) => {
+          type UpdatePayload = {
+            status: string;
+            latestVersion?: string;
+            currentVersion?: string;
+            downloadUrl?: string;
+            sha512?: string;
+            fileName?: string;
+            message?: string;
+          };
+          const bag = window as unknown as {
+            __agentUpUpdateListeners?: Array<(p: UpdatePayload) => void>;
+          };
+          if (!bag.__agentUpUpdateListeners) bag.__agentUpUpdateListeners = [];
+          bag.__agentUpUpdateListeners.push(listener);
+          return () => {
+            bag.__agentUpUpdateListeners = (bag.__agentUpUpdateListeners ?? []).filter(
+              (item) => item !== listener,
+            );
+          };
+        },
       };
     },
     { selectSkillPackage, recordOpenedVisit },

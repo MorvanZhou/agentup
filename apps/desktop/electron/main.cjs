@@ -340,6 +340,11 @@ app.whenReady().then(async () => {
     const fromEnv = process.env.AGENTUP_WEB_URL?.trim();
     return (fromEnv || releaseWebUrl || "http://127.0.0.1:3000").replace(/\/$/, "");
   });
+  // 设置「关于」与系统 About 同源：产品名 / package.json 版本（开发态勿用 Electron 版本）
+  ipcMain.handle("agentup:app-about", () => ({
+    name: appProductName,
+    version: appProductVersion,
+  }));
   // 粘贴的内存文件（截图等）拿不到磁盘路径：主进程写临时文件返回路径，
   // 渲染层继续走 from-path 复制 staging，字节不经 base64 / JSON。
   ipcMain.handle("agentup:stage-in-memory-file", async (_event, name, bytes) => {

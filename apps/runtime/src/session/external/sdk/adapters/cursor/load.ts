@@ -105,7 +105,7 @@ export async function loadCursorModule(
   if (!template || !profile) throw new ConfigError("该接入方式不支持本地调用");
   const dir = agentSdkDir(userDataRoot, templateId);
   const installed = readInstalledSdk(dir, profile.package);
-  if (!installed) throw new ConfigError("尚未安装，请先开始接入");
+  if (!installed) throw new ConfigError("尚未接入，请先开始接入");
   // Electron 入口找不到平台包旁的 rg；Agent.create 前写入 CURSOR_RIPGREP_PATH
   ensureCursorRipgrepPath(dir);
   try {
@@ -131,7 +131,7 @@ export function resolveEsmEntryUrl(installDir: string, packageName: string): str
   const pkgDir = path.join(installDir, "node_modules", ...packageName.split("/"));
   const pkgJsonPath = path.join(pkgDir, "package.json");
   if (!fs.existsSync(pkgJsonPath)) {
-    throw new ConfigError(`尚未找到已安装的 ${packageName}`);
+    throw new ConfigError(`尚未找到已接入的 ${packageName}`);
   }
   const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8")) as {
     exports?: unknown;

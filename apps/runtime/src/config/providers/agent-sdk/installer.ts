@@ -41,6 +41,8 @@ interface InstallJob extends Omit<InstallJobView, "job_id"> {
   userDataRoot: string;
   packageName: string;
   spec: string;
+  /** 与 spec 一并 npm install 的额外包 */
+  companionSpecs: string[];
   child?: ChildProcess;
   tmpDir?: string;
   /** npm 输出尾部，失败时带到错误里，不然只能看到退出码 */
@@ -166,15 +168,18 @@ export function startAgentSdkInstall(
   const template = getProviderTemplate(templateId);
   const profile = template?.agentSdk;
   if (!template || template.access !== "agent-sdk" || !profile) {
-    throw new ConfigError("该接入方式不支持本地安装");
+    throw new ConfigError("该接入方式不支持本地接入");
   }
   const spec = specOverride?.trim() || profile.spec;
   const packageName = packageNameFromSpec(spec) ?? profile.package;
+  const companionSpecs = (profile.companionSpecs ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean);
   if (readInstalledSdk(agentSdkDir(userDataRoot, templateId), profile.package)) {
-    throw new ConfigError("已经安装过了");
+    throw new ConfigError("已经接入过了");
   }
   const runner = resolveNpmRunner();
-  if (!runner) throw new ConfigError("本机没有可用的 npm（未找到 npm-cli.js），无法自动安装。请先安装 Node.js 并确保已加入 PATH");
+  if (!runner) throw new ConfigError("本机没有可用的 npm（未找到 npm-cli.js），无法自动接入。请先安装 Node.js 并确保已加入 PATH");
 
   const jobId = randomUUID();
   const tmpDir = path.join(userDataRoot, "agent-sdks", `.tmp-${templateId}-${jobId.slice(0, 8)}`);
@@ -184,6 +189,7 @@ export function startAgentSdkInstall(
     userDataRoot,
     packageName,
     spec,
+    companionSpecs,
     phase: "resolving",
     tmpDir,
   };
@@ -220,9 +226,19 @@ async function runInstall(
     };
 
     const code = await new Promise<number | null>((resolve, reject) => {
+      // companionSpecs：同一前缀再装薄客户端等（如 OpenCode CLI + @opencode-ai/sdk）
       const child = spawn(
         runner.command,
-        [...runner.args, "install", "--prefix", job.tmpDir!, job.spec, "--no-audit", "--no-fund"],
+        [
+          ...runner.args,
+          "install",
+          "--prefix",
+          job.tmpDir!,
+          job.spec,
+          ...job.companionSpecs,
+          "--no-audit",
+          "--no-fund",
+        ],
         { env, cwd: job.tmpDir!, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
       );
       job.child = child;
@@ -236,10 +252,10 @@ async function runInstall(
       child.stdout?.on("data", onChunk);
       child.stderr?.on("data", onChunk);
       child.on("error", (error) => {
-        // Windows 误 spawn .cmd 时常见 EINVAL；统一成可读安装错误
+        // Windows 误 spawn .cmd 时常见 EINVAL；统一成可读接入错误
         reject(
           new ConfigError(
-            `安装失败（无法启动 npm：${error instanceof Error ? error.message : String(error)}）`,
+            `接入失败（无法启动 npm：${error instanceof Error ? error.message : String(error)}）`,
           ),
         );
       });
@@ -254,13 +270,13 @@ async function runInstall(
     if ((job.phase as InstallPhase) === "cancelled") return;
     if (code !== 0) {
       throw new ConfigError(
-        job.npmTail ? `安装失败（npm 退出码 ${code}）：${job.npmTail}` : `安装失败（npm 退出码 ${code}）`,
+        job.npmTail ? `接入失败（npm 退出码 ${code}）：${job.npmTail}` : `接入失败（npm 退出码 ${code}）`,
       );
     }
 
     job.phase = "verifying";
     const installed = readInstalledSdk(job.tmpDir!, job.packageName);
-    if (!installed) throw new ConfigError("安装完成但未找到包，已回滚");
+    if (!installed) throw new ConfigError("接入完成但未找到包，已回滚");
 
     job.phase = "finalizing";
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -272,10 +288,10 @@ async function runInstall(
       installedVersion: installed.version,
     });
     job.phase = "done";
-    job.detail = `已安装 ${installed.version}`;
+    job.detail = `已接入 ${installed.version}`;
   } catch (error) {
     if ((job.phase as InstallPhase) === "cancelled") return;
-    const message = error instanceof Error ? error.message : "安装失败";
+    const message = error instanceof Error ? error.message : "接入失败";
     job.phase = "failed";
     job.error = message;
     cleanupTmp(job);

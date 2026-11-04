@@ -311,6 +311,15 @@ export class DesktopApi {
     return settingsApi.checkAgentSdkLogin(this.http, token, templateId, options);
   }
 
+  /** OpenCode Zen：粘贴官网 API Key */
+  submitAgentSdkApiKey(
+    token: string,
+    templateId: string,
+    apiKey: string,
+  ): Promise<settingsApi.AgentSdkLoginResult> {
+    return settingsApi.submitAgentSdkApiKey(this.http, token, templateId, apiKey);
+  }
+
   /** 登出本地 App：回到「已安装 / 未登录」，可以再登录别的账号 */
   logoutAgentSdk(token: string, templateId: string, locale?: UiLocale): Promise<ProviderSettings> {
     return settingsApi.logoutAgentSdk(this.http, token, templateId, locale);

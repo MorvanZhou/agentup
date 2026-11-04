@@ -18,8 +18,25 @@ type Harness = {
 
 let harness: Harness | null = null;
 
+const CASCADE_OPTIONS: AppSelectOption[] = [
+  { value: "cursor-sdk", label: "Cursor", group: "本地 Agent App 接入", hint: "可用", active: true },
+  { value: "codebuddy-sdk", label: "Workbuddy", group: "本地 Agent App 接入" },
+  { value: "openai", label: "OpenAI", group: "API Key 接入", active: true },
+  { value: "ollama", label: "Ollama", group: "API Key 接入" },
+];
+
 function mountSelect(
-  opts?: { modelValue?: string; disabled?: boolean; options?: AppSelectOption[] },
+  opts?: {
+    modelValue?: string;
+    disabled?: boolean;
+    options?: AppSelectOption[];
+    cascade?: boolean;
+    groupLabel?: string;
+    defaultGroup?: string;
+    searchable?: boolean;
+    searchPlaceholder?: string;
+    searchEmpty?: string;
+  },
 ): Harness {
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -29,9 +46,15 @@ function mountSelect(
       return () =>
         h(AppSelect, {
           modelValue: model.value,
-          label: "供应商",
+          label: opts?.cascade ? "接入商" : "供应商",
+          groupLabel: opts?.groupLabel ?? (opts?.cascade ? "接入方式" : undefined),
+          defaultGroup: opts?.defaultGroup,
+          cascade: opts?.cascade,
           options: opts?.options ?? OPTIONS,
           disabled: opts?.disabled,
+          searchable: opts?.searchable,
+          searchPlaceholder: opts?.searchPlaceholder,
+          searchEmpty: opts?.searchEmpty,
           activeHint: "已配置并生效",
           "onUpdate:modelValue": (value: string) => {
             model.value = value;
@@ -51,14 +74,20 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function triggerOf(host: HTMLElement): HTMLButtonElement {
-  const button = host.querySelector<HTMLButtonElement>("button[aria-haspopup='true']");
-  if (!button) throw new Error("missing AppSelect trigger");
+function triggerOf(host: HTMLElement, index = 0): HTMLButtonElement {
+  const buttons = host.querySelectorAll<HTMLButtonElement>("button[aria-haspopup='true']");
+  const button = buttons[index];
+  if (!button) throw new Error(`missing AppSelect trigger #${index}`);
   return button;
 }
 
 function listboxOf(host: HTMLElement): HTMLElement | null {
   return host.querySelector('[role="listbox"]');
+}
+
+/** 菜单外壳（含翻转 / 限高）；搜索开启后 listbox 不再承担定位 class */
+function menuPanelOf(host: HTMLElement): HTMLElement | null {
+  return host.querySelector("[data-placement]");
 }
 
 function optionNamed(host: HTMLElement, name: string): HTMLButtonElement {
@@ -167,4 +196,181 @@ it("禁用时不打开列表", async () => {
   await nextTick();
 
   expect(listboxOf(host)).toBeNull();
+});
+
+it("级联：左右两个下拉，左侧默认落到 defaultGroup，右侧只列该组接入商", async () => {
+  const { host, model } = mountSelect({
+    cascade: true,
+    modelValue: "",
+    defaultGroup: "本地 Agent App 接入",
+    options: CASCADE_OPTIONS,
+  });
+  await nextTick();
+
+  expect(host.querySelectorAll("button[aria-haspopup='true']")).toHaveLength(2);
+  expect(triggerOf(host, 0).textContent).toContain("本地 Agent App 接入");
+  // 空值时落到该组第一项
+  expect(model.value).toBe("cursor-sdk");
+  expect(triggerOf(host, 1).textContent).toContain("Cursor");
+
+  triggerOf(host, 1).click();
+  await nextTick();
+  const rightOptions = [...host.querySelectorAll('[role="option"]')].map((el) => el.textContent ?? "");
+  expect(rightOptions.some((text) => text.includes("Cursor"))).toBe(true);
+  expect(rightOptions.some((text) => text.includes("Workbuddy"))).toBe(true);
+  expect(rightOptions.some((text) => text.includes("OpenAI"))).toBe(false);
+});
+
+it("级联：切换接入方式后右侧换成该组接入商，并更新选中值", async () => {
+  const { host, model } = mountSelect({
+    cascade: true,
+    modelValue: "cursor-sdk",
+    defaultGroup: "本地 Agent App 接入",
+    options: CASCADE_OPTIONS,
+  });
+  await nextTick();
+
+  triggerOf(host, 0).click();
+  await nextTick();
+  optionNamed(host, "API Key 接入").click();
+  await nextTick();
+  await nextTick();
+
+  expect(model.value).toBe("openai");
+  expect(triggerOf(host, 0).textContent).toContain("API Key 接入");
+  expect(triggerOf(host, 1).textContent).toContain("OpenAI");
+
+  triggerOf(host, 1).click();
+  await nextTick();
+  const rightOptions = [...host.querySelectorAll('[role="option"]')].map((el) => el.textContent ?? "");
+  expect(rightOptions.some((text) => text.includes("Ollama"))).toBe(true);
+  expect(rightOptions.some((text) => text.includes("Cursor"))).toBe(false);
+});
+
+it("贴近视口底部打开时菜单翻转到上方，并按可用高度限高", async () => {
+  const { host } = mountSelect();
+  const trigger = triggerOf(host);
+  // 视口 600；触发器贴底 → 应 above，限高吃上方空间（不超过 256）
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+  trigger.getBoundingClientRect = () =>
+    ({
+      top: 500,
+      bottom: 536,
+      left: 0,
+      right: 200,
+      width: 200,
+      height: 36,
+      x: 0,
+      y: 500,
+      toJSON() {
+        return {};
+      },
+    }) as DOMRect;
+
+  trigger.click();
+  await nextTick();
+
+  const panel = menuPanelOf(host);
+  expect(panel).not.toBeNull();
+  expect(panel?.getAttribute("data-placement")).toBe("above");
+  expect(panel?.style.maxHeight).toBe("256px");
+  expect(panel?.className).toContain("bottom-full");
+});
+
+it("下方空间充足时菜单仍向下开", async () => {
+  const { host } = mountSelect();
+  const trigger = triggerOf(host);
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+  trigger.getBoundingClientRect = () =>
+    ({
+      top: 100,
+      bottom: 136,
+      left: 0,
+      right: 200,
+      width: 200,
+      height: 36,
+      x: 0,
+      y: 100,
+      toJSON() {
+        return {};
+      },
+    }) as DOMRect;
+
+  trigger.click();
+  await nextTick();
+
+  const panel = menuPanelOf(host);
+  expect(panel?.getAttribute("data-placement")).toBe("below");
+  expect(panel?.style.maxHeight).toBe("256px");
+  expect(panel?.className).toContain("top-full");
+});
+
+it("默认不可搜索：打开菜单没有搜索框", async () => {
+  const { host } = mountSelect();
+  triggerOf(host).click();
+  await nextTick();
+  expect(host.querySelector('input[type="search"]')).toBeNull();
+});
+
+it("可搜索：打开后按关键字过滤选项，无匹配显示空态", async () => {
+  const { host } = mountSelect({
+    searchable: true,
+    searchPlaceholder: "搜索供应商",
+    searchEmpty: "无匹配项",
+    options: [
+      { value: "openai", label: "OpenAI", group: "API Key 接入" },
+      { value: "openrouter", label: "OpenRouter", group: "API Key 接入" },
+      { value: "mistral", label: "Mistral", group: "API Key 接入" },
+    ],
+  });
+  triggerOf(host).click();
+  await nextTick();
+
+  const input = host.querySelector<HTMLInputElement>('input[type="search"]');
+  expect(input).not.toBeNull();
+  expect(input?.placeholder).toBe("搜索供应商");
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(3);
+
+  input!.value = "open";
+  input!.dispatchEvent(new Event("input", { bubbles: true }));
+  await nextTick();
+
+  const labels = [...host.querySelectorAll('[role="option"]')].map((el) => el.textContent ?? "");
+  expect(labels.some((text) => text.includes("OpenAI"))).toBe(true);
+  expect(labels.some((text) => text.includes("OpenRouter"))).toBe(true);
+  expect(labels.some((text) => text.includes("Mistral"))).toBe(false);
+
+  input!.value = "zzz-no-hit";
+  input!.dispatchEvent(new Event("input", { bubbles: true }));
+  await nextTick();
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(0);
+  expect(host.textContent).toContain("无匹配项");
+});
+
+it("可搜索：级联右侧也可按关键字过滤接入商", async () => {
+  const { host } = mountSelect({
+    cascade: true,
+    searchable: true,
+    modelValue: "openai",
+    defaultGroup: "API Key 接入",
+    options: [
+      ...CASCADE_OPTIONS,
+      { value: "openrouter", label: "OpenRouter", group: "API Key 接入" },
+      { value: "mistral", label: "Mistral", group: "API Key 接入" },
+    ],
+  });
+  await nextTick();
+  triggerOf(host, 1).click();
+  await nextTick();
+
+  const input = host.querySelector<HTMLInputElement>('input[type="search"]');
+  expect(input).not.toBeNull();
+  input!.value = "mistral";
+  input!.dispatchEvent(new Event("input", { bubbles: true }));
+  await nextTick();
+
+  const labels = [...host.querySelectorAll('[role="option"]')].map((el) => el.textContent ?? "");
+  expect(labels.some((text) => text.includes("Mistral"))).toBe(true);
+  expect(labels.some((text) => text.includes("OpenAI"))).toBe(false);
+  expect(labels.some((text) => text.includes("Cursor"))).toBe(false);
 });

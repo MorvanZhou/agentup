@@ -9,6 +9,8 @@ import { installedCliPath as codebuddyCliPath } from "./adapters/codebuddy/load.
 import { codexDriver } from "./adapters/codex/index.js";
 import { resolveCodexCliPath } from "./adapters/codex/load.js";
 import { cursorDriver } from "./adapters/cursor/index.js";
+import { opencodeDriver } from "./adapters/opencode/index.js";
+import { resolveOpencodeCliPath } from "./adapters/opencode/load.js";
 import type { ExternalDriver, ExternalDriverId } from "./contract.js";
 
 const DRIVERS: Record<string, ExternalDriver> = {
@@ -16,6 +18,7 @@ const DRIVERS: Record<string, ExternalDriver> = {
   "claude-code": claudeCodeDriver,
   cursor: cursorDriver,
   codex: codexDriver,
+  opencode: opencodeDriver,
 };
 
 export function getExternalDriver(driverId: ExternalDriverId | string): ExternalDriver {
@@ -44,6 +47,9 @@ export function installedCliPathFor(userDataRoot: string, templateId: string): s
   }
   if (profile.driverId === "codex") {
     return resolveCodexCliPath(userDataRoot, templateId);
+  }
+  if (profile.driverId === "opencode") {
+    return resolveOpencodeCliPath(userDataRoot, templateId);
   }
   // 其它厂商：有 CLI 时再按 profile 扩展；默认读安装记录
   return readInstalledSdk(agentSdkDir(userDataRoot, templateId), profile.package)?.cliPath ?? null;

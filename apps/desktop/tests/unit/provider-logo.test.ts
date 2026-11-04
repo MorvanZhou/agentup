@@ -13,6 +13,22 @@ it("把 vendorId 映射到模型品牌标：Google→Gemini、阿里→Qwen、�
   expect(resolveProviderMarkId("zhipu")).toBe("zai");
 });
 
+it("A 档新厂商有 Lobe 标形映射", () => {
+  expect(resolveProviderMarkId("openrouter")).toBe("openrouter");
+  expect(resolveProviderMarkId("xai")).toBe("xai");
+  expect(resolveProviderMarkId("mistral")).toBe("mistral");
+  expect(resolveProviderMarkId("groq")).toBe("groq");
+  expect(resolveProviderMarkId("minimax")).toBe("minimax");
+  expect(resolveProviderMarkId("fireworks")).toBe("fireworks");
+  expect(resolveProviderMarkId("together")).toBe("together");
+  expect(resolveProviderMarkId("nvidia")).toBe("nvidia");
+  expect(resolveProviderMarkId("huggingface")).toBe("huggingface");
+  const host = mountView(ProviderLogo, {
+    props: { vendorId: "openrouter", label: "OpenRouter", size: "md" },
+  });
+  expect(host.querySelector("svg")).not.toBeNull();
+});
+
 it("本地 App 的 codebuddy 使用 WorkBuddy 标形", () => {
   expect(resolveProviderMarkId("codebuddy")).toBe("workbuddy");
   const host = mountView(ProviderLogo, {
@@ -25,6 +41,14 @@ it("本地 App 的 cursor 使用 Lobe Icons Cursor 标形", () => {
   expect(resolveProviderMarkId("cursor")).toBe("cursor");
   const host = mountView(ProviderLogo, {
     props: { vendorId: "cursor", label: "Cursor", size: "md" },
+  });
+  expect(host.querySelector("svg")).not.toBeNull();
+});
+
+it("本地 App 的 opencode 使用官方方标单色 SVG", () => {
+  expect(resolveProviderMarkId("opencode")).toBe("opencode");
+  const host = mountView(ProviderLogo, {
+    props: { vendorId: "opencode", label: "OpenCode", size: "md" },
   });
   expect(host.querySelector("svg")).not.toBeNull();
 });

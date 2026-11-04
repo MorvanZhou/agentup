@@ -51,6 +51,8 @@ interface Window {
     oauthLoopbackStop?(): Promise<void>;
     /** 对外 Web 登录门面根地址（无尾斜杠）。 */
     webUrl?(): Promise<string>;
+    /** 产品名与版本（与系统 About 同源）。 */
+    getAppAbout?(): Promise<{ name: string; version: string }>;
     /** 同步 Electron nativeTheme（DevTools / 菜单等）与应用主题。 */
     setThemeSource?(mode: "system" | "light" | "dark"): Promise<void>;
     /** 同步 Dock / 任务栏待处理角标（0 清除）。 */

@@ -203,6 +203,8 @@ export interface AgentSdkLoginResult {
   accountLabel?: string;
   /** Codex device-auth 等：网页里要填的一次性码 */
   deviceCode?: string;
+  /** OpenCode Zen Key 回落：设置页展示粘贴框 */
+  needsApiKey?: boolean;
 }
 
 export async function installAgentSdk(
@@ -259,6 +261,7 @@ function parseAgentSdkLoginResult(payload: {
   state?: unknown;
   account_label?: unknown;
   device_code?: unknown;
+  needs_api_key?: unknown;
 }): AgentSdkLoginResult {
   return {
     authUrl: typeof payload.auth_url === "string" ? payload.auth_url : null,
@@ -268,6 +271,7 @@ function parseAgentSdkLoginResult(payload: {
     ...(typeof payload.device_code === "string" && payload.device_code.trim()
       ? { deviceCode: payload.device_code.trim() }
       : {}),
+    ...(payload.needs_api_key === true ? { needsApiKey: true } : {}),
   };
 }
 
@@ -286,6 +290,7 @@ export async function loginAgentSdk(
     state?: unknown;
     account_label?: unknown;
     device_code?: unknown;
+    needs_api_key?: unknown;
   };
   return parseAgentSdkLoginResult(payload);
 }
@@ -305,6 +310,28 @@ export async function checkAgentSdkLogin(
     state?: unknown;
     account_label?: unknown;
     device_code?: unknown;
+    needs_api_key?: unknown;
+  };
+  return parseAgentSdkLoginResult(payload);
+}
+
+/** OpenCode Zen：粘贴官网 API Key 写入隔离目录 */
+export async function submitAgentSdkApiKey(
+  http: RuntimeHttp,
+  token: string,
+  templateId: string,
+  apiKey: string,
+): Promise<AgentSdkLoginResult> {
+  const payload = (await http.request(
+    `/settings/provider/agents/${encodeURIComponent(templateId)}/login-key`,
+    token,
+    { api_key: apiKey },
+  )) as {
+    auth_url?: unknown;
+    state?: unknown;
+    account_label?: unknown;
+    device_code?: unknown;
+    needs_api_key?: unknown;
   };
   return parseAgentSdkLoginResult(payload);
 }

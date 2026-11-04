@@ -1,15 +1,27 @@
 import type { Api, Model, Provider } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
+import { fireworksProvider } from "@earendil-works/pi-ai/providers/fireworks";
 import { googleProvider } from "@earendil-works/pi-ai/providers/google";
+import { groqProvider } from "@earendil-works/pi-ai/providers/groq";
+import { huggingfaceProvider } from "@earendil-works/pi-ai/providers/huggingface";
 import { kimiCodingProvider } from "@earendil-works/pi-ai/providers/kimi-coding";
 import { metaProvider } from "@earendil-works/pi-ai/providers/meta";
+import { minimaxProvider } from "@earendil-works/pi-ai/providers/minimax";
+import { minimaxCnProvider } from "@earendil-works/pi-ai/providers/minimax-cn";
+import { mistralProvider } from "@earendil-works/pi-ai/providers/mistral";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { moonshotaiCnProvider } from "@earendil-works/pi-ai/providers/moonshotai-cn";
+import { nvidiaProvider } from "@earendil-works/pi-ai/providers/nvidia";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
+import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { qwenTokenPlanProvider } from "@earendil-works/pi-ai/providers/qwen-token-plan";
 import { qwenTokenPlanCnProvider } from "@earendil-works/pi-ai/providers/qwen-token-plan-cn";
 import { qwenTokenPlanIndividualProvider } from "@earendil-works/pi-ai/providers/qwen-token-plan-individual";
+import { togetherProvider } from "@earendil-works/pi-ai/providers/together";
+import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import { zaiProvider } from "@earendil-works/pi-ai/providers/zai";
 import { zaiCodingCnProvider } from "@earendil-works/pi-ai/providers/zai-coding-cn";
 
@@ -42,11 +54,16 @@ export interface AgentSdkProfile {
    * 实现契约的 adaptor id（与 templateId 解耦）。
    * 见 .cursor/skills/agentup-sdk-adapter/references/directory.md §6。
    */
-  driverId: "codebuddy" | "claude-code" | "cursor" | "codex" | (string & {});
+  driverId: "codebuddy" | "claude-code" | "cursor" | "codex" | "opencode" | (string & {});
   /** npm 包名，也用于定位安装目录内的包 */
   package: string;
   /** 安装 spec（含版本范围），避免装到不兼容的大版本 */
   spec: string;
+  /**
+   * 同前缀额外安装的包（如 OpenCode：主包装 CLI，再装薄 SDK 客户端）。
+   * 安装器 `npm install` 时与 `spec` 一并传入；自检仍只认 `package`。
+   */
+  companionSpecs?: readonly string[];
   /** 安装体积提示，设置页提前告知，别让人以为卡死 */
   sizeHintMb: number;
   loginGuide?: { command?: string; docUrl?: string };
@@ -214,6 +231,48 @@ const TEMPLATE_DEFS: TemplateDef[] = [
   native("google", "google", "Google", "Gemini", googleProvider),
   native("deepseek", "deepseek", "DeepSeek", OFFICIAL_API, deepseekProvider),
   native("meta", "meta", "Meta", "Muse", metaProvider, "Meta Model API"),
+  // A 档补齐：pi-ai 内置 factory，API Key 直连（与现有 native 同路径）
+  native(
+    "openrouter",
+    "openrouter",
+    "OpenRouter",
+    OFFICIAL_API,
+    openrouterProvider,
+    { key: "provider.template.openrouter.hint" },
+  ),
+  native("xai", "xai", "xAI", OFFICIAL_API, xaiProvider),
+  native("mistral", "mistral", "Mistral", OFFICIAL_API, mistralProvider),
+  native("groq", "groq", "Groq", OFFICIAL_API, groqProvider),
+  native("minimax", "minimax", "MiniMax", { key: "provider.option.minimaxIntl" }, minimaxProvider),
+  native("minimax-cn", "minimax", "MiniMax", { key: "provider.option.minimaxCn" }, minimaxCnProvider),
+  native("fireworks", "fireworks", "Fireworks", OFFICIAL_API, fireworksProvider),
+  native("together", "together", "Together AI", OFFICIAL_API, togetherProvider),
+  native("nvidia", "nvidia", "NVIDIA", "NIM", nvidiaProvider),
+  native(
+    "huggingface",
+    "huggingface",
+    "Hugging Face",
+    OFFICIAL_API,
+    huggingfaceProvider,
+    { key: "provider.template.huggingface.hint" },
+  ),
+  // OpenCode 模型网关（API Key）；整套本地 agent 走 opencode-sdk，勿混
+  native(
+    "opencode",
+    "opencode",
+    "OpenCode",
+    "Zen",
+    opencodeProvider,
+    { key: "provider.template.opencode.hint" },
+  ),
+  native(
+    "opencode-go",
+    "opencode",
+    "OpenCode",
+    "Go",
+    opencodeGoProvider,
+    { key: "provider.template.opencode-go.hint" },
+  ),
   native("moonshotai", "kimi", "Kimi", { key: "provider.option.moonshotIntl" }, moonshotaiProvider),
   native("moonshotai-cn", "kimi", "Kimi", { key: "provider.option.moonshotCn" }, moonshotaiCnProvider),
   native(
@@ -399,6 +458,40 @@ const TEMPLATE_DEFS: TemplateDef[] = [
         docUrl: "https://learn.chatgpt.com/docs/codex-sdk",
       },
       skillsProjectRel: ".agents/skills",
+    },
+  },
+  {
+    // OpenCode 本地 Agent App：官方 opencode/Zen 账号模型与额度；隔离 home，不 Attach Desktop
+    id: "opencode-sdk",
+    vendorId: "opencode",
+    vendorLabel: "OpenCode",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.opencode-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "opencode-sdk",
+    requiresApiKey: false,
+    defaultModelId: "default",
+    hint: { key: "provider.template.opencode-sdk.hint" },
+    models: [
+      {
+        id: "default",
+        name: "OpenCode 默认模型",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+    ],
+    agentSdk: {
+      driverId: "opencode",
+      // 主包：平台 CLI（optionalDeps）；薄 SDK 经 companionSpecs 同前缀安装
+      package: "opencode-ai",
+      spec: "opencode-ai@1.19.5",
+      companionSpecs: ["@opencode-ai/sdk@1.19.5"],
+      sizeHintMb: 180,
+      loginGuide: {
+        command: "opencode auth login opencode",
+        docUrl: "https://opencode.ai/docs/providers/",
+      },
+      skillsProjectRel: ".opencode/skills",
     },
   },
   {

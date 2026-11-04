@@ -94,9 +94,11 @@ export function collectGroupUnreadBumps(
   return { phases, bumpIds };
 }
 
-export type SidebarSlot =
-  | { kind: "agent"; row: ConversationRow }
-  | { kind: "group"; row: GroupSidebarRow };
+/** 侧栏分区：群为一等公民置顶区，私聊（含私人助理）单独成区。 */
+export type SidebarSections = {
+  groups: GroupSidebarRow[];
+  agents: ConversationRow[];
+};
 
 /** 群在侧栏里的时间：最后一条可见消息。没有消息时沉到列表后部。 */
 export function groupActivityAt(room: Pick<GroupRoom, "lines" | "updatedAt">): number {
@@ -199,10 +201,10 @@ export function groupAttentionFromSnapshot(snap: {
 }
 
 /**
- * 私人助理钉在最上。其余单聊和群按最近一条消息混排，和微信会话列表一样。
- * 待用户操作的群 / 单聊再按注意力置顶（在最近活跃之上）。
+ * 群 / 私聊分两区：区内仍按注意力置顶，再按最近消息。
+ * 私人助理钉在私聊区最上。
  */
-export function mergeSidebarSlots(
+export function buildSidebarSections(
   rows: ConversationRow[],
   groups: GroupRoom[],
   query: string,
@@ -211,7 +213,7 @@ export function mergeSidebarSlots(
     attention?: GroupSidebarAttention;
     unread?: Record<string, number>;
   },
-): SidebarSlot[] {
+): SidebarSections {
   const agents = filterConversationRows(rows, query);
   const q = query.trim().toLowerCase();
   const rooms = groups.filter((room) => !q || groupSearchText(room).includes(q));
@@ -219,33 +221,36 @@ export function mergeSidebarSlots(
   const selectedGroupId = options?.selectedGroupId ?? null;
   const attention = options?.attention;
   const unread = options?.unread;
-  const rest: Array<{ at: number; pin: number; slot: SidebarSlot }> = [
-    ...agents
-      .filter((row) => row.agent.kind !== "personal")
-      .map((row) => ({
-        at: row.lastActiveAt,
-        pin: agentAttentionPin(row),
-        slot: { kind: "agent" as const, row },
-      })),
-    ...rooms.map((room) => {
-      const row = buildGroupSidebarRow({
+
+  const groupRows = rooms
+    .map((room) =>
+      buildGroupSidebarRow({
         room,
         selected: room.id === selectedGroupId,
         attention,
         unread,
-      });
-      return {
-        at: groupActivityAt(room),
-        pin: groupAttentionPin(row),
-        slot: { kind: "group" as const, row },
-      };
-    }),
-  ];
-  rest.sort((left, right) => {
-    if (left.pin !== right.pin) return left.pin - right.pin;
-    return right.at - left.at;
-  });
-  return [...personal.map((row) => ({ kind: "agent" as const, row })), ...rest.map((item) => item.slot)];
+      }),
+    )
+    .map((row) => ({ at: groupActivityAt(row.room), pin: groupAttentionPin(row), row }))
+    .sort((left, right) => {
+      if (left.pin !== right.pin) return left.pin - right.pin;
+      return right.at - left.at;
+    })
+    .map((item) => item.row);
+
+  const directRows = agents
+    .filter((row) => row.agent.kind !== "personal")
+    .map((row) => ({ at: row.lastActiveAt, pin: agentAttentionPin(row), row }))
+    .sort((left, right) => {
+      if (left.pin !== right.pin) return left.pin - right.pin;
+      return right.at - left.at;
+    })
+    .map((item) => item.row);
+
+  return {
+    groups: groupRows,
+    agents: [...personal, ...directRows],
+  };
 }
 
 /** 越小越靠前；无注意力需求为 99。与单聊 attentionPinRank 同级。 */
