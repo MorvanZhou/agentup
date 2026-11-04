@@ -8,9 +8,16 @@
  * 体积：tarball ~3MB；解压后裁掉 man/docs ≈15MB（落盘进 Resources）。
  */
 const { createHash } = require("node:crypto");
-const { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } =
-  require("node:fs");
-const { tmpdir } = require("node:os");
+const {
+  cpSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} = require("node:fs");
 const path = require("node:path");
 const { pipeline } = require("node:stream/promises");
 const { loadTar } = require("./pack-runtime-modules.cjs");
@@ -57,6 +64,17 @@ async function extractTarball(tgzPath, extractDir) {
   await tar.x({ file: tgzPath, cwd: extractDir });
 }
 
+/** 同盘 rename；跨盘（Win CI：Temp 在 C:、仓库在 D:）回落 copy+rm，避免 EXDEV。 */
+function moveDir(from, to) {
+  try {
+    renameSync(from, to);
+  } catch (error) {
+    if (!error || error.code !== "EXDEV") throw error;
+    cpSync(from, to, { recursive: true });
+    rmSync(from, { recursive: true, force: true });
+  }
+}
+
 function prepareFromExtract(packageDir) {
   // 安装器只需 cli + lib；裁掉文档省 ~2.5MB
   for (const name of ["man", "docs"]) {
@@ -69,7 +87,7 @@ function prepareFromExtract(packageDir) {
   }
   rmSync(destRoot, { recursive: true, force: true });
   mkdirSync(path.dirname(destRoot), { recursive: true });
-  renameSync(packageDir, destRoot);
+  moveDir(packageDir, destRoot);
   writeFileSync(stampPath, `${NPM_VERSION}\n`);
 }
 
@@ -79,10 +97,8 @@ async function main() {
     return;
   }
 
-  const work = path.join(
-    tmpdir(),
-    `agentup-npm-${NPM_VERSION}-${process.pid}`,
-  );
+  // 工作目录放在 build/ 下，与 destRoot 同盘，避免 Win runner Temp(C:)→仓库(D:) 的 EXDEV
+  const work = path.join(desktopRoot, "build", `.tmp-npm-${NPM_VERSION}-${process.pid}`);
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
   const tgz = path.join(work, `npm-${NPM_VERSION}.tgz`);
