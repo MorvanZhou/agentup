@@ -22,6 +22,16 @@ import {
   refreshCursorModels,
 } from "../../../session/external/sdk/adapters/cursor/index.js";
 import {
+  ensureCopilotModels,
+  fetchCopilotModels,
+  refreshCopilotModels,
+} from "../../../session/external/sdk/adapters/copilot/index.js";
+import {
+  ensureDshModels,
+  fetchDshModels,
+  refreshDshModels,
+} from "../../../session/external/sdk/adapters/dsh/index.js";
+import {
   ensureOpencodeModels,
   fetchOpencodeModels,
   refreshOpencodeModels,
@@ -44,6 +54,8 @@ export async function fetchAgentSdkModels(
   if (driverId === "cursor") return fetchCursorModels(userDataRoot, templateId);
   if (driverId === "codex") return fetchCodexModels(userDataRoot, templateId);
   if (driverId === "opencode") return fetchOpencodeModels(userDataRoot, templateId);
+  if (driverId === "copilot") return fetchCopilotModels(userDataRoot, templateId);
+  if (driverId === "dsh") return fetchDshModels(userDataRoot, templateId);
   if (driverId === "codebuddy") return fetchCodebuddyModels(userDataRoot, templateId);
   throw new ConfigError(`尚未实现 ${driverId} 的模型目录`);
 }
@@ -56,6 +68,8 @@ export async function refreshAgentSdkModels(
   if (driverId === "cursor") return refreshCursorModels(userDataRoot, templateId);
   if (driverId === "codex") return refreshCodexModels(userDataRoot, templateId);
   if (driverId === "opencode") return refreshOpencodeModels(userDataRoot, templateId);
+  if (driverId === "copilot") return refreshCopilotModels(userDataRoot, templateId);
+  if (driverId === "dsh") return refreshDshModels(userDataRoot, templateId);
   if (driverId === "codebuddy") return refreshCodebuddyModels(userDataRoot, templateId);
   throw new ConfigError(`尚未实现 ${driverId} 的模型目录`);
 }
@@ -75,6 +89,14 @@ export async function ensureAgentSdkModels(
   }
   if (driverId === "opencode") {
     await ensureOpencodeModels(userDataRoot, templateId);
+    return;
+  }
+  if (driverId === "copilot") {
+    await ensureCopilotModels(userDataRoot, templateId);
+    return;
+  }
+  if (driverId === "dsh") {
+    await ensureDshModels(userDataRoot, templateId);
     return;
   }
   if (driverId === "codebuddy") {
@@ -111,6 +133,22 @@ export async function syncAgentSdkModelsAfterLogin(
       await refreshOpencodeModels(userDataRoot, templateId).catch(() => undefined);
     } else {
       await ensureOpencodeModels(userDataRoot, templateId);
+    }
+    return;
+  }
+  if (driverId === "copilot") {
+    if (options?.accountChanged) {
+      await refreshCopilotModels(userDataRoot, templateId).catch(() => undefined);
+    } else {
+      await ensureCopilotModels(userDataRoot, templateId);
+    }
+    return;
+  }
+  if (driverId === "dsh") {
+    if (options?.accountChanged) {
+      await refreshDshModels(userDataRoot, templateId).catch(() => undefined);
+    } else {
+      await ensureDshModels(userDataRoot, templateId);
     }
     return;
   }

@@ -36,8 +36,11 @@ export interface PromptSession {
    * （.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。只有 API / Pi 原生接入会用到；SDK 接入没有它，走 followUp 队列。
    */
   steer?: AgentSession["steer"];
-  /** 本地 Agent App 的直连事件流；存在时绕开 Pi agent loop，保留 SDK 工具过程与结果。 */
-  externalQuery?: (prompt: string) => Promise<ExternalAgentQuery>;
+  /**
+   * 本地 Agent App 的直连事件流；存在时绕开 Pi agent loop，保留 SDK 工具过程与结果。
+   * signal：Composer 停止须在 startTurn 冷启期间就能 abort（勿等起流返回后再挂）。
+   */
+  externalQuery?: (prompt: string, signal?: AbortSignal) => Promise<ExternalAgentQuery>;
   /** 中断当前 turn，并等到会话空闲。 */
   abort(): Promise<void>;
   dispose(): void;

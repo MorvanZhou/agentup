@@ -53,6 +53,23 @@ it("本地 App 的 opencode 使用官方方标单色 SVG", () => {
   expect(host.querySelector("svg")).not.toBeNull();
 });
 
+it("DeepSeek Harness 与官方 API 标形不同：harness 用带框标", () => {
+  expect(resolveProviderMarkId("deepseek")).toBe("deepseek");
+  expect(resolveProviderMarkId("deepseek-harness")).toBe("deepseek-harness");
+  const api = mountView(ProviderLogo, {
+    props: { vendorId: "deepseek", label: "DeepSeek", size: "md" },
+  });
+  const harness = mountView(ProviderLogo, {
+    props: { vendorId: "deepseek-harness", label: "DeepSeek Harness", size: "md" },
+  });
+  const apiSvg = api.querySelector("svg")?.outerHTML ?? "";
+  const harnessSvg = harness.querySelector("svg")?.outerHTML ?? "";
+  expect(apiSvg).not.toBe("");
+  expect(harnessSvg).not.toBe("");
+  // 带框版 path 更多；勿与官方鲸鱼标共用同一份 SVG
+  expect(harnessSvg).not.toBe(apiSvg);
+});
+
 it("已知厂商渲染单色 SVG 标，无色底磁贴", () => {
   const host = mountView(ProviderLogo, {
     props: { vendorId: "openai", label: "OpenAI", size: "md" },

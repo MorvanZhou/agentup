@@ -54,7 +54,7 @@ export interface AgentSdkProfile {
    * 实现契约的 adaptor id（与 templateId 解耦）。
    * 见 .cursor/skills/agentup-sdk-adapter/references/directory.md §6。
    */
-  driverId: "codebuddy" | "claude-code" | "cursor" | "codex" | "opencode" | (string & {});
+  driverId: "codebuddy" | "claude-code" | "cursor" | "codex" | "opencode" | "copilot" | (string & {});
   /** npm 包名，也用于定位安装目录内的包 */
   package: string;
   /** 安装 spec（含版本范围），避免装到不兼容的大版本 */
@@ -78,6 +78,11 @@ export interface AgentSdkProfile {
    * 未声明则设置页不展示站点选择；其它 driver 忽略。
    */
   authEnvironments?: ReadonlyArray<"internal" | "external">;
+  /**
+   * 粘贴 Key / Token 登录的文案档（Desktop ApiKeyPasteBlock 按此选词条）。
+   * 未声明 = 不走粘贴框（除非登录态临时 needs_api_key，则回落 opencode 词条）。
+   */
+  apiKeyPaste?: "opencode" | "github-pat" | "deepseek";
 }
 
 /** 专有名用 string；需翻译用 catalog key。 */
@@ -492,6 +497,89 @@ const TEMPLATE_DEFS: TemplateDef[] = [
         docUrl: "https://opencode.ai/docs/providers/",
       },
       skillsProjectRel: ".opencode/skills",
+      apiKeyPaste: "opencode",
+    },
+  },
+  {
+    // DeepSeek Harness 本地 Agent App：粘贴平台 API Key；stdio JSON-RPC 启流
+    // vendorId 与官方 API 的 deepseek 分开，Desktop 标形可区分（文案仍是 DeepSeek）
+    id: "deepseek-harness-sdk",
+    vendorId: "deepseek-harness",
+    vendorLabel: "DeepSeek",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.deepseek-harness-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "deepseek-harness-sdk",
+    requiresApiKey: false,
+    // 登录前占位；登录后 lifecycle FALLBACK 覆盖写入（与官方目录对齐）
+    defaultModelId: "deepseek-flash",
+    hint: { key: "provider.template.deepseek-harness-sdk.hint" },
+    models: [
+      {
+        id: "deepseek-flash",
+        name: "DeepSeek V4.1 Flash",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+      {
+        id: "deepseek-v4-pro",
+        name: "DeepSeek V4 Pro",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+    ],
+    agentSdk: {
+      driverId: "dsh",
+      package: "@deepseek-ai/dsh-sdk-client",
+      // 钉版：client 依赖同号 @deepseek-ai/dsh；升级须同号
+      spec: "@deepseek-ai/dsh-sdk-client@0.2.2-rc.1",
+      // 依赖树含完整 harness 插件；提示体积避免用户以为卡死
+      sizeHintMb: 100,
+      loginGuide: {
+        command: "paste DeepSeek API Key",
+        docUrl: "https://platform.deepseek.com/api_keys",
+      },
+      // 方案 D：项目根优先扫描 .dsh/skills
+      skillsProjectRel: ".dsh/skills",
+      apiKeyPaste: "deepseek",
+    },
+  },
+  {
+    // GitHub Copilot 本地 Agent App：订阅登录；CLI 经 @github/copilot-sdk 拉起
+    id: "copilot-sdk",
+    vendorId: "copilot",
+    vendorLabel: "GitHub Copilot",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.copilot-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "copilot-sdk",
+    requiresApiKey: false,
+    defaultModelId: "auto",
+    hint: { key: "provider.template.copilot-sdk.hint" },
+    models: [
+      {
+        id: "auto",
+        name: "Copilot Auto",
+        api: "agentup-agent-sdk",
+        reasoning: false,
+      },
+    ],
+    agentSdk: {
+      driverId: "copilot",
+      package: "@github/copilot-sdk",
+      // 钉版本：平台 optionalDeps（@github/copilot-sdk-<os>-<arch>）同号
+      spec: "@github/copilot-sdk@1.0.28",
+      // 含平台 CLI runtime（解压约 150MB）
+      sizeHintMb: 160,
+      loginGuide: {
+        // SDK 无 LoginAsync；设置页粘贴 fine-grained PAT（需 Copilot Requests）
+        command: "paste GitHub token",
+        docUrl: "https://github.com/settings/personal-access-tokens",
+      },
+      // 方案 D：投影到 cwd；Turn 时再经 skillDirectories 显式传入
+      skillsProjectRel: ".github/skills",
+      // 设置页粘贴 fine-grained PAT；词条含 Account 权限提醒
+      apiKeyPaste: "github-pat",
     },
   },
   {

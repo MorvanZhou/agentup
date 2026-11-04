@@ -22,9 +22,11 @@ import {
   buildAssistantByproducts,
   type ByproductTabId,
 } from "../../../../../model/message/message-byproducts";
+import { shouldShowAssistantReload } from "../../../../../model/message/assistant-reload";
 import { injectPendingAskUserToolCallId } from "../../../../../model/thread/thread-ask-user";
 import { chatMessageAuthor } from "../../../../../model/thread/chat-surface";
 import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
+import { injectThreadWakeLive } from "../../../../../model/thread/thread-wake-live";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
 import AssistantByproductContent from "./byproducts/AssistantByproductContent.vue";
 import ChatBubble from "../../ChatBubble.vue";
@@ -41,8 +43,13 @@ function onBubbleCopy(event: ClipboardEvent): void {
 
 const extras = injectThreadExtras();
 const pendingAskUserToolCallId = injectPendingAskUserToolCallId();
+const wakeLive = injectThreadWakeLive();
 const copied = useAuiState((s) => s.message.isCopied);
 const metadata = useAuiState((s) => s.message.metadata);
+const messageId = useAuiState((s) => s.message.id);
+const threadMessages = useAuiState((s) => s.thread.messages);
+const canReload = useAuiState((s) => s.thread.capabilities.reload);
+const threadRunning = useAuiState((s) => s.thread.isRunning);
 const messageAuthor = computed(() => chatMessageAuthor(metadata.value));
 const agentName = computed(() => messageAuthor.value?.name || extras.value.name);
 const agentRole = computed(() => messageAuthor.value?.role || "");
@@ -69,6 +76,21 @@ const error = useAuiState((s) => {
 });
 
 const streaming = useAuiState((s) => s.message.status?.type === "running");
+/**
+ * 只给最新已落定的助手气泡「重新生成」。
+ * 本轮正在跑（含 wake 旁路直播）时最新条是生成中那条，历史气泡一律不显示。
+ */
+const showReload = computed(() => {
+  const live = wakeLive?.value;
+  return shouldShowAssistantReload({
+    canReload: canReload.value,
+    messageId: messageId.value,
+    messages: threadMessages.value,
+    threadRunning: threadRunning.value,
+    messageRunning: streaming.value,
+    wakeLiveActive: Boolean(live?.streaming || live?.message || live?.userText),
+  });
+});
 const parts = useAuiState((s) => s.message.parts);
 const messageCancelStatus = useAuiState((s) => {
   const message = s.message;
@@ -375,7 +397,11 @@ const hasArtifactsTab = computed(
           <CheckIcon v-if="copied" class="size-3.5" />
           <CopyIcon v-else class="size-3.5" />
         </ActionBarPrimitiveCopy>
-        <ActionBarPrimitiveReload class="hover:text-foreground rounded p-1" :aria-label="t('msgReload')">
+        <ActionBarPrimitiveReload
+          v-if="showReload"
+          class="hover:text-foreground rounded p-1"
+          :aria-label="t('msgReload')"
+        >
           <RefreshCwIcon class="size-3.5" />
         </ActionBarPrimitiveReload>
       </div>

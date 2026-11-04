@@ -110,3 +110,31 @@ it("shows pending rows while waiting for answers", () => {
   expect(summary.rows.map((row) => row.status)).toEqual(["pending", "pending"]);
   expect(summary.rows[0]?.answerLabel).toBe("等待回答");
 });
+
+it("认 dsh 厂商 JSON answers，不误标已跳过", () => {
+  const dshArgs = {
+    questions: [
+      {
+        id: "rerun",
+        header: "重复请求",
+        question: "这个需求上一轮已经交付。你是没看到产物，还是要我重跑一遍流程？",
+        options: [
+          { label: "沿用现有文件，别再跑（推荐）" },
+          { label: "重跑一遍，我要看流程" },
+        ],
+      },
+    ],
+  };
+  const summary = summarizeAskUserTool(
+    dshArgs,
+    JSON.stringify({
+      answers: [{ id: "rerun", selected: ["重跑一遍，我要看流程"] }],
+    }),
+  );
+  expect(summary.cancelled).toBe(false);
+  expect(summary.rows[0]).toMatchObject({
+    status: "answered",
+    answerLabel: "重跑一遍，我要看流程",
+    answers: ["重跑一遍，我要看流程"],
+  });
+});

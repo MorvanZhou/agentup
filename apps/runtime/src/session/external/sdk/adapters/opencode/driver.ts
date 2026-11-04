@@ -11,6 +11,7 @@ import {
   type AskUserAnswer,
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { disposeAgentSdkRuntimesForTemplate } from "../../host/runtime-pool.js";
 import { hasOpencodeAuth } from "./home.js";
 import {
   checkOpencodeLogin,
@@ -24,7 +25,7 @@ import {
   opencodeServerConfigOf,
   opencodeSessionOptionsOf,
 } from "./options.js";
-import { startOpencodeServer } from "./server.js";
+import { acquireOpencodeServer } from "./server-pool.js";
 import {
   mirrorOpencodeEvents,
   type OpencodeQuestion,
@@ -51,6 +52,7 @@ export const opencodeDriver: ExternalDriver = {
   },
 
   async logout(input) {
+    await disposeAgentSdkRuntimesForTemplate(input.userDataRoot, input.templateId);
     await logoutOpencode(input.userDataRoot, input.templateId);
   },
 
@@ -71,13 +73,19 @@ export const opencodeDriver: ExternalDriver = {
     if (!hasOpencodeAuth(input.userDataRoot, input.templateId)) {
       throw new Error("尚未登录 OpenCode");
     }
-    const server = await startOpencodeServer({
+    const config = opencodeServerConfigOf(input);
+    const lease = await acquireOpencodeServer({
       userDataRoot: input.userDataRoot,
       templateId: input.templateId,
       cwd: input.cwd,
-      config: opencodeServerConfigOf(input),
+      config,
       signal: input.abortController.signal,
     });
+    if (input.abortController.signal.aborted) {
+      lease.release();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    }
+    const server = lease.value;
 
     const sdk = await loadOpencodeSdkModule(input.userDataRoot, input.templateId);
     const client = sdk.createOpencodeClient({
@@ -87,7 +95,7 @@ export const opencodeDriver: ExternalDriver = {
     const created = await client.session.create(opencodeSessionOptionsOf(input));
     const sessionId = responseId(created);
     if (!sessionId) {
-      await server.close();
+      lease.release();
       throw new Error("OpenCode 未返回 session id");
     }
 
@@ -96,12 +104,24 @@ export const opencodeDriver: ExternalDriver = {
       if (closed) return;
       closed = true;
       await client.session.delete({ sessionID: sessionId, directory: input.cwd }).catch(() => undefined);
-      await server.close();
+      // 进程还给池；闲置到期再 server.close
+      lease.release();
+    };
+    // 关本轮会话；SSE 依赖 abort/delete，不顺手杀 serve
+    const killVendor = () => {
+      void client.session.abort({ sessionID: sessionId, directory: input.cwd }).catch(() => undefined);
+      void close();
     };
     const abort = () => {
-      if (!input.abortController.signal.aborted) input.abortController.abort();
-      void client.session.abort({ sessionID: sessionId, directory: input.cwd }).catch(() => undefined);
+      if (!input.abortController.signal.aborted) {
+        // abort controller 会同步触发下方 listener → killVendor
+        input.abortController.abort();
+        return;
+      }
+      killVendor();
     };
+    input.abortController.signal.addEventListener("abort", killVendor, { once: true });
+    if (input.abortController.signal.aborted) killVendor();
 
     try {
       const subscription = await client.event.subscribe({ directory: input.cwd });
@@ -143,8 +163,16 @@ export const opencodeDriver: ExternalDriver = {
         ...opencodePromptBodyOf(input),
       });
       assertSdkSuccess(prompted, "OpenCode prompt 提交失败");
-      return { messages, abort, close };
+      return {
+        messages,
+        abort,
+        close: async () => {
+          input.abortController.signal.removeEventListener("abort", killVendor);
+          await close();
+        },
+      };
     } catch (error) {
+      input.abortController.signal.removeEventListener("abort", killVendor);
       await close();
       throw error;
     }

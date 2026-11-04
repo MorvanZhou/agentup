@@ -597,6 +597,51 @@ describe("失败与中断", () => {
     expect(JSON.stringify(chunks)).toContain("超时");
   });
 
+  it("用户停止时即使厂商流挂死也能立刻收束（群聊不再卡进行中）", async () => {
+    const chunks: UIMessageChunk[] = [];
+    const controller = new AbortController();
+    let interrupted = 0;
+    let releaseHang: (() => void) | undefined;
+
+    // 模拟 OpenCode SSE：出半句后永远等不到 session.idle
+    const source = (async function* () {
+      yield {
+        type: "stream_event",
+        event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "半句" } },
+      };
+      await new Promise<void>((resolve) => {
+        releaseHang = resolve;
+      });
+      yield { type: "result", subtype: "success", result: "不该到这" };
+    })();
+
+    const turn = runExternalTurn({
+      source,
+      signal: controller.signal,
+      onTimeout: () => {
+        interrupted += 1;
+        releaseHang?.();
+      },
+      write: (batch) => chunks.push(...batch),
+      errorPolicy: "prompt",
+      locale: "zh",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    const outcome = await Promise.race([
+      turn,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("停止后回合仍未收束")), 500),
+      ),
+    ]);
+
+    expect(outcome.aborted).toBe(true);
+    expect(interrupted).toBeGreaterThan(0);
+    expect(types(chunks)).toContain("finish");
+    expect(JSON.stringify(chunks)).toContain("已停止");
+  });
+
   it("工具启动后超时仍会输出工具终态", async () => {
     const chunks: UIMessageChunk[] = [];
     await runExternalTurn({

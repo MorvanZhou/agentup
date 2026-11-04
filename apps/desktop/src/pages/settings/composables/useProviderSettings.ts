@@ -29,6 +29,8 @@ export function useProviderSettings(api = new DesktopApi()) {
   const modelFilter = ref("");
   /** 启用服务列表按供应商收窄；空串 = 已存在的全部供应商。 */
   const modelProviderFilter = ref("");
+  /** 只看已打开开关的模型；默认关，避免首次发现时误以为没模型。 */
+  const modelEnabledOnly = ref(false);
   /** 手动追加模型 ID（仅 Ollama / 自定义 OpenAI 兼容可在运行时注册）。 */
   const draftCustomModelId = ref("");
   const draftAddTemplateId = ref("");
@@ -81,11 +83,13 @@ export function useProviderSettings(api = new DesktopApi()) {
     const seen = new Map<string, { value: string; label: string; icon?: string }>();
     for (const model of availableModels.value) {
       if (seen.has(model.templateId)) continue;
+      // 与模型行接入标签同一套：模板 label（DeepSeek Harness）优先
       const connection = connections.value.find((item) => item.templateId === model.templateId);
       const sdk = agentSdks.value.find((item) => item.templateId === model.templateId);
       const label =
-        connection?.label ??
-        sdk?.label ??
+        model.label ||
+        connection?.label ||
+        sdk?.label ||
         (model.optionLabel !== model.vendorLabel
           ? `${model.vendorLabel} · ${model.optionLabel}`
           : model.vendorLabel);
@@ -99,18 +103,24 @@ export function useProviderSettings(api = new DesktopApi()) {
   });
   const filteredModels = computed(() => {
     const providerId = modelProviderFilter.value;
-    const scoped = providerId
+    let scoped = providerId
       ? availableModels.value.filter((model) => model.templateId === providerId)
       : availableModels.value;
     const q = modelFilter.value.trim().toLowerCase();
-    if (!q) return scoped;
-    return scoped.filter(
-      (model) =>
-        model.name.toLowerCase().includes(q) ||
-        model.modelId.toLowerCase().includes(q) ||
-        model.vendorLabel.toLowerCase().includes(q) ||
-        model.optionLabel.toLowerCase().includes(q),
-    );
+    if (q) {
+      scoped = scoped.filter(
+        (model) =>
+          model.name.toLowerCase().includes(q) ||
+          model.modelId.toLowerCase().includes(q) ||
+          model.vendorLabel.toLowerCase().includes(q) ||
+          model.optionLabel.toLowerCase().includes(q),
+      );
+    }
+    // 叠在供应商 / 关键字之上；关开关后该行会立刻从「仅已启用」视图消失
+    if (modelEnabledOnly.value) {
+      scoped = scoped.filter((model) => model.enabled);
+    }
+    return scoped;
   });
 
   onMounted(() => void load());
@@ -300,7 +310,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       }
       // 本地接入的目录不在服务端，走 runtime 代问本地 SDK
       for (const templateId of sdkTargets) {
-        if (await refreshAgentSdkModels(templateId)) ok += 1;
+        if (await refreshAgentSdkModels(templateId, { quiet: true })) ok += 1;
       }
       const total = targets.length + sdkTargets.length;
       if (ok > 0) {
@@ -312,17 +322,28 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
-  /** 向本地 SDK 重新问一次模型目录；失败只提示，不清掉已有目录。 */
-  async function refreshAgentSdkModels(templateId: string): Promise<boolean> {
+  /**
+   * 向本地 SDK 重新问一次模型目录；失败只提示，不清掉已有目录。
+   * Copilot 等冷启 CLI 可能要几十秒——sdkModelsBusy 驱动按钮 / 进度条，勿静默等待。
+   */
+  async function refreshAgentSdkModels(
+    templateId: string,
+    options: { quiet?: boolean } = {},
+  ): Promise<boolean> {
     if (!session.value) return false;
+    if (sdkModelsBusy.value) return false;
+    sdkModelsBusy.value = true;
     try {
       settings.value = await api.refreshAgentSdkModels(session.value.token, templateId, locale());
       // 换账号后目录会变，会话侧的模型列表也得跟着换（别的改动都 bump，这里以前漏了）
       notifyProviderConfigChanged();
+      if (!options.quiet) showToast(t("providerSdkModelsSynced"), "success");
       return true;
     } catch (caught) {
       showToast(messageOf(caught), "error");
       return false;
+    } finally {
+      sdkModelsBusy.value = false;
     }
   }
 
@@ -449,6 +470,8 @@ export function useProviderSettings(api = new DesktopApi()) {
 
   /** CLI / SDK 接入：安装与登录（阶段 1） */
   const sdkBusy = ref(false);
+  /** ready 态刷模型目录中（与登录/安装的 sdkBusy 分开，避免互锁） */
+  const sdkModelsBusy = ref(false);
   const sdkPhase = ref<{ templateId: string; phase: string; detail?: string } | null>(null);
   /** Codex device-auth 等：登录中展示的一次性验证码 */
   const sdkLoginDeviceCode = ref<string | null>(null);
@@ -457,6 +480,11 @@ export function useProviderSettings(api = new DesktopApi()) {
   const sdkLoginApiKeyDraft = ref("");
   /** 取消进行中的登录轮询（含卡在 logging_in） */
   let sdkLoginAbort: AbortController | null = null;
+  /** 取消进行中的安装轮询；与登录 Abort 分开，避免互相误杀 */
+  let sdkInstallAbort: AbortController | null = null;
+  /** 当前安装 job；取消按钮不依赖 UI 记住 jobId */
+  let sdkInstallJobId: string | null = null;
+  let sdkInstallTemplateId: string | null = null;
 
   async function reload(): Promise<void> {
     if (!session.value) return;
@@ -467,34 +495,112 @@ export function useProviderSettings(api = new DesktopApi()) {
   async function startAgentSdkInstall(templateId: string): Promise<void> {
     if (!session.value || sdkBusy.value) return;
     sdkBusy.value = true;
+    sdkInstallAbort = new AbortController();
+    const signal = sdkInstallAbort.signal;
     sdkPhase.value = { templateId, phase: "resolving" };
+    sdkInstallTemplateId = templateId;
+    sdkInstallJobId = null;
     try {
       const jobId = await api.installAgentSdk(session.value.token, templateId);
-      const deadline = Date.now() + 10 * 60 * 1000;
-      while (Date.now() < deadline) {
+      if (signal.aborted) return;
+      sdkInstallJobId = jobId;
+      // DeepSeek Harness 等依赖树大，给足时间；仍须可取消，勿无限挂死
+      const deadline = Date.now() + 30 * 60 * 1000;
+      while (!signal.aborted && Date.now() < deadline) {
         const job = await api.agentSdkInstallJob(session.value.token, templateId, jobId);
-        sdkPhase.value = { templateId, phase: job.phase, ...(job.detail ? { detail: job.detail } : {}) };
+        if (signal.aborted) return;
+        sdkPhase.value = {
+          templateId,
+          phase: job.phase,
+          ...(job.detail ? { detail: job.detail } : {}),
+        };
         if (["done", "failed", "cancelled"].includes(job.phase)) {
           await reload();
-          showToast(job.phase === "done" ? t("providerSdkInstallDone") : (job.error ?? t("providerSdkInstallFailed")), job.phase === "done" ? "success" : "error");
-          break;
+          if (job.phase === "cancelled") {
+            showToast(t("providerSdkInstallCancelled"), "success");
+          } else {
+            showToast(
+              job.phase === "done"
+                ? t("providerSdkInstallDone")
+                : (job.error ?? t("providerSdkInstallFailed")),
+              job.phase === "done" ? "success" : "error",
+            );
+          }
+          return;
         }
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 700);
+          signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
       }
+      if (signal.aborted) return;
+      // 超时：主动取消远端 job，避免状态卡在 installing、进度区却已空
+      try {
+        settings.value = await api.cancelAgentSdkInstall(
+          session.value.token,
+          templateId,
+          jobId,
+        );
+      } catch {
+        await reload().catch(() => undefined);
+      }
+      showToast(t("providerSdkInstallTimedOut"), "error");
     } catch (caught) {
-      showToast(messageOf(caught), "error");
+      if (!signal.aborted) showToast(messageOf(caught), "error");
+      await reload().catch(() => undefined);
     } finally {
-      sdkBusy.value = false;
-      sdkPhase.value = null;
+      if (sdkInstallAbort?.signal === signal) {
+        sdkInstallAbort = null;
+        sdkInstallJobId = null;
+        sdkInstallTemplateId = null;
+        sdkBusy.value = false;
+        sdkPhase.value = null;
+      }
     }
   }
 
-  async function cancelAgentSdkInstall(templateId: string, jobId: string): Promise<void> {
+  /**
+   * 取消接入：杀 npm 子进程 + 状态打回 not_installed。
+   * 无进行中 job 时（超时清 phase / 丢 job）走卸载，保证能退出「接入中」。
+   */
+  async function cancelAgentSdkInstall(templateId: string): Promise<void> {
     if (!session.value) return;
+    const jobId =
+      sdkInstallTemplateId === templateId && sdkInstallJobId ? sdkInstallJobId : null;
+    sdkInstallAbort?.abort();
     try {
-      settings.value = await api.cancelAgentSdkInstall(session.value.token, templateId, jobId);
+      if (jobId) {
+        settings.value = await api.cancelAgentSdkInstall(
+          session.value.token,
+          templateId,
+          jobId,
+        );
+      } else {
+        // 卡死态：没有可取消的 job，用卸载清目录与 installing
+        settings.value = await api.uninstallAgentSdk(
+          session.value.token,
+          templateId,
+          locale(),
+        );
+      }
+      notifyProviderConfigChanged();
+      showToast(t("providerSdkInstallCancelled"), "success");
     } catch (caught) {
       showToast(messageOf(caught), "error");
+      await reload().catch(() => undefined);
+    } finally {
+      sdkInstallJobId = null;
+      sdkInstallTemplateId = null;
+      sdkInstallAbort = null;
+      sdkBusy.value = false;
+      sdkPhase.value = null;
     }
   }
 
@@ -572,8 +678,10 @@ export function useProviderSettings(api = new DesktopApi()) {
       showToast(messageOf(caught), "error");
       await reload().catch(() => undefined);
     } finally {
-      // Key 粘贴进行中仍保持 sdkBusy，避免操作区闪回「登录」按钮
+      // 等粘贴 Key：必须清掉 sdkBusy，否则粘贴框「提交」钮被 :disabled="busy" 锁死
+      // 操作区不会闪回「登录」——loginNeedsApiKey 已撑住 showProgress
       if (sdkLoginNeedsApiKey.value && !signal.aborted) {
+        sdkBusy.value = false;
         sdkLoginAbort = null;
         return;
       }
@@ -584,12 +692,22 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
-  /** OpenCode Zen：提交官网复制的 API Key */
+  /** OpenCode Zen / GitHub PAT：提交官网复制的 Key；runtime 内会顺手刷模型 */
   async function submitAgentSdkApiKey(templateId: string): Promise<void> {
     if (!session.value) return;
     const key = sdkLoginApiKeyDraft.value.trim();
     if (!key) {
-      showToast(t("providerSdkApiKeyRequired"), "error");
+      // 空 Key 提示跟粘贴档走，勿一律「请先粘贴 API Key」
+      const paste = settings.value?.agentSdks.find((item) => item.templateId === templateId)
+        ?.apiKeyPaste;
+      showToast(
+        paste === "github-pat"
+          ? t("providerSdkGithubPatRequired")
+          : paste === "deepseek"
+            ? t("providerSdkDeepseekKeyRequired")
+            : t("providerSdkApiKeyRequired"),
+        "error",
+      );
       return;
     }
     sdkBusy.value = true;
@@ -599,7 +717,16 @@ export function useProviderSettings(api = new DesktopApi()) {
         sdkLoginNeedsApiKey.value = false;
         sdkLoginApiKeyDraft.value = "";
         await reload();
-        showToast(t("providerSdkLoginDone"), "success");
+        notifyProviderConfigChanged();
+        // 目录是否已活：占位 / 空 → 提示可手动刷新；已有活列表 → 登录成功即可
+        const sdk = settings.value?.agentSdks.find((item) => item.templateId === templateId);
+        const catalogLive = Boolean(
+          sdk?.models.some((model) => model.id !== "auto" && model.id !== "default"),
+        );
+        showToast(
+          catalogLive ? t("providerSdkLoginDone") : t("providerSdkModelsSyncFailed"),
+          catalogLive ? "success" : "error",
+        );
         return;
       }
       showToast(t("providerSdkLoginPending"), "error");
@@ -705,6 +832,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     draftApiKey,
     modelFilter,
     modelProviderFilter,
+    modelEnabledOnly,
     draftCustomModelId,
     draftAddTemplateId,
     customModelTargets,
@@ -717,6 +845,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     needsApiKey,
     canRefreshModels,
     sdkBusy,
+    sdkModelsBusy,
     sdkPhase,
     sdkLoginDeviceCode,
     sdkLoginNeedsApiKey,

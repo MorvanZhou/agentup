@@ -71,7 +71,13 @@ export function summarizeAskUserTool(args: unknown, result: unknown): AskUserSum
     };
   }
 
+  // 优先 Host 标准行；再认 SDK 厂商 JSON（如 dsh onUserQuestion 回填）
   const byIndex = parseAnswerLines(text);
+  if (byIndex.size === 0) {
+    for (const [index, value] of parseVendorJsonAnswers(text, args)) {
+      byIndex.set(index, value);
+    }
+  }
   const byQuestion = new Map<string, ParsedAnswer>();
   for (const [index, value] of byIndex) {
     const q = questions[index]?.question;
@@ -147,5 +153,61 @@ function parseAnswerLines(text: string): Map<number, ParsedAnswer> {
       .filter(Boolean);
     map.set(index, { skipped: false, answers: answers.length > 0 ? answers : [answer] });
   }
+  return map;
+}
+
+/**
+ * dsh 等 SDK：toolResult 可能是 `{"answers":[{"id","selected","custom?"}]}`，
+ * 不是 `User answered:` 行。按题 id / 下标对齐，避免整卡误标「已跳过」。
+ */
+function parseVendorJsonAnswers(text: string, args: unknown): Map<number, ParsedAnswer> {
+  const map = new Map<number, ParsedAnswer>();
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) return map;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return map;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return map;
+  const answers = (parsed as { answers?: unknown }).answers;
+  if (!Array.isArray(answers) || answers.length === 0) return map;
+
+  const idToIndex = new Map<string, number>();
+  if (args && typeof args === "object" && !Array.isArray(args)) {
+    const questions = (args as { questions?: unknown }).questions;
+    if (Array.isArray(questions)) {
+      questions.forEach((item, index) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return;
+        const id = (item as { id?: unknown }).id;
+        if (typeof id === "string" && id.trim()) idToIndex.set(id.trim(), index);
+      });
+    }
+  }
+
+  answers.forEach((raw, fallbackIndex) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const row = raw as Record<string, unknown>;
+    const id = typeof row.id === "string" ? row.id.trim() : "";
+    const index = (id && idToIndex.has(id) ? idToIndex.get(id) : undefined) ?? fallbackIndex;
+    if (!Number.isFinite(index) || index < 0) return;
+    const custom = typeof row.custom === "string" ? row.custom.trim() : "";
+    if (custom) {
+      map.set(index, { skipped: false, answers: [custom] });
+      return;
+    }
+    const selected = Array.isArray(row.selected)
+      ? row.selected
+          .filter((part): part is string => typeof part === "string")
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : [];
+    if (selected.length === 0) {
+      map.set(index, { skipped: true, answers: [] });
+      return;
+    }
+    map.set(index, { skipped: false, answers: selected });
+  });
   return map;
 }

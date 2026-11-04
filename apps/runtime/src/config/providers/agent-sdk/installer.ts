@@ -9,6 +9,7 @@ import { ConfigError } from "../../load.js";
 import { getProviderTemplate } from "../../provider-templates.js";
 import { setAgentSdkState } from "../../provider/index.js";
 import { killProcessTree } from "../../../session/hitl/shell-hang/process-kill.js";
+import { disposeAgentSdkRuntimesForTemplate } from "../../../session/external/sdk/host/runtime-pool.js";
 
 /**
  * 本地 SDK 安装器（阶段 1）。
@@ -325,6 +326,8 @@ export function cancelAgentSdkInstall(jobId: string): void {
 export function uninstallAgentSdk(userDataRoot: string, templateId: string): void {
   const template = getProviderTemplate(templateId);
   if (!template || template.access !== "agent-sdk") throw new ConfigError("未知的服务商");
+  // 先踢保活进程（fire-and-forget 同步触发；destroy 异步收尾）
+  void disposeAgentSdkRuntimesForTemplate(userDataRoot, templateId);
   const target = agentSdkDir(userDataRoot, templateId);
   if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
   for (const [jobId, job] of jobs) {

@@ -189,6 +189,29 @@ export function uiMessagePlainText(message: UIMessage): string {
 }
 
 /**
+ * 群聊助手「重新生成」：ExternalThread onReload 给的是助手前一条 id，
+ * 往前找到最近用户行，原样走 edit（rewind + 重发），与编辑重发同一条 API。
+ */
+export function resolveGroupReloadEdit(
+  messages: readonly UIMessage[],
+  parentId: string | null,
+): { messageId: string; text: string } | null {
+  let index =
+    parentId == null
+      ? messages.length - 1
+      : messages.findIndex((message) => message.id === parentId);
+  if (index < 0) index = messages.length - 1;
+  for (let i = index; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== "user") continue;
+    const text = uiMessagePlainText(message);
+    if (!text) return null;
+    return { messageId: message.id, text };
+  }
+  return null;
+}
+
+/**
  * 群聊 wake 旁路：有 live 用真流；speaking 尚无 chunk 用占位；
  * pendingUserText 在 POST 返回前先亮用户气泡。
  */

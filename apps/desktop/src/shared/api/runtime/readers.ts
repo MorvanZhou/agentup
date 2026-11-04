@@ -211,6 +211,8 @@ export function readSessionModelState(payload: Record<string, unknown>): Session
         vendorId: typeof row.vendor_id === "string" ? row.vendor_id : "",
         vendorLabel: row.vendor_label,
         optionLabel: row.option_label,
+        // 老 runtime 无 label 时回落空串，接入标签再拼厂商 · 方式
+        label: typeof row.label === "string" ? row.label : "",
         // 0 是真实倍率；老 runtime / API 服务商没有就省略
         ...(typeof row.credits === "number" && row.credits >= 0 ? { credits: row.credits } : {}),
       };
@@ -292,6 +294,12 @@ function readAgentSdkOption(value: unknown): AgentSdkOption {
     models: readAgentSdkModels(payload.models),
     authEnvironments: readAgentSdkAuthEnvironments(payload.auth_environments),
     authEnvironment: readAgentSdkAuthEnvironment(payload.auth_environment),
+    apiKeyPaste:
+      payload.api_key_paste === "opencode" ||
+      payload.api_key_paste === "github-pat" ||
+      payload.api_key_paste === "deepseek"
+        ? payload.api_key_paste
+        : null,
   };
 }
 
@@ -399,6 +407,8 @@ function readAvailableProviderModel(value: unknown): AvailableProviderModel {
     vendorId: typeof payload.vendor_id === "string" ? payload.vendor_id : "",
     vendorLabel: payload.vendor_label,
     optionLabel: payload.option_label,
+    // 老 runtime 无 label 时回落空串，接入标签再拼厂商 · 方式
+    label: typeof payload.label === "string" ? payload.label : "",
     enabled: payload.enabled,
     active: payload.active,
     custom: payload.custom === true,

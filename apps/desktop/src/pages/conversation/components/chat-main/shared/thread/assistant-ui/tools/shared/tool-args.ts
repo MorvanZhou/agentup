@@ -276,7 +276,11 @@ export function isToolProgressActive(
   return false;
 }
 
-/** 是否为应用退出后愈合写入的中断结果（含 ask_user / 审批中 / 执行中工具）。 */
+/**
+ * 是否为应用退出后愈合写入的中断结果（含 ask_user / 审批中 / 执行中工具）。
+ * 只认 runtime 固定句式（见 history.ts INTERRUPTED_*）；勿用裸「中断」——
+ * MCP 正文常复述历史失败原因（如「网络连接中断」），会把成功的 check_delegation 标成「已终止」。
+ */
 export function isInterruptedToolOutput(value: unknown): boolean {
   const text =
     typeof value === "string"
@@ -286,7 +290,12 @@ export function isInterruptedToolOutput(value: unknown): boolean {
         : value == null
           ? ""
           : String(value);
-  return /interrupted|中断|Session was interrupted|app exited before/i.test(text);
+  return (
+    /Tool call interrupted:\s*the app exited before the tool finished/i.test(text) ||
+    /Session was interrupted before answers were received/i.test(text) ||
+    /应用已退出，这项工作在完成前中断/.test(text) ||
+    /The app exited before this work finished/i.test(text)
+  );
 }
 
 /** 从工具失败结果里取出可读正文。assistant-ui 常把 errorText 包成 `{ error }`。 */

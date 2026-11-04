@@ -48,6 +48,7 @@ export type ExternalTurnInput = {
   source: AsyncIterable<unknown>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** 超时或用户停止时打断厂商（abort session / 关流） */
   onTimeout?: () => void;
   write: (chunks: UIMessageChunk[]) => void;
   locale?: UiLocale | string | null;
@@ -160,20 +161,44 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
       input.write(projector.project(toolEvent));
     }
   });
+  let iterator: AsyncIterator<unknown> | undefined;
+  const interruptVendor = () => {
+    try {
+      input.onTimeout?.();
+    } catch {
+      /* ignore */
+    }
+  };
   const onAbort = () => {
     aborted = true;
+    // 停厂商 + 关迭代；真正跳出 await next() 靠下方与 signal 的竞态
+    interruptVendor();
+    void iterator?.return?.().catch(() => undefined);
   };
   input.signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
-    const iterator = input.source[Symbol.asyncIterator]();
+    iterator = input.source[Symbol.asyncIterator]();
     const deadline = input.timeoutMs ? Date.now() + input.timeoutMs : undefined;
     for (;;) {
+      if (aborted || input.signal?.aborted) {
+        aborted = true;
+        interruptVendor();
+        void iterator.return?.().catch(() => undefined);
+        break;
+      }
       const remaining = deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
-      const next = await nextExternalMessage(iterator, remaining);
+      // 与 abort 竞态：OpenCode SSE 挂死时不能干等 next()，否则群聊卡「进行中」
+      const next = await nextExternalMessage(iterator, remaining, input.signal);
+      if (next === "aborted") {
+        aborted = true;
+        interruptVendor();
+        void iterator.return?.().catch(() => undefined);
+        break;
+      }
       if (next === "timeout") {
         timedOut = true;
-        input.onTimeout?.();
+        interruptVendor();
         void iterator.return?.().catch(() => undefined);
         break;
       }
@@ -181,6 +206,8 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
       const message = next.value;
       if (aborted || input.signal?.aborted) {
         aborted = true;
+        interruptVendor();
+        void iterator.return?.().catch(() => undefined);
         break;
       }
       for (const event of translator.push(message)) {
@@ -307,7 +334,11 @@ export async function runExternalSessionTurn(input: {
   };
   let query: Awaited<ReturnType<NonNullable<PromptSession["externalQuery"]>>>;
   try {
-    query = await input.session.externalQuery(externalPromptFromSession(input.session, input.text));
+    // 把停止信号传进起流：Copilot 等冷启期间 Composer 停止才能 abort
+    query = await input.session.externalQuery(
+      externalPromptFromSession(input.session, input.text),
+      input.signal,
+    );
   } catch (error) {
     const failed = (async function* () {
       throw error;
@@ -327,7 +358,10 @@ export async function runExternalSessionTurn(input: {
       writeBack,
     });
   }
-  const abortExternal = () => query.controller.abort();
+  const abortExternal = () => {
+    query.controller.abort();
+    query.abort?.();
+  };
   if (input.signal?.aborted) abortExternal();
   else input.signal?.addEventListener("abort", abortExternal, { once: true });
   try {
@@ -354,19 +388,39 @@ export async function runExternalSessionTurn(input: {
 async function nextExternalMessage(
   iterator: AsyncIterator<unknown>,
   timeoutMs: number | undefined,
-): Promise<IteratorResult<unknown> | "timeout"> {
-  if (timeoutMs === undefined) return iterator.next();
-  if (timeoutMs <= 0) return "timeout";
+  signal?: AbortSignal,
+): Promise<IteratorResult<unknown> | "timeout" | "aborted"> {
+  if (signal?.aborted) return "aborted";
+  if (timeoutMs !== undefined && timeoutMs <= 0) return "timeout";
+  if (timeoutMs === undefined && !signal) return iterator.next();
+
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   try {
-    return await Promise.race([
-      iterator.next(),
-      new Promise<"timeout">((resolve) => {
-        timer = setTimeout(() => resolve("timeout"), timeoutMs);
-      }),
-    ]);
+    return await new Promise<IteratorResult<unknown> | "timeout" | "aborted">((resolve, reject) => {
+      let settled = false;
+      const finish = (value: IteratorResult<unknown> | "timeout" | "aborted") => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      onAbort = () => finish("aborted");
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (timeoutMs !== undefined) {
+        timer = setTimeout(() => finish("timeout"), timeoutMs);
+      }
+      void iterator.next().then(
+        (result) => finish(result),
+        (error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        },
+      );
+    });
   } finally {
     if (timer) clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
 }
 

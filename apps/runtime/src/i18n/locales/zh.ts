@@ -45,6 +45,12 @@ export const zh: Record<string, string> = {
   "provider.template.opencode-sdk.label": "OpenCode",
   "provider.template.opencode-sdk.hint":
     "用你的 OpenCode 官方账号在本机跑 Agent（无需自备模型 API Key）",
+  "provider.template.copilot-sdk.label": "GitHub Copilot",
+  "provider.template.copilot-sdk.hint":
+    "用你的 GitHub Copilot 订阅在本机跑 Agent（无需 API Key）",
+  "provider.template.deepseek-harness-sdk.label": "DeepSeek Harness",
+  "provider.template.deepseek-harness-sdk.hint":
+    "用 DeepSeek 平台 API Key 在本机跑 Harness Agent（developer preview）",
 
   "agentSdk.fail.noDetail": "未知原因",
   "agentSdk.fail.not_installed":

@@ -12,12 +12,20 @@ import { AGENT_SDK_TURN_TIMEOUT_MS, type AgentSdkStreamContext, type ExternalAge
 export async function queryExternalAgent(
   ctx: AgentSdkStreamContext,
   prompt: string,
+  signal?: AbortSignal,
 ): Promise<ExternalAgentQuery> {
   const state = agentSdkStateOf(ctx.userDataRoot, ctx.templateId);
   if (state && state !== "ready") throw new Error(`本地 Agent App 当前状态：${state}`);
 
   const driver = getExternalDriver(driverIdOfTemplate(ctx.templateId));
   const controller = new AbortController();
+  // 冷启 CLI 可能十几秒：必须在 startTurn 前把用户停止接到 controller
+  const onUserAbort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  if (signal?.aborted) onUserAbort();
+  else signal?.addEventListener("abort", onUserAbort, { once: true });
+
   const mcp = await openExternalMcp(ctx);
   const external = externalContextOf(ctx);
   const request: ExternalTurnRequest = {
@@ -31,7 +39,7 @@ export async function queryExternalAgent(
     ...(ctx.askUser
       ? {
           askUser: {
-            request: async (req, signal) =>
+            request: async (req, askSignal) =>
               ctx.askUser!.request(
                 {
                   userId: req.userId,
@@ -39,7 +47,7 @@ export async function queryExternalAgent(
                   toolCallId: req.toolCallId,
                   questions: req.questions as never,
                 },
-                signal,
+                askSignal,
               ),
           },
         }
@@ -51,15 +59,34 @@ export async function queryExternalAgent(
     templateId: ctx.templateId,
   };
 
-  const handle = await driver.startTurn(request);
-  return {
-    iterable: handle.messages,
-    controller,
-    timeoutMs: ctx.turnTimeoutMs ?? AGENT_SDK_TURN_TIMEOUT_MS,
-    close: async () => {
-      await Promise.resolve(handle.close()).catch(() => undefined);
-      await mcp?.close().catch(() => undefined);
-    },
-  };
+  try {
+    const handle = await driver.startTurn(request);
+    // 起流后：用户停止除 abort controller 外还要调厂商 abort（OpenCode SSE 否则挂死）
+    const abortVendor = () => {
+      try {
+        handle.abort();
+      } catch {
+        /* ignore */
+      }
+    };
+    if (controller.signal.aborted) abortVendor();
+    else controller.signal.addEventListener("abort", abortVendor, { once: true });
+    return {
+      iterable: handle.messages,
+      controller,
+      timeoutMs: ctx.turnTimeoutMs ?? AGENT_SDK_TURN_TIMEOUT_MS,
+      abort: abortVendor,
+      close: async () => {
+        signal?.removeEventListener("abort", onUserAbort);
+        controller.signal.removeEventListener("abort", abortVendor);
+        await Promise.resolve(handle.close()).catch(() => undefined);
+        await mcp?.close().catch(() => undefined);
+      },
+    };
+  } catch (error) {
+    signal?.removeEventListener("abort", onUserAbort);
+    await mcp?.close().catch(() => undefined);
+    throw error;
+  }
 }
 

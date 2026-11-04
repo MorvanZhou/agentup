@@ -138,10 +138,16 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
       const port = address && typeof address === "object" ? address.port : config.port;
       resolve({
         url: `http://127.0.0.1:${port}`,
-        close: () =>
-          new Promise((done, fail) => {
+        close: async () => {
+          // 退出前清掉保活 CLI/serve，避免孤儿进程占端口
+          const { disposeAllAgentSdkRuntimes } = await import(
+            "../session/external/sdk/host/runtime-pool.js"
+          );
+          await disposeAllAgentSdkRuntimes().catch(() => undefined);
+          await new Promise<void>((done, fail) => {
             server.close((error) => (error ? fail(error) : done()));
-          }),
+          });
+        },
       });
     });
   });

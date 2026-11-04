@@ -34,6 +34,8 @@ export interface AvailableModelView {
   vendorId: string;
   vendorLabel: string;
   optionLabel: string;
+  /** 模板展示名（如 DeepSeek Harness）；列表接入标签优先用它 */
+  label: string;
   enabled: boolean;
   active: boolean;
   /** 仅手动追加、不在内置/发现目录中，可从列表移除 */
@@ -104,6 +106,8 @@ export interface AgentSdkView {
   authEnvironments?: AgentSdkAuthEnvironment[];
   /** 本机已选 / 上次登录站点；未选过为 undefined */
   authEnvironment?: AgentSdkAuthEnvironment;
+  /** 粘贴 Key 文案档；未声明 = 无粘贴框能力 */
+  apiKeyPaste?: "opencode" | "github-pat" | "deepseek";
 }
 
 export interface ProviderSettingsView {

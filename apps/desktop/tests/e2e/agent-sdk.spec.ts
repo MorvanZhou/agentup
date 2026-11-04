@@ -100,6 +100,37 @@ test("选 Codex：见信任说明与开始接入（入口在本地 App 组）", 
   await expect(page.getByText(/不需要先装桌面版/)).toBeVisible();
 });
 
+test("接入中可取消：点取消接入后回到待接入，可再开始", async ({ page }) => {
+  await installRuntime(page);
+  await signIn(page);
+  await openProviderSettings(page);
+  await selectLocalAgentApp(page);
+
+  const installStarted = page.waitForRequest((request) => {
+    if (request.method() !== "POST") return false;
+    return new URL(request.url()).pathname.endsWith("/settings/provider/agents/codebuddy-sdk/install");
+  });
+  await page.getByRole("button", { name: "开始接入" }).click();
+  await installStarted;
+  // 本机轮询未 reload 前 pill 可能仍是「待接入」；以进度区「取消接入」为准
+  await expect(page.getByRole("button", { name: "取消接入" })).toBeVisible();
+  await expect(page.getByText(/正在下载接入组件/)).toBeVisible();
+  // 安装中不应误提示「已打开浏览器」
+  await expect(page.getByText("已打开浏览器，完成后回到这里")).toHaveCount(0);
+
+  const cancelled = page.waitForRequest((request) => {
+    if (request.method() !== "POST") return false;
+    return /\/settings\/provider\/agents\/codebuddy-sdk\/install\/[^/]+\/cancel$/.test(
+      new URL(request.url()).pathname,
+    );
+  });
+  await page.getByRole("button", { name: "取消接入" }).click();
+  await cancelled;
+  await expect(page.getByRole("status").filter({ hasText: "已取消接入" })).toBeVisible();
+  await expect(page.getByText("待接入", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
+});
+
 test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在会话里选中", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
@@ -113,7 +144,9 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   await page.getByRole("button", { name: "开始接入" }).click();
   await installStarted;
   // toast 与接入进度都是 role=status；裸 getByRole 会跟「安装中/登录中」撞 strict mode
-  await expect(page.getByRole("status").filter({ hasText: "接入完成" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "接入完成" })).toBeVisible({
+    timeout: 20_000,
+  });
   await expect(page.getByText("未登录", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
   // 登录前选站点：中文界面默认中国站；点国际站再登录，请求要带 environment

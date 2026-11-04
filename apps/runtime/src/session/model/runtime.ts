@@ -102,7 +102,8 @@ export async function openModelRuntime(plan: SessionPlan, options: OpenModelRunt
     model,
     ...(externalContext
       ? {
-          externalQuery: (prompt: string) => queryExternalAgent(externalContext!, prompt),
+          externalQuery: (prompt: string, signal?: AbortSignal) =>
+            queryExternalAgent(externalContext!, prompt, signal),
         }
       : {}),
   };

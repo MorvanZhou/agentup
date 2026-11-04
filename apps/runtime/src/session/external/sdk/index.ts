@@ -19,7 +19,16 @@ export { transcriptToPrompt } from "./host/prompt.js";
 export { resultFromSdkMessage } from "./host/result.js";
 export {
   AGENT_SDK_API,
+  AGENT_SDK_RUNTIME_IDLE_MS,
   AGENT_SDK_TURN_TIMEOUT_MS,
   type AgentSdkStreamContext,
   type ExternalAgentQuery,
 } from "./host/types.js";
+export {
+  acquireAgentSdkRuntime,
+  agentSdkRuntimeKey,
+  disposeAgentSdkRuntime,
+  disposeAgentSdkRuntimesForTemplate,
+  disposeAllAgentSdkRuntimes,
+  releaseAgentSdkRuntime,
+} from "./host/runtime-pool.js";

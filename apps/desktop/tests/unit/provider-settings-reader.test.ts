@@ -54,8 +54,80 @@ it("reads the CLI / SDK group with its local state", () => {
       models: [],
       authEnvironments: [],
       authEnvironment: null,
+      apiKeyPaste: null,
     },
   ]);
+});
+
+it("reads api_key_paste capability for OpenCode, GitHub PAT, and DeepSeek", () => {
+  const settings = readProviderSettings(
+    payload([
+      {
+        template_id: "opencode-sdk",
+        vendor_label: "OpenCode",
+        option_label: "本地 Agent App",
+        label: "OpenCode",
+        hint: null,
+        package: "opencode-ai",
+        size_hint_mb: 180,
+        login_guide: null,
+        state: "not_logged_in",
+        installed_version: "1.0.0",
+        last_error: null,
+        models: [],
+        api_key_paste: "opencode",
+      },
+      {
+        template_id: "copilot-sdk",
+        vendor_label: "GitHub Copilot",
+        option_label: "本地 Agent App",
+        label: "GitHub Copilot",
+        hint: null,
+        package: "@github/copilot-sdk",
+        size_hint_mb: 160,
+        login_guide: null,
+        state: "not_logged_in",
+        installed_version: "1.0.28",
+        last_error: null,
+        models: [],
+        api_key_paste: "github-pat",
+      },
+      {
+        template_id: "deepseek-harness-sdk",
+        vendor_label: "DeepSeek",
+        option_label: "本地 Agent App",
+        label: "DeepSeek Harness",
+        hint: null,
+        package: "@deepseek-ai/dsh-sdk-client",
+        size_hint_mb: 100,
+        login_guide: null,
+        state: "not_logged_in",
+        installed_version: "0.2.2-rc.1",
+        last_error: null,
+        models: [],
+        api_key_paste: "deepseek",
+      },
+      {
+        template_id: "codebuddy-sdk",
+        vendor_label: "CodeBuddy",
+        option_label: "本地 Agent App",
+        label: "CodeBuddy",
+        hint: null,
+        package: "@tencent-ai/agent-sdk",
+        size_hint_mb: 180,
+        login_guide: null,
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        models: [],
+        api_key_paste: "bogus",
+      },
+    ]),
+  );
+  expect(settings.agentSdks[0]?.apiKeyPaste).toBe("opencode");
+  expect(settings.agentSdks[1]?.apiKeyPaste).toBe("github-pat");
+  expect(settings.agentSdks[2]?.apiKeyPaste).toBe("deepseek");
+  expect(settings.agentSdks[3]?.apiKeyPaste).toBeNull();
 });
 
 it("reads CodeBuddy auth site options and the remembered choice", () => {
@@ -236,6 +308,39 @@ it("reads the credit rate on a model row and leaves API providers without one", 
   ];
   const settings = readProviderSettings(body);
   expect(settings.availableModels.map((model) => model.credits)).toEqual([1.33, undefined]);
+});
+
+it("reads template label on model rows and falls back when an older runtime omits it", () => {
+  const body = payload([]);
+  body.available_models = [
+    {
+      template_id: "deepseek-harness-sdk",
+      model_id: "deepseek-flash",
+      name: "DeepSeek V4.1 Flash",
+      vendor_id: "deepseek-harness",
+      vendor_label: "DeepSeek",
+      option_label: "本地 Agent App",
+      label: "DeepSeek Harness",
+      enabled: true,
+      active: false,
+      custom: false,
+    },
+    {
+      template_id: "openai",
+      model_id: "gpt-6",
+      name: "GPT-6",
+      vendor_id: "openai",
+      vendor_label: "OpenAI",
+      option_label: "官方 API",
+      enabled: false,
+      active: false,
+      custom: false,
+    },
+  ];
+  expect(readProviderSettings(body).availableModels.map((model) => model.label)).toEqual([
+    "DeepSeek Harness",
+    "",
+  ]);
 });
 
 it("reads vendor_id on model rows and falls back when an older runtime omits it", () => {

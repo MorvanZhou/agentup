@@ -8,7 +8,11 @@ import { codebuddyDriver } from "./adapters/codebuddy/index.js";
 import { installedCliPath as codebuddyCliPath } from "./adapters/codebuddy/load.js";
 import { codexDriver } from "./adapters/codex/index.js";
 import { resolveCodexCliPath } from "./adapters/codex/load.js";
+import { copilotDriver } from "./adapters/copilot/index.js";
+import { resolveCopilotCliPath } from "./adapters/copilot/load.js";
 import { cursorDriver } from "./adapters/cursor/index.js";
+import { dshDriver } from "./adapters/dsh/index.js";
+import { resolveDshCliPath } from "./adapters/dsh/load.js";
 import { opencodeDriver } from "./adapters/opencode/index.js";
 import { resolveOpencodeCliPath } from "./adapters/opencode/load.js";
 import type { ExternalDriver, ExternalDriverId } from "./contract.js";
@@ -19,6 +23,8 @@ const DRIVERS: Record<string, ExternalDriver> = {
   cursor: cursorDriver,
   codex: codexDriver,
   opencode: opencodeDriver,
+  copilot: copilotDriver,
+  dsh: dshDriver,
 };
 
 export function getExternalDriver(driverId: ExternalDriverId | string): ExternalDriver {
@@ -50,6 +56,12 @@ export function installedCliPathFor(userDataRoot: string, templateId: string): s
   }
   if (profile.driverId === "opencode") {
     return resolveOpencodeCliPath(userDataRoot, templateId);
+  }
+  if (profile.driverId === "copilot") {
+    return resolveCopilotCliPath(userDataRoot, templateId);
+  }
+  if (profile.driverId === "dsh") {
+    return resolveDshCliPath(userDataRoot, templateId);
   }
   // 其它厂商：有 CLI 时再按 profile 扩展；默认读安装记录
   return readInstalledSdk(agentSdkDir(userDataRoot, templateId), profile.package)?.cliPath ?? null;

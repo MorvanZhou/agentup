@@ -13,6 +13,7 @@ const MODELS = [
     vendorId: "codebuddy",
     vendorLabel: "WorkBuddy",
     optionLabel: "本地 Agent App",
+    label: "WorkBuddy",
     credits: 0,
   },
   {
@@ -22,6 +23,7 @@ const MODELS = [
     vendorId: "openai",
     vendorLabel: "OpenAI",
     optionLabel: "官方 API",
+    label: "OpenAI · 官方 API",
   },
 ];
 
@@ -45,6 +47,11 @@ it("下拉行：单色标、倍率、当前项打勾", async () => {
   expect(options).toHaveLength(2);
   expect(options[0]?.getAttribute("aria-selected")).toBe("true");
   expect(options[0]?.textContent).toContain("0.00x");
+  // 接入标签用模板 label、modelId 单独一行
+  expect(options[0]?.textContent).toContain("WorkBuddy");
+  expect(options[0]?.textContent).toContain("hy4");
+  expect(options[1]?.textContent).toContain("OpenAI · 官方 API");
+  expect(options[1]?.textContent).toContain("gpt-5");
   expect(options[0]?.querySelector(".text-success-foreground")).not.toBeNull();
   expect(options[1]?.getAttribute("aria-selected")).toBe("false");
   expect(options[1]?.textContent).not.toContain("x");

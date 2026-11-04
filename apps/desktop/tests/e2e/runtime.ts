@@ -31,11 +31,12 @@ function sessionModelPayload(
     vendor_id?: string;
     vendor_label: string;
     option_label: string;
+    label?: string;
     enabled: boolean;
     credits?: number;
   }>;
   configured: boolean;
-  templates?: Array<{ id: string; access?: string }>;
+  templates?: Array<{ id: string; access?: string; label?: string }>;
 },
   followUp = false,
 ) {
@@ -52,6 +53,10 @@ function sessionModelPayload(
       vendor_id: model.vendor_id ?? "",
       vendor_label: model.vendor_label,
       option_label: model.option_label,
+      label:
+        model.label ??
+        settings.templates?.find((item) => item.id === model.template_id)?.label ??
+        "",
       credits: model.credits ?? null,
     })),
     configured: settings.configured,
@@ -304,6 +309,34 @@ export async function installRuntime(
     supports_model_discovery: false,
     models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
   };
+  const copilotSdkTemplate = {
+    id: "copilot-sdk",
+    access: "agent-sdk",
+    vendor_id: "copilot",
+    vendor_label: "GitHub Copilot",
+    option_label: "本地 Agent App",
+    label: "GitHub Copilot",
+    kind: "agent-sdk",
+    pi_provider_id: "copilot-sdk",
+    requires_api_key: false,
+    default_model_id: "auto",
+    supports_model_discovery: false,
+    models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
+  };
+  const deepseekHarnessSdkTemplate = {
+    id: "deepseek-harness-sdk",
+    access: "agent-sdk",
+    vendor_id: "deepseek-harness",
+    vendor_label: "DeepSeek",
+    option_label: "本地 Agent App",
+    label: "DeepSeek Harness",
+    kind: "agent-sdk",
+    pi_provider_id: "deepseek-harness-sdk",
+    requires_api_key: false,
+    default_model_id: "deepseek-flash",
+    supports_model_discovery: false,
+    models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
+  };
   type AgentSdkRow = {
     template_id: string;
     vendor_label: string;
@@ -320,6 +353,7 @@ export async function installRuntime(
     models: Array<{ id: string; name: string; credits: number | null }>;
     auth_environments: Array<"internal" | "external"> | null;
     auth_environment: "internal" | "external" | null;
+    api_key_paste?: "opencode" | "github-pat" | "deepseek" | null;
   };
   const defaultSdkModels: AgentSdkRow["models"] = [
     { id: "claude-sonnet-5", name: "Claude-Sonnet-5", credits: 1.33 },
@@ -362,6 +396,7 @@ export async function installRuntime(
               vendor_id: "ollama",
               vendor_label: "Ollama",
               option_label: "本机",
+              label: "Ollama · 本机",
               enabled: true,
               active: true,
               custom: true,
@@ -373,6 +408,7 @@ export async function installRuntime(
             vendor_id: string;
             vendor_label: string;
             option_label: string;
+            label: string;
             enabled: boolean;
             active: boolean;
             custom: boolean;
@@ -382,14 +418,20 @@ export async function installRuntime(
     overridden_by_environment: false,
     vendors: [
       { id: "ollama", label: "Ollama", options: [ollamaTemplate] },
-      { id: "deepseek", label: "DeepSeek", options: [deepseekTemplate] },
+      {
+        id: "deepseek",
+        label: "DeepSeek",
+        options: [deepseekTemplate, deepseekHarnessSdkTemplate],
+      },
     ],
     templates: [
       ollamaTemplate,
       deepseekTemplate,
+      deepseekHarnessSdkTemplate,
       codebuddySdkTemplate,
       codexSdkTemplate,
       opencodeSdkTemplate,
+      copilotSdkTemplate,
     ],
     agent_sdks: [
       {
@@ -442,6 +484,49 @@ export async function installRuntime(
         models: [],
         auth_environments: null,
         auth_environment: null,
+        api_key_paste: "opencode",
+      },
+      {
+        template_id: "copilot-sdk",
+        vendor_label: "GitHub Copilot",
+        option_label: "本地 Agent App",
+        label: "GitHub Copilot",
+        hint: "用你的 GitHub Copilot 订阅在本机跑 Agent",
+        package: "@github/copilot-sdk",
+        size_hint_mb: 160,
+        login_guide: {
+          command: "paste GitHub token",
+          doc_url: "https://github.com/settings/personal-access-tokens",
+        },
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        account_label: null,
+        models: [],
+        auth_environments: null,
+        auth_environment: null,
+        api_key_paste: "github-pat",
+      },
+      {
+        template_id: "deepseek-harness-sdk",
+        vendor_label: "DeepSeek",
+        option_label: "本地 Agent App",
+        label: "DeepSeek Harness",
+        hint: "用 DeepSeek 平台 API Key 在本机跑 Harness Agent",
+        package: "@deepseek-ai/dsh-sdk-client",
+        size_hint_mb: 100,
+        login_guide: {
+          command: "paste DeepSeek API Key",
+          doc_url: "https://platform.deepseek.com/api_keys",
+        },
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        account_label: null,
+        models: [],
+        auth_environments: null,
+        auth_environment: null,
+        api_key_paste: "deepseek",
       },
     ] as AgentSdkRow[],
   };
@@ -498,6 +583,7 @@ export async function installRuntime(
           vendor_id: template.vendor_id,
           vendor_label: template.vendor_label,
           option_label: template.option_label,
+          label: template.label,
           enabled: enabled.has(key),
           active: key === activeKey,
           custom: customIds.has(modelId) && !catalogIds.has(modelId),
@@ -518,6 +604,7 @@ export async function installRuntime(
           vendor_id: template.vendor_id,
           vendor_label: template.vendor_label,
           option_label: template.option_label,
+          label: template.label,
           enabled: enabled.has(key),
           active: key === activeKey,
           custom: false,
@@ -726,12 +813,25 @@ export async function installRuntime(
         sdkRow().last_error = null;
         return json(route, 200, { job_id: sdkInstallJobId });
       }
+      // 取消接入：杀进行中 job，状态打回待接入（与 runtime cancel 对齐）
+      const installCancel = rest.match(/^\/install\/([^/]+)\/cancel$/);
+      if (request.method() === "POST" && installCancel) {
+        const jobId = decodeURIComponent(installCancel[1]!);
+        if (jobId !== sdkInstallJobId) return json(route, 400, { error: "安装任务不存在" });
+        sdkInstallJobId = null;
+        sdkInstallPolls = 0;
+        sdkRow().state = "not_installed";
+        sdkRow().installed_version = null;
+        sdkRow().last_error = null;
+        return json(route, 200, providerSettings);
+      }
       const installJob = rest.match(/^\/install\/([^/]+)$/);
       if (request.method() === "GET" && installJob) {
         const jobId = decodeURIComponent(installJob[1]!);
         if (jobId !== sdkInstallJobId) return json(route, 404, { error: "安装任务不存在" });
         sdkInstallPolls += 1;
-        if (sdkInstallPolls < 2) {
+        // 前几轮保持 downloading，便于「取消接入」测例点到按钮；第 8 轮起完成
+        if (sdkInstallPolls < 8) {
           return json(route, 200, {
             job_id: jobId,
             template_id: templateId,

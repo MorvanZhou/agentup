@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 
 import ProviderLogo from "../../../../../../../../shared/components/ProviderLogo.vue";
+import { modelSourceLabel } from "../../../../../../../../shared/model/provider/model-source-label";
 import type {
   ProviderModelRef,
   SessionModelOption,
@@ -129,14 +130,21 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocPointer, 
               :vendor-id="model.vendorId"
               :label="model.vendorLabel"
             />
-            <!-- 同显示名（如 Cursor Auto）时靠 modelId 区分 -->
+            <!-- 主名旁 modelId；次行接入标签（次要色） -->
             <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium">{{ model.name }}</span>
+              <span class="flex min-w-0 items-baseline gap-2">
+                <span class="min-w-0 truncate text-sm font-medium">{{ model.name }}</span>
+                <span
+                  v-if="model.modelId !== model.name"
+                  class="shrink-0 truncate font-mono text-xs text-muted-foreground"
+                >
+                  {{ model.modelId }}
+                </span>
+              </span>
               <span
-                v-if="model.modelId !== model.name"
-                class="mt-0.5 block truncate font-mono text-xs text-muted-foreground"
+                class="mt-0.5 inline-flex max-w-full truncate rounded-md border border-rule bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
               >
-                {{ model.modelId }}
+                {{ modelSourceLabel(model) }}
               </span>
             </span>
             <!-- credit 倍率：本地 App 才有；0 也要显示 -->

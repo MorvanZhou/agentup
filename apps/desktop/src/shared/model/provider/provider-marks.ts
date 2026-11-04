@@ -1,7 +1,8 @@
 /**
  * 供应商 → 模型品牌标（Lobe Icons 单色 SVG，统一 currentColor）。
  * 按「模型/产品标」而不是母公司字标：Google→Gemini、阿里→Qwen、腾讯→混元，
- * 本地 App：codebuddy → WorkBuddy 标；cursor → Cursor 标；opencode → 官方方标（均产品标）。
+ * 本地 App：codebuddy → WorkBuddy；cursor → Cursor；opencode → 官方方标；
+ * copilot → GitHub Copilot（均产品标）。
  *
  * 来源：多数出自 @lobehub/icons-static-svg（Lobe Icons）；OpenCode 方标改编自
  * anomalyco/opencode brand `opencode-logo-light-square.svg`（单色 currentColor）。
@@ -10,6 +11,7 @@
 import anthropic from "../../assets/providers/anthropic.svg?raw";
 import cursor from "../../assets/providers/cursor.svg?raw";
 import deepseek from "../../assets/providers/deepseek.svg?raw";
+import deepseekHarness from "../../assets/providers/deepseek-harness.svg?raw";
 import doubao from "../../assets/providers/doubao.svg?raw";
 import fireworks from "../../assets/providers/fireworks.svg?raw";
 import gemini from "../../assets/providers/gemini.svg?raw";
@@ -23,6 +25,7 @@ import mistral from "../../assets/providers/mistral.svg?raw";
 import nvidia from "../../assets/providers/nvidia.svg?raw";
 import ollama from "../../assets/providers/ollama.svg?raw";
 import openai from "../../assets/providers/openai.svg?raw";
+import githubcopilot from "../../assets/providers/githubcopilot.svg?raw";
 import opencode from "../../assets/providers/opencode.svg?raw";
 import openrouter from "../../assets/providers/openrouter.svg?raw";
 import qwen from "../../assets/providers/qwen.svg?raw";
@@ -36,6 +39,7 @@ export type ProviderMarkId =
   | "anthropic"
   | "gemini"
   | "deepseek"
+  | "deepseek-harness"
   | "meta"
   | "kimi"
   | "qwen"
@@ -46,6 +50,7 @@ export type ProviderMarkId =
   | "workbuddy"
   | "cursor"
   | "opencode"
+  | "githubcopilot"
   | "openrouter"
   | "xai"
   | "mistral"
@@ -62,6 +67,8 @@ const VENDOR_TO_MARK: Record<string, ProviderMarkId> = {
   anthropic: "anthropic",
   google: "gemini",
   deepseek: "deepseek",
+  // 本地 Harness App：带框鲸鱼，与官方 API 裸标区分
+  "deepseek-harness": "deepseek-harness",
   meta: "meta",
   kimi: "kimi",
   zhipu: "zai",
@@ -77,6 +84,8 @@ const VENDOR_TO_MARK: Record<string, ProviderMarkId> = {
   cursor: "cursor",
   // 本地 App：OpenCode（官方 brand 方标，单色）
   opencode: "opencode",
+  // 本地 App：GitHub Copilot（Lobe githubcopilot）
+  copilot: "githubcopilot",
   // 本地 App：Codex（OpenAI 产品；Lobe 用 openai 标）
   codex: "openai",
   // A 档 pi-native：vendorId 与模板一致
@@ -96,6 +105,7 @@ const MARK_SVG: Record<ProviderMarkId, string> = {
   anthropic,
   gemini,
   deepseek,
+  "deepseek-harness": deepseekHarness,
   meta,
   kimi,
   qwen,
@@ -106,6 +116,7 @@ const MARK_SVG: Record<ProviderMarkId, string> = {
   workbuddy,
   cursor,
   opencode,
+  githubcopilot,
   openrouter,
   xai,
   mistral,

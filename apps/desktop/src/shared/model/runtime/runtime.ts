@@ -147,6 +147,8 @@ export interface AgentSdkOption {
   authEnvironments: AgentSdkAuthEnvironment[];
   /** 本机已选 / 上次登录站点；未选过为 null */
   authEnvironment: AgentSdkAuthEnvironment | null;
+  /** 粘贴 Key 文案档；null = 无粘贴能力声明 */
+  apiKeyPaste: "opencode" | "github-pat" | "deepseek" | null;
 }
 
 export interface ProviderTemplate {
@@ -201,6 +203,8 @@ export interface AvailableProviderModel {
   vendorId: string;
   vendorLabel: string;
   optionLabel: string;
+  /** 模板展示名（如 DeepSeek Harness）；接入标签优先用它 */
+  label: string;
   enabled: boolean;
   active: boolean;
   /** 手动追加的模型，可从列表移除 */
@@ -217,6 +221,8 @@ export interface SessionModelOption {
   vendorId: string;
   vendorLabel: string;
   optionLabel: string;
+  /** 模板展示名；接入标签优先用它 */
+  label: string;
   /** credit 消耗倍率；本地 App 才有，下拉右侧显示如 1.58x */
   credits?: number;
 }

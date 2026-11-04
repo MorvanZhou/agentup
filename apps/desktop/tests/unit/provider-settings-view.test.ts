@@ -19,6 +19,12 @@ function payload(options?: {
   modelCredits?: number;
   /** 登录后 runtime 记住的账号名；不传就是没登录 */
   sdkAccount?: string | null;
+  /** 额外模型行（测「仅已启用」筛选用）；默认只有一条已启用 */
+  extraModels?: Array<{
+    model_id: string;
+    name: string;
+    enabled: boolean;
+  }>;
 }) {
   const sdkReady = options?.sdkReady ?? true;
   const sdkModels = options?.sdkModels ?? true;
@@ -41,6 +47,18 @@ function payload(options?: {
             custom: false,
             credits: options?.modelCredits ?? null,
           },
+          ...(options?.extraModels ?? []).map((item) => ({
+            template_id: "codebuddy-sdk",
+            model_id: item.model_id,
+            name: item.name,
+            vendor_id: "codebuddy",
+            vendor_label: "CodeBuddy",
+            option_label: "本地 Agent App",
+            enabled: item.enabled,
+            active: false,
+            custom: false,
+            credits: null,
+          })),
         ]
       : [],
     configured: sdkReady,
@@ -198,6 +216,38 @@ it("级联下拉默认 Agent App，本地 App 的模型出现在「启用服务�
   const apiVendors = optionTexts(host);
   expect(apiVendors.some((text) => text.includes("OpenAI"))).toBe(true);
   expect(apiVendors.some((text) => text.includes("Workbuddy / CodeBuddy"))).toBe(false);
+  vi.restoreAllMocks();
+});
+
+it("勾选「仅已启用」后未开开关的模型从列表消失，取消勾选后回来", async () => {
+  const host = mountProviderSettings(
+    payload({
+      extraModels: [
+        { model_id: "gpt-off", name: "Off-Model", enabled: false },
+        { model_id: "gpt-on", name: "On-Model", enabled: true },
+      ],
+    }),
+  );
+  await waitLoaded(host);
+
+  // 默认看全部：已启用 + 未启用都在
+  expect(host.textContent).toContain("Claude-Sonnet-5");
+  expect(host.textContent).toContain("Off-Model");
+  expect(host.textContent).toContain("On-Model");
+
+  const enabledOnly = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!enabledOnly) throw new Error("缺少「仅已启用」勾选");
+  enabledOnly.click();
+  await nextTick();
+
+  expect(host.textContent).toContain("Claude-Sonnet-5");
+  expect(host.textContent).toContain("On-Model");
+  expect(host.textContent).not.toContain("Off-Model");
+
+  // 旧路径：取消勾选仍看得到未启用项
+  enabledOnly.click();
+  await nextTick();
+  expect(host.textContent).toContain("Off-Model");
   vi.restoreAllMocks();
 });
 

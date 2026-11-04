@@ -36,6 +36,9 @@ export function buildAgentSdkViews(records: AgentSdkRecord[], locale: UiLocale):
       models: record?.models,
       ...(authEnvironments ? { authEnvironments } : {}),
       ...(record?.authEnvironment ? { authEnvironment: record.authEnvironment } : {}),
+      ...(template.agentSdk?.apiKeyPaste
+        ? { apiKeyPaste: template.agentSdk.apiKeyPaste }
+        : {}),
     };
   });
 }

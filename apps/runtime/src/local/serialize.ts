@@ -99,6 +99,7 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       vendor_id: model.vendorId,
       vendor_label: model.vendorLabel,
       option_label: model.optionLabel,
+      label: model.label,
       enabled: model.enabled,
       active: model.active,
       custom: model.custom,
@@ -157,6 +158,8 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       // CodeBuddy 站点：模板可选列表 + 本机已选；无声明时两端都省略
       auth_environments: sdk.authEnvironments ?? null,
       auth_environment: sdk.authEnvironment ?? null,
+      // 粘贴 Key 文案档（opencode / github-pat / deepseek）；无声明为 null
+      api_key_paste: sdk.apiKeyPaste ?? null,
     })),
     templates: settings.templates.map((template) => ({
       id: template.id,
@@ -204,6 +207,7 @@ export function sessionModelBody(
       vendor_id: model.vendorId,
       vendor_label: model.vendorLabel,
       option_label: model.optionLabel,
+      label: model.label,
       credits: model.credits ?? null,
     })),
     configured: settings.configured,

@@ -29,6 +29,7 @@ import {
 import {
   groupLinesToUiMessages,
   pendingDelegationCards,
+  resolveGroupReloadEdit,
   resolveGroupWakeLive,
   uiMessagePlainText,
 } from "../../../model/group/group-ui-messages";
@@ -415,6 +416,11 @@ const config = computed(() =>
         const text = outgoingText(message);
         const messageId = message.sourceId?.trim() ?? "";
         if (text && messageId) emit("edit", messageId, text);
+      },
+      // 助手「重新生成」：找触发它的用户行，原样 edit（与编辑重发同一 rewind 路径）
+      onReload: (parentId) => {
+        const target = resolveGroupReloadEdit(messages.value, parentId);
+        if (target) emit("edit", target.messageId, target.text);
       },
     }),
   }),

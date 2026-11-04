@@ -58,11 +58,19 @@ export type ExternalAgentQuery = {
   iterable: AsyncIterable<unknown>;
   controller: AbortController;
   timeoutMs: number;
+  /** 立刻打断厂商侧（如 OpenCode session.abort）；仅 abort controller 不够停住 SSE */
+  abort?: () => void;
   close?: () => Promise<void>;
 };
 
 /** 整回合上限：外部 agent 可能长时间不给结果。 */
 export const AGENT_SDK_TURN_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Client/CLI/serve 闲置保活：refcount 归零后超过此时长则 destroy。
+ * 详见 docs/ARCHITECTURE/agent-sdk-runtime-pool.md。
+ */
+export const AGENT_SDK_RUNTIME_IDLE_MS = 10 * 60_000;
 
 /** Pi 自定义 api 名；与模板 models[].api 一致。 */
 export const AGENT_SDK_API = "agentup-agent-sdk";

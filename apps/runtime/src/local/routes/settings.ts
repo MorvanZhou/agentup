@@ -250,9 +250,7 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
       const apiKey = optionalText(body, "api_key") ?? optionalText(body, "apiKey");
       if (!apiKey) throw new LocalError("请输入 API Key", 400);
       const result = await submitAgentSdkApiKey(config.userDataRoot, templateId, apiKey);
-      if (result.state === "ready") {
-        await ensureAgentSdkModels(config.userDataRoot, templateId);
-      }
+      // 粘贴 Key 路径：adaptor 内已顺手 listModels；勿再 ensure（Copilot 冷启贵，失败会连开三次）
       return json(c, 200, result);
     } catch (error) {
       if (error instanceof ConfigError) throw new LocalError(error.message, 400);

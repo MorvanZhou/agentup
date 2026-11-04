@@ -1,23 +1,22 @@
 <script setup lang="ts">
-import { ChevronDownIcon, LogOutIcon, Trash2Icon } from "@lucide/vue";
+import { ChevronDownIcon, LoaderCircleIcon, Trash2Icon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import AppSelect from "../../../../../shared/components/AppSelect.vue";
 import ProviderLogo from "../../../../../shared/components/ProviderLogo.vue";
 import UiSkeleton from "../../../../../shared/components/UiSkeleton.vue";
-import type {
-  AgentSdkAuthEnvironment,
-  AgentSdkOption,
-} from "../../../../../shared/model/runtime/runtime";
-import { showToast } from "../../../../../shared/model/ui/toast";
-import { readUiLocale, t, tf } from "../../../../../shared/model/ui/ui-locale";
+import { modelSourceLabel } from "../../../../../shared/model/provider/model-source-label";
+import type { AgentSdkAuthEnvironment } from "../../../../../shared/model/runtime/runtime";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useProviderSettings } from "../../../composables/useProviderSettings";
+import AgentSdkConnectPanel from "./provider-sdk/AgentSdkConnectPanel.vue";
+import { sdkReady, sdkStateLabel } from "./provider-sdk/sdk-state";
 
 const MODEL_PREVIEW_COUNT = 5;
 
 const {
   connections,
+  availableModels,
   filteredModels,
   modelProviderFilterOptions,
   overridden,
@@ -27,6 +26,7 @@ const {
   draftApiKey,
   modelFilter,
   modelProviderFilter,
+  modelEnabledOnly,
   apiTemplates,
   templates,
   agentSdks,
@@ -43,11 +43,13 @@ const {
   draftAddTemplateId,
   loaded,
   sdkBusy,
+  sdkModelsBusy,
   sdkPhase,
   sdkLoginDeviceCode,
   sdkLoginNeedsApiKey,
   sdkLoginApiKeyDraft,
   startAgentSdkInstall,
+  cancelAgentSdkInstall,
   loginAgentSdk,
   checkAgentSdkLogin,
   submitAgentSdkApiKey,
@@ -71,56 +73,6 @@ const addTargetOptions = computed(() =>
   })),
 );
 
-/** 状态机 → 状态标签词条（见 .cursor/skills/agentup-sdk-adapter/references/overview.md §2） */
-const SDK_STATE_KEYS: Record<string, string> = {
-  not_installed: "providerSdkStateNotInstalled",
-  installing: "providerSdkStateInstalling",
-  install_failed: "providerSdkStateInstallFailed",
-  installed: "providerSdkStateInstalled",
-  not_logged_in: "providerSdkStateNotLoggedIn",
-  logging_in: "providerSdkStateLoggingIn",
-  ready: "providerSdkStateReady",
-  error: "providerSdkStateError",
-};
-
-function sdkStateLabel(state: string): string {
-  return t(SDK_STATE_KEYS[state] ?? "providerSdkStateNotInstalled");
-}
-
-/** 只有 ready 才算可用；其余状态走「开始接入 / 登录」 */
-const sdkReady = (state: string): boolean => state === "ready";
-/** 已接入未登录 → 登录；未接入或接入失败 → 开始接入 */
-const needsLogin = (state: string): boolean =>
-  ["installed", "not_logged_in", "error"].includes(state);
-const busyState = (state: string): boolean => ["installing", "logging_in"].includes(state);
-/** 已登录（或残留登录态）才谈得上登出；登出只清登录态，接入组件还留着 */
-const canLogout = (state: string): boolean => sdkReady(state) || state === "error";
-/** 待接入 / 接入失败：专治「已装桌面版为何仍提示未接入」的误解 */
-const showDesktopMyth = (state: string): boolean =>
-  state === "not_installed" || state === "install_failed";
-
-/** 设备验证码弹窗：码出现时强制弹出一次，关掉后卡片上仍保留同一份码 */
-const deviceCodeDialogOpen = ref(false);
-
-watch(sdkLoginDeviceCode, (code) => {
-  if (code) {
-    deviceCodeDialogOpen.value = true;
-    return;
-  }
-  deviceCodeDialogOpen.value = false;
-});
-
-async function copyDeviceCode(): Promise<void> {
-  const code = sdkLoginDeviceCode.value?.trim();
-  if (!code) return;
-  try {
-    await navigator.clipboard.writeText(code);
-    showToast(t("providerSdkDeviceCodeCopied"), "success");
-  } catch {
-    /* Electron 下极少失败；失败时用户仍可手动选中弹窗里的码 */
-  }
-}
-
 /** 当前选中 SDK 的安装阶段：登录不进 sdkPhase，只看状态机（见 composable §安装与登录） */
 const installPhase = computed(() =>
   selectedSdk.value && sdkPhase.value?.templateId === selectedSdk.value.templateId
@@ -128,76 +80,20 @@ const installPhase = computed(() =>
     : null,
 );
 
-/** 状态徽标配色：可用 / 失败 / 进行中 / 其余中性，让状态不只靠文字区分 */
-function statePillClass(state: string): string {
-  if (sdkReady(state)) return "border-transparent bg-success-soft text-success-foreground";
-  if (state === "install_failed" || state === "error")
-    return "border-destructive/30 bg-danger-soft text-destructive";
-  if (busyState(state)) return "border-accent/30 bg-accent/10 text-accent";
-  return "border-rule bg-background text-muted-foreground";
-}
-
-/** 进行中文案：安装阶段优先用 runtime 回传的 detail，登录阶段回落到状态机标签 */
-function progressLabel(sdk: AgentSdkOption): string {
-  const phase = installPhase.value;
-  if (phase) return phase.detail ?? t("providerSdkInstall");
-  return sdkStateLabel(sdk.state);
-}
-
-/** 主钮文案跟状态机走：可用→刷模型；已装未登→登录；其余→开始接入 */
-function sdkPrimaryLabel(state: string): string {
-  if (sdkReady(state)) return t("providerRefreshModels");
-  if (needsLogin(state)) return t("providerSdkLogin");
-  return t("providerSdkStart");
-}
-
-/**
- * CodeBuddy 登录站点：分段选择 + 单一登录主钮（对齐 ApprovalScopePicker）。
- * 界面语言 zh 默认中国站，其它默认国际站；本机已有偏好则跟偏好。
- */
-const draftAuthEnvironment = ref<AgentSdkAuthEnvironment>("external");
-
-function defaultAuthEnvironment(): AgentSdkAuthEnvironment {
-  return readUiLocale() === "zh" ? "internal" : "external";
-}
-
-watch(
-  selectedSdk,
-  (sdk) => {
-    if (!sdk?.authEnvironments.length) return;
-    draftAuthEnvironment.value =
-      sdk.authEnvironment && sdk.authEnvironments.includes(sdk.authEnvironment)
-        ? sdk.authEnvironment
-        : defaultAuthEnvironment();
-  },
-  { immediate: true },
-);
-
-const showAuthEnvironmentPicker = computed(
-  () =>
-    Boolean(selectedSdk.value?.authEnvironments.length) &&
-    (needsLogin(selectedSdk.value?.state ?? "") || sdkReady(selectedSdk.value?.state ?? "")),
-);
-
-const authEnvironmentOptions = computed(() => {
-  const envs = selectedSdk.value?.authEnvironments ?? [];
-  return envs.map((value) => ({
-    value,
-    label:
-      value === "internal" ? t("providerSdkAuthEnvInternal") : t("providerSdkAuthEnvExternal"),
-  }));
-});
-
-function runSdkPrimary(sdk: AgentSdkOption): void {
+/** 面板主钮：可用→刷模型；已装未登→登录（可带站点）；其余→开始接入 */
+function onSdkPrimary(environment?: AgentSdkAuthEnvironment): void {
+  const sdk = selectedSdk.value;
+  if (!sdk) return;
   if (sdkReady(sdk.state)) {
     void refreshAgentSdkModels(sdk.templateId);
     return;
   }
-  if (needsLogin(sdk.state)) {
-    void loginAgentSdk(
-      sdk.templateId,
-      sdk.authEnvironments.length ? { environment: draftAuthEnvironment.value } : {},
-    );
+  if (environment) {
+    void loginAgentSdk(sdk.templateId, { environment });
+    return;
+  }
+  if (["installed", "not_logged_in", "error"].includes(sdk.state)) {
+    void loginAgentSdk(sdk.templateId, {});
     return;
   }
   void startAgentSdkInstall(sdk.templateId);
@@ -253,21 +149,28 @@ const draftTemplateSearchable = computed(
     t("providerAccessApi"),
 );
 
-watch([modelFilter, modelProviderFilter], () => {
+watch([modelFilter, modelProviderFilter, modelEnabledOnly], () => {
   modelsExpanded.value = false;
 });
 
-/** 悬停：厂商 + 接入方式 + 稳定 modelId（同名模型靠它区分） */
+/** 空列表文案：真没模型 / 仅已启用无结果 / 关键字或供应商筛空 */
+const modelsEmptyCopy = computed(() => {
+  if (!availableModels.value.length) {
+    return connections.value.length ? t("providerNoMatch") : t("providerNeedConnection");
+  }
+  if (modelEnabledOnly.value && !modelFilter.value.trim()) return t("providerNoEnabled");
+  return t("providerNoMatch");
+});
+
+/** 悬停：接入名 + 稳定 modelId（同名模型靠它区分） */
 function modelRowTitle(model: {
+  label?: string;
   vendorLabel: string;
   optionLabel: string;
   modelId: string;
   name: string;
 }): string {
-  const source =
-    model.optionLabel !== model.vendorLabel
-      ? `${model.vendorLabel} · ${model.optionLabel}`
-      : model.vendorLabel;
+  const source = modelSourceLabel(model);
   return model.modelId !== model.name ? `${source} · ${model.modelId}` : source;
 }
 </script>
@@ -294,14 +197,25 @@ function modelRowTitle(model: {
               {{ t("providerEnableLead") }}
             </p>
           </div>
+          <!-- 刷新全部：busy 整段可能很长，钮上转圈 + 文案，避免用户以为点了没反应 -->
           <button
             v-if="canRefreshModels"
             type="button"
-            :disabled="busy"
-            class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background disabled:opacity-50"
+            :disabled="busy || sdkModelsBusy"
+            class="inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background disabled:opacity-50"
+            :aria-busy="busy || sdkModelsBusy ? 'true' : undefined"
             @click="refreshAllDiscoverableModels"
           >
-            {{ t("providerRefreshModels") }}
+            <LoaderCircleIcon
+              v-if="busy || sdkModelsBusy"
+              class="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            {{
+              busy || sdkModelsBusy
+                ? t("providerSdkRefreshingModels")
+                : t("providerRefreshModels")
+            }}
           </button>
         </div>
 
@@ -344,6 +258,18 @@ function modelRowTitle(model: {
               />
             </label>
           </div>
+          <!-- 仅已启用：叠在供应商 / 关键字上，默认关 -->
+          <label
+            class="mt-2 flex cursor-pointer items-center gap-2 text-sm text-muted-foreground transition duration-200 hover:text-foreground"
+          >
+            <input
+              v-model="modelEnabledOnly"
+              type="checkbox"
+              :disabled="busy"
+              class="size-4 rounded border-rule text-accent accent-accent disabled:opacity-50"
+            />
+            <span>{{ t("providerFilterEnabledOnly") }}</span>
+          </label>
 
           <!-- 手动添加：默认折叠；箭头 + 实线边框示意可展开 -->
           <details
@@ -406,17 +332,24 @@ function modelRowTitle(model: {
               :title="modelRowTitle(model)"
             >
               <ProviderLogo size="md" :vendor-id="model.vendorId" :label="model.vendorLabel" />
-              <!-- 主名 + modelId：同显示名（如 Cursor 两个 Auto）靠 id 区分 -->
+              <!-- 主名旁 modelId；次行接入标签（次要色） -->
               <div class="min-w-0 flex-1">
-                <p class="m-0 truncate text-sm font-medium text-foreground">
-                  {{ model.name }}
+                <p class="m-0 flex min-w-0 items-baseline gap-2">
+                  <span class="min-w-0 truncate text-sm font-medium text-foreground">
+                    {{ model.name }}
+                  </span>
+                  <span
+                    v-if="model.modelId !== model.name"
+                    class="shrink-0 truncate font-mono text-xs text-muted-foreground"
+                  >
+                    {{ model.modelId }}
+                  </span>
                 </p>
-                <p
-                  v-if="model.modelId !== model.name"
-                  class="mb-0 mt-0.5 truncate font-mono text-xs text-muted-foreground"
+                <span
+                  class="mt-0.5 inline-flex max-w-full truncate rounded-md border border-rule bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
                 >
-                  {{ model.modelId }}
-                </p>
+                  {{ modelSourceLabel(model) }}
+                </span>
               </div>
               <!-- credit 倍率：本地 App 才有；0 也显示，不能靠 falsy -->
               <span
@@ -468,7 +401,7 @@ function modelRowTitle(model: {
             }}
           </button>
           <p v-else-if="!filteredModels.length" class="mb-0 mt-4 text-sm text-muted-foreground">
-            {{ connections.length ? t("providerNoMatch") : t("providerNeedConnection") }}
+            {{ modelsEmptyCopy }}
           </p>
         </template>
 
@@ -539,278 +472,26 @@ function modelRowTitle(model: {
               :search-empty="t('providerSelectSearchEmpty')"
             />
 
-            <!-- 本地 Agent App：单层扁平面（身份主名+副行 → 说明 → 操作），状态与主钮已表达下一步 -->
-            <section
+            <!-- 本地 Agent App：Base 面板 + 能力 parts（选站 / 验证码 / Key） -->
+            <AgentSdkConnectPanel
               v-if="sdkSelected && selectedSdk"
-              class="grid gap-3 rounded-xl border border-rule bg-paper p-3.5"
-            >
-              <!-- 身份：主名 + 状态；说明文案不塞进副行，避免与下方重点句重复 -->
-              <div class="flex items-start gap-2.5">
-                <ProviderLogo
-                  class="mt-0.5"
-                  size="lg"
-                  :vendor-id="selectedTemplate?.vendorId"
-                  :label="selectedSdk.label"
-                />
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <p class="m-0 text-sm font-semibold tracking-tight text-foreground">
-                      {{ selectedSdk.label }}
-                    </p>
-                    <span
-                      class="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium"
-                      :class="statePillClass(selectedSdk.state)"
-                    >
-                      <span
-                        v-if="busyState(selectedSdk.state)"
-                        class="size-1.5 animate-breathe rounded-full bg-current motion-reduce:animate-none"
-                        aria-hidden="true"
-                      />
-                      {{ sdkStateLabel(selectedSdk.state) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 说明：待接入只留「排雷一句 + 短信任」；可用后短信任 + 账号元信息；不再叠 hint/副行 -->
-              <div class="grid gap-1.5">
-                <p
-                  v-if="showDesktopMyth(selectedSdk.state)"
-                  class="m-0 max-w-xl text-xs leading-relaxed text-foreground"
-                >
-                  {{ t("providerSdkDesktopMyth") }}
-                </p>
-                <!-- SDK 信任模式：选此模板即默认放行工具，须明示风险 -->
-                <p class="m-0 max-w-xl text-xs leading-relaxed text-muted-foreground" role="note">
-                  {{
-                    sdkReady(selectedSdk.state)
-                      ? t("providerSdkTrustNoticeReady")
-                      : t("providerSdkTrustNotice")
-                  }}
-                </p>
-                <p
-                  v-if="
-                    (selectedSdk.accountLabel && canLogout(selectedSdk.state)) ||
-                    selectedSdk.models.length ||
-                    selectedSdk.installedVersion
-                  "
-                  class="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
-                >
-                  <!-- 登录账号：只显示各家给的昵称，token 从不进配置 -->
-                  <span
-                    v-if="selectedSdk.accountLabel && canLogout(selectedSdk.state)"
-                    class="font-medium text-foreground"
-                  >
-                    {{ tf("providerSdkAccount", { label: selectedSdk.accountLabel }) }}
-                  </span>
-                  <span v-if="selectedSdk.models.length">
-                    {{ tf("providerSdkModelsCount", { count: selectedSdk.models.length }) }}
-                  </span>
-                  <span v-if="selectedSdk.installedVersion" class="font-mono">
-                    v{{ selectedSdk.installedVersion }}
-                  </span>
-                </p>
-                <p
-                  v-if="selectedSdk.lastError"
-                  class="m-0 rounded-lg border border-destructive/30 bg-danger-soft px-2.5 py-1.5 text-xs text-destructive"
-                >
-                  {{ selectedSdk.lastError }}
-                </p>
-              </div>
-
-              <!-- 进度：安装 / 登录中（含 sdkBusy 尚未 reload 成 logging_in）仍展示；验证码 / Key 粘贴必须可见 -->
-              <div
-                v-if="installPhase || busyState(selectedSdk.state) || (!!sdkLoginDeviceCode && sdkBusy) || sdkLoginNeedsApiKey"
-                class="grid gap-2 border-t border-rule pt-3"
-              >
-                <div
-                  v-if="!sdkLoginNeedsApiKey"
-                  class="h-1 w-full overflow-hidden rounded-md bg-muted"
-                >
-                  <div class="h-full w-1/3 animate-breathe rounded-md bg-accent motion-reduce:animate-none" />
-                </div>
-                <p
-                  v-if="!sdkLoginNeedsApiKey"
-                  class="m-0 text-xs text-muted-foreground"
-                  role="status"
-                  aria-live="polite"
-                >
-                  {{ progressLabel(selectedSdk) }}
-                </p>
-                <!-- 登录轮询期才提示浏览器，安装时不显示 -->
-                <p v-if="!installPhase" class="m-0 text-xs text-muted-foreground">
-                  {{
-                    sdkLoginNeedsApiKey
-                      ? t("providerSdkApiKeyHint")
-                      : t("providerSdkBrowserHint")
-                  }}
-                </p>
-                <!-- Codex device-auth：码来自 CLI stdout，填到网页 XXXX-XXXXX -->
-                <div
-                  v-if="!installPhase && sdkLoginDeviceCode"
-                  class="grid gap-1 rounded-lg border border-rule bg-paper px-2.5 py-2"
-                >
-                  <p class="m-0 text-xs text-muted-foreground">
-                    {{ t("providerSdkDeviceCodeHint") }}
-                  </p>
-                  <p
-                    class="m-0 font-mono text-base font-semibold tracking-wider text-foreground"
-                    data-testid="sdk-device-code"
-                  >
-                    {{ tf("providerSdkDeviceCode", { code: sdkLoginDeviceCode }) }}
-                  </p>
-                </div>
-                <!-- OpenCode Zen：官网复制 Key 后粘贴写入隔离目录 -->
-                <div
-                  v-if="!installPhase && sdkLoginNeedsApiKey"
-                  class="grid gap-1.5"
-                  data-testid="sdk-api-key-paste"
-                >
-                  <label class="m-0 text-xs font-medium text-foreground" for="sdk-opencode-api-key">
-                    {{ t("providerSdkApiKeyLabel") }}
-                  </label>
-                  <input
-                    id="sdk-opencode-api-key"
-                    v-model="sdkLoginApiKeyDraft"
-                    type="password"
-                    autocomplete="off"
-                    class="min-h-8 w-full rounded-lg border border-rule bg-paper px-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/15"
-                    :placeholder="t('providerSdkApiKeyPlaceholder')"
-                    @keydown.enter.prevent="submitAgentSdkApiKey(selectedSdk.templateId)"
-                  />
-                  <div class="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      class="min-h-8 rounded-lg bg-accent px-2.5 text-xs font-medium text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-                      :disabled="sdkBusy && !sdkLoginApiKeyDraft.trim()"
-                      @click="submitAgentSdkApiKey(selectedSdk.templateId)"
-                    >
-                      {{ t("providerSdkApiKeySubmit") }}
-                    </button>
-                    <button
-                      type="button"
-                      class="min-h-8 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper"
-                      @click="cancelAgentSdkLogin(selectedSdk.templateId)"
-                    >
-                      {{ t("providerSdkCancelLogin") }}
-                    </button>
-                  </div>
-                </div>
-                <div
-                  v-else-if="selectedSdk.state === 'logging_in' || (!installPhase && sdkBusy)"
-                  class="flex flex-wrap items-center gap-1.5"
-                >
-                  <button
-                    type="button"
-                    class="min-h-8 rounded-lg border border-rule bg-background px-2.5 text-xs font-medium transition duration-200 hover:bg-paper"
-                    @click="cancelAgentSdkLogin(selectedSdk.templateId)"
-                  >
-                    {{ t("providerSdkCancelLogin") }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- 操作：登录主区块单列叠放（无左右空洞）；次要动作沉底安静一排 -->
-              <div v-else class="grid gap-2.5 border-t border-rule pt-3">
-                <!-- 主路径：标签+短 hint 同行 → 站点分段 → 全宽登录；无左右掏空 -->
-                <div class="grid gap-1.5">
-                  <div
-                    v-if="showAuthEnvironmentPicker"
-                    class="flex items-baseline justify-between gap-3"
-                  >
-                    <p
-                      id="sdk-auth-env-label"
-                      class="m-0 shrink-0 text-xs font-medium text-foreground"
-                    >
-                      {{ t("providerSdkAuthEnvLabel") }}
-                    </p>
-                    <p
-                      class="m-0 truncate text-right text-[11px] leading-none text-muted-foreground"
-                    >
-                      {{
-                        sdkReady(selectedSdk.state)
-                          ? t("providerSdkAuthEnvLockedHint")
-                          : t("providerSdkAuthEnvHint")
-                      }}
-                    </p>
-                  </div>
-                  <div
-                    v-if="showAuthEnvironmentPicker"
-                    class="grid gap-0.5 rounded-lg border border-rule bg-muted/40 p-0.5"
-                    :style="{
-                      gridTemplateColumns: `repeat(${authEnvironmentOptions.length}, minmax(0, 1fr))`,
-                    }"
-                    role="radiogroup"
-                    aria-labelledby="sdk-auth-env-label"
-                  >
-                    <button
-                      v-for="option in authEnvironmentOptions"
-                      :key="option.value"
-                      type="button"
-                      role="radio"
-                      class="min-h-8 rounded-md px-2 text-xs font-medium leading-tight transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
-                      :class="
-                        draftAuthEnvironment === option.value
-                          ? 'bg-paper text-foreground shadow-sm ring-1 ring-accent/35'
-                          : 'text-muted-foreground hover:bg-paper/70 hover:text-foreground'
-                      "
-                      :aria-checked="draftAuthEnvironment === option.value"
-                      :disabled="busy || sdkBusy || sdkReady(selectedSdk.state)"
-                      @click="draftAuthEnvironment = option.value"
-                    >
-                      {{ option.label }}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    :disabled="busy || sdkBusy"
-                    class="min-h-8 w-full rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-                    @click="runSdkPrimary(selectedSdk)"
-                  >
-                    {{ sdkPrimaryLabel(selectedSdk.state) }}
-                  </button>
-                </div>
-                <!-- 次要：检查 / 登出 / 移除接入 — 弱视觉底栏，不与主 CTA 抢横向空间 -->
-                <div
-                  v-if="
-                    needsLogin(selectedSdk.state) ||
-                    canLogout(selectedSdk.state) ||
-                    selectedSdk.state !== 'not_installed'
-                  "
-                  class="flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-rule/70 pt-2"
-                >
-                  <button
-                    v-if="needsLogin(selectedSdk.state)"
-                    type="button"
-                    :disabled="busy || sdkBusy"
-                    class="min-h-7 rounded-md px-2 text-xs font-medium text-muted-foreground transition duration-150 hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
-                    @click="checkAgentSdkLogin(selectedSdk.templateId)"
-                  >
-                    {{ t("providerSdkCheck") }}
-                  </button>
-                  <button
-                    v-if="canLogout(selectedSdk.state)"
-                    type="button"
-                    :disabled="busy || sdkBusy"
-                    class="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition duration-150 hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
-                    @click="logoutAgentSdk(selectedSdk.templateId)"
-                  >
-                    <LogOutIcon class="size-3.5" aria-hidden="true" />
-                    {{ t("providerSdkLogout") }}
-                  </button>
-                  <button
-                    v-if="selectedSdk.state !== 'not_installed'"
-                    type="button"
-                    :disabled="busy || sdkBusy"
-                    class="inline-flex min-h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-destructive/90 transition duration-150 hover:bg-danger-soft disabled:opacity-50"
-                    @click="uninstallAgentSdk(selectedSdk.templateId)"
-                  >
-                    <Trash2Icon class="size-3.5" aria-hidden="true" />
-                    {{ t("providerSdkUninstall") }}
-                  </button>
-                </div>
-              </div>
-            </section>
+              v-model:api-key-draft="sdkLoginApiKeyDraft"
+              :sdk="selectedSdk"
+              :vendor-id="selectedTemplate?.vendorId"
+              :busy="busy"
+              :sdk-busy="sdkBusy"
+              :models-busy="sdkModelsBusy"
+              :install-phase="installPhase"
+              :device-code="sdkLoginDeviceCode"
+              :login-needs-api-key="sdkLoginNeedsApiKey"
+              @primary="onSdkPrimary"
+              @check="checkAgentSdkLogin(selectedSdk.templateId)"
+              @logout="logoutAgentSdk(selectedSdk.templateId)"
+              @uninstall="uninstallAgentSdk(selectedSdk.templateId)"
+              @submit-api-key="submitAgentSdkApiKey(selectedSdk.templateId)"
+              @cancel-login="cancelAgentSdkLogin(selectedSdk.templateId)"
+              @cancel-install="cancelAgentSdkInstall(selectedSdk.templateId)"
+            />
 
             <!-- API Key 接入：填地址与密钥 -->
             <form v-else class="grid gap-3" @submit.prevent="saveConnection">
@@ -879,42 +560,5 @@ function modelRowTitle(model: {
         </div>
       </details>
     </div>
-
-    <!-- Codex device-auth：验证码强化弹窗（与登录卡片内联展示并存） -->
-    <AppDialog
-      :open="deviceCodeDialogOpen"
-      :title="t('providerSdkDeviceCodeDialogTitle')"
-      :description="t('providerSdkDeviceCodeDialogBody')"
-      align="center"
-      @update:open="deviceCodeDialogOpen = $event"
-    >
-      <div
-        v-if="sdkLoginDeviceCode"
-        class="grid justify-items-center gap-2 rounded-xl border border-rule bg-background px-4 py-5"
-      >
-        <p
-          class="m-0 select-all font-mono text-2xl font-semibold tracking-[0.2em] text-foreground"
-          data-testid="sdk-device-code-dialog"
-        >
-          {{ sdkLoginDeviceCode }}
-        </p>
-      </div>
-      <template #footer>
-        <button
-          type="button"
-          class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background focus-visible:ring-2 focus-visible:ring-accent/15 focus-visible:outline-none"
-          @click="copyDeviceCode"
-        >
-          {{ t("providerSdkDeviceCodeCopy") }}
-        </button>
-        <button
-          type="button"
-          class="min-h-8 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep focus-visible:ring-2 focus-visible:ring-accent/15 focus-visible:outline-none"
-          @click="deviceCodeDialogOpen = false"
-        >
-          {{ t("providerSdkDeviceCodeDialogGotIt") }}
-        </button>
-      </template>
-    </AppDialog>
   </main>
 </template>

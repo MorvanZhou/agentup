@@ -129,8 +129,19 @@ it("detects interrupted tool outputs after app exit", () => {
       "User dismissed the questions. Session was interrupted before answers were received.",
     ),
   ).toBe(true);
-  expect(isInterruptedToolOutput({ error: "Tool call interrupted: …" })).toBe(true);
+  expect(
+    isInterruptedToolOutput({
+      error: "Tool call interrupted: the app exited before the tool finished.",
+    }),
+  ).toBe(true);
+  expect(isInterruptedToolOutput("应用已退出，这项工作在完成前中断")).toBe(true);
   expect(isInterruptedToolOutput("ok")).toBe(false);
+  // MCP 正文复述历史「连接中断」≠ 本工具被终止
+  expect(
+    isInterruptedToolOutput(
+      "task_id: Xm33bvIq\nstatus: cancelled\nerror: 用户已取消\n此前任务失败的原因是模型服务网络连接中断。",
+    ),
+  ).toBe(false);
 });
 
 it("formats tool failures as an Error line", () => {

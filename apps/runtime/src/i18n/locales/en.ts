@@ -45,6 +45,12 @@ export const en: Record<string, string> = {
   "provider.template.opencode-sdk.label": "OpenCode",
   "provider.template.opencode-sdk.hint":
     "Runs a local agent with your official OpenCode account — no model API key required",
+  "provider.template.copilot-sdk.label": "GitHub Copilot",
+  "provider.template.copilot-sdk.hint":
+    "Runs a local agent with your GitHub Copilot subscription — no API key",
+  "provider.template.deepseek-harness-sdk.label": "DeepSeek Harness",
+  "provider.template.deepseek-harness-sdk.hint":
+    "Runs DeepSeek Harness locally with your platform API key (developer preview)",
 
   "agentSdk.fail.noDetail": "unknown reason",
   "agentSdk.fail.not_installed":
