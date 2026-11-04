@@ -16,7 +16,7 @@ import { disposeAgentSdkRuntimesForTemplate } from "../../../session/external/sd
  *
  * 稳定性优先的三条：
  * 1. 只装进 runtime 自管目录 `<userDataRoot>/agent-sdks/<templateId>`，不碰 App 安装目录；
- * 2. 用 runtime 自己的 Node 跑 npm-cli.js，不依赖用户 PATH 上的 npm / node；
+ * 2. 用 runtime 自己的 Node 跑 npm-cli.js（打包态优先 Desktop extraResources 内置 npm）；
  * 3. 先在临时目录构建 → 自检 → 原子 rename，任何失败都删临时目录回滚。
  */
 
@@ -76,9 +76,14 @@ export function readInstalledSdk(
 /**
  * 定位 npm：一律「当前 Node（含 ELECTRON_RUN_AS_NODE）+ npm-cli.js」。
  *
+ * 优先级：
+ * 1. Desktop 注入的 `AGENTUP_NPM_CLI`（extraResources 的 npm）
+ * 2. 打包布局：mac `Contents/Resources/npm`、win `resources/npm`
+ * 3. 官方 Node 旁 `lib/node_modules/npm`（开发机 / 系统 Node）
+ * 4. PATH 反查；Unix 最后才直接 spawn PATH 上的 `npm` 脚本
+ *
  * Windows 上 Node ≥20.12 直接 spawn `.cmd`/`.bat` 会 EINVAL（CVE-2024-27980），
- * 因此禁止把 `npm.cmd` 当作 command；打包 Electron 旁也没有附带 npm，需从 PATH 上的
- * Node 安装目录反查 `node_modules/npm/bin/npm-cli.js`。
+ * 因此禁止把 `npm.cmd` 当作 command。
  *
  * `npm_execpath` 不可信——被 pnpm / yarn 拉起时可能指向 pnpm.cjs，
  * 只有确认为 npm-cli.js 时才用。
@@ -97,17 +102,34 @@ export function resolveNpmRunner(options?: {
   const exists = options?.existsSync ?? ((filePath: string) => fs.existsSync(filePath));
   const execDir = path.dirname(execPath);
 
-  const bundled = [
+  const asRunner = (cli: string): NpmRunner => ({ command: execPath, args: [cli] });
+
+  // Desktop 主进程写入；打包态优先，避免误用用户 PATH 上的旧 npm
+  const fromAgentUp = env.AGENTUP_NPM_CLI?.trim();
+  if (fromAgentUp && /npm-cli\.js$/i.test(fromAgentUp) && exists(fromAgentUp)) {
+    return asRunner(fromAgentUp);
+  }
+
+  // extraResources → Resources/npm（mac）或 resources/npm（win）
+  const packaged = [
+    path.join(execDir, "..", "Resources", "npm", "bin", "npm-cli.js"),
+    path.join(execDir, "resources", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidate of packaged) {
+    if (exists(candidate)) return asRunner(candidate);
+  }
+
+  const besideNode = [
     path.join(execDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
     path.join(execDir, "node_modules", "npm", "bin", "npm-cli.js"),
   ];
-  for (const candidate of bundled) {
-    if (exists(candidate)) return { command: execPath, args: [candidate] };
+  for (const candidate of besideNode) {
+    if (exists(candidate)) return asRunner(candidate);
   }
 
   const fromEnv = env.npm_execpath;
   if (fromEnv && /npm-cli\.js$/i.test(fromEnv) && exists(fromEnv)) {
-    return { command: execPath, args: [fromEnv] };
+    return asRunner(fromEnv);
   }
 
   const pathDirs = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
@@ -122,7 +144,7 @@ export function resolveNpmRunner(options?: {
       for (const dir of pathDirs) {
         if (!exists(path.join(dir, name))) continue;
         const cli = npmCliBeside(dir);
-        if (cli) return { command: execPath, args: [cli] };
+        if (cli) return asRunner(cli);
       }
     }
     return null;
@@ -130,7 +152,7 @@ export function resolveNpmRunner(options?: {
 
   for (const dir of pathDirs) {
     const cli = npmCliBeside(dir);
-    if (cli) return { command: execPath, args: [cli] };
+    if (cli) return asRunner(cli);
   }
   // Unix 兜底：PATH 上的 npm shell 脚本可直接 spawn（非 .cmd）
   const onPath = findOnPath("npm", env, exists);
@@ -180,7 +202,11 @@ export function startAgentSdkInstall(
     throw new ConfigError("已经接入过了");
   }
   const runner = resolveNpmRunner();
-  if (!runner) throw new ConfigError("本机没有可用的 npm（未找到 npm-cli.js），无法自动接入。请先安装 Node.js 并确保已加入 PATH");
+  if (!runner) {
+    throw new ConfigError(
+      "本机没有可用的 npm（未找到 npm-cli.js），无法自动接入。请重装 AgentUp，或安装 Node.js 并加入 PATH",
+    );
+  }
 
   const jobId = randomUUID();
   const tmpDir = path.join(userDataRoot, "agent-sdks", `.tmp-${templateId}-${jobId.slice(0, 8)}`);

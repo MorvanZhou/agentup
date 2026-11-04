@@ -106,6 +106,10 @@ async function main() {
     console.log(`→ 使用缓存 Electron zip（保留 symlink）: ${zipPath}`);
   }
 
+  // 直接 pnpm pack:mac 时也要有 build/npm，否则 extraResources 缺文件
+  const { main: prepareBundledNpm } = require("./prepare-bundled-npm.cjs");
+  await prepareBundledNpm();
+
   const env = unsetProxies({ ...process.env });
   const cli = require.resolve("electron-builder/cli.js");
   const args = ["--mac", "--arm64"];

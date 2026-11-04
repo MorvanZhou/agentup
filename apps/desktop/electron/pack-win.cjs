@@ -14,10 +14,21 @@ function unsetProxies(env) {
   return env;
 }
 
-const env = unsetProxies({ ...process.env });
-const cli = require.resolve("electron-builder/cli.js");
-const result = spawnSync(process.execPath, [cli, "--win", "--x64"], {
-  stdio: "inherit",
-  env,
+async function main() {
+  // 直接 pnpm pack:win 时也要有 build/npm，否则 extraResources 缺文件
+  const { main: prepareBundledNpm } = require("./prepare-bundled-npm.cjs");
+  await prepareBundledNpm();
+
+  const env = unsetProxies({ ...process.env });
+  const cli = require.resolve("electron-builder/cli.js");
+  const result = spawnSync(process.execPath, [cli, "--win", "--x64"], {
+    stdio: "inherit",
+    env,
+  });
+  process.exit(result.status ?? 1);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
-process.exit(result.status ?? 1);

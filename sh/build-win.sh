@@ -42,6 +42,9 @@ node apps/desktop/electron/prune-runtime-modules.cjs "${runtime_deploy}/node_mod
 echo "→ 构建 desktop 界面"
 pnpm --filter @agentup/desktop build
 
+echo "→ 准备打包用 npm（extraResources，无系统 Node 也能接入 SDK）"
+node apps/desktop/electron/prepare-bundled-npm.cjs
+
 echo "→ electron-builder（win x64 NSIS，未签名）"
 pnpm --filter @agentup/desktop pack:win
 

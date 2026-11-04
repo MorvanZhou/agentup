@@ -192,6 +192,45 @@ async function waitJob(jobId: string, timeoutMs = 60_000): Promise<string> {
   return "timeout";
 }
 
+it("优先使用 AGENTUP_NPM_CLI（Desktop extraResources 注入）", () => {
+  const execPath = path.join("/fake", "AgentUp.app", "Contents", "MacOS", "AgentUp");
+  const bundled = path.join("/fake", "AgentUp.app", "Contents", "Resources", "npm", "bin", "npm-cli.js");
+  const pathNpm = path.join("/fake", "nodejs", "node_modules", "npm", "bin", "npm-cli.js");
+  const files = new Set([bundled, pathNpm]);
+  const runner = resolveNpmRunner({
+    platform: "darwin",
+    execPath,
+    env: { AGENTUP_NPM_CLI: bundled, PATH: path.join("/fake", "nodejs") },
+    existsSync: (filePath) => files.has(filePath),
+  });
+  expect(runner).toEqual({ command: execPath, args: [bundled] });
+});
+
+it("mac 打包态从 execPath 旁 Resources/npm 解析，不依赖系统 PATH", () => {
+  const execPath = path.join("/fake", "AgentUp.app", "Contents", "MacOS", "AgentUp");
+  const bundled = path.join("/fake", "AgentUp.app", "Contents", "Resources", "npm", "bin", "npm-cli.js");
+  const runner = resolveNpmRunner({
+    platform: "darwin",
+    execPath,
+    env: { PATH: "" },
+    existsSync: (filePath) => filePath === bundled,
+  });
+  expect(runner).toEqual({ command: execPath, args: [bundled] });
+});
+
+it("win 打包态从 execPath 旁 resources/npm 解析，不 spawn npm.cmd", () => {
+  const execPath = path.join("/fake", "AgentUp", "AgentUp.exe");
+  const bundled = path.join("/fake", "AgentUp", "resources", "npm", "bin", "npm-cli.js");
+  const runner = resolveNpmRunner({
+    platform: "win32",
+    execPath,
+    env: { PATH: "" },
+    existsSync: (filePath) => filePath === bundled,
+  });
+  expect(runner).toEqual({ command: execPath, args: [bundled] });
+  expect(runner?.command.toLowerCase().endsWith(".cmd")).toBe(false);
+});
+
 it("Windows 从 PATH 反查 npm-cli.js，绝不把 npm.cmd 当作 spawn command", () => {
   // 不用盘符路径：本机若是 darwin，PATH 按 `:` 分割会把 `C:` 拆碎
   const nodeDir = path.join("/fake", "nodejs");

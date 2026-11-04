@@ -15,11 +15,11 @@ const { pruneRuntimeModules } = require("./prune-runtime-modules.cjs");
  * 为何不进 app.asar / 不写 extraResources 的 node_modules
  * - electron-builder 会按 .gitignore 跳过 node_modules，故在 afterPack 再拷。
  * - runtime 子进程 ELECTRON_RUN_AS_NODE=1，不能依赖 asar 虚拟文件系统。
- * - package.json extraResources 只放 dist + package.json；node_modules 由此处注入。
+ * - package.json extraResources：runtime dist/package.json + 钉版 npm；node_modules 由此处注入。
  *
  * 产物路径
- * - mac: <Product>.app/Contents/Resources/runtime/{dist,package.json,node_modules.tgz}
- * - win: resources/runtime/...（同上；NSIS customInstall 安装期展开 tgz）
+ * - mac: <Product>.app/Contents/Resources/{runtime/..., npm/bin/npm-cli.js}
+ * - win: resources/{runtime/..., npm/...}（NSIS customInstall 安装期展开 runtime 的 tgz）
  *
  * follow 按平台分叉（详见 pack-runtime-modules.cjs）
  * - darwin：follow=false，保 dmg ~160MB
@@ -44,6 +44,11 @@ exports.default = async function afterPack(context) {
   }
   if (!existsSync(runtimeRoot)) {
     throw new Error(`打包产物缺少 runtime：${runtimeRoot}`);
+  }
+  // extraResources 应已拷入钉版 npm（prepare-bundled-npm.cjs）；与 runtime 同级
+  const npmCli = path.join(path.dirname(runtimeRoot), "npm", "bin", "npm-cli.js");
+  if (!existsSync(npmCli)) {
+    throw new Error(`打包产物缺少 bundled npm：${npmCli}（先跑 prepare-bundled-npm.cjs）`);
   }
   // build-mac / build-win 已预裁剪；此处再跑一遍，避免直接调 pack:* 时漏剪。
   pruneRuntimeModules(srcModules);
