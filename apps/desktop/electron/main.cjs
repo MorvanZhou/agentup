@@ -609,7 +609,7 @@ function spawnRuntime(packagedRuntimeRoot) {
   logInfo(`spawn runtime cli=${cli} backend=${env.AGENTUP_BACKEND_URL}`);
   if (app.isPackaged) {
     env.ELECTRON_RUN_AS_NODE = "1";
-    // SDK 接入：runtime 用本机 Electron 当 Node 跑 extraResources 里的 npm-cli.js
+    // SDK 接入：runtime 用本机 Electron 当 Node 跑 afterPack 注入的 npm-cli.js
     const bundledNpmCli = path.join(process.resourcesPath, "npm", "bin", "npm-cli.js");
     if (fs.existsSync(bundledNpmCli)) {
       env.AGENTUP_NPM_CLI = bundledNpmCli;

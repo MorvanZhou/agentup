@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
- * 把钉版 npm 解到 apps/desktop/build/npm，供 electron-builder extraResources 打进安装包。
+ * 把钉版 npm 解到 apps/desktop/build/npm，供 afterPack 整树拷进 Resources/npm。
  *
  * 为何自带：打包 Electron 旁没有官方 Node 的 lib/node_modules/npm；无系统 Node 时
  * SDK 接入（npm install）会失败。npm 为纯 JS，mac/win 共用一份。
+ *
+ * 勿用 extraResources 拷 npm：electron-builder 会按 .gitignore 丢掉其 node_modules，
+ * 装出来只剩 cli 壳 → `Cannot find module 'graceful-fs'`。须 afterPack cpSync。
  *
  * 体积：tarball ~3MB；解压后裁掉 man/docs ≈15MB（落盘进 Resources）。
  */
@@ -117,7 +120,7 @@ async function main() {
       throw new Error(`npm tarball 布局异常，缺少 package/：${extractDir}`);
     }
     prepareFromExtract(packageDir);
-    console.log(`→ bundled npm ${NPM_VERSION} 就绪（extraResources → Resources/npm）`);
+    console.log(`→ bundled npm ${NPM_VERSION} 就绪（afterPack → Resources/npm）`);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

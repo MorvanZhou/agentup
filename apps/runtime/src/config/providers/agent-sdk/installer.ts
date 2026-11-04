@@ -16,7 +16,7 @@ import { disposeAgentSdkRuntimesForTemplate } from "../../../session/external/sd
  *
  * 稳定性优先的三条：
  * 1. 只装进 runtime 自管目录 `<userDataRoot>/agent-sdks/<templateId>`，不碰 App 安装目录；
- * 2. 用 runtime 自己的 Node 跑 npm-cli.js（打包态优先 Desktop extraResources 内置 npm）；
+ * 2. 用 runtime 自己的 Node 跑 npm-cli.js（打包态优先 Desktop afterPack 注入的钉版 npm）；
  * 3. 先在临时目录构建 → 自检 → 原子 rename，任何失败都删临时目录回滚。
  */
 
@@ -77,7 +77,7 @@ export function readInstalledSdk(
  * 定位 npm：一律「当前 Node（含 ELECTRON_RUN_AS_NODE）+ npm-cli.js」。
  *
  * 优先级：
- * 1. Desktop 注入的 `AGENTUP_NPM_CLI`（extraResources 的 npm）
+ * 1. Desktop 注入的 `AGENTUP_NPM_CLI`（afterPack 拷入的钉版 npm）
  * 2. 打包布局：mac `Contents/Resources/npm`、win `resources/npm`
  * 3. 官方 Node 旁 `lib/node_modules/npm`（开发机 / 系统 Node）
  * 4. PATH 反查；Unix 最后才直接 spawn PATH 上的 `npm` 脚本
@@ -110,7 +110,7 @@ export function resolveNpmRunner(options?: {
     return asRunner(fromAgentUp);
   }
 
-  // extraResources → Resources/npm（mac）或 resources/npm（win）
+  // afterPack 注入 → Resources/npm（mac）或 resources/npm（win）
   const packaged = [
     path.join(execDir, "..", "Resources", "npm", "bin", "npm-cli.js"),
     path.join(execDir, "resources", "npm", "bin", "npm-cli.js"),

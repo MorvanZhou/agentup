@@ -15,7 +15,7 @@ function unsetProxies(env) {
 }
 
 async function main() {
-  // 直接 pnpm pack:win 时也要有 build/npm，否则 extraResources 缺文件
+  // 直接 pnpm pack:win 时也要有 build/npm，否则 afterPack 缺钉版 npm
   const { main: prepareBundledNpm } = require("./prepare-bundled-npm.cjs");
   await prepareBundledNpm();
 

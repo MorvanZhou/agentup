@@ -192,7 +192,7 @@ async function waitJob(jobId: string, timeoutMs = 60_000): Promise<string> {
   return "timeout";
 }
 
-it("优先使用 AGENTUP_NPM_CLI（Desktop extraResources 注入）", () => {
+it("优先使用 AGENTUP_NPM_CLI（Desktop afterPack 注入的钉版 npm）", () => {
   const execPath = path.join("/fake", "AgentUp.app", "Contents", "MacOS", "AgentUp");
   const bundled = path.join("/fake", "AgentUp.app", "Contents", "Resources", "npm", "bin", "npm-cli.js");
   const pathNpm = path.join("/fake", "nodejs", "node_modules", "npm", "bin", "npm-cli.js");

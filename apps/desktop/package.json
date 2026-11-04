@@ -64,10 +64,6 @@
       {
         "from": "build/runtime/package.json",
         "to": "runtime/package.json"
-      },
-      {
-        "from": "build/npm",
-        "to": "npm"
       }
     ],
     "protocols": [
