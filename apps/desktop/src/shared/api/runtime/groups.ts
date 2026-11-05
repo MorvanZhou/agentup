@@ -58,6 +58,8 @@ export type GroupRoom = {
   lines: GroupLine[];
   phase: "idle" | "holding" | "task";
   holderId: string | null;
+  /** 尚无执掌者且未 @ 时首启此人；须为成员。 */
+  defaultHolderId: string;
   holderSpeaking: boolean;
   taskIds: string[];
   pendingDelegations: GroupPendingDelegation[];
@@ -100,8 +102,14 @@ export async function createGroup(
   userId: string,
   title: string,
   members: GroupMember[],
+  defaultHolderId?: string,
 ): Promise<GroupRoom> {
-  const payload = await http.request("/groups", token, { user_id: userId, title, members });
+  const payload = await http.request("/groups", token, {
+    user_id: userId,
+    title,
+    members,
+    ...(defaultHolderId ? { defaultHolderId } : {}),
+  });
   return readRoom(payload.group);
 }
 
@@ -117,6 +125,28 @@ export async function renameGroup(
     `/groups/${encodeURIComponent(groupId)}`,
     token,
     { user_id: userId, title },
+    "PUT",
+  );
+  return readRoom(payload.group);
+}
+
+/** 改成员（可顺带改默认执掌者）；响应可能不带会话行，合并 members / holderId / defaultHolderId / queue。 */
+export async function setGroupMembers(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  groupId: string,
+  members: GroupMember[],
+  defaultHolderId?: string,
+): Promise<GroupRoom> {
+  const payload = await http.request(
+    `/groups/${encodeURIComponent(groupId)}/members`,
+    token,
+    {
+      user_id: userId,
+      members,
+      ...(defaultHolderId ? { defaultHolderId } : {}),
+    },
     "PUT",
   );
   return readRoom(payload.group);
@@ -300,13 +330,21 @@ function readRoom(value: unknown): GroupRoom {
   if (!value || typeof value !== "object") throw new DesktopApiError("群记录无效");
   const room = value as Partial<GroupRoom>;
   if (typeof room.id !== "string") throw new DesktopApiError("群记录无效");
+  const members = Array.isArray(room.members) ? room.members : [];
+  const fallbackDefault =
+    typeof room.defaultHolderId === "string" && room.defaultHolderId
+      ? room.defaultHolderId
+      : typeof members[0]?.agentId === "string"
+        ? members[0].agentId
+        : "";
   return {
     id: room.id,
     title: typeof room.title === "string" ? room.title : "",
-    members: Array.isArray(room.members) ? room.members : [],
+    members,
     lines: Array.isArray(room.lines) ? room.lines.map(readLine) : [],
     phase: room.phase === "holding" || room.phase === "task" ? room.phase : "idle",
     holderId: typeof room.holderId === "string" ? room.holderId : null,
+    defaultHolderId: fallbackDefault,
     holderSpeaking: room.holderSpeaking === true,
     taskIds: Array.isArray(room.taskIds) ? room.taskIds.filter((id) => typeof id === "string") : [],
     pendingDelegations: Array.isArray(room.pendingDelegations)

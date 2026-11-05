@@ -1,4 +1,5 @@
 import type {
+  ExternalCompactRequest,
   ExternalDriver,
   ExternalDriverCapabilities,
   ExternalLoginInput,
@@ -6,6 +7,7 @@ import type {
   ExternalTurnRequest,
   WorkerResult,
 } from "../../contract.js";
+import { closeIterable, collectCompactSummary } from "../../host/collect-compact-summary.js";
 import { resultFromSdkMessage } from "../../host/result.js";
 import { loadCodebuddyModule } from "./load.js";
 import {
@@ -14,12 +16,13 @@ import {
   startAgentSdkLogin,
 } from "./login-impl.js";
 import { fetchAgentSdkModels } from "./models-impl.js";
-import { codebuddyOptionsOf } from "./options.js";
+import { codebuddyCompactOptionsOf, codebuddyOptionsOf } from "./options.js";
 
 const CAPABILITIES: ExternalDriverCapabilities = {
   driverId: "codebuddy",
   systemPromptMode: "append",
   askUserToolNames: ["AskUserQuestion"],
+  compactSummarize: true,
 };
 
 /**
@@ -76,13 +79,18 @@ export const codebuddyDriver: ExternalDriver = {
   normalizeResult(message: unknown): WorkerResult | null {
     return resultFromSdkMessage(message);
   },
-};
 
-function closeIterable(iterable: AsyncIterable<unknown>): void {
-  try {
-    const closer = (iterable as { return?: () => Promise<unknown> | undefined }).return;
-    void Promise.resolve(closer?.call(iterable)).catch(() => undefined);
-  } catch {
-    // 关不掉就算了
-  }
-}
+  async compactSummarize(input: ExternalCompactRequest): Promise<string> {
+    const module = await loadCodebuddyModule(input.userDataRoot, input.templateId);
+    if (typeof module.query !== "function") throw new Error("本地 Agent App 不支持 query()");
+    const iterable = module.query({
+      prompt: input.prompt,
+      options: codebuddyCompactOptionsOf(input),
+    });
+    try {
+      return await collectCompactSummary(iterable);
+    } finally {
+      closeIterable(iterable);
+    }
+  },
+};

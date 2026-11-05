@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { ConfigError } from "../../../../../config/load.js";
+import { throwModelCatalogUnavailable } from "../../../../../config/provider/model-list-policy.js";
 import { getProviderTemplate } from "../../../../../config/provider-templates.js";
 import {
   agentSdkAccountLabel,
@@ -19,6 +20,7 @@ import {
   hasCodexAuth,
   readCodexAccountLabel,
 } from "./home.js";
+import { positiveTokenCount, withTokenLimits } from "../../host/model-meta.js";
 import { resolveCodexCliPath, withTimeout } from "./load.js";
 
 /**
@@ -67,6 +69,8 @@ export interface AgentSdkModel {
   id: string;
   name: string;
   credits?: number;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export async function startCodexLogin(
@@ -284,7 +288,8 @@ export async function fetchCodexModels(
     throw new ConfigError("尚未登录 Codex");
   }
   const catalog = await runCodexDebugModels(userDataRoot, templateId);
-  if (!catalog.length) return [...FALLBACK_MODELS];
+  // 空活目录：统一提示，禁 default FALLBACK 假目录
+  if (!catalog.length) throwModelCatalogUnavailable();
   // 保留 default（不传 model）+ CLI 目录；无 credits
   return mergeWithDefault(catalog);
 }
@@ -316,6 +321,8 @@ export function parseCodexDebugModels(stdout: string): AgentSdkModel[] {
       display_name?: unknown;
       displayName?: unknown;
       visibility?: unknown;
+      context_window?: unknown;
+      max_context_window?: unknown;
     };
     // visibility=list 为 picker 可见；缺字段时照收（bundled / 旧格式）
     if (
@@ -337,7 +344,16 @@ export function parseCodexDebugModels(stdout: string): AgentSdkModel[] {
       (typeof record.name === "string" && record.name.trim()) ||
       id;
     seen.add(id);
-    out.push({ id, name });
+    // 优先 context_window；缺则 max_context_window（catalog 上限）
+    const contextWindow =
+      positiveTokenCount(record.context_window) ?? positiveTokenCount(record.max_context_window);
+    out.push(
+      withTokenLimits({
+        id,
+        name,
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+      }),
+    );
     if (out.length >= MAX_AGENT_SDK_MODELS) break;
   }
   return out;

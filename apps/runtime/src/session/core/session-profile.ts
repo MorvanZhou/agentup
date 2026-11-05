@@ -52,7 +52,7 @@ const PROFILE: Record<ExecutionMode, SessionProfile> = {
     kind: "group-holder",
     mode: "group-holder",
     // 留任跨轮续写；换人 / 清空仍由 start_holder / clearContext rm 目录。
-    // SDK 每轮 externalPromptFromSession → transcriptToPrompt（超长压缩），勿各 adaptor 自拼。
+    // SDK 每轮 externalPromptFromSession → 可喂视图 → transcriptToPrompt；压缩边界见 agent-context-compaction.md
     session: "continue",
     personalSkills: true,
     personalMcp: true,

@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { ExternalTurnRequest } from "../../contract.js";
+import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
 import {
   type AskUserAnswer,
   type AskUserOption,
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
 import { ensureDshHome } from "./home.js";
 import { dshChildEnv, resolveDshCliPath } from "./load.js";
 
@@ -61,6 +62,49 @@ export function dshHarnessOptionsOf(
 export function systemPromptOf(input: ExternalTurnRequest): string {
   const append = input.systemAppend.trim();
   return append ? `${DSH_CONTEXT_HEADER}\n\n${append}` : DSH_CONTEXT_HEADER;
+}
+
+/** 压缩：仅 persona=压缩器；无 MCP insert；空 cwd。 */
+export function dshCompactHarnessOptionsOf(input: ExternalCompactRequest): {
+  options: Record<string, unknown>;
+  patchPath: string | null;
+} {
+  const home = ensureDshHome(input.userDataRoot, input.templateId);
+  const dshBin = resolveDshCliPath(input.userDataRoot, input.templateId);
+  const patchPath = writeCompactPersonaPatch(home);
+  const model =
+    input.modelId && input.modelId !== "default" ? input.modelId : "deepseek-flash";
+  const options: Record<string, unknown> = {
+    profile: "sdk",
+    dshHome: home,
+    cwd: input.cwd,
+    provider: "deepseek-official",
+    model,
+    approvalRequests: true,
+    env: dshChildEnv(input.userDataRoot, input.templateId, {
+      systemPrompt: COMPACT_SYSTEM_PROMPT,
+    }),
+    ...(dshBin ? { dshBin } : {}),
+    ...(patchPath ? { patches: [patchPath] } : {}),
+  };
+  return { options, patchPath };
+}
+
+function writeCompactPersonaPatch(home: string): string | null {
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    const file = path.join(home, "agentup-compact.cordis.yml");
+    const body = [
+      "overrides:",
+      "  system-prompt:",
+      `    personaPrefix: ${JSON.stringify(COMPACT_SYSTEM_PROMPT)}`,
+      "",
+    ].join("\n");
+    fs.writeFileSync(file, body, "utf8");
+    return file;
+  } catch {
+    return null;
+  }
 }
 
 /**

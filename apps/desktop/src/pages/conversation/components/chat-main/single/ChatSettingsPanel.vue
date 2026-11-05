@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { PuzzleIcon, TerminalIcon, UsersIcon } from "@lucide/vue";
+import { PuzzleIcon, TerminalIcon, Trash2Icon, UsersIcon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
+import { useAuiState } from "@assistant-ui/vue";
 
 import { useDesktop } from "../../../../../app/desktop";
 import { DesktopApi } from "../../../../../shared/api/runtime";
@@ -8,6 +9,7 @@ import type {
   AgentApprovals,
   ApprovalChoice,
 } from "../../../../../shared/api/runtime/agents";
+import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import UiSkeleton from "../../../../../shared/components/UiSkeleton.vue";
 import { showToast } from "../../../../../shared/model/ui/toast";
 import { t } from "../../../../../shared/model/ui/ui-locale";
@@ -36,6 +38,18 @@ const saving = ref(false);
 const remarkDraft = ref("");
 const remarkSaving = ref(false);
 const approvals = ref<AgentApprovals | null>(null);
+const confirmClearHistory = ref(false);
+const isRunning = useAuiState((state) => state.thread.isRunning);
+
+const clearHistoryDisabled = computed(
+  () =>
+    !extras.value.name ||
+    !extras.value.syncedVersion ||
+    extras.value.busy ||
+    (actions?.value.clearing ?? false) ||
+    (actions?.value.clearingHistory ?? false) ||
+    isRunning.value,
+);
 
 const scopeOptions = computed(() => [
   { value: "once" as const, label: t("approvalScopeOnce") },
@@ -156,11 +170,26 @@ function toolKindLabel(kind: "mcp_server" | "mcp_tool"): string {
   if (kind === "mcp_server") return t("chatSettingsMcpServer");
   return t("chatSettingsMcpTool");
 }
+
+function askClearHistory(): void {
+  if (clearHistoryDisabled.value || !actions) return;
+  confirmClearHistory.value = true;
+}
+
+async function confirmClearHistoryAction(): Promise<void> {
+  if (!actions) return;
+  confirmClearHistory.value = false;
+  try {
+    await actions.value.clearHistory();
+  } catch (error) {
+    showToast(error instanceof Error && error.message ? error.message : t("threadClearFailed"), "error");
+  }
+}
 </script>
 
 <template>
-  <!-- 对话配置：备注 + 审批范围；复用右侧抽屉 -->
-  <SettingsDrawerFrame :lead="t('chatSettingsLead')" @close="emit('close')">
+  <!-- 对话设置：备注 + 审批范围；底部清空聊天 -->
+  <SettingsDrawerFrame :close-label="t('chatSettingsClose')" @close="emit('close')">
     <div class="flex flex-col gap-3">
       <!-- 备注 -->
       <section
@@ -388,6 +417,43 @@ function toolKindLabel(kind: "mcp_server" | "mcp_tool"): string {
           </div>
         </section>
       </template>
+
+      <!-- 危险操作：清空聊天 -->
+      <section class="mt-3 flex flex-col gap-2 border-t border-rule pt-4">
+        <button
+          type="button"
+          class="flex min-h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-destructive transition duration-150 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="clearHistoryDisabled"
+          @click="askClearHistory"
+        >
+          <Trash2Icon class="size-3.5" aria-hidden="true" />
+          {{ actions?.clearingHistory ? t("threadClearing") : t("threadClear") }}
+        </button>
+      </section>
     </div>
   </SettingsDrawerFrame>
+
+  <AppDialog
+    :open="confirmClearHistory"
+    :title="t('threadClearTitle')"
+    :description="t('threadClearBody')"
+    @update:open="confirmClearHistory = $event"
+  >
+    <template #footer>
+      <button
+        type="button"
+        class="min-h-8 cursor-pointer rounded-lg border border-rule px-3 text-sm font-medium transition duration-200 hover:bg-paper-deep"
+        @click="confirmClearHistory = false"
+      >
+        {{ t("cancel") }}
+      </button>
+      <button
+        type="button"
+        class="min-h-8 cursor-pointer rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90"
+        @click="confirmClearHistoryAction"
+      >
+        {{ t("threadClearConfirm") }}
+      </button>
+    </template>
+  </AppDialog>
 </template>

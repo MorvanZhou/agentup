@@ -63,6 +63,18 @@ export function showBrowserOauthHint(
 }
 
 /**
+ * 是否自动 openExternal。
+ * Key 粘贴档（needsApiKey）禁止自动打开——用户多半已有 Key，打扰；改由粘贴框前手动开申请页。
+ * OAuth / device-auth 仍自动开。
+ */
+export function shouldAutoOpenLoginBrowser(options: {
+  authUrl: string | null | undefined;
+  needsApiKey: boolean;
+}): boolean {
+  return Boolean(options.authUrl) && !options.needsApiKey;
+}
+
+/**
  * 取消接入：有进行中安装任务，或状态卡在 installing（超时清 phase / 丢 job）。
  */
 export function showCancelInstall(state: string, hasInstallPhase: boolean): boolean {

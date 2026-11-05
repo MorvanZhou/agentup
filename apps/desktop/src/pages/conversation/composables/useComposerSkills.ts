@@ -7,6 +7,7 @@ import {
   insertSkillReference,
   slashQueryAtCursor,
 } from "../model/composer/skill-text";
+import { loadInvocableSkills, peekInvocableSkills } from "./invocable-skills-cache";
 
 export function useComposerSkills(options: {
   agentId: Ref<string>;
@@ -39,6 +40,29 @@ export function useComposerSkills(options: {
   );
   const knownNames = computed(() => new Set(skills.value.map((skill) => skill.name)));
 
+  function applySkills(list: InvocableSkill[], key: string): void {
+    if (`${options.userId.value}/${options.agentId.value}` !== key) return;
+    skills.value = list;
+    loadedFor.value = key;
+  }
+
+  function refreshSkills(): void {
+    const agentId = options.agentId.value;
+    const token = options.token.value;
+    const userId = options.userId.value;
+    if (!agentId || !token || !userId) return;
+    const key = `${userId}/${agentId}`;
+    if (loadedFor.value === key) return;
+    const cached = peekInvocableSkills(userId, agentId);
+    if (cached) {
+      applySkills(cached, key);
+      return;
+    }
+    void loadInvocableSkills(token, agentId, userId, api)
+      .then((list) => applySkills(list, key))
+      .catch(() => applySkills([], key));
+  }
+
   watch(slash, (value, prev) => {
     if (value) {
       insertRange.value = { start: value.start, end: value.end };
@@ -62,42 +86,13 @@ export function useComposerSkills(options: {
 
   watch(
     [() => options.agentId.value, () => options.token.value, () => options.userId.value],
-    ([agentId, token, userId]) => {
-      if (!agentId || !token || !userId) return;
-      const key = `${userId}/${agentId}`;
-      if (loadedFor.value === key) return;
-      void api
-        .invocableSkills(token, agentId, userId)
-        .then((list) => {
-          if (`${options.userId.value}/${options.agentId.value}` !== key) return;
-          skills.value = list;
-          loadedFor.value = key;
-        })
-        .catch(() => {
-          if (`${options.userId.value}/${options.agentId.value}` !== key) return;
-          skills.value = [];
-          loadedFor.value = key;
-        });
-    },
+    () => refreshSkills(),
     { immediate: true },
   );
 
   // 打开选择器时也拉一次（冷启动先点工具栏）。
   watch(open, (isOpen) => {
-    if (!isOpen) return;
-    const agentId = options.agentId.value;
-    const token = options.token.value;
-    const userId = options.userId.value;
-    if (!agentId || !token || !userId) return;
-    const key = `${userId}/${agentId}`;
-    if (loadedFor.value === key) return;
-    void api.invocableSkills(token, agentId, userId).then((list) => {
-      skills.value = list;
-      loadedFor.value = key;
-    }).catch(() => {
-      skills.value = [];
-      loadedFor.value = key;
-    });
+    if (isOpen) refreshSkills();
   });
 
   watch(

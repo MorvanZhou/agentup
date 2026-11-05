@@ -6,8 +6,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { ConfigError } from "../../load.js";
-import { getProviderTemplate } from "../../provider-templates.js";
-import { setAgentSdkState } from "../../provider/index.js";
+import { getProviderTemplate, listAgentSdkTemplates } from "../../provider-templates.js";
+import { agentSdkStateOf, setAgentSdkState } from "../../provider/agent-sdk-state.js";
+import { readStored } from "../../provider/store.js";
 import { killProcessTree } from "../../../session/hitl/shell-hang/process-kill.js";
 import { disposeAgentSdkRuntimesForTemplate } from "../../../session/external/sdk/host/runtime-pool.js";
 
@@ -54,6 +55,35 @@ const jobs = new Map<string, InstallJob>();
 
 export function agentSdkDir(userDataRoot: string, templateId: string): string {
   return path.join(userDataRoot, "agent-sdks", templateId);
+}
+
+/**
+ * 盘上已有接入包、但 provider.json 状态丢失时对齐为 installed。
+ * 典型：状态被冲掉 / 残留目录 → UI 仍「开始接入」，点接入却报「已经接入过了」。
+ * 不降级 ready / logging_in 等已推进态。
+ */
+export function reconcileAgentSdkDiskState(userDataRoot: string): void {
+  for (const template of listAgentSdkTemplates()) {
+    const packageName = template.agentSdk?.package;
+    if (!packageName) continue;
+    const installed = readInstalledSdk(agentSdkDir(userDataRoot, template.id), packageName);
+    if (!installed) continue;
+    const record = readStored(userDataRoot).agentSdks.find(
+      (item) => item.templateId === template.id,
+    );
+    const state = record?.state;
+    if (!state || state === "not_installed" || state === "install_failed") {
+      setAgentSdkState(userDataRoot, template.id, "installed", {
+        installedVersion: installed.version,
+      });
+      continue;
+    }
+    if (!record?.installedVersion) {
+      setAgentSdkState(userDataRoot, template.id, state, {
+        installedVersion: installed.version,
+      });
+    }
+  }
 }
 
 /** 已安装包的信息；拿不到就是没装好。 */
@@ -198,8 +228,19 @@ export function startAgentSdkInstall(
   const companionSpecs = (profile.companionSpecs ?? [])
     .map((item) => item.trim())
     .filter(Boolean);
-  if (readInstalledSdk(agentSdkDir(userDataRoot, templateId), profile.package)) {
-    throw new ConfigError("已经接入过了");
+  // 无 override：盘上已有包 → 对齐状态并返回幂等 done（勿抛「已经接入过了」让 UI 卡在开始接入）
+  if (!specOverride?.trim()) {
+    reconcileAgentSdkDiskState(userDataRoot);
+    const installed = readInstalledSdk(agentSdkDir(userDataRoot, templateId), profile.package);
+    if (installed) {
+      const state = agentSdkStateOf(userDataRoot, templateId);
+      if (!state || state === "not_installed" || state === "install_failed") {
+        setAgentSdkState(userDataRoot, templateId, "installed", {
+          installedVersion: installed.version,
+        });
+      }
+      return rememberDoneInstallJob(userDataRoot, templateId, packageName, installed.version);
+    }
   }
   const runner = resolveNpmRunner();
   if (!runner) {
@@ -223,6 +264,27 @@ export function startAgentSdkInstall(
   jobs.set(jobId, job);
   setAgentSdkState(userDataRoot, templateId, "installing");
   void runInstall(job, runner);
+  return jobId;
+}
+
+/** 幂等「已接入」：给 Desktop 轮询一条立刻 done 的 job，避免 400 误报。 */
+function rememberDoneInstallJob(
+  userDataRoot: string,
+  templateId: string,
+  packageName: string,
+  version: string,
+): string {
+  const jobId = randomUUID();
+  jobs.set(jobId, {
+    jobId,
+    template_id: templateId,
+    userDataRoot,
+    packageName,
+    spec: packageName,
+    companionSpecs: [],
+    phase: "done",
+    detail: `已接入 ${version}`,
+  });
   return jobId;
 }
 

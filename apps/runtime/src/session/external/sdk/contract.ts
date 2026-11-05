@@ -26,6 +26,26 @@ export interface ExternalDriverCapabilities {
   systemPromptMode: SystemPromptMode;
   /** 需拦到 AskUserBroker 的厂商工具名；空 = 本路径无问卷。 */
   askUserToolNames: readonly string[];
+  /**
+   * 是否实现受限压缩回合（禁工具 / MCP / skills / 业务 systemAppend）。
+   * false → Host 无 API 模型时跳过语义压缩，回落硬裁。
+   */
+  compactSummarize: boolean;
+}
+
+/**
+ * Host 编排的上下文压缩输入（临时空 cwd，无 MCP / AskUser / 工作区挂载）。
+ * 与业务 ExternalTurnRequest 刻意分开，避免误带工具面。
+ */
+export interface ExternalCompactRequest {
+  /** 已规则截窗后的待摘要正文（含任务说明由 adaptor/Host 约定） */
+  prompt: string;
+  cwd: string;
+  modelId?: string;
+  abortController: AbortController;
+  userDataRoot: string;
+  templateId: string;
+  cliPath?: string | null;
 }
 
 export interface ExternalLoginInput {
@@ -40,6 +60,10 @@ export interface ExternalModel {
   name: string;
   /** credit 倍率；0 是真实值，认不出才是 undefined */
   credits?: number;
+  /** 上下文窗口（token）；上游有稳定数值才写，勿臆造 */
+  contextWindow?: number;
+  /** 单次输出上限（token）；有才写 */
+  maxTokens?: number;
 }
 
 export type ExternalProbeState = "ready" | "not_logged_in" | "error";
@@ -122,6 +146,11 @@ export interface ExternalDriverTurn {
   startTurn(input: ExternalTurnRequest): Promise<ExternalTurnHandle>;
   /** 覆盖默认鸭子归一；缺省用 host/result */
   normalizeResult?(message: unknown): WorkerResult | null;
+  /**
+   * 受限压缩：只返回摘要正文，不进 UI 工具卡。
+   * 仅当 capabilities.compactSummarize === true 时由 Host 调用。
+   */
+  compactSummarize?(input: ExternalCompactRequest): Promise<string>;
 }
 
 export interface ExternalDriver extends ExternalDriverLifecycle, ExternalDriverTurn {

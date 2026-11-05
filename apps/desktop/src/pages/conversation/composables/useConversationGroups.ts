@@ -60,6 +60,8 @@ export function useConversationGroups() {
   const deletingId = ref<string | null>(null);
   const title = ref("");
   const picked = ref<string[]>([]);
+  /** 建群时指定的默认执掌者；须落在 picked 内，缺省取首位已选。 */
+  const defaultHolderId = ref<string | null>(null);
   const busy = ref(false);
   const askUser = ref<AgentUpAskUserData | undefined>();
   const approval = ref<AgentUpApprovalData | undefined>();
@@ -284,6 +286,9 @@ export function useConversationGroups() {
   function beginCreate(): void {
     selectedGroupId.value = null;
     creating.value = true;
+    picked.value = [];
+    defaultHolderId.value = null;
+    title.value = "";
     clearHitl();
   }
 
@@ -291,12 +296,18 @@ export function useConversationGroups() {
     selectedGroupId.value = null;
     creating.value = false;
     liveTurnId.value = "";
+    picked.value = [];
+    defaultHolderId.value = null;
     clearHitl();
   }
 
   function toggle(agentId: string): void {
     if (picked.value.includes(agentId)) {
       picked.value = picked.value.filter((id) => id !== agentId);
+      // 取消勾选当前默认时回落到剩余首位
+      if (defaultHolderId.value === agentId) {
+        defaultHolderId.value = picked.value[0] ?? null;
+      }
       return;
     }
     if (picked.value.length >= GROUP_MEMBER_MAX) {
@@ -304,6 +315,12 @@ export function useConversationGroups() {
       return;
     }
     picked.value = [...picked.value, agentId];
+    if (!defaultHolderId.value) defaultHolderId.value = agentId;
+  }
+
+  function setDefaultHolder(agentId: string): void {
+    if (!picked.value.includes(agentId)) return;
+    defaultHolderId.value = agentId;
   }
 
   function needMembersMessage(): string {
@@ -320,15 +337,26 @@ export function useConversationGroups() {
       showToast(needMembersMessage(), "error");
       return;
     }
+    const preferredDefault =
+      defaultHolderId.value && members.some((member) => member.agentId === defaultHolderId.value)
+        ? defaultHolderId.value
+        : members[0]?.agentId;
     busy.value = true;
     try {
-      const room = await api.createGroup(current.token, current.userId, title.value, members);
+      const room = await api.createGroup(
+        current.token,
+        current.userId,
+        title.value,
+        members,
+        preferredDefault,
+      );
       groups.value = [applyRoom(undefined, room), ...groups.value.filter((item) => item.id !== room.id)];
       creating.value = false;
       selectedGroupId.value = room.id;
       notePhases([room], "merge");
       void clearUnread(groupUnreadKey(room.id));
       picked.value = [];
+      defaultHolderId.value = null;
       title.value = "";
       clearHitl();
     } catch (error) {
@@ -392,6 +420,34 @@ export function useConversationGroups() {
     const next = await api.renameGroup(current.token, current.userId, room.id, title);
     groups.value = groups.value.map((item) =>
       item.id === next.id ? { ...item, title: next.title } : item,
+    );
+  }
+
+  /** 改成员（可顺带改默认执掌者）；合并 members / holderId / defaultHolderId / queue，不碰会话行。 */
+  async function setMembers(
+    members: GroupMember[],
+    nextDefaultHolderId?: string,
+  ): Promise<void> {
+    const current = session.value;
+    const room = openRoom.value;
+    if (!current || !room) return;
+    const next = await api.setGroupMembers(
+      current.token,
+      current.userId,
+      room.id,
+      members,
+      nextDefaultHolderId,
+    );
+    groups.value = groups.value.map((item) =>
+      item.id === next.id
+        ? {
+            ...item,
+            members: next.members,
+            holderId: next.holderId,
+            defaultHolderId: next.defaultHolderId,
+            queue: next.queue,
+          }
+        : item,
     );
   }
 
@@ -601,6 +657,7 @@ export function useConversationGroups() {
     creating,
     title,
     picked,
+    defaultHolderId,
     busy,
     roster,
     openRoom,
@@ -614,6 +671,7 @@ export function useConversationGroups() {
     beginCreate,
     closeSurface,
     toggle,
+    setDefaultHolder,
     create,
     send,
     edit,
@@ -622,6 +680,7 @@ export function useConversationGroups() {
     clearWorkspace,
     clearContext,
     rename,
+    setMembers,
     remove,
     reloadOpen,
     setAskUser,

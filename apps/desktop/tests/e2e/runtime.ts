@@ -103,6 +103,13 @@ export async function installRuntime(
     modelConfigured?: boolean;
     /** 群聊房间 mock（id / title / members 必填，其余字段有默认）。 */
     groups?: Array<Record<string, unknown>>;
+    /** 追加市场 Agent（群设置加人等场景）。 */
+    extraAgents?: Array<{
+      agent_id: string;
+      name: string;
+      role?: string;
+      background?: string;
+    }>;
   },
 ): Promise<void> {
   const histories: Record<string, unknown[]> = Object.fromEntries(
@@ -148,6 +155,25 @@ export async function installRuntime(
       updated_at: "2026-01-03T00:00:00Z",
     },
   ];
+  for (const extra of options?.extraAgents ?? []) {
+    if (agents.some((agent) => agent.agent_id === extra.agent_id)) continue;
+    agents.push({
+      agent_id: extra.agent_id,
+      name: extra.name,
+      role: extra.role ?? "",
+      background: extra.background ?? "",
+      latest_version: 1,
+      latest_digest: `${extra.agent_id}-digest`,
+      local_version: 0,
+      recruited: false,
+      has_avatar: false,
+      avatar_url: null,
+      remark: "",
+      recruit_count: 0,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+  }
   type LocalAgentRecord = {
     agent_id: string;
     name: string;
@@ -267,6 +293,20 @@ export async function installRuntime(
     models: [{ id: "deepseek-flash", name: "deepseek-flash", api: "openai-completions", reasoning: false }],
   };
   // 与生产目录对齐：本地 Agent App 始终出现在第二组（默认未安装）
+  const claudeAgentSdkTemplate = {
+    id: "claude-agent-sdk",
+    access: "agent-sdk",
+    vendor_id: "anthropic",
+    vendor_label: "Claude Code",
+    option_label: "本地 Agent App",
+    label: "Claude Code",
+    kind: "agent-sdk",
+    pi_provider_id: "claude-agent-sdk",
+    requires_api_key: false,
+    default_model_id: null,
+    supports_model_discovery: false,
+    models: [] as Array<{ id: string; name: string; api: string; reasoning: boolean }>,
+  };
   const codebuddySdkTemplate = {
     id: "codebuddy-sdk",
     access: "agent-sdk",
@@ -428,12 +468,34 @@ export async function installRuntime(
       ollamaTemplate,
       deepseekTemplate,
       deepseekHarnessSdkTemplate,
+      claudeAgentSdkTemplate,
       codebuddySdkTemplate,
       codexSdkTemplate,
       opencodeSdkTemplate,
       copilotSdkTemplate,
     ],
     agent_sdks: [
+      {
+        template_id: "claude-agent-sdk",
+        vendor_label: "Claude Code",
+        option_label: "本地 Agent App",
+        label: "Claude Code",
+        hint: "用 Anthropic Console API Key 在本机跑 Claude Code",
+        package: "@anthropic-ai/claude-agent-sdk",
+        size_hint_mb: 300,
+        login_guide: {
+          command: "paste Anthropic API Key",
+          doc_url: "https://console.anthropic.com/settings/keys",
+        },
+        state: "not_installed",
+        installed_version: null,
+        last_error: null,
+        account_label: null,
+        models: [],
+        auth_environments: null,
+        auth_environment: null,
+        api_key_paste: "anthropic",
+      },
       {
         template_id: "codebuddy-sdk",
         vendor_label: "Workbuddy / CodeBuddy",
@@ -531,8 +593,11 @@ export async function installRuntime(
     ] as AgentSdkRow[],
   };
 
+  /** 只 mock CodeBuddy 状态机；勿用 [0]——目录里 Claude 等可能排在前面 */
   function sdkRow(): AgentSdkRow {
-    return providerSettings.agent_sdks[0]!;
+    const row = providerSettings.agent_sdks.find((item) => item.template_id === "codebuddy-sdk");
+    if (!row) throw new Error("e2e mock 缺少 codebuddy-sdk");
+    return row;
   }
 
   function clearSdkModelsFromSelection(): void {
@@ -618,18 +683,26 @@ export async function installRuntime(
   let skipEditResendConfirm = false;
   let uiLocale = "zh";
   /** 群聊列表 mock：e2e 群聊（附件预览等）场景的最小房间数据。 */
-  const groupRooms: Array<Record<string, unknown>> = (options?.groups ?? []).map((room) => ({
-    lines: [],
-    phase: "idle",
-    holderId: null,
-    holderSpeaking: false,
-    taskIds: [],
-    pendingDelegations: [],
-    queue: [],
-    updatedAt: 0,
-    linesHasMore: false,
-    ...room,
-  }));
+  const groupRooms: Array<Record<string, unknown>> = (options?.groups ?? []).map((room) => {
+    const members = Array.isArray(room.members) ? room.members : [];
+    const firstId =
+      members[0] && typeof members[0] === "object" && typeof (members[0] as { agentId?: unknown }).agentId === "string"
+        ? (members[0] as { agentId: string }).agentId
+        : "";
+    return {
+      lines: [],
+      phase: "idle",
+      holderId: null,
+      defaultHolderId: firstId,
+      holderSpeaking: false,
+      taskIds: [],
+      pendingDelegations: [],
+      queue: [],
+      updatedAt: 0,
+      linesHasMore: false,
+      ...room,
+    };
+  });
   let uiUnread: Record<string, number> = { ...(options?.unread ?? {}) };
   let uiPreviews: Record<string, string> = { ...(options?.previews ?? {}) };
   let uiLastActiveAt: Record<string, number> = { ...(options?.lastActiveAt ?? {}) };
@@ -727,6 +800,25 @@ export async function installRuntime(
       const room = groupRooms.find((item) => item.id === groupId);
       if (!room) return json(route, 404, { error: "找不到群" });
       return json(route, 200, { group: room, liveTurnId: "" });
+    }
+    if (request.method() === "PUT" && /^\/groups\/[^/]+$/.test(path)) {
+      const groupId = path.split("/")[2]!;
+      const room = groupRooms.find((item) => item.id === groupId);
+      if (!room) return json(route, 404, { error: "找不到群" });
+      const body = request.postDataJSON() as { title?: string };
+      if (typeof body.title === "string") room.title = body.title.trim() || room.title;
+      return json(route, 200, { group: room });
+    }
+    if (request.method() === "PUT" && /^\/groups\/[^/]+\/members$/.test(path)) {
+      const groupId = path.split("/")[2]!;
+      const room = groupRooms.find((item) => item.id === groupId);
+      if (!room) return json(route, 404, { error: "找不到群" });
+      const body = request.postDataJSON() as { members?: unknown; defaultHolderId?: unknown };
+      if (Array.isArray(body.members)) room.members = body.members;
+      if (typeof body.defaultHolderId === "string" && body.defaultHolderId.trim()) {
+        room.defaultHolderId = body.defaultHolderId.trim();
+      }
+      return json(route, 200, { group: room });
     }
     if (request.method() === "POST" && /^\/groups\/[^/]+\/messages$/.test(path)) {
       const groupId = path.split("/")[2] ?? "";

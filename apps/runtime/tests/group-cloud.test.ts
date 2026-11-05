@@ -240,6 +240,127 @@ it("GET /groups keeps local title when cloud has same id", async () => {
   }
 });
 
+it("PUT /groups/:id/members upserts cloud meta then updates local", async () => {
+  const { startLocalServer } = await import("../src/local/server.js");
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-members-ok-"));
+  const store = new GroupStore(dataRoot);
+  store.createWithId({
+    id: "membrs01",
+    userId: "u1",
+    title: "小队",
+    members: [
+      { agentId: "a1", name: "A" },
+      { agentId: "b2", name: "B" },
+      { agentId: "c3", name: "C" },
+    ],
+  });
+  const upsertBodies: Array<{ group_id?: string; members?: string[] }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.includes("cloud.test")) return originalFetch(input, init);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url.includes("/v1/groups") && method === "GET") {
+      return jsonResponse({ groups: [] });
+    }
+    if (url.includes("/v1/groups") && method === "POST") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        group_id?: string;
+        members?: string[];
+      };
+      upsertBodies.push(body);
+      return jsonResponse(cloudRow(body.group_id ?? "x", "小队", body.members ?? []));
+    }
+    return jsonResponse({});
+  }) as typeof fetch;
+  const local = await startLocalServer({
+    host: "127.0.0.1",
+    port: 0,
+    userDataRoot: dataRoot,
+    backendUrl: "http://cloud.test",
+  });
+  try {
+    const res = await originalFetch(`${local.url}/groups/membrs01/members`, {
+      method: "PUT",
+      headers: { authorization: "Bearer tok", "content-type": "application/json" },
+      body: JSON.stringify({
+        user_id: "u1",
+        members: [
+          { agentId: "a1", name: "A" },
+          { agentId: "b2", name: "B" },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      group: { members: Array<{ agentId: string }> };
+    };
+    expect(body.group.members.map((m) => m.agentId)).toEqual(["a1", "b2"]);
+    expect(upsertBodies).toEqual([{ group_id: "membrs01", members: ["a1", "b2"], title: "小队" }]);
+    expect(store.peek("u1", "membrs01").members.map((m) => m.agentId)).toEqual(["a1", "b2"]);
+  } finally {
+    await local.close();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+it("PUT /groups/:id/members leaves local unchanged when cloud upsert fails", async () => {
+  const { startLocalServer } = await import("../src/local/server.js");
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-members-fail-"));
+  const store = new GroupStore(dataRoot);
+  store.createWithId({
+    id: "membrs02",
+    userId: "u1",
+    title: "小队",
+    members: [
+      { agentId: "a1", name: "A" },
+      { agentId: "b2", name: "B" },
+      { agentId: "c3", name: "C" },
+    ],
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.includes("cloud.test")) return originalFetch(input, init);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url.includes("/v1/groups") && method === "GET") {
+      return jsonResponse({ groups: [] });
+    }
+    if (url.includes("/v1/groups") && method === "POST") {
+      return new Response(JSON.stringify({ error: "boom" }), { status: 500 });
+    }
+    return jsonResponse({});
+  }) as typeof fetch;
+  const local = await startLocalServer({
+    host: "127.0.0.1",
+    port: 0,
+    userDataRoot: dataRoot,
+    backendUrl: "http://cloud.test",
+  });
+  try {
+    const res = await originalFetch(`${local.url}/groups/membrs02/members`, {
+      method: "PUT",
+      headers: { authorization: "Bearer tok", "content-type": "application/json" },
+      body: JSON.stringify({
+        user_id: "u1",
+        members: [
+          { agentId: "a1", name: "A" },
+          { agentId: "b2", name: "B" },
+        ],
+      }),
+    });
+    expect(res.status).toBe(500);
+    expect(store.peek("u1", "membrs02").members.map((m) => m.agentId)).toEqual([
+      "a1",
+      "b2",
+      "c3",
+    ]);
+  } finally {
+    await local.close();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function cloudRow(groupId: string, title: string, members: string[]) {
   return {
     group_id: groupId,

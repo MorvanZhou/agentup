@@ -1,9 +1,10 @@
 import { agentSdkAuthEnvironment } from "../../../../../config/provider/index.js";
-import type { ExternalTurnRequest } from "../../contract.js";
+import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
 import type {
   AskUserAnswer,
   AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
 
 /**
  * ExternalTurnRequest → CodeBuddy query options。
@@ -26,6 +27,30 @@ export function codebuddyOptionsOf(input: ExternalTurnRequest): Record<string, u
     ...model,
     ...(input.cliPath ? { pathToCodebuddyCode: input.cliPath } : {}),
     ...(input.mcpServer ? { mcpServers: { agentup: input.mcpServer } } : {}),
+    ...(environment ? { environment } : {}),
+  };
+}
+
+/**
+ * 受限压缩：空 cwd、无 MCP / additionalDirectories、systemPrompt 整段、工具恒 deny。
+ */
+export function codebuddyCompactOptionsOf(input: ExternalCompactRequest): Record<string, unknown> {
+  const model = input.modelId ? { model: input.modelId } : {};
+  const environment = agentSdkAuthEnvironment(input.userDataRoot, input.templateId);
+  return {
+    abortController: input.abortController,
+    cwd: input.cwd,
+    systemPrompt: COMPACT_SYSTEM_PROMPT,
+    permissionMode: "bypassPermissions",
+    canUseTool: async () => ({
+      behavior: "deny" as const,
+      message: "压缩回合不允许使用工具",
+    }),
+    includePartialMessages: false,
+    persistSession: false,
+    maxTurns: 1,
+    ...model,
+    ...(input.cliPath ? { pathToCodebuddyCode: input.cliPath } : {}),
     ...(environment ? { environment } : {}),
   };
 }

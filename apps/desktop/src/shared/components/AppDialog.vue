@@ -104,9 +104,16 @@ onUnmounted(() => descriptionObserver?.disconnect());
             : 'max-h-[min(80dvh,36rem)] w-[min(calc(100vw-2rem),32rem)]'
         "
       >
-        <!-- 弹窗页头：可选 leading（如 Agent 头像）；标题与说明在其右侧 -->
+        <!-- 关钮贴齐弹窗右上角，不随页头 leading 垂直居中 -->
+        <DialogClose
+          class="absolute top-3 right-3 z-10 grid size-8 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-label="关闭弹窗"
+        >
+          <XIcon class="size-4" />
+        </DialogClose>
+        <!-- 弹窗页头：可选 leading（如 Agent 头像）；标题与说明在其右侧；右侧留空给关钮 -->
         <header
-          class="flex shrink-0 px-4"
+          class="flex shrink-0 pr-12 pl-4"
           :class="align === 'center' ? 'items-center gap-4 pt-4 pb-3' : 'items-start gap-3 pt-3 pb-1'"
         >
           <div v-if="$slots.leading" class="shrink-0" :class="align === 'start' ? 'mt-0.5' : ''">
@@ -145,12 +152,6 @@ onUnmounted(() => descriptionObserver?.disconnect());
               </button>
             </div>
           </div>
-          <DialogClose
-            class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            aria-label="关闭弹窗"
-          >
-            <XIcon class="size-4" />
-          </DialogClose>
         </header>
         <!-- 弹窗内容：超长时在中间区域滚动，页头/页脚固定 -->
         <div v-if="$slots.default" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2">

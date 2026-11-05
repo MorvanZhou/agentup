@@ -6,6 +6,8 @@ export {
   fetchCursorModels,
   refreshCursorModels,
   ensureCursorModels,
+  normalizeCursorModels,
+  CURSOR_DEFAULT_CONTEXT_WINDOW,
   type LoginResult,
   type AgentSdkModel,
 } from "./lifecycle.js";

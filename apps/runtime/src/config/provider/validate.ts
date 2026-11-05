@@ -122,23 +122,39 @@ export function validateAgentSdkRecord(value: AgentSdkRecord): AgentSdkRecord | 
   };
 }
 
-/** 本地 SDK 报上来的模型：留 id + 展示名 + credit 倍率，去掉脏数据与重复项。 */
+/** 本地 SDK 报上来的模型：留 id + 展示名 + credit / 窗口，去掉脏数据与重复项。 */
 export function normalizeAgentSdkModels(value: unknown): AgentSdkModel[] {
   if (!Array.isArray(value)) return [];
   const out: AgentSdkModel[] = [];
   const seen = new Set<string>();
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
-    const row = item as { id?: unknown; name?: unknown; credits?: unknown };
+    const row = item as {
+      id?: unknown;
+      name?: unknown;
+      credits?: unknown;
+      contextWindow?: unknown;
+      maxTokens?: unknown;
+    };
     const id = clean(typeof row.id === "string" ? row.id : "");
     if (!id || seen.has(id)) continue;
     seen.add(id);
     // 0 是真实倍率，只挡负数与非数字（负数一定是脏数据）
     const credits = typeof row.credits === "number" && row.credits >= 0 ? row.credits : undefined;
+    const contextWindow =
+      typeof row.contextWindow === "number" && Number.isFinite(row.contextWindow) && row.contextWindow > 0
+        ? Math.floor(row.contextWindow)
+        : undefined;
+    const maxTokens =
+      typeof row.maxTokens === "number" && Number.isFinite(row.maxTokens) && row.maxTokens > 0
+        ? Math.floor(row.maxTokens)
+        : undefined;
     out.push({
       id,
       name: clean(typeof row.name === "string" ? row.name : "") || id,
       ...(credits === undefined ? {} : { credits }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...(maxTokens === undefined ? {} : { maxTokens }),
     });
     if (out.length >= MAX_AGENT_SDK_MODELS) break;
   }

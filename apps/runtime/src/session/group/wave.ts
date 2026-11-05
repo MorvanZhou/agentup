@@ -19,6 +19,7 @@ export function createGroupRoom(input: {
   userId: string;
   title: string;
   members: GroupMember[];
+  defaultHolderId?: string | null;
 }): GroupRoom {
   const members = normalizeMembers(input.members);
   return {
@@ -29,6 +30,7 @@ export function createGroupRoom(input: {
     members,
     lines: [],
     holderId: null,
+    defaultHolderId: resolveDefaultHolderId(members, input.defaultHolderId),
     holderSpeaking: false,
     phase: "idle",
     taskIds: [],
@@ -39,7 +41,7 @@ export function createGroupRoom(input: {
 
 /**
  * 用户在群里说话。
- * 还没有执掌者、也没点到成员：只留下文字。
+ * 还没有执掌者、也没点到成员：默认执掌者开工（消息行 mentionIds 仍为空）。
  * 还没有执掌者、点到了成员：第一个成为执掌者。其余的人由他派活，不排队接班。
  * 一轮已结束：没点到别人就由留任的人接着开工；点到的第一个新人换上。
  * 一轮还在（正在说话或还有工作单）：话交给当前执掌者，不换人。
@@ -62,8 +64,8 @@ export function postUserMessage(
   let next = append(room, line);
 
   if (!next.holderId) {
-    const first = mentionIds[0];
-    if (!first) return { room: next, effect: { type: "stored" } };
+    // 无 @ 时用默认执掌者首启；有 @ 仍以第一个有效提及为准
+    const first = mentionIds[0] ?? resolveDefaultHolderId(next.members, next.defaultHolderId);
     next = {
       ...next,
       holderId: first,
@@ -590,7 +592,7 @@ function nameOf(room: GroupRoom, agentId: string): string {
   return room.members.find((member) => member.agentId === agentId)?.name ?? agentId;
 }
 
-function normalizeMembers(members: GroupMember[]): GroupMember[] {
+export function normalizeMembers(members: GroupMember[]): GroupMember[] {
   if (members.length < MEMBER_MIN || members.length > MEMBER_MAX) {
     throw new GroupError(`群成员需要 ${MEMBER_MIN} 到 ${MEMBER_MAX} 人`);
   }
@@ -605,4 +607,47 @@ function normalizeMembers(members: GroupMember[]): GroupMember[] {
     next.push({ agentId, name });
   }
   return next;
+}
+
+/** 默认执掌者须在成员内；缺省或非法时回落 members[0]。 */
+export function resolveDefaultHolderId(
+  members: readonly GroupMember[],
+  preferred?: string | null,
+): string {
+  const first = members[0];
+  if (!first) throw new GroupError(`群成员需要 ${MEMBER_MIN} 到 ${MEMBER_MAX} 人`);
+  if (preferred && members.some((member) => member.agentId === preferred)) {
+    return preferred;
+  }
+  return first.agentId;
+}
+
+/**
+ * 空闲时替换成员名单：busy 拒绝；执掌者不在新名单则清空；排队滤掉已离群的人。
+ * 默认执掌者被移出则回落；显式 preferredDefaultHolderId 可改默认（不切换当前 holderId）。
+ * 不改 title / lines / taskIds（调用方须在无进行中任务时调用）。
+ */
+export function applyMemberChange(
+  room: Pick<GroupRoom, "holderId" | "holderSpeaking" | "taskIds" | "queue" | "defaultHolderId">,
+  members: GroupMember[],
+  preferredDefaultHolderId?: string | null,
+): {
+  members: GroupMember[];
+  holderId: string | null;
+  queue: GroupQueueItem[];
+  defaultHolderId: string;
+} {
+  if (room.holderSpeaking || room.taskIds.length > 0) {
+    throw new GroupError("群正在进行中，无法改成员");
+  }
+  const nextMembers = normalizeMembers(members);
+  const ids = new Set(nextMembers.map((member) => member.agentId));
+  const holderId =
+    room.holderId && ids.has(room.holderId) ? room.holderId : null;
+  const queue = room.queue.filter((item) => ids.has(item.agentId));
+  const defaultHolderId = resolveDefaultHolderId(
+    nextMembers,
+    preferredDefaultHolderId !== undefined ? preferredDefaultHolderId : room.defaultHolderId,
+  );
+  return { members: nextMembers, holderId, queue, defaultHolderId };
 }

@@ -1,40 +1,35 @@
 /**
  * 按模板 driverId 分发模型目录查询。
+ * 活拉取结果经 requireNonEmptyModelCatalog：空列表统一报错，禁假 FALLBACK。
  */
 import { ConfigError } from "../../load.js";
+import { setAgentSdkModels } from "../../provider/agent-sdk-state.js";
+import { requireNonEmptyModelCatalog } from "../../provider/model-list-policy.js";
 import { getProviderTemplate } from "../../provider-templates.js";
 import {
   creditRateOf,
   ensureAgentSdkModels as ensureCodebuddyModels,
   fetchAgentSdkModels as fetchCodebuddyModels,
-  refreshAgentSdkModels as refreshCodebuddyModels,
   syncAgentSdkModelsAfterLogin as syncCodebuddyModelsAfterLogin,
   type AgentSdkModel,
 } from "../../../session/external/sdk/adapters/codebuddy/index.js";
-import {
-  ensureCodexModels,
-  fetchCodexModels,
-  refreshCodexModels,
-} from "../../../session/external/sdk/adapters/codex/index.js";
+import { ensureCodexModels, fetchCodexModels } from "../../../session/external/sdk/adapters/codex/index.js";
 import {
   ensureCursorModels,
   fetchCursorModels,
-  refreshCursorModels,
 } from "../../../session/external/sdk/adapters/cursor/index.js";
 import {
   ensureCopilotModels,
   fetchCopilotModels,
-  refreshCopilotModels,
 } from "../../../session/external/sdk/adapters/copilot/index.js";
 import {
-  ensureDshModels,
-  fetchDshModels,
-  refreshDshModels,
-} from "../../../session/external/sdk/adapters/dsh/index.js";
+  ensureClaudeModels,
+  fetchClaudeModels,
+} from "../../../session/external/sdk/adapters/claude-code/index.js";
+import { ensureDshModels, fetchDshModels } from "../../../session/external/sdk/adapters/dsh/index.js";
 import {
   ensureOpencodeModels,
   fetchOpencodeModels,
-  refreshOpencodeModels,
 } from "../../../session/external/sdk/adapters/opencode/index.js";
 
 export type { AgentSdkModel };
@@ -46,7 +41,7 @@ function driverIdOf(templateId: string): string {
   return profile.driverId;
 }
 
-export async function fetchAgentSdkModels(
+async function fetchByDriver(
   userDataRoot: string,
   templateId: string,
 ): Promise<AgentSdkModel[]> {
@@ -56,22 +51,27 @@ export async function fetchAgentSdkModels(
   if (driverId === "opencode") return fetchOpencodeModels(userDataRoot, templateId);
   if (driverId === "copilot") return fetchCopilotModels(userDataRoot, templateId);
   if (driverId === "dsh") return fetchDshModels(userDataRoot, templateId);
+  if (driverId === "claude-code") return fetchClaudeModels(userDataRoot, templateId);
   if (driverId === "codebuddy") return fetchCodebuddyModels(userDataRoot, templateId);
   throw new ConfigError(`尚未实现 ${driverId} 的模型目录`);
+}
+
+export async function fetchAgentSdkModels(
+  userDataRoot: string,
+  templateId: string,
+): Promise<AgentSdkModel[]> {
+  // 统一闸门：活拉取空目录不得冒充已发现
+  return requireNonEmptyModelCatalog(await fetchByDriver(userDataRoot, templateId));
 }
 
 export async function refreshAgentSdkModels(
   userDataRoot: string,
   templateId: string,
 ): Promise<AgentSdkModel[]> {
-  const driverId = driverIdOf(templateId);
-  if (driverId === "cursor") return refreshCursorModels(userDataRoot, templateId);
-  if (driverId === "codex") return refreshCodexModels(userDataRoot, templateId);
-  if (driverId === "opencode") return refreshOpencodeModels(userDataRoot, templateId);
-  if (driverId === "copilot") return refreshCopilotModels(userDataRoot, templateId);
-  if (driverId === "dsh") return refreshDshModels(userDataRoot, templateId);
-  if (driverId === "codebuddy") return refreshCodebuddyModels(userDataRoot, templateId);
-  throw new ConfigError(`尚未实现 ${driverId} 的模型目录`);
+  // 统一闸门 + 落盘；失败抛错时不改写已有目录
+  const models = await fetchAgentSdkModels(userDataRoot, templateId);
+  setAgentSdkModels(userDataRoot, templateId, models);
+  return models;
 }
 
 export async function ensureAgentSdkModels(
@@ -99,6 +99,10 @@ export async function ensureAgentSdkModels(
     await ensureDshModels(userDataRoot, templateId);
     return;
   }
+  if (driverId === "claude-code") {
+    await ensureClaudeModels(userDataRoot, templateId);
+    return;
+  }
   if (driverId === "codebuddy") {
     await ensureCodebuddyModels(userDataRoot, templateId);
     return;
@@ -110,49 +114,14 @@ export async function syncAgentSdkModelsAfterLogin(
   templateId: string,
   options?: { accountChanged?: boolean },
 ): Promise<void> {
-  // 各 adaptor 登录实现内部也会 sync；此函数留给旧调用路径。
-  const driverId = driverIdOf(templateId);
-  if (driverId === "cursor") {
-    if (options?.accountChanged) {
-      await refreshCursorModels(userDataRoot, templateId).catch(() => undefined);
-    } else {
-      await ensureCursorModels(userDataRoot, templateId);
-    }
-    return;
-  }
-  if (driverId === "codex") {
-    if (options?.accountChanged) {
-      await refreshCodexModels(userDataRoot, templateId).catch(() => undefined);
-    } else {
-      await ensureCodexModels(userDataRoot, templateId);
-    }
-    return;
-  }
-  if (driverId === "opencode") {
-    if (options?.accountChanged) {
-      await refreshOpencodeModels(userDataRoot, templateId).catch(() => undefined);
-    } else {
-      await ensureOpencodeModels(userDataRoot, templateId);
-    }
-    return;
-  }
-  if (driverId === "copilot") {
-    if (options?.accountChanged) {
-      await refreshCopilotModels(userDataRoot, templateId).catch(() => undefined);
-    } else {
-      await ensureCopilotModels(userDataRoot, templateId);
-    }
-    return;
-  }
-  if (driverId === "dsh") {
-    if (options?.accountChanged) {
-      await refreshDshModels(userDataRoot, templateId).catch(() => undefined);
-    } else {
-      await ensureDshModels(userDataRoot, templateId);
-    }
-    return;
-  }
-  if (driverId === "codebuddy") {
+  // 换账号强制刷；否则 ensure。失败不推翻登录。
+  if (driverIdOf(templateId) === "codebuddy") {
     await syncCodebuddyModelsAfterLogin(userDataRoot, templateId, options);
+    return;
   }
+  if (options?.accountChanged) {
+    await refreshAgentSdkModels(userDataRoot, templateId).catch(() => undefined);
+    return;
+  }
+  await ensureAgentSdkModels(userDataRoot, templateId);
 }

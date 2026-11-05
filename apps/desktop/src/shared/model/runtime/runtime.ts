@@ -121,6 +121,8 @@ export interface AgentSdkModelOption {
   name: string;
   /** credit 消耗倍率（如 1.33）；本地 App 才报得出来，没有就是不显示 */
   credits?: number;
+  /** 上下文窗口（token）；上游有稳定数值才有 */
+  contextWindow?: number;
 }
 
 /** CodeBuddy 登录站点：中国站 / 国际站 */
@@ -148,7 +150,7 @@ export interface AgentSdkOption {
   /** 本机已选 / 上次登录站点；未选过为 null */
   authEnvironment: AgentSdkAuthEnvironment | null;
   /** 粘贴 Key 文案档；null = 无粘贴能力声明 */
-  apiKeyPaste: "opencode" | "github-pat" | "deepseek" | null;
+  apiKeyPaste: "opencode" | "github-pat" | "deepseek" | "anthropic" | null;
 }
 
 export interface ProviderTemplate {
@@ -211,6 +213,8 @@ export interface AvailableProviderModel {
   custom: boolean;
   /** credit 消耗倍率；只有本地 App 接入的模型有，API 服务商没有 */
   credits?: number;
+  /** 上下文窗口（token）；本地 SDK 目录有才显示 */
+  contextWindow?: number;
 }
 
 /** 当前 Pi session 选用的模型 + Composer 下拉候选。 */
@@ -225,6 +229,8 @@ export interface SessionModelOption {
   label: string;
   /** credit 消耗倍率；本地 App 才有，下拉右侧显示如 1.58x */
   credits?: number;
+  /** 上下文窗口（token）；有才显示如 1M */
+  contextWindow?: number;
 }
 
 export interface SessionModelState {

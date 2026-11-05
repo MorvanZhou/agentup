@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from "vue";
 import { expect, it, vi } from "vitest";
 
 import { desktopKey } from "../../src/app/desktop.js";
+import { agentProfileHostKey } from "../../src/shared/components/agent/agent-profile-host.js";
 import GroupDelegationBubble from "../../src/pages/conversation/components/chat-main/group/GroupDelegationBubble.vue";
 import {
   groupDelegationRuntimeKey,
@@ -29,17 +30,31 @@ function mount(
   next: GroupDelegationCard,
   waiting: string[] = [],
   runtime: { token: string; userId: string } = { token: "", userId: "" },
+  openProfile?: (input: { agent: { agentId: string } }) => void,
 ): HTMLElement {
   // MarkdownText 预览链路会 useDesktop()；单测只喂 session，不启整棵桌面壳
+  const provide: Array<[symbol | string, unknown]> = [
+    [desktopKey, { session: ref({ token: runtime.token, userId: runtime.userId }) }],
+    [groupWaitingTaskIdsKey, computed(() => waiting)],
+    [groupDelegationRuntimeKey, computed(() => runtime)],
+  ];
+  if (openProfile) {
+    provide.push([agentProfileHostKey, { open: openProfile }]);
+  }
   return mountView(GroupDelegationBubble, {
     props: { card: next },
-    provide: [
-      [desktopKey, { session: ref({ token: runtime.token, userId: runtime.userId }) }],
-      [groupWaitingTaskIdsKey, computed(() => waiting)],
-      [groupDelegationRuntimeKey, computed(() => runtime)],
-    ],
+    provide,
   });
 }
+
+it("有 authorId 时点头像开资料", () => {
+  const opened: string[] = [];
+  const host = mount(card, [], { token: "", userId: "" }, (input) => {
+    opened.push(input.agent.agentId);
+  });
+  host.querySelector<HTMLButtonElement>('button[aria-label="查看 设计师"]')?.click();
+  expect(opened).toEqual(["design"]);
+});
 
 function tab(host: HTMLElement, id: string): HTMLElement | null {
   return host.querySelector<HTMLElement>(`[data-testid="delegation-tab-${id}"]`);

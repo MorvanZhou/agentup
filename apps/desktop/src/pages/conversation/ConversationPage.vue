@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import type { UIMessage } from "ai";
-import { computed, onActivated, ref, watch } from "vue";
+import { computed, onActivated, provide, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
+import AgentProfileDialog from "../agents/components/AgentProfileDialog.vue";
+import {
+  stubAgentCard,
+  type AgentProfileScene,
+} from "../../shared/components/agent/agent-profile";
+import {
+  agentProfileHostKey,
+  type OpenAgentProfileInput,
+} from "../../shared/components/agent/agent-profile-host";
 import type { ApprovalScope, AskUserAnswer } from "../../shared/model/chat/chat";
+import type { AgentCard } from "../../shared/model/runtime/runtime";
 import GroupCreatePanel from "./components/chat-main/group/GroupCreatePanel.vue";
 import GroupThread from "./components/chat-main/group/GroupThread.vue";
 import AgentSidebar from "./components/agent-sidebar/AgentSidebar.vue";
@@ -25,6 +36,7 @@ import { useProviderSettings } from "../settings/composables/useProviderSettings
 
 defineOptions({ name: "ConversationPage" });
 
+const router = useRouter();
 const emptyMessages: UIMessage[] = [];
 const layoutEl = ref<HTMLElement | null>(null);
 const { width: sidebarWidth, startResize: startSidebarResize } = useSidebarPaneWidth();
@@ -56,6 +68,46 @@ const {
   pullPulse,
 } = useDesktop();
 const roomGroups = useConversationGroups();
+
+/** 会话页统一资料弹窗：气泡 / 侧栏 / 群设置头像共用 */
+const profileOpen = ref(false);
+const profileAgent = ref<AgentCard | null>(null);
+const profileScene = ref<AgentProfileScene | undefined>(undefined);
+
+function openAgentProfile(input: OpenAgentProfileInput): void {
+  const fromRoster = conversations.value.find((item) => item.agentId === input.agent.agentId);
+  profileAgent.value = fromRoster
+    ? fromRoster
+    : stubAgentCard({
+        agentId: input.agent.agentId,
+        name: input.agent.name,
+        role: input.agent.role,
+        remark: input.agent.remark,
+        background: input.agent.background,
+        avatarUrl: input.agent.avatarUrl,
+        kind: input.agent.kind,
+        recruited: input.agent.recruited,
+      });
+  profileScene.value = input.scene;
+  profileOpen.value = true;
+}
+
+provide(agentProfileHostKey, { open: openAgentProfile });
+
+function onProfileChat(agent: AgentCard): void {
+  select(agent);
+  roomGroups.closeSurface();
+}
+
+function onProfileEdit(agent: AgentCard): void {
+  if (agent.kind === "personal") {
+    void router.push({ name: "agents-assistant" });
+    return;
+  }
+  if (agent.kind === "local") {
+    void router.push({ name: "agents-local-edit", params: { agentId: agent.agentId } });
+  }
+}
 const sessionToken = computed(() => session.value?.token ?? "");
 const sessionUserId = computed(() => session.value?.userId ?? "");
 const runningDelegations = computed(() => pulseFleets.value.runningDelegations);
@@ -493,9 +545,11 @@ const threadRoster = computed((): ThreadRoster => ({
           :title="roomGroups.title.value"
           :agents="roomGroups.roster.value"
           :picked="roomGroups.picked.value"
+          :default-holder-id="roomGroups.defaultHolderId.value"
           :busy="roomGroups.busy.value"
           @update:title="roomGroups.title.value = $event"
           @toggle="roomGroups.toggle"
+          @set-default-holder="roomGroups.setDefaultHolder"
           @submit="roomGroups.create"
         />
         <GroupThread
@@ -520,6 +574,8 @@ const threadRoster = computed((): ThreadRoster => ({
           :delete-group="roomGroups.remove"
           :clear-workspace="roomGroups.clearWorkspace"
           :rename-title="roomGroups.rename"
+          :set-members="roomGroups.setMembers"
+          :agents="roomGroups.roster.value"
           :history-has-more="roomGroups.historyHasMore.value"
           :load-older="roomGroups.loadEarlier"
           @send="roomGroups.send"
@@ -584,5 +640,15 @@ const threadRoster = computed((): ThreadRoster => ({
         />
       </div>
     </main>
+    <!-- 会话内统一 Agent 资料弹窗 -->
+    <AgentProfileDialog
+      v-if="profileAgent"
+      :open="profileOpen"
+      :agent="profileAgent"
+      :scene="profileScene"
+      @update:open="profileOpen = $event"
+      @chat="onProfileChat"
+      @edit="onProfileEdit"
+    />
   </div>
 </template>

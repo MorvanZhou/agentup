@@ -86,9 +86,12 @@ test("外部 SDK 过程卡：解包后的 AgentUp 专用卡与协助 tab", async
   await expect(page.getByRole("button", { name: /DeferExecuteTool/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /ToolSearch/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /搜索专家/ })).toBeVisible();
-  // 直播会话未招募 Weaty 时可能没有岗职称；名或默认标题即可
+  // 委托 ToolCard 折叠钮（aria-expanded）；勿与摘要行头像「查看 Weaty」撞名
   await expect(
-    page.getByRole("tabpanel").getByRole("button", { name: /Weaty|委托 Agent/ }),
+    page.getByRole("tabpanel").getByRole("button", {
+      name: /Weaty|委托 Agent/,
+      expanded: false,
+    }),
   ).toBeVisible();
 });
 
@@ -133,9 +136,12 @@ test("SDK 形 history 重载仍有总结/过程双 tab，总结无 toolDigest �
   await expect(page.getByRole("tab", { name: "协助 Agent" })).toBeVisible();
   await page.getByRole("tab", { name: "过程" }).click();
   await page.getByRole("button", { name: /\d+ 个步骤/ }).click();
-  // 过程时间线里的委托卡（避开侧栏 Weaty）
+  // 过程时间线里的委托 ToolCard（expanded 区分头像「查看 Weaty」；tabpanel 避开侧栏）
   await expect(
-    page.getByRole("tabpanel").getByRole("button", { name: /Weaty|委托 Agent/ }),
+    page.getByRole("tabpanel").getByRole("button", {
+      name: /Weaty|委托 Agent/,
+      expanded: false,
+    }),
   ).toBeVisible();
 });
 
@@ -248,7 +254,7 @@ test("mermaid 图渲染为图片后可预览并缩放", async ({ page }) => {
   await expect(preview).toHaveCount(0);
 });
 
-test("菜单清空聊天后界面与侧栏预览一并消失", async ({ page }) => {
+test("对话设置里清空聊天后界面与侧栏预览一并消失", async ({ page }) => {
   await installRuntime(page, {
     recruited: ["weather"],
     localVersions: { weather: 1 },
@@ -270,7 +276,8 @@ test("菜单清空聊天后界面与侧栏预览一并消失", async ({ page }) 
   await expect(page.getByText("上海今天晴，24°C。").first()).toBeVisible();
 
   await page.getByRole("button", { name: "会话菜单" }).click();
-  await page.getByRole("menuitem", { name: "清空聊天" }).click();
+  await page.getByRole("menuitem", { name: "对话设置" }).click();
+  await page.getByRole("button", { name: "清空聊天" }).click();
   const cleared = page.waitForRequest(
     (request) =>
       request.method() === "DELETE" &&
@@ -351,8 +358,8 @@ test("修改备注名后顶栏与侧栏显示备注名，原名仍可见", async
   await expect(page.getByRole("heading", { name: "Weaty" })).toBeVisible();
 
   await page.getByRole("button", { name: "会话菜单" }).click();
-  await page.getByRole("menuitem", { name: "对话配置" }).click();
-  await expect(page.getByRole("heading", { name: "对话配置" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "对话设置" }).click();
+  await expect(page.getByRole("button", { name: "关闭对话设置" })).toBeVisible();
   const saved = page.waitForRequest(
     (request) =>
       request.method() === "PUT" && request.url().includes("/runtime/agents/weather/remark"),

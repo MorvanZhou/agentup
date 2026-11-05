@@ -26,8 +26,12 @@ test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) 
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("link", { name: "设置" }).click();
-  await expect(page).toHaveURL(/\/settings\?section=appearance/);
+  // 轨栏设置入口默认进 AI 服务配置（不再落外观）
+  await expect(page).toHaveURL(/\/settings\?section=provider/);
   await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
+  // 窄窗下侧栏切分区仍不横溢
+  await page.getByRole("button", { name: "外观" }).click();
   await expect(page.getByRole("heading", { name: "外观" })).toBeVisible();
   await page.getByRole("button", { name: "AI 服务配置" }).click();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();

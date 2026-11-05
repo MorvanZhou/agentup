@@ -12,6 +12,8 @@ import {
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import { computed, inject, ref, watch } from "vue";
 
+import { stubAgentCard } from "../../../../../shared/components/agent/agent-profile";
+import { agentProfileHostKey } from "../../../../../shared/components/agent/agent-profile-host";
 import AgentAvatar from "../../../../../shared/components/avatar/AgentAvatar.vue";
 import { useTabScrollPin } from "../../../composables/tab-scroll-pin";
 import { useDelegationProcess } from "../../../composables/useDelegationProcess";
@@ -29,12 +31,29 @@ import {
   type GroupDelegationCard,
   type GroupDelegationPhase,
 } from "../../../model/group/group-delegation";
-import { t } from "../../../../../shared/model/ui/ui-locale";
+import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { selectionToPlainText } from "../../../model/composer/copy-text";
 import DelegationProcessProducts from "../shared/thread/assistant-ui/byproducts/DelegationProcessProducts.vue";
 import ChatBubble from "../shared/ChatBubble.vue";
 
 const props = defineProps<{ card: GroupDelegationCard }>();
+const profileHost = inject(agentProfileHostKey, null);
+/** 有专员 id 就可点开资料（host 缺失时点了无响应，仍保留按钮态）。 */
+const canOpenProfile = computed(() => Boolean(props.card.authorId));
+
+function openAgentProfile(): void {
+  if (!profileHost || !props.card.authorId) return;
+  profileHost.open({
+    agent: stubAgentCard({
+      agentId: props.card.authorId,
+      name: props.card.authorName || props.card.authorId,
+      role: props.card.role,
+      avatarUrl: props.card.avatarUrl,
+      kind: "recruited",
+      recruited: true,
+    }),
+  });
+}
 
 /** 选区复制：与主 Agent 气泡同一套清洗，去掉 chrome / 尾部空行。 */
 function onBubbleCopy(event: ClipboardEvent): void {
@@ -201,16 +220,39 @@ const taskError = computed(() =>
   <!-- 群委派气泡 -->
   <ChatBubble ref="bubble" side="agent" tag="li" :padded="false" @copy="onBubbleCopy">
     <template #avatar>
-      <!-- 子 Agent 头像 -->
-      <AgentAvatar :name="card.authorName || 'A'" :avatar-url="card.avatarUrl" size="lg" />
+      <!-- 子 Agent 头像：点开资料 -->
+      <button
+        v-if="canOpenProfile"
+        type="button"
+        class="cursor-pointer rounded-lg border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+        :aria-label="tf('agentsViewProfile', { name: card.authorName || 'A' })"
+        @click="openAgentProfile"
+      >
+        <AgentAvatar :name="card.authorName || 'A'" :avatar-url="card.avatarUrl" size="lg" />
+      </button>
+      <AgentAvatar
+        v-else
+        :name="card.authorName || 'A'"
+        :avatar-url="card.avatarUrl"
+        size="lg"
+      />
     </template>
     <template #header>
-      <!-- 子 Agent 名称与角色（不进拖选） -->
+      <!-- 子 Agent 名称与角色（不进拖选）；名称也可点开资料 -->
       <div
         class="flex min-w-0 items-baseline gap-1.5 px-0.5 select-none"
         data-copy-ignore
       >
-        <span class="truncate text-xs font-medium text-foreground">{{ card.authorName }}</span>
+        <button
+          v-if="canOpenProfile"
+          type="button"
+          class="truncate border-0 bg-transparent p-0 text-left text-xs font-medium text-foreground outline-none hover:text-accent focus-visible:ring-2 focus-visible:ring-accent/40"
+          :aria-label="tf('agentsViewProfile', { name: card.authorName || 'A' })"
+          @click="openAgentProfile"
+        >
+          {{ card.authorName }}
+        </button>
+        <span v-else class="truncate text-xs font-medium text-foreground">{{ card.authorName }}</span>
         <span v-if="card.role" class="min-w-0 truncate text-xs text-muted-foreground">{{ card.role }}</span>
       </div>
     </template>

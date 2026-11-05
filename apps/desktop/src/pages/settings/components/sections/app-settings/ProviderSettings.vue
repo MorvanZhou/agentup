@@ -5,6 +5,7 @@ import { computed, ref, watch } from "vue";
 import AppSelect from "../../../../../shared/components/AppSelect.vue";
 import ProviderLogo from "../../../../../shared/components/ProviderLogo.vue";
 import UiSkeleton from "../../../../../shared/components/UiSkeleton.vue";
+import { formatTokenWindow } from "../../../../../shared/lib/format-tokens";
 import { modelSourceLabel } from "../../../../../shared/model/provider/model-source-label";
 import type { AgentSdkAuthEnvironment } from "../../../../../shared/model/runtime/runtime";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
@@ -48,11 +49,13 @@ const {
   sdkLoginDeviceCode,
   sdkLoginNeedsApiKey,
   sdkLoginApiKeyDraft,
+  sdkLoginAuthUrl,
   startAgentSdkInstall,
   cancelAgentSdkInstall,
   loginAgentSdk,
   checkAgentSdkLogin,
   submitAgentSdkApiKey,
+  openAgentSdkApiKeyDoc,
   cancelAgentSdkLogin,
   logoutAgentSdk,
   uninstallAgentSdk,
@@ -332,25 +335,33 @@ function modelRowTitle(model: {
               :title="modelRowTitle(model)"
             >
               <ProviderLogo size="md" :vendor-id="model.vendorId" :label="model.vendorLabel" />
-              <!-- 主名旁 modelId；次行接入标签（次要色） -->
-              <div class="min-w-0 flex-1">
-                <p class="m-0 flex min-w-0 items-baseline gap-2">
-                  <span class="min-w-0 truncate text-sm font-medium text-foreground">
-                    {{ model.name }}
+              <!-- 窄宽：主名独占首行；modelId 落到次行 tag 后，避免挤掉开关 -->
+              <div class="min-w-0 flex-1 overflow-hidden">
+                <p class="m-0 truncate text-sm font-medium text-foreground">
+                  {{ model.name }}
+                </p>
+                <div class="mt-0.5 flex min-w-0 items-center gap-1.5">
+                  <span
+                    class="inline-flex shrink-0 truncate rounded-md border border-rule bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+                  >
+                    {{ modelSourceLabel(model) }}
                   </span>
                   <span
                     v-if="model.modelId !== model.name"
-                    class="shrink-0 truncate font-mono text-xs text-muted-foreground"
+                    class="min-w-0 truncate font-mono text-xs text-muted-foreground"
                   >
                     {{ model.modelId }}
                   </span>
-                </p>
-                <span
-                  class="mt-0.5 inline-flex max-w-full truncate rounded-md border border-rule bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
-                >
-                  {{ modelSourceLabel(model) }}
-                </span>
+                </div>
               </div>
+              <!-- 上下文长度：有已知窗口才显示（如 1M ctx） -->
+              <span
+                v-if="model.contextWindow !== undefined"
+                class="shrink-0 rounded-md border border-rule bg-muted px-1.5 py-0.5 tabular-nums text-[10px] font-medium leading-none text-muted-foreground"
+                :title="t('providerModelContextHint')"
+              >
+                {{ formatTokenWindow(model.contextWindow) }} ctx
+              </span>
               <!-- credit 倍率：本地 App 才有；0 也显示，不能靠 falsy -->
               <span
                 v-if="model.credits !== undefined"
@@ -484,11 +495,13 @@ function modelRowTitle(model: {
               :install-phase="installPhase"
               :device-code="sdkLoginDeviceCode"
               :login-needs-api-key="sdkLoginNeedsApiKey"
+              :login-auth-url="sdkLoginAuthUrl"
               @primary="onSdkPrimary"
               @check="checkAgentSdkLogin(selectedSdk.templateId)"
               @logout="logoutAgentSdk(selectedSdk.templateId)"
               @uninstall="uninstallAgentSdk(selectedSdk.templateId)"
               @submit-api-key="submitAgentSdkApiKey(selectedSdk.templateId)"
+              @open-api-key-doc="openAgentSdkApiKeyDoc"
               @cancel-login="cancelAgentSdkLogin(selectedSdk.templateId)"
               @cancel-install="cancelAgentSdkInstall(selectedSdk.templateId)"
             />

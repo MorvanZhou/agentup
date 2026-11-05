@@ -1,9 +1,11 @@
 import type { UiLocale } from "../../i18n/index.js";
+import { peekTemplateModelLimits } from "../model-catalog.js";
 import {
   getProviderTemplate,
   listProviderTemplateViews,
   listVendorGroups,
 } from "../provider-templates.js";
+import { reconcileAgentSdkDiskState } from "../providers/agent-sdk/installer.js";
 import { buildAgentSdkViews } from "./agent-sdk-state.js";
 import { envOverrides } from "./env.js";
 import { hasRuntimeApiKey } from "./secrets.js";
@@ -23,6 +25,8 @@ export function readProviderSettings(
   env: NodeJS.ProcessEnv = process.env,
   locale: UiLocale = "zh",
 ): ProviderSettingsView {
+  // 盘↔状态对齐：避免「已经接入过了」却仍显示开始接入
+  reconcileAgentSdkDiskState(userDataRoot);
   const stored = readStored(userDataRoot);
   const overriddenByEnvironment = envOverrides(env);
   const connections = stored.connections.map((item) => toConnectionView(item, locale));
@@ -102,6 +106,10 @@ export function buildAvailableModels(
       seen.add(model.id);
       const ref = { templateId: connection.templateId, modelId: model.id };
       const key = modelKey(ref);
+      // API：只展示内置模板已知窗口（pi-native / ark），勿用默认 128k 冒充
+      const limits = peekTemplateModelLimits(connection.templateId, model.id);
+      const contextWindow =
+        limits && limits.contextWindow > 0 ? limits.contextWindow : undefined;
       rows.push({
         templateId: connection.templateId,
         modelId: model.id,
@@ -113,6 +121,7 @@ export function buildAvailableModels(
         enabled: enabled.has(key),
         active: key === activeKey,
         custom: customIds.has(model.id) && !catalogIds.has(model.id),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
       });
     }
   }
@@ -122,16 +131,22 @@ export function buildAvailableModels(
     if (!template) continue;
     const record = stored.agentSdks.find((item) => item.templateId === templateId);
     const models = record?.models?.length ? record.models : (template.models ?? []);
-    // 模板默认项没有倍率，只有 SDK 查回来的目录才有
+    // 模板默认项没有倍率/窗口，只有 SDK 查回来的目录才有
     const rates = new Map(
       (record?.models ?? [])
         .filter((model) => typeof model.credits === "number")
         .map((model) => [model.id, model.credits as number]),
     );
+    const windows = new Map(
+      (record?.models ?? [])
+        .filter((model) => typeof model.contextWindow === "number" && model.contextWindow > 0)
+        .map((model) => [model.id, model.contextWindow as number]),
+    );
     for (const model of models) {
       const ref = { templateId, modelId: model.id };
       const key = modelKey(ref);
       const credits = rates.get(model.id);
+      const contextWindow = windows.get(model.id);
       rows.push({
         templateId,
         modelId: model.id,
@@ -145,6 +160,7 @@ export function buildAvailableModels(
         custom: false,
         // 0 是真实倍率：只能用 !== undefined 判
         ...(credits === undefined ? {} : { credits }),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
       });
     }
   }

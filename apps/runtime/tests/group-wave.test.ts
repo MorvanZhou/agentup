@@ -70,6 +70,53 @@ it("renames a group title and falls back to member names when blank", () => {
   expect(cleared.title).toBe("产品经理、开发、设计师");
 });
 
+it("replaces members when idle and clears holder if removed", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-members-"));
+  const store = new GroupStore(root);
+  const room = store.create({ userId: "u1", title: "产品组", members });
+  store.post("u1", room.id, "@产品经理 做登录");
+  // 收口执掌回合，回到空闲再改成员
+  const closed = store.finishHolder("u1", room.id, "好的");
+  expect(closed.room.holderId).toBe("pm");
+  expect(closed.room.holderSpeaking).toBe(false);
+  expect(closed.room.taskIds).toEqual([]);
+
+  const next = store.setMembers("u1", room.id, [
+    { agentId: "dev", name: "开发" },
+    { agentId: "design", name: "设计师" },
+  ]);
+  expect(next.members.map((m) => m.agentId)).toEqual(["dev", "design"]);
+  expect(next.holderId).toBeNull();
+  expect(next.title).toBe("产品组");
+});
+
+it("rejects member changes while the holder is speaking", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-busy-"));
+  const store = new GroupStore(root);
+  const room = store.create({ userId: "u1", title: "产品组", members });
+  store.post("u1", room.id, "@产品经理 做登录");
+  expect(() =>
+    store.setMembers("u1", room.id, [
+      { agentId: "dev", name: "开发" },
+      { agentId: "design", name: "设计师" },
+    ]),
+  ).toThrow(/无法改成员/);
+  expect(store.peek("u1", room.id).members.map((m) => m.agentId)).toEqual([
+    "pm",
+    "dev",
+    "design",
+  ]);
+});
+
+it("rejects member lists outside the allowed size", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-size-"));
+  const store = new GroupStore(root);
+  const room = store.create({ userId: "u1", title: "产品组", members });
+  expect(() =>
+    store.setMembers("u1", room.id, [{ agentId: "pm", name: "产品经理" }]),
+  ).toThrow(/群成员需要/);
+});
+
 it("keeps the group transcript out of one-to-one session directories", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-"));
   const store = new GroupStore(root);
@@ -85,13 +132,95 @@ it("keeps the group transcript out of one-to-one session directories", () => {
   expect(posted.effect.type).toBe("start_holder");
 });
 
-it("does not run anyone when the user speaks without a mention", () => {
+it("starts the default holder when the user speaks without a mention", () => {
   const store = new GroupStore(fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-")));
-  const room = store.create({ userId: "u1", title: "组", members });
+  const room = store.create({
+    userId: "u1",
+    title: "组",
+    members,
+    defaultHolderId: "design",
+  });
+  expect(room.defaultHolderId).toBe("design");
   const posted = store.post("u1", room.id, "先看看");
-  expect(posted.effect).toEqual({ type: "stored" });
-  expect(posted.room.holderId).toBeNull();
-  expect(posted.room.phase).toBe("idle");
+  expect(posted.effect.type).toBe("start_holder");
+  expect(posted.room.holderId).toBe("design");
+  expect(posted.room.holderSpeaking).toBe(true);
+  expect(posted.room.lines[0]?.mentionIds).toEqual([]);
+});
+
+it("prefers an explicit mention over the default holder when none has held yet", () => {
+  const store = new GroupStore(fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-")));
+  const room = store.create({
+    userId: "u1",
+    title: "组",
+    members,
+    defaultHolderId: "design",
+  });
+  const posted = store.post("u1", room.id, "@开发 做登录");
+  expect(posted.room.holderId).toBe("dev");
+  expect(posted.room.defaultHolderId).toBe("design");
+});
+
+it("keeps the sitting holder on a no-mention message after someone has held", () => {
+  const store = new GroupStore(fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-")));
+  const room = store.create({
+    userId: "u1",
+    title: "组",
+    members,
+    defaultHolderId: "design",
+  });
+  store.post("u1", room.id, "@产品经理 做登录");
+  store.finishHolder("u1", room.id, "好的");
+  const resumed = store.post("u1", room.id, "再改一下颜色");
+  expect(resumed.room.holderId).toBe("pm");
+  expect(resumed.effect.type).toBe("resume_holder");
+});
+
+it("falls default holder back when that member is removed, then bootstraps on next no-mention", () => {
+  const store = new GroupStore(fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-")));
+  const room = store.create({
+    userId: "u1",
+    title: "组",
+    members,
+    defaultHolderId: "pm",
+  });
+  store.post("u1", room.id, "@产品经理 做登录");
+  store.finishHolder("u1", room.id, "好的");
+  const next = store.setMembers("u1", room.id, [
+    { agentId: "dev", name: "开发" },
+    { agentId: "design", name: "设计师" },
+  ]);
+  expect(next.holderId).toBeNull();
+  expect(next.defaultHolderId).toBe("dev");
+  const posted = store.post("u1", room.id, "继续");
+  expect(posted.room.holderId).toBe("dev");
+  expect(posted.effect.type).toBe("start_holder");
+});
+
+it("changing default holder does not switch the current holder", () => {
+  const store = new GroupStore(fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-")));
+  const room = store.create({
+    userId: "u1",
+    title: "组",
+    members,
+    defaultHolderId: "pm",
+  });
+  store.post("u1", room.id, "@产品经理 做登录");
+  store.finishHolder("u1", room.id, "好的");
+  const next = store.setMembers("u1", room.id, members, "design");
+  expect(next.holderId).toBe("pm");
+  expect(next.defaultHolderId).toBe("design");
+});
+
+it("fills defaultHolderId from members[0] when reading an older index without the field", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-legacy-default-"));
+  const store = new GroupStore(root);
+  const room = store.create({ userId: "u1", title: "组", members });
+  const file = path.join(root, "users", "u1", ".runtime", "groups", `${room.id}.json`);
+  const index = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  delete index.defaultHolderId;
+  fs.writeFileSync(file, JSON.stringify(index, null, 2));
+  expect(store.peek("u1", room.id).defaultHolderId).toBe("pm");
 });
 
 it("gives a sub agent only the assignment text, not the room transcript", () => {
@@ -288,8 +417,14 @@ it("keeps earlier lines when a later user line is edited", () => {
   expect(edited.effect.prompt).not.toContain("再改颜色");
 });
 
-it("stores the replacement without a holder when the new text mentions nobody", () => {
-  let current = createGroupRoom({ id: "g1", userId: "u1", title: "组", members });
+it("restarts the default holder when an edited first message mentions nobody", () => {
+  let current = createGroupRoom({
+    id: "g1",
+    userId: "u1",
+    title: "组",
+    members,
+    defaultHolderId: "design",
+  });
   current = postUserMessage(current, { id: "u1", text: "@产品经理 做登录", now: 1 }).room;
   const edited = replaceUserMessage(current, {
     messageId: "u1",
@@ -297,9 +432,11 @@ it("stores the replacement without a holder when the new text mentions nobody", 
     text: "先看看",
     now: 2,
   });
-  expect(edited.effect.type).toBe("stored");
-  expect(edited.room.holderId).toBeNull();
+  // 改发回退到无执掌者后，无 @ 按默认执掌者首启
+  expect(edited.effect.type).toBe("start_holder");
+  expect(edited.room.holderId).toBe("design");
   expect(edited.room.lines.map((line) => line.text)).toEqual(["先看看"]);
+  expect(edited.room.lines[0]?.mentionIds).toEqual([]);
 });
 
 it("keeps a task started before the edited line and drops that line's queue card", () => {

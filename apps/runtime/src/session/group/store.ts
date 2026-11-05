@@ -27,7 +27,9 @@ import {
   briefForSub,
   cancelQueued,
   clearQueue,
+  applyMemberChange,
   createGroupRoom,
+  resolveDefaultHolderId,
   enqueueAgent,
   finishHolderTurn,
   haltHolderTurn,
@@ -43,12 +45,18 @@ import {
 export class GroupStore {
   constructor(private readonly userDataRoot: string) {}
 
-  create(input: { userId: string; title: string; members: GroupMember[] }): GroupRoom {
+  create(input: {
+    userId: string;
+    title: string;
+    members: GroupMember[];
+    defaultHolderId?: string | null;
+  }): GroupRoom {
     const room = createGroupRoom({
       id: this.allocateId(input.userId),
       userId: input.userId,
       title: input.title,
       members: input.members,
+      defaultHolderId: input.defaultHolderId,
     });
     this.save(room);
     return room;
@@ -63,6 +71,7 @@ export class GroupStore {
     userId: string;
     title: string;
     members: GroupMember[];
+    defaultHolderId?: string | null;
   }): GroupRoom {
     assertId(input.id);
     if (this.readIndex(input.userId, input.id)) {
@@ -73,6 +82,7 @@ export class GroupStore {
       userId: input.userId,
       title: input.title,
       members: input.members,
+      defaultHolderId: input.defaultHolderId,
     });
     this.save(room);
     return room;
@@ -127,6 +137,23 @@ export class GroupStore {
     const index = this.loadIndex(userId, groupId);
     const trimmed = title.trim();
     index.title = trimmed || index.members.map((member) => member.name).join("、");
+    fs.writeFileSync(this.file(userId, groupId), JSON.stringify(index, null, 2));
+    return this.peek(userId, groupId);
+  }
+
+  /** 空闲时替换成员（可顺带改默认执掌者）；忙时抛错。不改会话行与 title。 */
+  setMembers(
+    userId: string,
+    groupId: string,
+    members: GroupMember[],
+    defaultHolderId?: string | null,
+  ): GroupRoom {
+    const index = this.loadIndex(userId, groupId);
+    const next = applyMemberChange(index, members, defaultHolderId);
+    index.members = next.members;
+    index.holderId = next.holderId;
+    index.queue = next.queue;
+    index.defaultHolderId = next.defaultHolderId;
     fs.writeFileSync(this.file(userId, groupId), JSON.stringify(index, null, 2));
     return this.peek(userId, groupId);
   }
@@ -367,6 +394,7 @@ export class GroupStore {
       sessionIds,
       currentSessionId,
       holderId: room.holderId,
+      defaultHolderId: room.defaultHolderId,
       holderSpeaking: room.holderSpeaking,
       phase: room.phase,
       taskIds: room.taskIds,
@@ -382,7 +410,7 @@ export class GroupStore {
     try {
       const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
       if (!isGroupIndex(parsed, userId)) return null;
-      return parsed;
+      return normalizeGroupIndex(parsed);
     } catch {
       return null;
     }
@@ -401,7 +429,7 @@ export class GroupStore {
       fs.rmSync(file, { force: true });
       throw new GroupError("群记录已过期");
     }
-    return parsed;
+    return normalizeGroupIndex(parsed);
   }
 
   private loadSessions(userId: string, groupId: string, sessionIds: readonly string[]): GroupSessionRecord[] {
@@ -435,15 +463,17 @@ export class GroupStore {
   }
 }
 
-function isGroupIndex(value: unknown, userId: string): value is GroupIndex {
+function isGroupIndex(value: unknown, userId: string): value is GroupIndexRaw {
   if (!value || typeof value !== "object") return false;
-  const index = value as Partial<GroupIndex>;
+  const index = value as Partial<GroupIndexRaw>;
   return (
     index.version === GROUP_RECORD_VERSION &&
     index.userId === userId &&
     typeof index.currentSessionId === "string" &&
     Array.isArray(index.sessionIds) &&
-    Array.isArray(index.pendingDelegations)
+    Array.isArray(index.pendingDelegations) &&
+    // 缺 members 时 normalize 的 resolveDefaultHolderId 会炸成 500；当过期记录丢弃。
+    Array.isArray(index.members)
   );
 }
 
@@ -475,7 +505,7 @@ function alignSessionIds(existing: readonly string[], segmentCount: number): str
   return ids;
 }
 
-type GroupIndex = {
+type GroupIndexRaw = {
   version: typeof GROUP_RECORD_VERSION;
   id: string;
   userId: string;
@@ -484,12 +514,24 @@ type GroupIndex = {
   sessionIds: string[];
   currentSessionId: string;
   holderId: GroupRoom["holderId"];
+  /** 旧文件可能缺此字段，读时 normalize 补齐。 */
+  defaultHolderId?: string;
   holderSpeaking: boolean;
   phase: GroupRoom["phase"];
   taskIds: string[];
   pendingDelegations: GroupRoom["pendingDelegations"];
   queue: GroupRoom["queue"];
 };
+
+type GroupIndex = GroupIndexRaw & { defaultHolderId: string };
+
+/** 旧索引缺 defaultHolderId 时按 members[0] 补齐。 */
+function normalizeGroupIndex(index: GroupIndexRaw): GroupIndex {
+  return {
+    ...index,
+    defaultHolderId: resolveDefaultHolderId(index.members, index.defaultHolderId),
+  };
+}
 
 function roomShell(index: GroupIndex, lines: GroupLine[]): GroupRoom {
   return {
@@ -500,6 +542,7 @@ function roomShell(index: GroupIndex, lines: GroupLine[]): GroupRoom {
     members: index.members,
     lines,
     holderId: index.holderId,
+    defaultHolderId: index.defaultHolderId,
     holderSpeaking: index.holderSpeaking,
     phase: index.phase,
     taskIds: index.taskIds,

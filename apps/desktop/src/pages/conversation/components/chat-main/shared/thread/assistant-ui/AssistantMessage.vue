@@ -12,10 +12,12 @@ import {
   RefreshCwIcon,
 } from "@lucide/vue";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
+import { stubAgentCard } from "../../../../../../../shared/components/agent/agent-profile";
+import { agentProfileHostKey } from "../../../../../../../shared/components/agent/agent-profile-host";
 import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
-import { t } from "../../../../../../../shared/model/ui/ui-locale";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import { selectionToPlainText } from "../../../../../model/composer/copy-text";
 import { isOpenAskUserPart } from "../../../../../model/message/ask-user-summary";
 import {
@@ -25,6 +27,7 @@ import {
 import { shouldShowAssistantReload } from "../../../../../model/message/assistant-reload";
 import { injectPendingAskUserToolCallId } from "../../../../../model/thread/thread-ask-user";
 import { chatMessageAuthor } from "../../../../../model/thread/chat-surface";
+import { injectThreadAgentId } from "../../../../../model/thread/thread-agent-id";
 import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
 import { injectThreadWakeLive } from "../../../../../model/thread/thread-wake-live";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
@@ -42,6 +45,8 @@ function onBubbleCopy(event: ClipboardEvent): void {
 }
 
 const extras = injectThreadExtras();
+const threadAgentId = injectThreadAgentId();
+const profileHost = inject(agentProfileHostKey, null);
 const pendingAskUserToolCallId = injectPendingAskUserToolCallId();
 const wakeLive = injectThreadWakeLive();
 const copied = useAuiState((s) => s.message.isCopied);
@@ -58,6 +63,30 @@ const showAuthorByline = computed(() => Boolean(messageAuthor.value?.name));
 const agentAvatar = computed(
   () => messageAuthor.value?.avatarUrl || extras.value.avatarUrl || "",
 );
+const profileAgentId = computed(() => messageAuthor.value?.id || threadAgentId || "");
+
+/** 点头像开资料；缺 agentId 时不可点 */
+function openAgentProfile(): void {
+  if (!profileHost || !profileAgentId.value) return;
+  const kind =
+    extras.value.kind === "personal" ||
+    extras.value.kind === "local" ||
+    extras.value.kind === "recruited"
+      ? extras.value.kind
+      : undefined;
+  profileHost.open({
+    agent: stubAgentCard({
+      agentId: profileAgentId.value,
+      name: agentName.value || profileAgentId.value,
+      role: agentRole.value || extras.value.role,
+      remark: extras.value.remark,
+      background: extras.value.background,
+      avatarUrl: agentAvatar.value || undefined,
+      kind,
+      recruited: extras.value.recruited,
+    }),
+  });
+}
 const error = useAuiState((s) => {
   const message = s.message;
   if (
@@ -247,7 +276,21 @@ const hasArtifactsTab = computed(
         class="flex shrink-0 flex-col items-end"
         :class="showAuthorByline ? '' : 'mt-0.5'"
       >
+        <button
+          v-if="profileHost && profileAgentId"
+          type="button"
+          class="cursor-pointer rounded-lg border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+          :aria-label="tf('agentsViewProfile', { name: agentName || 'A' })"
+          @click="openAgentProfile"
+        >
+          <AgentAvatar
+            :name="agentName || 'A'"
+            :avatar-url="agentAvatar || undefined"
+            size="lg"
+          />
+        </button>
         <AgentAvatar
+          v-else
           :name="agentName || 'A'"
           :avatar-url="agentAvatar || undefined"
           size="lg"

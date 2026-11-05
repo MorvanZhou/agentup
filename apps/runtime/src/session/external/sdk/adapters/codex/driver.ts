@@ -1,4 +1,5 @@
 import type {
+  ExternalCompactRequest,
   ExternalDriver,
   ExternalDriverCapabilities,
   ExternalLoginInput,
@@ -6,6 +7,7 @@ import type {
   ExternalTurnRequest,
   WorkerResult,
 } from "../../contract.js";
+import { collectCompactSummary } from "../../host/collect-compact-summary.js";
 import { CodexAskUserIdBridge } from "./ask-user-bridge.js";
 import { ensureCodexHome, hasCodexAuth } from "./home.js";
 import {
@@ -17,6 +19,9 @@ import {
 import { loadCodexModule, resolveCodexCliPath } from "./load.js";
 import {
   codexClientOptionsOf,
+  codexCompactClientOptionsOf,
+  codexCompactPromptOf,
+  codexCompactThreadOptionsOf,
   codexThreadOptionsOf,
   codexTurnPromptOf,
   openCodexAskUserMcp,
@@ -29,6 +34,8 @@ const CAPABILITIES: ExternalDriverCapabilities = {
   systemPromptMode: "prompt_prefix",
   // 临时 MCP agentup_ask → stream 解包成 ask_user
   askUserToolNames: ["ask_user", "agentup_ask_user"],
+  // 无硬 deny 工具；靠空 cwd + 无 MCP + 压缩 prompt 软约束
+  compactSummarize: true,
 };
 
 /**
@@ -135,5 +142,28 @@ export const codexDriver: ExternalDriver = {
 
   normalizeResult(message: unknown): WorkerResult | null {
     return workerResultFromCodexMessage(message);
+  },
+
+  async compactSummarize(input: ExternalCompactRequest): Promise<string> {
+    if (!hasCodexAuth(input.userDataRoot, input.templateId)) {
+      throw new Error("尚未登录 Codex");
+    }
+    const cliPath =
+      input.cliPath || resolveCodexCliPath(input.userDataRoot, input.templateId);
+    if (!cliPath) throw new Error("找不到 Codex CLI，请重新安装");
+
+    const sdk = await loadCodexModule(input.userDataRoot, input.templateId);
+    const codexHome = ensureCodexHome(input.userDataRoot, input.templateId);
+    const client = new sdk.Codex(
+      codexCompactClientOptionsOf({ cliPath, codexHome }),
+    );
+    const thread = client.startThread(codexCompactThreadOptionsOf(input));
+    const streamed = await thread.runStreamed(codexCompactPromptOf(input), {
+      signal: input.abortController.signal,
+    });
+    const messages = mirrorCodexEvents(streamed.events);
+    return collectCompactSummary(messages, {
+      normalizeResult: workerResultFromCodexMessage,
+    });
   },
 };

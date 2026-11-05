@@ -6,7 +6,6 @@ import {
   MessageSquarePlusIcon,
   Settings2Icon,
   SettingsIcon,
-  Trash2Icon,
   UserMinusIcon,
 } from "@lucide/vue";
 import { computed, ref } from "vue";
@@ -63,7 +62,6 @@ const turnBusy = computed(
 const confirmOpen = ref(false);
 const skipConfirm = ref(false);
 const confirmDismiss = ref(false);
-const confirmClearHistory = ref(false);
 
 /** 仅私人助理 / 本机 Local 可进 Agent 配置；招募来的（含自有再招募）置灰。 */
 const agentSettingsLocked = computed(() => {
@@ -96,13 +94,6 @@ const menuItems = computed<AppDropdownItem[]>(() => [
     disabled: !name.value || agentSettingsLocked.value,
     hint: agentSettingsLocked.value ? t("threadAgentSettingsLocked") : undefined,
   },
-  {
-    id: "clear-history",
-    label: actions?.value.clearingHistory ? t("threadClearing") : t("threadClear"),
-    icon: Trash2Icon,
-    disabled: clearDisabled.value,
-    danger: true,
-  },
   ...(!extras.value.personal
     ? [
         {
@@ -123,12 +114,6 @@ function onSelect(id: string): void {
   }
   if (id === "agent-settings") {
     openAgentSettings();
-    return;
-  }
-  if (!actions) return;
-  if (id === "clear-history") {
-    if (clearDisabled.value) return;
-    confirmClearHistory.value = true;
     return;
   }
   if (id === "dismiss") confirmDismiss.value = true;
@@ -170,16 +155,6 @@ async function runClearContext(): Promise<void> {
     await actions.value.clearContext();
   } catch (error) {
     showToast(error instanceof Error && error.message ? error.message : t("threadNewFailed"), "error");
-  }
-}
-
-async function confirmClearHistoryAction(): Promise<void> {
-  if (!actions) return;
-  confirmClearHistory.value = false;
-  try {
-    await actions.value.clearHistory();
-  } catch (error) {
-    showToast(error instanceof Error && error.message ? error.message : t("threadClearFailed"), "error");
   }
 }
 
@@ -270,29 +245,6 @@ async function confirmDismissAction(): Promise<void> {
           @click="confirmClear"
         >
           {{ t("threadNew") }}
-        </button>
-      </template>
-    </AppDialog>
-    <AppDialog
-      :open="confirmClearHistory"
-      :title="t('threadClearTitle')"
-      :description="t('threadClearBody')"
-      @update:open="confirmClearHistory = $event"
-    >
-      <template #footer>
-        <button
-          type="button"
-          class="min-h-8 cursor-pointer rounded-lg border border-rule px-3 text-sm font-medium transition duration-200 hover:bg-paper-deep"
-          @click="confirmClearHistory = false"
-        >
-          {{ t("cancel") }}
-        </button>
-        <button
-          type="button"
-          class="min-h-8 cursor-pointer rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90"
-          @click="confirmClearHistoryAction"
-        >
-          {{ t("threadClearConfirm") }}
         </button>
       </template>
     </AppDialog>

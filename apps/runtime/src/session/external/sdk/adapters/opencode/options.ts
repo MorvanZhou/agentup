@@ -1,4 +1,5 @@
-import type { ExternalTurnRequest } from "../../contract.js";
+import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
+import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
 
 export const OPENCODE_CONTEXT_HEADER = [
   "You are running as a local OpenCode agent hosted inside AgentUp.",
@@ -47,6 +48,31 @@ export function opencodeServerConfigOf(input: ExternalTurnRequest): Record<strin
   return {
     permission: "allow",
     mcp,
+  };
+}
+
+/** 压缩：无 MCP；session 工具 deny；system 仅压缩器文案。 */
+export function opencodeCompactServerConfigOf(): Record<string, unknown> {
+  return { permission: "deny", mcp: {} };
+}
+
+export function opencodeCompactSessionOptionsOf(
+  input: ExternalCompactRequest,
+): Record<string, unknown> {
+  return {
+    directory: input.cwd,
+    title: "AgentUp compact",
+    permission: [{ permission: "*", pattern: "*", action: "deny" }],
+  };
+}
+
+export function opencodeCompactPromptBodyOf(
+  input: ExternalCompactRequest,
+): Record<string, unknown> {
+  return {
+    ...(opencodeModelOf(input.modelId) ? { model: opencodeModelOf(input.modelId) } : {}),
+    system: COMPACT_SYSTEM_PROMPT,
+    parts: [{ type: "text", text: input.prompt }],
   };
 }
 

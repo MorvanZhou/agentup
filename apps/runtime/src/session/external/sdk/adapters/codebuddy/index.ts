@@ -1,4 +1,5 @@
 export { codebuddyDriver } from "./driver.js";
+export { codebuddyCompactOptionsOf, codebuddyOptionsOf } from "./options.js";
 export {
   loadCodebuddyModule,
   loadAgentSdkModule,
@@ -21,6 +22,7 @@ export {
   refreshAgentSdkModels,
   ensureAgentSdkModels,
   syncAgentSdkModelsAfterLogin,
+  normalizeCodebuddyModels,
   creditRateOf,
   type AgentSdkModel,
 } from "./models-impl.js";

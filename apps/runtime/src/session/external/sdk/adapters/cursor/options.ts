@@ -1,10 +1,11 @@
-import type { ExternalTurnRequest } from "../../contract.js";
+import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
 import {
   formatAskUserResultText,
   type AskUserAnswer,
   type AskUserOption,
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { compactUserPrompt } from "../../host/compact-instruction.js";
 
 /**
  * Cursor 多数账号未开通 Custom system prompt（会报 invalid_argument）。
@@ -82,6 +83,27 @@ export function cursorCreateOptionsOf(
 /** 本轮发给 Cursor 的 user 文本：前缀 Host context + 用户/transcript prompt。 */
 export function cursorTurnPromptOf(input: ExternalTurnRequest): string {
   return composePromptPrefix(input.systemAppend, input.prompt);
+}
+
+/** 压缩：无 MCP / customTools / dirs；仍不传 systemPrompt（账号限制）。 */
+export function cursorCompactCreateOptionsOf(
+  input: ExternalCompactRequest,
+  extras: { apiKey: string; localStore: unknown },
+): Record<string, unknown> {
+  const model =
+    input.modelId && input.modelId !== "default" ? { model: { id: input.modelId } } : {};
+  return {
+    apiKey: extras.apiKey,
+    ...model,
+    local: {
+      cwd: input.cwd,
+      store: extras.localStore,
+    },
+  };
+}
+
+export function cursorCompactPromptOf(input: ExternalCompactRequest): string {
+  return compactUserPrompt(input.prompt);
 }
 
 export function composePromptPrefix(systemAppend: string, prompt: string): string {

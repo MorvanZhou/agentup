@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { PlusIcon, SearchIcon } from "@lucide/vue";
 import { computed, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
+import type { AgentCard } from "../../shared/model/runtime/runtime";
 import { t } from "../../shared/model/ui/ui-locale";
 import AgentCatalogSkeleton from "./components/AgentCatalogSkeleton.vue";
 import AgentMarketCard from "./components/market/AgentMarketCard.vue";
 import { useAgentCatalog } from "./composables/useAgentCatalog";
 import { useAgentMarket } from "./composables/useAgentMarket";
 
-const { session, refresh } = useDesktop();
+const router = useRouter();
+const { session, refresh, select } = useDesktop();
 const query = ref("");
 const section = computed(() => "market" as const);
 const catalog = useAgentCatalog(session, section, query);
@@ -19,6 +21,11 @@ const market = useAgentMarket(session, async () => {
   await catalog.reload();
 });
 const searching = computed(() => Boolean(query.value.trim()));
+
+function openChat(agent: AgentCard): void {
+  select(agent);
+  void router.push({ name: "conversation" });
+}
 </script>
 
 <template>
@@ -71,6 +78,7 @@ const searching = computed(() => Boolean(query.value.trim()));
               @recruit="market.recruit"
               @open="market.openDirectory"
               @dismiss="market.dismiss"
+              @chat="openChat"
             />
           </div>
           <AgentCatalogSkeleton v-else-if="catalog.loading.value" dense />

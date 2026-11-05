@@ -54,7 +54,12 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     }),
   },
   SettingsManager: {
-    create: (cwd: string, agentDir: string, options: unknown) => ({ cwd, agentDir, options }),
+    create: (cwd: string, agentDir: string, options: unknown) => ({
+      cwd,
+      agentDir,
+      options,
+      setCompactionEnabled: () => undefined,
+    }),
   },
   DefaultResourceLoader: class {
     options: unknown;

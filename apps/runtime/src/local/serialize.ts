@@ -104,6 +104,7 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       active: model.active,
       custom: model.custom,
       credits: model.credits ?? null,
+      context_window: model.contextWindow ?? null,
     })),
     configured: settings.configured,
     overridden_by_environment: settings.overriddenByEnvironment,
@@ -154,6 +155,8 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
         id: model.id,
         name: model.name,
         credits: model.credits ?? null,
+        context_window: model.contextWindow ?? null,
+        max_tokens: model.maxTokens ?? null,
       })),
       // CodeBuddy 站点：模板可选列表 + 本机已选；无声明时两端都省略
       auth_environments: sdk.authEnvironments ?? null,
@@ -209,6 +212,7 @@ export function sessionModelBody(
       option_label: model.optionLabel,
       label: model.label,
       credits: model.credits ?? null,
+      context_window: model.contextWindow ?? null,
     })),
     configured: settings.configured,
     // 会话当前模型是不是本地 Agent App（SDK）接入：桌面据此把「回合中发送」改成排队（§12.8）

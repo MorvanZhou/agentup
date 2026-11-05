@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
+import type { AgentCard } from "../../shared/model/runtime/runtime";
 import { isGuestSession } from "../../shared/model/session/session";
 import { t } from "../../shared/model/ui/ui-locale";
 import PublishedAgentCard from "./components/owned/PublishedAgentCard.vue";
@@ -19,7 +20,7 @@ import AssistantPage from "./AssistantPage.vue";
 
 const route = useRoute();
 const router = useRouter();
-const { session, refresh } = useDesktop();
+const { session, refresh, select } = useDesktop();
 const query = ref("");
 
 const section = computed<AgentsSection>(() => {
@@ -59,6 +60,12 @@ function goMarket(): void {
 
 function openOwnedEdit(agentId: string): void {
   void router.push({ name: "agents-owned-edit", params: { agentId } });
+}
+
+/** 资料弹窗 / 卡片「去对话」：选中会话后回消息页 */
+function openChat(agent: AgentCard): void {
+  select(agent);
+  void router.push({ name: "conversation" });
 }
 </script>
 
@@ -182,6 +189,7 @@ function openOwnedEdit(agentId: string): void {
                 @recruit="market.recruit"
                 @open="market.openDirectory"
                 @dismiss="market.dismiss"
+                @chat="openChat"
               />
             </div>
             <AgentCatalogSkeleton v-else-if="catalog.loading.value" dense />

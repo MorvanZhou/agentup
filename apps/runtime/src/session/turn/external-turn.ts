@@ -1,5 +1,4 @@
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import type { Message } from "@earendil-works/pi-ai";
 import type { UIMessageChunk } from "ai";
 
 import type { UiLocale } from "../../i18n/locale.js";
@@ -13,6 +12,8 @@ import { PiUIMessageProjector } from "../history/frames.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE } from "../history/summary.js";
 import type { ApprovalRequest } from "../hitl/approval/types.js";
 import {
+  feedMessagesFromBranch,
+  maybeCompactBranch,
   resultFromSdkMessage,
   transcriptToPrompt,
   type WorkerResult,
@@ -311,6 +312,15 @@ export async function runExternalSessionTurn(input: {
   onDirty?: () => void;
   hitl?: ExternalTurnInput["hitl"];
   delegationStarted?: ExternalTurnInput["delegationStarted"];
+  /**
+   * 超预算时 Host 语义压缩。传入则 `maybeCompactBranch`；失败/未超限不阻塞本轮。
+   * summarize 须与会话同一 provider（见 createCompactSummarize）。
+   */
+  compactSummarize?: (plainTranscript: string) => Promise<string>;
+  /** 压缩触发字符预算（按会话模型窗）；默认见 shouldCompactFeed */
+  compactBudgetChars?: number;
+  /** flatten 硬裁上限（按会话模型窗） */
+  promptMaxChars?: number;
 }): Promise<ExternalTurnResult | null> {
   if (!input.session.externalQuery) return null;
   const writeBack = ({
@@ -332,11 +342,30 @@ export async function runExternalSessionTurn(input: {
       trail,
     });
   };
+
+  if (input.compactSummarize && input.session.sessionManager) {
+    try {
+      await maybeCompactBranch({
+        entries: input.session.sessionManager.getBranch?.() ?? [],
+        userText: input.text,
+        summarize: input.compactSummarize,
+        sink: input.session.sessionManager,
+        ...(input.compactBudgetChars !== undefined
+          ? { budgetChars: input.compactBudgetChars }
+          : {}),
+      });
+    } catch {
+      // 压缩失败不挡本轮；拼装侧仍有字符回退
+    }
+  }
+
   let query: Awaited<ReturnType<NonNullable<PromptSession["externalQuery"]>>>;
   try {
     // 把停止信号传进起流：Copilot 等冷启期间 Composer 停止才能 abort
     query = await input.session.externalQuery(
-      externalPromptFromSession(input.session, input.text),
+      externalPromptFromSession(input.session, input.text, {
+        ...(input.promptMaxChars !== undefined ? { maxChars: input.promptMaxChars } : {}),
+      }),
       input.signal,
     );
   } catch (error) {
@@ -441,38 +470,17 @@ export type ExternalTurnSink = {
 
 /**
  * 直连 SDK 绕开 Pi agent loop 后，自己从同一份 session branch 拼 prompt。
- * 隐藏 custom message（专家提示、异步结果等）也必须带上，否则切通道会丢上下文。
+ * 隐藏 custom message（专家提示、异步结果、压缩边界等）进可喂视图；规格见 agent-context-compaction.md § SDK。
  */
 export function externalPromptFromSession(
   session: ExternalTurnSink | undefined,
   userText: string,
+  options?: { maxChars?: number },
 ): string {
-  const messages: Message[] = [];
-  for (const entry of session?.sessionManager?.getBranch?.() ?? []) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const row = entry as Record<string, unknown>;
-    if (row.type === "message" && row.message && typeof row.message === "object") {
-      const message = row.message as Message;
-      if (
-        message.role === "system" ||
-        message.role === "user" ||
-        message.role === "assistant" ||
-        message.role === "toolResult"
-      ) {
-        messages.push(message);
-      }
-      continue;
-    }
-    if (row.type === "custom_message" && typeof row.content === "string" && row.content.trim()) {
-      messages.push({
-        role: "user",
-        content: `[会话上下文]\n${row.content.trim()}`,
-        timestamp: typeof row.timestamp === "number" ? row.timestamp : Date.now(),
-      });
-    }
-  }
-  messages.push({ role: "user", content: userText, timestamp: Date.now() });
-  return transcriptToPrompt(messages);
+  const entries = session?.sessionManager?.getBranch?.() ?? [];
+  return transcriptToPrompt(feedMessagesFromBranch(entries, userText), {
+    ...(options?.maxChars !== undefined ? { maxChars: options.maxChars } : {}),
+  });
 }
 
 /**

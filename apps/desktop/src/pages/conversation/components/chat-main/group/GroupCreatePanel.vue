@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { CheckIcon, SearchIcon, UsersIcon } from "@lucide/vue";
+import { CheckIcon, ChevronDownIcon, SearchIcon, UsersIcon } from "@lucide/vue";
 import { computed, ref } from "vue";
 
 import type { AgentCard } from "../../../../../shared/model/runtime/runtime";
+import AppDropdownMenu, {
+  type AppDropdownItem,
+} from "../../../../../shared/components/AppDropdownMenu.vue";
 import AgentAvatar from "../../../../../shared/components/avatar/AgentAvatar.vue";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "../../../model/group/group-limits";
@@ -11,12 +14,15 @@ const props = defineProps<{
   title: string;
   agents: AgentCard[];
   picked: string[];
+  /** 建群默认应答者；须在 picked 内。 */
+  defaultHolderId: string | null;
   busy?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:title": [value: string];
   toggle: [agentId: string];
+  "set-default-holder": [agentId: string];
   submit: [];
 }>();
 
@@ -28,6 +34,29 @@ const filteredAgents = computed(() => {
   if (!q) return props.agents;
   return props.agents.filter((agent) => agentSearchText(agent).includes(q));
 });
+
+const pickedAgents = computed(() =>
+  props.agents.filter((agent) => props.picked.includes(agent.agentId)),
+);
+
+const defaultHolderAgent = computed(() => {
+  const id = props.defaultHolderId;
+  if (id) {
+    const match = pickedAgents.value.find((agent) => agent.agentId === id);
+    if (match) return match;
+  }
+  return pickedAgents.value[0] ?? null;
+});
+
+const defaultHolderItems = computed((): AppDropdownItem[] =>
+  pickedAgents.value.map((agent) => ({
+    id: agent.agentId,
+    label: agentLabel(agent),
+    hint: agent.role.trim() || undefined,
+    avatarName: agentLabel(agent),
+    avatarUrl: agent.avatarUrl || undefined,
+  })),
+);
 
 const pickedCount = computed(() => props.picked.length);
 const canSubmit = computed(
@@ -172,6 +201,51 @@ function atCap(agentId: string): boolean {
               </button>
             </div>
           </div>
+        </fieldset>
+
+        <!-- 默认应答者：下拉展示头像 / 名称 / 职业；无 @ 首启时用此人 -->
+        <fieldset v-if="pickedAgents.length > 0" class="m-0 border-0 p-0">
+          <legend class="mb-1.5 p-0 text-xs font-medium text-foreground">
+            {{ t("groupDefaultHolderField") }}
+          </legend>
+          <p class="m-0 mb-2 text-xs leading-snug text-muted-foreground">
+            {{ t("groupDefaultHolderHint") }}
+          </p>
+          <AppDropdownMenu
+            :items="defaultHolderItems"
+            align="start"
+            @select="emit('set-default-holder', $event)"
+          >
+            <template #trigger>
+              <button
+                type="button"
+                class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm text-foreground outline-none transition duration-150 hover:border-accent/40 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/15"
+                :aria-label="t('groupDefaultHolderField')"
+              >
+                <template v-if="defaultHolderAgent">
+                  <AgentAvatar
+                    :name="agentLabel(defaultHolderAgent)"
+                    :avatar-url="defaultHolderAgent.avatarUrl"
+                    size="sm"
+                    round
+                  />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate">{{ agentLabel(defaultHolderAgent) }}</span>
+                    <span
+                      v-if="defaultHolderAgent.role.trim()"
+                      class="mt-0.5 block truncate text-xs text-muted-foreground"
+                    >
+                      {{ defaultHolderAgent.role }}
+                    </span>
+                  </span>
+                </template>
+                <span v-else class="min-w-0 flex-1 truncate text-muted-foreground">
+                  {{ t("groupDefaultHolderField") }}
+                </span>
+                <ChevronDownIcon class="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </button>
+            </template>
+          </AppDropdownMenu>
         </fieldset>
 
         <div class="mt-auto flex items-center gap-3 border-t border-rule pt-5">

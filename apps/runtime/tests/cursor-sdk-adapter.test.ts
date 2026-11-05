@@ -5,6 +5,10 @@ import path from "node:path";
 import { expect, it } from "vitest";
 
 import { getExternalDriver } from "../src/session/external/sdk/registry.js";
+import {
+  CURSOR_DEFAULT_CONTEXT_WINDOW,
+  normalizeCursorModels,
+} from "../src/session/external/sdk/adapters/cursor/lifecycle.js";
 import { resolveEsmEntryUrl } from "../src/session/external/sdk/adapters/cursor/load.js";
 import {
   composePromptPrefix,
@@ -98,6 +102,19 @@ it("模板 cursor-sdk 声明 driverId=cursor 与 .cursor/skills", () => {
   expect(template?.agentSdk?.driverId).toBe("cursor");
   expect(template?.agentSdk?.package).toBe("@cursor/sdk");
   expect(template?.agentSdk?.skillsProjectRel).toBe(".cursor/skills");
+});
+
+it("normalizeCursorModels：官方无窗字段时 Host curated 默认 200k", () => {
+  expect(CURSOR_DEFAULT_CONTEXT_WINDOW).toBe(200_000);
+  expect(
+    normalizeCursorModels([
+      { id: "composer-1", displayName: "Composer 1" },
+      { id: "gpt-5", name: "GPT-5" },
+    ]),
+  ).toEqual([
+    { id: "composer-1", name: "Composer 1", contextWindow: 200_000 },
+    { id: "gpt-5", name: "GPT-5", contextWindow: 200_000 },
+  ]);
 });
 
 it("registry 能取到 cursor driver，且 systemPromptMode=prompt_prefix", () => {

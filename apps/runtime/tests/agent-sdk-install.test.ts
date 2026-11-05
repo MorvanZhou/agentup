@@ -286,10 +286,18 @@ it("reports install_failed and rolls back when npm cannot resolve the spec", asy
   expect(fs.existsSync(agentSdkDir(root, "codebuddy-sdk"))).toBe(false);
 }, 90_000);
 
-it("refuses a second install and cleans up on uninstall", () => {
+it("盘上已装时再点接入：幂等 done + 对齐状态，卸载仍可清", () => {
   const root = tempRoot();
   fakeInstalled(root);
-  expect(() => startAgentSdkInstall(root, "codebuddy-sdk")).toThrow(/已经接入/);
+  // 状态故意缺失：模拟「已经接入过了」但 UI 仍显示开始接入
+  expect(sdkOf(root)?.state).toBe("installed");
+
+  const jobId = startAgentSdkInstall(root, "codebuddy-sdk");
+  expect(readInstallJob(jobId).phase).toBe("done");
+  expect(sdkOf(root)).toMatchObject({
+    state: "installed",
+    installedVersion: "0.3.295",
+  });
 
   uninstallAgentSdk(root, "codebuddy-sdk");
   expect(fs.existsSync(agentSdkDir(root, "codebuddy-sdk"))).toBe(false);

@@ -27,7 +27,7 @@ function agent(overrides: Partial<AgentCard> = {}): AgentCard {
     recruited: false,
     hasAvatar: true,
     avatarUrl: "https://example.com/a.webp",
-    remark: "别名不应单独成栏",
+    remark: "",
     recruitCount: 3,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
@@ -67,6 +67,7 @@ it("点本机卡片展开资料，不含高级配置；点对话不展开", asyn
   expect(header?.querySelector("img")?.className).toContain("size-20");
   expect(dialog.textContent).toContain("人物背景");
   expect(dialog.textContent).toContain("常年盯着天气图，说话短。");
+  expect(dialog.textContent).toContain("编辑配置");
   expect(dialog.textContent).not.toContain("它是干什么的");
   expect(dialog.textContent).not.toContain(SECRET_RULES);
   expect(dialog.textContent).not.toContain(SECRET_SKILL);
@@ -88,6 +89,17 @@ it("点本机卡片展开资料，不含高级配置；点对话不展开", asyn
   await nextTick();
   expect(document.body.querySelector('[data-testid="image-preview"]')).toBeNull();
   expect(document.body.querySelector('[role="dialog"][data-state="open"]')).toBeTruthy();
+});
+
+it("有备注时标题用备注，另起一行显示真名", async () => {
+  const host = mountView(LocalAgentCard, {
+    props: { agent: agent({ remark: "天气哥" }), busy: false },
+  });
+  const dialog = await openProfile(host, "天气哥");
+  const header = dialog.querySelector("header");
+  expect(header?.textContent).toContain("天气哥");
+  expect(dialog.textContent).toContain("真名");
+  expect(dialog.textContent).toContain("Weaty");
 });
 
 it("本机卡片缺职位、背景和头像时仍能打开资料", async () => {
@@ -128,6 +140,7 @@ it("点市场卡片展开资料；点招募不展开", async () => {
   const dialog = await openProfile(host, "Weaty");
   expect(dialog.textContent).toContain("气象顾问");
   expect(dialog.textContent).toContain("常年盯着天气图，说话短。");
+  expect(dialog.textContent).toContain("招募");
   expect(dialog.textContent).not.toContain(SECRET_RULES);
   expect(dialog.textContent).not.toContain("高级设置");
 });

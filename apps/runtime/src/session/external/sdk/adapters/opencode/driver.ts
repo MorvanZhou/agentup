@@ -1,4 +1,5 @@
 import type {
+  ExternalCompactRequest,
   ExternalDriver,
   ExternalDriverCapabilities,
   ExternalLoginInput,
@@ -11,6 +12,7 @@ import {
   type AskUserAnswer,
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { collectCompactSummary } from "../../host/collect-compact-summary.js";
 import { disposeAgentSdkRuntimesForTemplate } from "../../host/runtime-pool.js";
 import { hasOpencodeAuth } from "./home.js";
 import {
@@ -21,6 +23,9 @@ import {
 } from "./lifecycle.js";
 import { loadOpencodeSdkModule } from "./load.js";
 import {
+  opencodeCompactPromptBodyOf,
+  opencodeCompactServerConfigOf,
+  opencodeCompactSessionOptionsOf,
   opencodePromptBodyOf,
   opencodeServerConfigOf,
   opencodeSessionOptionsOf,
@@ -36,6 +41,7 @@ const CAPABILITIES: ExternalDriverCapabilities = {
   driverId: "opencode",
   systemPromptMode: "append",
   askUserToolNames: ["ask_user", "question"],
+  compactSummarize: true,
 };
 
 export const opencodeDriver: ExternalDriver = {
@@ -180,6 +186,68 @@ export const opencodeDriver: ExternalDriver = {
 
   normalizeResult(message: unknown): WorkerResult | null {
     return workerResultFromOpencodeMessage(message);
+  },
+
+  async compactSummarize(input: ExternalCompactRequest): Promise<string> {
+    if (!hasOpencodeAuth(input.userDataRoot, input.templateId)) {
+      throw new Error("尚未登录 OpenCode");
+    }
+    const config = opencodeCompactServerConfigOf();
+    const lease = await acquireOpencodeServer({
+      userDataRoot: input.userDataRoot,
+      templateId: input.templateId,
+      cwd: input.cwd,
+      config,
+      signal: input.abortController.signal,
+    });
+    if (input.abortController.signal.aborted) {
+      lease.release();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    }
+    const server = lease.value;
+    const sdk = await loadOpencodeSdkModule(input.userDataRoot, input.templateId);
+    const client = sdk.createOpencodeClient({
+      baseUrl: server.url,
+      directory: input.cwd,
+    });
+    const created = await client.session.create(opencodeCompactSessionOptionsOf(input));
+    const sessionId = responseId(created);
+    if (!sessionId) {
+      lease.release();
+      throw new Error("OpenCode 未返回 session id");
+    }
+
+    const close = async () => {
+      await client.session
+        .delete({ sessionID: sessionId, directory: input.cwd })
+        .catch(() => undefined);
+      lease.release();
+    };
+
+    try {
+      const subscription = await client.event.subscribe({ directory: input.cwd });
+      const messages = mirrorOpencodeEvents(subscription.stream, {
+        sessionId,
+        onPermission: async (requestId) => {
+          await client.permission.reply({
+            requestID: requestId,
+            directory: input.cwd,
+            reply: "reject",
+          });
+        },
+      });
+      const prompted = await client.session.promptAsync({
+        sessionID: sessionId,
+        directory: input.cwd,
+        ...opencodeCompactPromptBodyOf(input),
+      });
+      assertSdkSuccess(prompted, "OpenCode compact prompt 提交失败");
+      return await collectCompactSummary(messages, {
+        normalizeResult: workerResultFromOpencodeMessage,
+      });
+    } finally {
+      await close();
+    }
   },
 };
 

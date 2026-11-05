@@ -215,6 +215,9 @@ export function readSessionModelState(payload: Record<string, unknown>): Session
         label: typeof row.label === "string" ? row.label : "",
         // 0 是真实倍率；老 runtime / API 服务商没有就省略
         ...(typeof row.credits === "number" && row.credits >= 0 ? { credits: row.credits } : {}),
+        ...(typeof row.context_window === "number" && row.context_window > 0
+          ? { contextWindow: Math.floor(row.context_window) }
+          : {}),
       };
     }),
     configured: payload.configured,
@@ -297,7 +300,8 @@ function readAgentSdkOption(value: unknown): AgentSdkOption {
     apiKeyPaste:
       payload.api_key_paste === "opencode" ||
       payload.api_key_paste === "github-pat" ||
-      payload.api_key_paste === "deepseek"
+      payload.api_key_paste === "deepseek" ||
+      payload.api_key_paste === "anthropic"
         ? payload.api_key_paste
         : null,
   };
@@ -328,9 +332,18 @@ function readAgentSdkModels(value: unknown): AgentSdkModelOption[] {
     if (typeof row.id !== "string" || typeof row.name !== "string") continue;
     if (seen.has(row.id)) continue;
     seen.add(row.id);
-    // 倍率可选：老 runtime 不带；0 是真实值要留，负数和字符串一律当没有
+    // 倍率 / 窗口可选：老 runtime 不带；0 倍率是真实值要留，窗口须 >0
     const credits = typeof row.credits === "number" && row.credits >= 0 ? row.credits : undefined;
-    out.push({ id: row.id, name: row.name, ...(credits === undefined ? {} : { credits }) });
+    const contextWindow =
+      typeof row.context_window === "number" && row.context_window > 0
+        ? Math.floor(row.context_window)
+        : undefined;
+    out.push({
+      id: row.id,
+      name: row.name,
+      ...(credits === undefined ? {} : { credits }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+    });
   }
   return out;
 }
@@ -415,6 +428,9 @@ function readAvailableProviderModel(value: unknown): AvailableProviderModel {
     // 0 是真实倍率（自部署 / 免费档），照常带上
     ...(typeof payload.credits === "number" && payload.credits >= 0
       ? { credits: payload.credits }
+      : {}),
+    ...(typeof payload.context_window === "number" && payload.context_window > 0
+      ? { contextWindow: Math.floor(payload.context_window) }
       : {}),
   };
 }

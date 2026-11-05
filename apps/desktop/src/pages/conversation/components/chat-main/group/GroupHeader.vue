@@ -3,15 +3,11 @@ import { computed, ref } from "vue";
 import {
   EllipsisVerticalIcon,
   FolderIcon,
-  FolderXIcon,
   MessageSquarePlusIcon,
-  Settings2Icon,
-  Trash2Icon,
 } from "@lucide/vue";
 
 import { useDesktop } from "../../../../../app/desktop";
 import AppDialog from "../../../../../shared/components/AppDialog.vue";
-import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
 import GroupAvatar from "../../../../../shared/components/avatar/GroupAvatar.vue";
 import { t } from "../../../../../shared/model/ui/ui-locale";
 import { holderPhase, roomHolder, roomMembers, type GroupRoomView } from "../../../model/group/group-view";
@@ -28,15 +24,11 @@ const props = defineProps<{
   workspaceOpen?: boolean;
   chatSettingsOpen?: boolean;
   clearing?: boolean;
-  deleting?: boolean;
-  clearingWorkspace?: boolean;
 }>();
 const emit = defineEmits<{
   "toggle-workspace": [];
   "open-chat-settings": [];
   "clear-context": [];
-  delete: [];
-  "clear-workspace": [includeWork: boolean];
 }>();
 
 const { session } = useDesktop();
@@ -70,29 +62,6 @@ const subtitle = computed(() => {
 });
 
 const clearDisabled = computed(() => props.room.holderSpeaking === true || props.clearing === true);
-const deleteDisabled = computed(() => props.deleting === true);
-const clearWorkspaceDisabled = computed(() => props.clearingWorkspace === true || props.deleting === true);
-const menuItems = computed<AppDropdownItem[]>(() => [
-  {
-    id: "chat-settings",
-    label: t("threadChatSettings"),
-    icon: Settings2Icon,
-  },
-  {
-    id: "clear-workspace",
-    label: t("groupClearWorkspace"),
-    icon: FolderXIcon,
-    disabled: clearWorkspaceDisabled.value,
-    danger: true,
-  },
-  {
-    id: "delete",
-    label: t("groupDelete"),
-    icon: Trash2Icon,
-    disabled: deleteDisabled.value,
-    danger: true,
-  },
-]);
 
 function openClearConfirm(): void {
   if (clearDisabled.value) return;
@@ -108,43 +77,6 @@ function confirmClear(): void {
   if (skipConfirm.value) rememberSkipClearContextConfirm(session.value?.userId ?? "");
   confirmOpen.value = false;
   emit("clear-context");
-}
-
-const confirmDelete = ref(false);
-const confirmClearWorkspace = ref(false);
-const includeWork = ref(false);
-
-function onMenuSelect(id: string): void {
-  if (id === "chat-settings") {
-    emit("open-chat-settings");
-    return;
-  }
-  if (id === "delete") askDelete();
-  if (id === "clear-workspace") askClearWorkspace();
-}
-
-function askDelete(): void {
-  if (deleteDisabled.value) return;
-  confirmDelete.value = true;
-}
-
-function confirmDeleteGroup(): void {
-  if (deleteDisabled.value) return;
-  confirmDelete.value = false;
-  emit("delete");
-}
-
-function askClearWorkspace(): void {
-  if (clearWorkspaceDisabled.value) return;
-  includeWork.value = false;
-  confirmClearWorkspace.value = true;
-}
-
-function confirmClearWorkspaceAction(): void {
-  if (clearWorkspaceDisabled.value) return;
-  const withWork = includeWork.value;
-  confirmClearWorkspace.value = false;
-  emit("clear-workspace", withWork);
 }
 </script>
 
@@ -179,18 +111,17 @@ function confirmClearWorkspaceAction(): void {
       >
         <FolderIcon class="size-4" aria-hidden="true" />
       </button>
-      <!-- 群菜单 -->
-      <AppDropdownMenu :items="menuItems" @select="onMenuSelect">
-        <template #trigger>
-          <button
-            type="button"
-            class="app-no-drag grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-muted-foreground outline-none transition duration-200 hover:bg-paper hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
-            :aria-label="t('groupMenu')"
-          >
-            <EllipsisVerticalIcon class="size-4" />
-          </button>
-        </template>
-      </AppDropdownMenu>
+      <!-- 一点直进群设置（清空工作区 / 删群在设置底） -->
+      <button
+        type="button"
+        class="app-no-drag grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent outline-none transition duration-200 hover:bg-paper hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
+        :class="chatSettingsOpen ? 'bg-paper text-foreground' : 'text-muted-foreground'"
+        :aria-label="t('groupSettingsMenu')"
+        :aria-pressed="Boolean(chatSettingsOpen)"
+        @click="emit('open-chat-settings')"
+      >
+        <EllipsisVerticalIcon class="size-4" />
+      </button>
     </template>
   </ChatHeader>
   <AppDialog
@@ -221,64 +152,6 @@ function confirmClearWorkspaceAction(): void {
         @click="confirmClear"
       >
         {{ t("threadNew") }}
-      </button>
-    </template>
-  </AppDialog>
-  <!-- 清空工作区确认 -->
-  <AppDialog
-    :open="confirmClearWorkspace"
-    :title="t('groupClearWorkspaceTitle')"
-    :description="t('groupClearWorkspaceBody')"
-    @update:open="confirmClearWorkspace = $event"
-  >
-    <label class="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-      <input
-        v-model="includeWork"
-        type="checkbox"
-        class="size-4 rounded border-rule text-accent accent-accent"
-      />
-      <span>{{ t("groupClearWorkspaceAlso") }}</span>
-    </label>
-    <template #footer>
-      <button
-        type="button"
-        class="min-h-8 cursor-pointer rounded-lg border border-rule px-3 text-sm font-medium transition duration-200 hover:bg-paper-deep"
-        @click="confirmClearWorkspace = false"
-      >
-        {{ t("cancel") }}
-      </button>
-      <button
-        type="button"
-        class="min-h-8 cursor-pointer rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="clearWorkspaceDisabled"
-        @click="confirmClearWorkspaceAction"
-      >
-        {{ t("groupClearWorkspaceConfirm") }}
-      </button>
-    </template>
-  </AppDialog>
-  <!-- 删除群确认 -->
-  <AppDialog
-    :open="confirmDelete"
-    :title="t('groupDeleteTitle')"
-    :description="t('groupDeleteBody')"
-    @update:open="confirmDelete = $event"
-  >
-    <template #footer>
-      <button
-        type="button"
-        class="min-h-8 cursor-pointer rounded-lg border border-rule px-3 text-sm font-medium transition duration-200 hover:bg-paper-deep"
-        @click="confirmDelete = false"
-      >
-        {{ t("cancel") }}
-      </button>
-      <button
-        type="button"
-        class="min-h-8 cursor-pointer rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="deleteDisabled"
-        @click="confirmDeleteGroup"
-      >
-        {{ t("groupDelete") }}
       </button>
     </template>
   </AppDialog>

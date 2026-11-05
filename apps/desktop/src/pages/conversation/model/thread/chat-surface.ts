@@ -112,15 +112,18 @@ export function chatSurfaceKind(metadata: unknown): ChatSurfaceKind | null {
 
 export function chatMessageAuthor(
   metadata: unknown,
-): { name: string; avatarUrl?: string; role?: string } | null {
+): { id?: string; name: string; avatarUrl?: string; role?: string } | null {
   if (!metadata || typeof metadata !== "object") return null;
   const author = (
     metadata as {
-      custom?: { author?: { name?: unknown; avatarUrl?: unknown; role?: unknown } };
+      custom?: {
+        author?: { id?: unknown; name?: unknown; avatarUrl?: unknown; role?: unknown };
+      };
     }
   ).custom?.author;
   if (!author || typeof author.name !== "string" || !author.name) return null;
   return {
+    ...(typeof author.id === "string" && author.id ? { id: author.id } : {}),
     name: author.name,
     avatarUrl: typeof author.avatarUrl === "string" ? author.avatarUrl : undefined,
     role: typeof author.role === "string" && author.role ? author.role : undefined,

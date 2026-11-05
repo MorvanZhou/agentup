@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import type {
+  ExternalCompactRequest,
   ExternalDriver,
   ExternalDriverCapabilities,
   ExternalLoginInput,
@@ -11,6 +12,7 @@ import type {
   ExternalTurnRequest,
   WorkerResult,
 } from "../../contract.js";
+import { collectCompactSummary } from "../../host/collect-compact-summary.js";
 import { readCursorApiKey } from "./credentials.js";
 import {
   checkCursorLogin,
@@ -19,7 +21,12 @@ import {
   startCursorLogin,
 } from "./lifecycle.js";
 import { loadCursorModule } from "./load.js";
-import { cursorCreateOptionsOf, cursorTurnPromptOf } from "./options.js";
+import {
+  cursorCompactCreateOptionsOf,
+  cursorCompactPromptOf,
+  cursorCreateOptionsOf,
+  cursorTurnPromptOf,
+} from "./options.js";
 import { mirrorCursorRun, workerResultFromCursorMessage } from "./stream.js";
 
 const CAPABILITIES: ExternalDriverCapabilities = {
@@ -28,6 +35,8 @@ const CAPABILITIES: ExternalDriverCapabilities = {
   systemPromptMode: "prompt_prefix",
   // customTools → MCP custom-user-tools；stream 解包成 ask_user
   askUserToolNames: ["ask_user", "agentup_ask_user"],
+  // 无硬 deny；靠空 cwd + 无 MCP/tools + 压缩 prompt
+  compactSummarize: true,
 };
 
 /**
@@ -128,5 +137,47 @@ export const cursorDriver: ExternalDriver = {
 
   normalizeResult(message: unknown): WorkerResult | null {
     return workerResultFromCursorMessage(message);
+  },
+
+  async compactSummarize(input: ExternalCompactRequest): Promise<string> {
+    const sdk = await loadCursorModule(input.userDataRoot, input.templateId);
+    const apiKey = await readCursorApiKey(input.userDataRoot, input.templateId);
+    if (!apiKey) throw new Error("尚未登录 Cursor");
+
+    const storeDir = path.join(
+      os.tmpdir(),
+      "agentup-cursor-compact",
+      `${input.templateId}-${randomUUID()}`,
+    );
+    fs.mkdirSync(storeDir, { recursive: true });
+    const JsonlStore = sdk.JsonlLocalAgentStore;
+    if (typeof JsonlStore !== "function") {
+      throw new Error("Cursor SDK 缺少 JsonlLocalAgentStore");
+    }
+    const localStore = new JsonlStore(storeDir);
+    const agent = await sdk.Agent.create(
+      cursorCompactCreateOptionsOf(input, { apiKey, localStore }),
+    );
+
+    let run: Awaited<ReturnType<typeof agent.send>> | undefined;
+    const onAbort = () => {
+      void Promise.resolve(run?.cancel()).catch(() => undefined);
+    };
+    input.abortController.signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      run = await agent.send(cursorCompactPromptOf(input));
+      const messages = mirrorCursorRun(agent, run);
+      return await collectCompactSummary(messages, {
+        normalizeResult: workerResultFromCursorMessage,
+      });
+    } finally {
+      input.abortController.signal.removeEventListener("abort", onAbort);
+      try {
+        await Promise.resolve(run?.cancel()).catch(() => undefined);
+      } finally {
+        await Promise.resolve(agent.close()).catch(() => undefined);
+        fs.rmSync(storeDir, { recursive: true, force: true });
+      }
+    }
   },
 };

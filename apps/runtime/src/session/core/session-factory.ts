@@ -174,6 +174,8 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
       : projectVisitMcp(plan.cwd, visit.userId);
   const mcpEnabled = mcpConfig.servers.length > 0;
   const settingsManager = SettingsManager.create(plan.cwd, plan.agentDir, { projectTrusted: true });
+  // API/Pi：开内建 compact；阈值 = model.contextWindow - reserveTokens（窗长见 openModelRuntime）
+  settingsManager.setCompactionEnabled(true);
   const deliverState: DeliverArtifactsState | undefined =
     profile.deliverArtifacts || profile.completeGroupTask ? { confirmed: false, staged: [] } : undefined;
   const artifactBefore = profile.deliverArtifacts ? snapshotArtifactDir(plan.cwd) : undefined;

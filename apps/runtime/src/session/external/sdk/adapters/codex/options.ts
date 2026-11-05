@@ -1,10 +1,11 @@
-import type { ExternalTurnRequest } from "../../contract.js";
+import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
 import {
   formatAskUserResultText,
   type AskUserAnswer,
   type AskUserOption,
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { compactUserPrompt } from "../../host/compact-instruction.js";
 import { startExternalMcpServer, type ExternalMcpServer } from "../../../mcp/server.js";
 import type { CodexAskUserIdBridge } from "./ask-user-bridge.js";
 
@@ -129,6 +130,42 @@ export function codexThreadOptionsOf(input: ExternalTurnRequest): CodexThreadOpt
 
 export function codexTurnPromptOf(input: ExternalTurnRequest): string {
   return composePromptPrefix(input.systemAppend, input.prompt);
+}
+
+/** 压缩：无 MCP；空 cwd；prompt 仅压缩指令（无业务 header）。 */
+export function codexCompactClientOptionsOf(extras: {
+  cliPath: string;
+  codexHome: string;
+}): CodexClientOptions {
+  const pathKey = process.platform === "win32" ? "Path" : "PATH";
+  const env: Record<string, string> = {
+    CODEX_HOME: extras.codexHome,
+    [pathKey]: process.env[pathKey] ?? process.env.PATH ?? "",
+  };
+  if (process.env.HOME) env.HOME = process.env.HOME;
+  if (process.env.USERPROFILE) env.USERPROFILE = process.env.USERPROFILE;
+  return {
+    codexPathOverride: extras.cliPath,
+    env,
+    config: { mcp_servers: {} },
+  };
+}
+
+export function codexCompactThreadOptionsOf(input: ExternalCompactRequest): CodexThreadOptions {
+  const model =
+    input.modelId && input.modelId !== "default" ? { model: input.modelId } : {};
+  return {
+    ...model,
+    sandboxMode: "danger-full-access",
+    approvalPolicy: "never",
+    workingDirectory: input.cwd,
+    skipGitRepoCheck: true,
+    networkAccessEnabled: false,
+  };
+}
+
+export function codexCompactPromptOf(input: ExternalCompactRequest): string {
+  return compactUserPrompt(input.prompt);
 }
 
 export function composePromptPrefix(systemAppend: string, prompt: string): string {

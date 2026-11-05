@@ -37,6 +37,8 @@ const props = defineProps<{
   deviceCode: string | null;
   loginNeedsApiKey: boolean;
   apiKeyDraft: string;
+  /** Key 粘贴档申请页；有则输入框前展示手动打开 */
+  loginAuthUrl?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -49,6 +51,7 @@ const emit = defineEmits<{
   /** 取消进行中的接入（npm 安装）或卡死的 installing */
   "cancel-install": [];
   "update:apiKeyDraft": [value: string];
+  "open-api-key-doc": [];
 }>();
 
 /**
@@ -100,6 +103,15 @@ const apiKeyCopy = computed(() => {
       placeholder: t("providerSdkDeepseekKeyPlaceholder"),
       submitLabel: t("providerSdkDeepseekKeySubmit"),
       cancelLabel: t("providerSdkDeepseekKeyCancel"),
+    };
+  }
+  if (props.sdk.apiKeyPaste === "anthropic") {
+    return {
+      label: t("providerSdkAnthropicKeyLabel"),
+      hint: t("providerSdkAnthropicKeyHint"),
+      placeholder: t("providerSdkAnthropicKeyPlaceholder"),
+      submitLabel: t("providerSdkAnthropicKeySubmit"),
+      cancelLabel: t("providerSdkAnthropicKeyCancel"),
     };
   }
   // 默认 / opencode：OpenCode Zen Key 粘贴档（providerSdkApiKey* = 该档词条）
@@ -265,9 +277,11 @@ function runPrimary(): void {
         :placeholder="apiKeyCopy.placeholder"
         :submit-label="apiKeyCopy.submitLabel"
         :cancel-label="apiKeyCopy.cancelLabel"
+        :doc-url="loginAuthUrl"
         @update:model-value="emit('update:apiKeyDraft', $event)"
         @submit="emit('submit-api-key')"
         @cancel="emit('cancel-login')"
+        @open-doc="emit('open-api-key-doc')"
       />
       <!-- 接入中可退出重试：杀 npm / 清卡死 installing；与取消登录分钮 -->
       <div

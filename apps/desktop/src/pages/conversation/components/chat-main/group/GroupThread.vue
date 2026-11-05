@@ -6,6 +6,7 @@ import type { UIMessage } from "ai";
 import { computed, onBeforeUnmount, provide, ref, shallowRef, toRef, watch } from "vue";
 
 import { DesktopApi, runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../../shared/api/runtime";
+import type { GroupMember } from "../../../../../shared/api/runtime/groups";
 import {
   createGroupImageAttachmentAdapter,
   groupOutgoingText,
@@ -18,6 +19,7 @@ import type {
   AskUserAnswer,
   ShellHangAction,
 } from "../../../../../shared/model/chat/chat";
+import type { AgentCard } from "../../../../../shared/model/runtime/runtime";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useWorkspacePaneWidth } from "../../../composables/usePaneWidth";
 import { clampWorkspaceWidth } from "../../../model/layout/pane-width";
@@ -111,6 +113,9 @@ const props = defineProps<{
   deleteGroup?: () => Promise<void>;
   clearWorkspace?: (includeWork: boolean) => Promise<void>;
   renameTitle?: (title: string) => Promise<void>;
+  setMembers?: (members: GroupMember[], defaultHolderId?: string) => Promise<void>;
+  /** 可加入群的本机名单（已招募，不含私人助理）。 */
+  agents?: AgentCard[];
   historyHasMore?: boolean;
   loadOlder?: () => Promise<number>;
 }>();
@@ -164,6 +169,14 @@ function closeRightPane(): void {
 async function renameRoomTitle(title: string): Promise<void> {
   if (!props.renameTitle) return;
   await props.renameTitle(title);
+}
+
+async function setRoomMembers(
+  members: GroupMember[],
+  defaultHolderId?: string,
+): Promise<void> {
+  if (!props.setMembers) return;
+  await props.setMembers(members, defaultHolderId);
 }
 
 async function clearRoomWorkspace(includeWork: boolean): Promise<void> {
@@ -242,7 +255,14 @@ const trailCards = computed(() =>
   pendingDelegationCards(props.room.pendingDelegations, roomMembers(props.room), profileByAgent.value),
 );
 const placeholder = computed(() => {
-  if (!holder.value) return t("groupComposerIdle");
+  if (!holder.value) {
+    // 尚无执掌者：提示将交给默认应答者
+    const fallback =
+      roomMembers(props.room).find((member) => member.agentId === props.room.defaultHolderId)?.name ??
+      roomMembers(props.room)[0]?.name ??
+      "";
+    return tf("groupComposerIdle", { name: fallback });
+  }
   if (taskIds.value.length > 0) return tf("groupComposerBusy", { name: holder.value.name });
   return tf("groupComposerHolder", { name: holder.value.name });
 });
@@ -531,13 +551,9 @@ provide(chatQueueBusyKey, computed(() => Boolean(props.busy)));
           :workspace-open="workspaceOpen"
           :chat-settings-open="chatSettingsOpen"
           :clearing="clearing"
-          :deleting="deleting"
-          :clearing-workspace="clearingWorkspace"
           @toggle-workspace="toggleWorkspace"
           @open-chat-settings="openChatSettings"
           @clear-context="() => void actions.clearContext()"
-          @delete="() => void deleteRoom()"
-          @clear-workspace="(includeWork) => void clearRoomWorkspace(includeWork)"
         />
       </template>
       <template #process />
@@ -589,7 +605,17 @@ provide(chatQueueBusyKey, computed(() => Boolean(props.busy)));
           <GroupSettingsPanel
             v-else-if="chatSettingsOpen"
             :title="room.title ?? ''"
+            :members="roomMembers(room)"
+            :default-holder-id="room.defaultHolderId ?? roomMembers(room)[0]?.agentId ?? ''"
+            :agents="agents ?? []"
+            :avatars="avatarByAgent"
+            :busy="room.holderSpeaking === true || (room.taskIds?.length ?? 0) > 0"
+            :deleting="deleting"
+            :clearing-workspace="clearingWorkspace"
             :rename-title="renameRoomTitle"
+            :set-members="setRoomMembers"
+            :clear-workspace="clearRoomWorkspace"
+            :delete-group="deleteRoom"
             class="h-full w-full"
             @close="closeRightPane"
           />

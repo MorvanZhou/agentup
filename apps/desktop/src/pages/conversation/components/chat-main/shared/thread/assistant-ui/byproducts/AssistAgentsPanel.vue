@@ -4,8 +4,10 @@ import {
   ArrowUpRightIcon,
   ChevronDownIcon,
 } from "@lucide/vue";
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed, inject, onUnmounted, ref, watch } from "vue";
 
+import { stubAgentCard } from "../../../../../../../../shared/components/agent/agent-profile";
+import { agentProfileHostKey } from "../../../../../../../../shared/components/agent/agent-profile-host";
 import AgentAvatar from "../../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import { showToast } from "../../../../../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../../../../../shared/model/ui/ui-locale";
@@ -33,6 +35,7 @@ const props = withDefaults(
 
 const roster = injectThreadRoster();
 const delegation = injectThreadDelegation();
+const profileHost = inject(agentProfileHostKey, null);
 /** 默认展开首个，降低「点开才能懂归属」的成本。 */
 const expandedId = ref<string | null>(props.assists[0]?.agentId ?? null);
 /** 驱动进行中耗时刷新；无 running 时不跑定时器。 */
@@ -152,6 +155,23 @@ function goToAgent(assist: AssistAgentRef): void {
   }
 }
 
+/** 点头像开资料弹窗（与气泡头像同一套 host）。 */
+function openAgentProfile(assist: AssistAgentRef): void {
+  if (!profileHost || !assist.agentId) return;
+  const agent = resolveRosterAgent(roster.value, assist.agentId, assist.nameHint);
+  profileHost.open({
+    agent: stubAgentCard({
+      agentId: assist.agentId,
+      name: agent.name || assist.nameHint || assist.agentId,
+      role: agent.role,
+      remark: agent.remark,
+      avatarUrl: agent.avatarUrl,
+      kind: "recruited",
+      recruited: agent.available,
+    }),
+  });
+}
+
 function processTaskId(assist: AssistAgentRef): string {
   if (assist.toolCallId) {
     const fromStarted = delegation.value.resolveTaskId(assist.toolCallId);
@@ -231,14 +251,21 @@ function openProcess(assist: AssistAgentRef): void {
       class="overflow-hidden rounded-xl border border-rule bg-background shadow-sm"
       role="listitem"
     >
-      <!-- 身份层：协助方是谁 + 已执行多久 -->
+      <!-- 身份层：协助方是谁 + 已执行多久；头像可开资料 -->
       <header class="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-        <AgentAvatar
-          :name="displayName(assist)"
-          :avatar-url="avatarUrl(assist)"
-          size="md"
-          round
-        />
+        <button
+          type="button"
+          class="shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+          :aria-label="tf('agentsViewProfile', { name: displayName(assist) })"
+          @click="openAgentProfile(assist)"
+        >
+          <AgentAvatar
+            :name="displayName(assist)"
+            :avatar-url="avatarUrl(assist)"
+            size="md"
+            round
+          />
+        </button>
         <div class="min-w-0 flex-1">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
             <p class="mb-0 min-w-0 truncate text-sm font-semibold text-foreground">

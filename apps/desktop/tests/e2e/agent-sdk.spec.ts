@@ -200,12 +200,12 @@ test("安装 → 浏览器登录 → 可用：模型进列表，可启用并在�
   await page.getByRole("switch", { name: "启用 Claude-Sonnet-5" }).click();
   await enabled;
 
-  // 卡片主按钮在 ready 后变成「刷新模型」
+  // ready 后主钮为「刷新模型列表」（与顶栏「刷新全部模型」区分）
   const refreshed = page.waitForRequest((request) => {
     if (request.method() !== "POST") return false;
     return new URL(request.url()).pathname.endsWith("/settings/provider/agents/codebuddy-sdk/models");
   });
-  await page.getByRole("button", { name: "刷新模型" }).first().click();
+  await page.getByRole("button", { name: "刷新模型列表" }).click();
   await refreshed;
   await expect(page.getByText("Claude-Opus-4", { exact: true })).toBeVisible();
 
@@ -231,8 +231,11 @@ test("登出清登录态与模型，移除接入回到待接入", async ({ page 
   await openProviderSettings(page);
   await selectLocalAgentApp(page);
 
-  // 先走到 ready（与上条同一 mock 状态机）
+  // 先走到 ready（与上条同一 mock 状态机；安装要多轮 polling，勿用默认 5s）
   await page.getByRole("button", { name: "开始接入" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "接入完成" })).toBeVisible({
+    timeout: 20_000,
+  });
   await expect(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page.getByText("可用", { exact: true })).toBeVisible();

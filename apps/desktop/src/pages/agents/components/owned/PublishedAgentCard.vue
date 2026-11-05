@@ -2,9 +2,9 @@
 import { CheckIcon, CopyIcon, EllipsisIcon, PencilIcon, Trash2Icon, UsersIcon } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
-import AgentAvatar from "../../../../shared/components/avatar/AgentAvatar.vue";
 import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
+import AgentCatalogCard from "../../../../shared/components/agent/AgentCatalogCard.vue";
 import type { AgentCard } from "../../../../shared/model/runtime/runtime";
 import { t, tf } from "../../../../shared/model/ui/ui-locale";
 import AgentProfileDialog from "../AgentProfileDialog.vue";
@@ -73,43 +73,12 @@ function confirmDeleteAction(): void {
 </script>
 
 <template>
-  <article
-    class="group relative flex h-full w-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 text-left shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
-    :aria-labelledby="`owned-card-${agent.agentId}`"
+  <AgentCatalogCard
+    :agent="agent"
+    :title-id="`owned-card-${agent.agentId}`"
+    @view-profile="profileOpen = true"
   >
-    <!-- 点卡片空白处看资料；菜单盖在上层 -->
-    <button
-      type="button"
-      class="absolute inset-0 z-10 cursor-pointer rounded-xl border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"
-      :aria-label="tf('agentsViewProfile', { name: agent.name })"
-      @click="profileOpen = true"
-    />
-    <!-- 身份：头像 + 名职 + 菜单 -->
-    <div class="flex shrink-0 items-start gap-2.5">
-      <AgentAvatar
-        class="ring-1 ring-rule ring-offset-1 ring-offset-paper"
-        :name="agent.name"
-        :avatar-url="agent.avatarUrl"
-        size="sidebar"
-      />
-      <div class="min-w-0 flex-1 pt-0.5">
-        <h2
-          :id="`owned-card-${agent.agentId}`"
-          class="m-0 truncate text-[15px] font-bold leading-snug tracking-tight text-foreground"
-          :title="agent.name"
-        >
-          {{ agent.name }}
-        </h2>
-        <p
-          v-if="agent.role"
-          class="m-0 mt-1 truncate text-xs font-semibold leading-tight text-accent"
-          :title="agent.role"
-        >
-          {{ agent.role }}
-        </p>
-        <p v-else class="m-0 mt-1 h-4" aria-hidden="true" />
-      </div>
-      <div class="relative z-20">
+    <template #trailing>
       <AppDropdownMenu :items="menuItems" @select="onSelect">
         <template #trigger>
           <button
@@ -122,19 +91,8 @@ function confirmDeleteAction(): void {
           </button>
         </template>
       </AppDropdownMenu>
-      </div>
-    </div>
-
-    <!-- 简介 -->
-    <p
-      class="m-0 line-clamp-2 min-h-[2.5rem] flex-1 text-xs leading-snug text-muted-foreground"
-      :title="agent.background"
-    >
-      {{ agent.background }}
-    </p>
-
-    <!-- 底栏：招募次数 -->
-    <footer class="mt-auto flex shrink-0 items-center gap-2 pt-0.5">
+    </template>
+    <template #footer>
       <span
         class="inline-flex min-w-0 flex-1 items-center gap-1 truncate text-[11px] tabular-nums text-muted-foreground"
         :aria-label="tf('agentsRecruitCount', { n: agent.recruitCount })"
@@ -142,61 +100,67 @@ function confirmDeleteAction(): void {
         <UsersIcon class="size-3 shrink-0 opacity-70" aria-hidden="true" />
         {{ tf("agentsRecruitCount", { n: agent.recruitCount }) }}
       </span>
-    </footer>
+    </template>
+  </AgentCatalogCard>
 
-    <AppDialog
-      :open="confirmDelete"
-      :title="t('publishDeleteTitle')"
-      :description="tf('publishDeleteDesc', { name: agent.name })"
-      @update:open="confirmDelete = $event"
-    >
-      <div class="flex flex-col gap-3 py-1">
-        <div class="flex min-w-0 items-center gap-2">
-          <code
-            class="min-w-0 flex-1 truncate rounded-lg border border-rule bg-background px-2.5 py-1.5 text-sm font-semibold text-foreground"
-            :title="agent.name"
-          >{{ agent.name }}</code>
-          <button
-            type="button"
-            class="inline-flex min-h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-            :aria-label="t('publishDeleteCopyName')"
-            @click="copyAgentName"
-          >
-            <CheckIcon v-if="nameCopied" class="size-3.5 text-accent" aria-hidden="true" />
-            <CopyIcon v-else class="size-3.5 text-muted-foreground" aria-hidden="true" />
-            {{ nameCopied ? t("publishDeleteCopied") : t("publishDeleteCopyName") }}
-          </button>
-        </div>
-        <label class="flex flex-col gap-1.5">
-          <span class="text-xs font-medium text-muted-foreground">{{ t("publishDeleteConfirmLabel") }}</span>
-          <input
-            v-model="confirmName"
-            type="text"
-            autocomplete="off"
-            spellcheck="false"
-            :placeholder="t('publishDeleteConfirmPlaceholder')"
-            class="min-h-8 w-full rounded-lg border border-rule bg-paper px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
-          />
-        </label>
+  <AppDialog
+    :open="confirmDelete"
+    :title="t('publishDeleteTitle')"
+    :description="tf('publishDeleteDesc', { name: agent.name })"
+    @update:open="confirmDelete = $event"
+  >
+    <div class="flex flex-col gap-3 py-1">
+      <div class="flex min-w-0 items-center gap-2">
+        <code
+          class="min-w-0 flex-1 truncate rounded-lg border border-rule bg-background px-2.5 py-1.5 text-sm font-semibold text-foreground"
+          :title="agent.name"
+        >{{ agent.name }}</code>
+        <button
+          type="button"
+          class="inline-flex min-h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          :aria-label="t('publishDeleteCopyName')"
+          @click="copyAgentName"
+        >
+          <CheckIcon v-if="nameCopied" class="size-3.5 text-accent" aria-hidden="true" />
+          <CopyIcon v-else class="size-3.5 text-muted-foreground" aria-hidden="true" />
+          {{ nameCopied ? t("publishDeleteCopied") : t("publishDeleteCopyName") }}
+        </button>
       </div>
-      <template #footer>
-        <button
-          type="button"
-          class="inline-flex min-h-8 cursor-pointer items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-paper-deep"
-          @click="confirmDelete = false"
-        >
-          {{ t("cancel") }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex min-h-8 cursor-pointer items-center rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-          :disabled="!nameMatches || busy"
-          @click="confirmDeleteAction"
-        >
-          {{ t("publishDelete") }}
-        </button>
-      </template>
-    </AppDialog>
-    <AgentProfileDialog :open="profileOpen" :agent="agent" @update:open="profileOpen = $event" />
-  </article>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-medium text-muted-foreground">{{ t("publishDeleteConfirmLabel") }}</span>
+        <input
+          v-model="confirmName"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          :placeholder="t('publishDeleteConfirmPlaceholder')"
+          class="min-h-8 w-full rounded-lg border border-rule bg-paper px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
+        />
+      </label>
+    </div>
+    <template #footer>
+      <button
+        type="button"
+        class="inline-flex min-h-8 cursor-pointer items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-paper-deep"
+        @click="confirmDelete = false"
+      >
+        {{ t("cancel") }}
+      </button>
+      <button
+        type="button"
+        class="inline-flex min-h-8 cursor-pointer items-center rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+        :disabled="!nameMatches || busy"
+        @click="confirmDeleteAction"
+      >
+        {{ t("publishDelete") }}
+      </button>
+    </template>
+  </AppDialog>
+  <AgentProfileDialog
+    :open="profileOpen"
+    :agent="agent"
+    scene="published"
+    :busy="busy"
+    @update:open="profileOpen = $event"
+  />
 </template>

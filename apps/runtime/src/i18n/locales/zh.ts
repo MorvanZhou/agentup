@@ -34,6 +34,9 @@ export const zh: Record<string, string> = {
   "provider.template.tencent-coding.hint": "兼容 OpenAI 的编程套餐接口",
   "provider.template.custom-openai.label": "自定义 OpenAI Compatible",
 
+  "provider.template.claude-agent-sdk.label": "Claude Code",
+  "provider.template.claude-agent-sdk.hint":
+    "用 Anthropic Console API Key 在本机跑 Claude Code",
   "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
   "provider.template.codebuddy-sdk.hint": "用你的 Workbuddy / CodeBuddy 订阅执行任务（无需 API Key）",
   "provider.template.cursor-sdk.label": "Cursor",

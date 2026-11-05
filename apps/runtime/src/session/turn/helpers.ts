@@ -41,7 +41,13 @@ export function trackModelFailure(
   }
 }
 
-/** 编辑旧 user message 重发前：navigateTree 回退对话，checkpoint 扩展顺带还原文件。 */
+/**
+ * 编辑旧 user message 重发前：navigateTree 回退对话，checkpoint 扩展顺带还原文件。
+ *
+ * 与压缩边界（§4.4）：切到目标 turn 后，其 descendant（含 Pi `compaction` /
+ * `agentup.context_compaction`）脱离 active branch → 可喂视图丢边界、恢复该点前原文；
+ * 不禁止跨界。之后若再超预算，下一轮重新 compact。
+ */
 export async function rewindSession(session: PromptSession, rewind?: PromptRewind): Promise<void> {
   if (!rewind) return;
   const targetId = resolveRewindEntryId(session, rewind);

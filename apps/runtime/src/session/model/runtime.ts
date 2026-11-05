@@ -97,6 +97,8 @@ export async function openModelRuntime(plan: SessionPlan, options: OpenModelRunt
 
   const model = runtime.getModel(binding.providerId, binding.modelId);
   if (!model) throw new Error("模型没有注册成功，请检查模型名称是否属于该 Provider");
+  // 列模型落盘的窗长覆盖厂商内置默认，供 Pi shouldCompact(contextWindow - reserve) 使用
+  applyCatalogContextWindow(model, binding.contextWindow, binding.maxTokens);
   return {
     runtime,
     model,
@@ -107,6 +109,21 @@ export async function openModelRuntime(plan: SessionPlan, options: OpenModelRunt
         }
       : {}),
   };
+}
+
+function applyCatalogContextWindow(
+  model: { contextWindow: number; maxTokens: number },
+  contextWindow?: number,
+  maxTokens?: number,
+): void {
+  if (typeof contextWindow === "number" && contextWindow > 0) {
+    model.contextWindow = Math.floor(contextWindow);
+  } else if (!(model.contextWindow > 0)) {
+    model.contextWindow = DEFAULT_CONTEXT_WINDOW;
+  }
+  if (typeof maxTokens === "number" && maxTokens > 0) {
+    model.maxTokens = Math.floor(maxTokens);
+  }
 }
 
 /** 内置目录有该 id 走 native；手动追加的未知 id 按同端点动态注册。 */

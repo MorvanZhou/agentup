@@ -7,11 +7,13 @@ import type { ModelConfig } from "../../config/load.js";
 import { getProviderTemplate } from "../../config/provider-templates.js";
 import type { Visit } from "../../package/sync.js";
 import { openProfiledSession } from "../core/session-factory.js";
+import { userDataRootFromVisit } from "../context/user-data-root.js";
 import type { DiscoverToolSurface } from "./discover.js";
 import { ApprovalBroker } from "../hitl/approval/index.js";
 import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import { PiUIMessageProjector } from "../history/frames.js";
 import { projectHistoryFromManager } from "../history/history.js";
+import { compactTurnOptions, maybeCompactApiSession } from "../model/agent-sdk.js";
 import { resolveEmptyAssistantError } from "../output-length.js";
 import { AskUserBroker, type StagedArtifact } from "../tools/index.js";
 import { groupTaskDirName } from "../tools/deliver-artifacts.js";
@@ -131,6 +133,13 @@ export async function runDelegatedPrompt(
   let turnGate = new AbortController();
   try {
     const isExternal = Boolean((session as PromptSession).externalQuery);
+    const compact = isExternal
+      ? compactTurnOptions({
+          userDataRoot: userDataRootFromVisit(visit),
+          prefer: model,
+          ...(signal ? { signal } : {}),
+        })
+      : undefined;
     releaseSteer = options.bindSteer?.(
       isExternal
         ? createSdkInterruptQueue({
@@ -174,8 +183,18 @@ export async function runDelegatedPrompt(
             approvals,
             askUser,
           },
+          ...(compact ?? {}),
         });
-        if (!lastExternal) await session.prompt(activePrompt, { expandPromptTemplates: false });
+        if (!lastExternal) {
+          await maybeCompactApiSession({
+            session: session as PromptSession,
+            userText: activePrompt,
+            userDataRoot: userDataRootFromVisit(visit),
+            model,
+            ...(signal ? { signal } : {}),
+          });
+          await session.prompt(activePrompt, { expandPromptTemplates: false });
+        }
       } finally {
         turnSignal.dispose();
       }

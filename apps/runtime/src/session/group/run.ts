@@ -11,6 +11,8 @@ import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import { expandSkillReferences } from "../skills/expand.js";
 import type { AskUserBroker } from "../tools/index.js";
 import { customMessageDelivery } from "../turn/custom-message-delivery.js";
+import { userDataRootFromVisit } from "../context/user-data-root.js";
+import { compactTurnOptions, maybeCompactApiSession } from "../model/agent-sdk.js";
 import { runExternalSessionTurn } from "../turn/external-turn.js";
 import { createSdkInterruptQueue, linkTurnSignal } from "../turn/sdk-interrupt.js";
 import { runObservedTurn } from "../turn/turn-runner.js";
@@ -53,13 +55,21 @@ export function createHolderTurnDriver(deps: {
         groupId: input.groupId,
         holderAgentId: input.agentId,
       });
-      const session = await deps.open(visit, deps.resolveModel(visit), input.sessionDir, conversation);
+      const model = deps.resolveModel(visit);
+      const session = await deps.open(visit, model, input.sessionDir, conversation);
       const stopController = new AbortController();
       const abortTurn = () => stopController.abort();
       if (input.signal.aborted) abortTurn();
       else input.signal.addEventListener("abort", abortTurn, { once: true });
 
       const isExternal = Boolean(session.externalQuery);
+      const compact = isExternal
+        ? compactTurnOptions({
+            userDataRoot: userDataRootFromVisit(visit),
+            prefer: model,
+            signal: stopController.signal,
+          })
+        : undefined;
       const sdkCues: string[] = [];
       let turnGate = new AbortController();
       const enqueueSdkCue = createSdkInterruptQueue({
@@ -112,6 +122,13 @@ export function createHolderTurnDriver(deps: {
         const expanded = expandSkillReferences(prompt, skills);
 
         if (!isExternal) {
+          await maybeCompactApiSession({
+            session,
+            userText: expanded,
+            userDataRoot: userDataRootFromVisit(visit),
+            model,
+            signal: stopController.signal,
+          });
           const { visibleText } = await runObservedTurn({
             session,
             signal: input.signal,
@@ -156,6 +173,7 @@ export function createHolderTurnDriver(deps: {
                 ...(deps.approvals ? { approvals: deps.approvals } : {}),
                 ...(deps.askUser ? { askUser: deps.askUser } : {}),
               },
+              ...(compact ?? {}),
             });
           } finally {
             turnSignal.dispose();

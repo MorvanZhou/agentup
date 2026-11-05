@@ -82,7 +82,7 @@ export interface AgentSdkProfile {
    * 粘贴 Key / Token 登录的文案档（Desktop ApiKeyPasteBlock 按此选词条）。
    * 未声明 = 不走粘贴框（除非登录态临时 needs_api_key，则回落 opencode 词条）。
    */
-  apiKeyPaste?: "opencode" | "github-pat" | "deepseek";
+  apiKeyPaste?: "opencode" | "github-pat" | "deepseek" | "anthropic";
 }
 
 /** 专有名用 string；需翻译用 catalog key。 */
@@ -367,6 +367,36 @@ const TEMPLATE_DEFS: TemplateDef[] = [
     models: [],
   },
   {
+    // Anthropic Claude Agent SDK：本机 agent loop；Console API Key（禁未批准的 claude.ai 登录）
+    // 外显名 Claude Code（产品选择）；登录后 models 由 Models API 覆盖
+    id: "claude-agent-sdk",
+    vendorId: "anthropic",
+    vendorLabel: "Claude Code",
+    optionLabel: { key: "provider.option.agentSdk" },
+    label: { key: "provider.template.claude-agent-sdk.label" },
+    kind: "agent-sdk",
+    piProviderId: "claude-agent-sdk",
+    requiresApiKey: false,
+    // 登录前无占位假目录；登录后由 Models API 覆盖写入（无 defaultModelId）
+    hint: { key: "provider.template.claude-agent-sdk.hint" },
+    models: [],
+    agentSdk: {
+      driverId: "claude-code",
+      package: "@anthropic-ai/claude-agent-sdk",
+      // 钉版：平台 optionalDeps（claude-agent-sdk-<os>-<arch>）同号；升级时同步
+      spec: "@anthropic-ai/claude-agent-sdk@0.3.318",
+      // 含平台 native CLI（解压约 230–300MB）
+      sizeHintMb: 300,
+      loginGuide: {
+        command: "paste Anthropic API Key",
+        docUrl: "https://console.anthropic.com/settings/keys",
+      },
+      // 方案 D：投影到 cwd/.claude/skills
+      skillsProjectRel: ".claude/skills",
+      apiKeyPaste: "anthropic",
+    },
+  },
+  {
     // CLI / SDK 接入（形态 B）：任务执行外包给 CodeBuddy agent，阶段 0 只登记目录与状态
     id: "codebuddy-sdk",
     vendorId: "codebuddy",
@@ -511,7 +541,7 @@ const TEMPLATE_DEFS: TemplateDef[] = [
     kind: "agent-sdk",
     piProviderId: "deepseek-harness-sdk",
     requiresApiKey: false,
-    // 登录前占位；登录后 lifecycle FALLBACK 覆盖写入（与官方目录对齐）
+    // 登录前占位；登录后 lifecycle 写入 curated（无活 list API）
     defaultModelId: "deepseek-flash",
     hint: { key: "provider.template.deepseek-harness-sdk.hint" },
     models: [

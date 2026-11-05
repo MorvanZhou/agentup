@@ -63,7 +63,7 @@ function itemAriaLabel(item: { id: string; label: string }): string {
     </RouterLink>
     <!-- 设置入口：宽屏沉底，窄屏跟在主导航后 -->
     <RouterLink
-      :to="{ name: 'settings', query: { section: 'appearance' } }"
+      :to="{ name: 'settings', query: { section: 'provider' } }"
       class="app-no-drag relative grid size-12 place-items-center rounded-lg text-shell-muted no-underline transition duration-200 hover:bg-accent/10 hover:text-accent min-[730px]:mt-auto"
       active-class=""
       exact-active-class=""

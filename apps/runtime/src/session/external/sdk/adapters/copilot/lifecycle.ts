@@ -1,4 +1,5 @@
 import { ConfigError } from "../../../../../config/load.js";
+import { throwModelCatalogUnavailable } from "../../../../../config/provider/model-list-policy.js";
 import { getProviderTemplate } from "../../../../../config/provider-templates.js";
 import {
   agentSdkModels,
@@ -10,6 +11,7 @@ import {
   agentSdkDir,
   readInstalledSdk,
 } from "../../../../../config/providers/agent-sdk/installer.js";
+import { positiveTokenCount, withTokenLimits } from "../../host/model-meta.js";
 import { disposeAgentSdkRuntimesForTemplate } from "../../host/runtime-pool.js";
 import { acquireCopilotClient } from "./client-pool.js";
 import {
@@ -25,7 +27,7 @@ import { withTimeout } from "./load.js";
  * GitHub Copilot 登录 / 登出 / 探测 / 列模型。
  *
  * SDK 无 LoginAsync（#1109），捆绑 copilot-runtime 也不接受 `login`：
- * - 开始登录 → 打开文档 + needs_api_key（粘贴 fine-grained PAT / gho_）
+ * - 开始登录 → auth_url + needs_api_key（Desktop 手动开申请页；粘贴 fine-grained PAT / gho_）
  * - 若本机已有 Copilot / gh 凭据，getAuthStatus 直接 ready
  */
 
@@ -55,6 +57,8 @@ export interface AgentSdkModel {
   id: string;
   name: string;
   credits?: number;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 const lastModelAttempt = new Map<string, number>();
@@ -127,13 +131,13 @@ export async function submitCopilotApiKey(
   if (label) writeCopilotGithubToken(userDataRoot, templateId, token, label);
   setAgentSdkState(userDataRoot, templateId, "ready");
   setAgentSdkAccountLabel(userDataRoot, templateId, label);
-  // 活目录落盘；拉失败也写 auto 占位 + 记冷却，避免 ensure 立刻再开一次 CLI
+  // 活目录落盘；拉失败写空（禁 auto FALLBACK 假目录），记冷却避免 ensure 连打
   lastModelAttempt.set(templateId, Date.now());
-  if (verified.models?.length) {
-    setAgentSdkModels(userDataRoot, templateId, verified.models);
-  } else {
-    setAgentSdkModels(userDataRoot, templateId, [...FALLBACK_MODELS]);
-  }
+  setAgentSdkModels(
+    userDataRoot,
+    templateId,
+    verified.models?.length ? verified.models : [],
+  );
   return {
     auth_url: null,
     state: "ready",
@@ -167,8 +171,8 @@ export async function fetchCopilotModels(
       throw new ConfigError(listed.error);
     }
     const models = normalizeModels(listed.raw);
-    // 活目录为空才回落；有活列表则合并 auto 占位
-    if (!models.length) return [...FALLBACK_MODELS];
+    // 空活目录：统一提示，禁 auto FALLBACK
+    if (!models.length) throwModelCatalogUnavailable();
     return mergeWithAuto(models);
   } finally {
     lease.release();
@@ -270,10 +274,11 @@ async function verifyAndListModels(
       const listed = await listModelsOnce(lease.value.client);
       if (listed.raw != null) {
         const normalized = normalizeModels(listed.raw);
-        const models = normalized.length ? mergeWithAuto(normalized) : [...FALLBACK_MODELS];
+        // 空目录不写 FALLBACK；submit 侧会落空列表并提示刷新
+        const models = normalized.length ? mergeWithAuto(normalized) : [];
         return { ok: true, label, models };
       }
-      // 鉴权已过；目录网络失败时仍 ready，占位留给用户稍后刷新
+      // 鉴权已过；目录网络失败时仍 ready，models 缺省 → submit 写空
       return { ok: true, label };
     } finally {
       lease.release();
@@ -406,6 +411,7 @@ export function normalizeModels(raw: unknown): AgentSdkModel[] {
       label?: unknown;
       displayName?: unknown;
       billing?: unknown;
+      capabilities?: unknown;
     };
     const id = typeof row.id === "string" ? row.id.trim() : "";
     if (!id || seen.has(id)) continue;
@@ -415,11 +421,36 @@ export function normalizeModels(raw: unknown): AgentSdkModel[] {
       (typeof row.displayName === "string" && row.displayName.trim()) ||
       id;
     const credits = creditsOf(row.billing);
+    // 官方 RPC / CAPI：capabilities.limits.max_context_window_tokens
+    const limits = copilotLimitsOf(row.capabilities);
     seen.add(id);
-    out.push(credits != null ? { id, name, credits } : { id, name });
+    out.push(
+      withTokenLimits({
+        id,
+        name,
+        ...(credits != null ? { credits } : {}),
+        ...(limits.contextWindow === undefined ? {} : { contextWindow: limits.contextWindow }),
+        ...(limits.maxTokens === undefined ? {} : { maxTokens: limits.maxTokens }),
+      }),
+    );
     if (out.length >= MAX_MODELS) break;
   }
   return out;
+}
+
+/** Copilot models.list → capabilities.limits。 */
+function copilotLimitsOf(capabilities: unknown): {
+  contextWindow?: number;
+  maxTokens?: number;
+} {
+  if (!capabilities || typeof capabilities !== "object") return {};
+  const limits = (capabilities as { limits?: unknown }).limits;
+  if (!limits || typeof limits !== "object") return {};
+  const row = limits as Record<string, unknown>;
+  return {
+    contextWindow: positiveTokenCount(row.max_context_window_tokens),
+    maxTokens: positiveTokenCount(row.max_output_tokens),
+  };
 }
 
 function creditsOf(billing: unknown): number | undefined {

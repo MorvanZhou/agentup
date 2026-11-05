@@ -16,9 +16,48 @@ export {
 } from "../external/sdk/host/types.js";
 export {
   transcriptToPrompt,
+  feedMessagesFromBranch,
+  estimateFeedChars,
+  shouldCompactFeed,
+  CONTEXT_COMPACTION_CUSTOM_TYPE,
+  CONTEXT_COMPACTION_PREFIX,
+  MAX_PROMPT_CHARS,
   DEFAULT_RECENT_TURNS,
   type TranscriptPromptOptions,
 } from "../external/sdk/host/prompt.js";
+export {
+  appendContextCompaction,
+  maybeCompactBranch,
+  maybeCompactApiBranch,
+  resolveApiKeepRecentTokens,
+} from "../external/sdk/host/compact.js";
+export {
+  createCompactSummarize,
+  pickApiModelConfig,
+  resolveApiModelConfig,
+  isOpenAiCompatApiModel,
+  summarizeViaOpenAiCompat,
+  summarizeViaModelRuntime,
+  summarizeViaApiModel,
+} from "../external/sdk/host/summarize.js";
+export {
+  createSdkCompactSummarize,
+  clipTranscriptForCompact,
+  buildCompactPrompt,
+  pickSdkCompactTarget,
+  COMPACT_INPUT_WINDOW_RATIO,
+} from "../external/sdk/host/compact-sdk.js";
+export {
+  compactBudgetsFromContextWindow,
+  resolveContextWindowTokens,
+  COMPACT_TRIGGER_RATIO,
+  COMPACT_HARD_TRUNCATE_RATIO,
+  CHARS_PER_TOKEN_ESTIMATE,
+} from "../external/sdk/host/budget.js";
+export {
+  compactTurnOptions,
+  maybeCompactApiSession,
+} from "../external/sdk/host/compact-turn.js";
 export { resultFromSdkMessage } from "../external/sdk/host/result.js";
 export {
   createAgentSdkStreamSimple,

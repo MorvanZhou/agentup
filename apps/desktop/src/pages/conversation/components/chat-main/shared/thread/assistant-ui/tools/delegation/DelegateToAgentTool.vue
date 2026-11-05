@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, inject } from "vue";
 import { BotIcon } from "@lucide/vue";
 import { useAuiState } from "@assistant-ui/vue";
 import type {} from "@assistant-ui/core/store";
 
+import { stubAgentCard } from "../../../../../../../../../shared/components/agent/agent-profile";
+import { agentProfileHostKey } from "../../../../../../../../../shared/components/agent/agent-profile-host";
 import AgentAvatar from "../../../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import { t, tf } from "../../../../../../../../../shared/model/ui/ui-locale";
 import {
@@ -38,6 +40,7 @@ const toolCallId = useAuiState((s) =>
 );
 const roster = injectThreadRoster();
 const delegation = injectThreadDelegation();
+const profileHost = inject(agentProfileHostKey, null);
 
 const fanoutCount = computed(() => fanoutTaskCount(args.value));
 const brief = computed(() => {
@@ -146,6 +149,23 @@ function openProcess(): void {
     toAgentAvatarUrl: agentAvatarUrl.value,
   });
 }
+
+/** 点头像开资料；批量 fanout 无单一 agentId 时不可点。 */
+function openAgentProfile(): void {
+  if (!profileHost || !agentId.value || fanoutCount.value > 1) return;
+  const card = rosterCard.value;
+  profileHost.open({
+    agent: stubAgentCard({
+      agentId: agentId.value,
+      name: agentLabel.value || agentId.value,
+      role: agentRole.value || card?.role,
+      remark: card?.remark,
+      avatarUrl: agentAvatarUrl.value,
+      kind: "recruited",
+      recruited: card?.available ?? true,
+    }),
+  });
+}
 </script>
 
 <template>
@@ -158,7 +178,23 @@ function openProcess(): void {
     :prefer-open="false"
   >
     <template v-if="showAgentIdentity" #summary>
+      <!-- 委托专家头像：点开资料 -->
+      <button
+        v-if="agentId"
+        type="button"
+        class="shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+        :aria-label="tf('agentsViewProfile', { name: agentLabel || 'A' })"
+        @click.stop="openAgentProfile"
+      >
+        <AgentAvatar
+          :name="agentLabel"
+          :avatar-url="agentAvatarUrl"
+          size="sm"
+          round
+        />
+      </button>
       <AgentAvatar
+        v-else
         :name="agentLabel"
         :avatar-url="agentAvatarUrl"
         size="sm"
@@ -197,7 +233,22 @@ function openProcess(): void {
       <div v-if="showBrief" class="min-w-0">
         <div class="mb-1 flex min-w-0 items-center gap-1.5">
           <template v-if="showAgentIdentity">
+            <button
+              v-if="agentId"
+              type="button"
+              class="shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+              :aria-label="tf('agentsViewProfile', { name: agentLabel || 'A' })"
+              @click="openAgentProfile"
+            >
+              <AgentAvatar
+                :name="agentLabel"
+                :avatar-url="agentAvatarUrl"
+                size="xs"
+                round
+              />
+            </button>
             <AgentAvatar
+              v-else
               :name="agentLabel"
               :avatar-url="agentAvatarUrl"
               size="xs"

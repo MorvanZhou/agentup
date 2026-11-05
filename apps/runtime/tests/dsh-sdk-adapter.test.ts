@@ -96,11 +96,21 @@ it("resolveEsmEntryUrl 直接读安装目录 package.json", () => {
   expect(url.endsWith("/lib/index.js")).toBe(true);
 });
 
-it("列模型显式 FALLBACK：V4.1 Flash + V4 Pro，不伪装活目录", () => {
+it("列模型 curated：V4.1 Flash + V4 Pro（无活 list，≠ 拉失败回落）", () => {
   const models = dshModelsFallback();
   expect(models).toEqual([
-    { id: "deepseek-flash", name: "DeepSeek V4.1 Flash" },
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+    {
+      id: "deepseek-flash",
+      name: "DeepSeek V4.1 Flash",
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+    },
+    {
+      id: "deepseek-v4-pro",
+      name: "DeepSeek V4 Pro",
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+    },
   ]);
 });
 

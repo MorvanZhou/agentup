@@ -1,6 +1,11 @@
 import { ConfigError } from "../../../../../config/load.js";
 import { getProviderTemplate } from "../../../../../config/provider-templates.js";
-import { agentSdkModels, setAgentSdkModels } from "../../../../../config/provider/index.js";
+import {
+  agentSdkModels,
+  setAgentSdkModels,
+  throwModelCatalogUnavailable,
+} from "../../../../../config/provider/index.js";
+import { positiveTokenCount, withTokenLimits } from "../../host/model-meta.js";
 import { installedCliPath, loadCodebuddyModule, withTimeout, type CodebuddySession } from "./load.js";
 
 const MODEL_QUERY_TIMEOUT_MS = 30_000;
@@ -11,6 +16,8 @@ export interface AgentSdkModel {
   id: string;
   name: string;
   credits?: number;
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 const lastAttempt = new Map<string, number>();
@@ -39,9 +46,11 @@ export async function fetchAgentSdkModels(
     if (!models.length) {
       const query = session.getAvailableModels;
       if (typeof query !== "function") throw new ConfigError("本地 SDK 不支持查询模型");
-      models = normalizeModels(await withTimeout(query.call(session), MODEL_QUERY_TIMEOUT_MS));
+      const plain = await withTimeout(query.call(session), MODEL_QUERY_TIMEOUT_MS);
+      models = normalizeModels(plain);
     }
-    if (!models.length) throw new ConfigError("本地接入没有返回可用模型");
+    // 空活目录：统一 MODEL_CATALOG_UNAVAILABLE（禁假目录）
+    if (!models.length) throwModelCatalogUnavailable();
     return models;
   } finally {
     try {
@@ -94,13 +103,22 @@ export async function syncAgentSdkModelsAfterLogin(
   }
 }
 
-function normalizeModels(raw: unknown): AgentSdkModel[] {
+/** 测例 / 探针共用：归一 CodeBuddy 目录行（含窗口字段）。 */
+export function normalizeCodebuddyModels(raw: unknown): AgentSdkModel[] {
   if (!Array.isArray(raw)) return [];
   const out: AgentSdkModel[] = [];
   const seen = new Set<string>();
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
-    const record = item as { modelId?: unknown; id?: unknown; name?: unknown; credits?: unknown };
+    const record = item as {
+      modelId?: unknown;
+      id?: unknown;
+      name?: unknown;
+      credits?: unknown;
+      maxInputTokens?: unknown;
+      maxOutputTokens?: unknown;
+      contextWindow?: unknown;
+    };
     const id =
       typeof record.modelId === "string"
         ? record.modelId.trim()
@@ -111,10 +129,35 @@ function normalizeModels(raw: unknown): AgentSdkModel[] {
     const name = (typeof record.name === "string" && record.name.trim()) || id;
     seen.add(id);
     const credits = creditRateOf(record.credits);
-    out.push({ id, name, ...(credits === undefined ? {} : { credits }) });
+    // 优先 maxInputTokens；否则 contextWindow 数值或 { defaultLength }
+    const contextWindow =
+      positiveTokenCount(record.maxInputTokens) ?? readCodebuddyContextWindow(record.contextWindow);
+    const maxTokens = positiveTokenCount(record.maxOutputTokens);
+    out.push(
+      withTokenLimits({
+        id,
+        name,
+        ...(credits === undefined ? {} : { credits }),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
+      }),
+    );
     if (out.length >= MAX_AGENT_SDK_MODELS) break;
   }
   return out;
+}
+
+function normalizeModels(raw: unknown): AgentSdkModel[] {
+  return normalizeCodebuddyModels(raw);
+}
+
+/** CodeBuddy：纯数字，或 `{ defaultLength }` / `{ default }`。 */
+function readCodebuddyContextWindow(value: unknown): number | undefined {
+  const direct = positiveTokenCount(value);
+  if (direct !== undefined) return direct;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const row = value as { defaultLength?: unknown; default?: unknown };
+  return positiveTokenCount(row.defaultLength) ?? positiveTokenCount(row.default);
 }
 
 export function creditRateOf(value: unknown): number | undefined {

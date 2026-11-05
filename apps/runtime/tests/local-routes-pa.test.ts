@@ -215,16 +215,28 @@ it("stages group attachments with the same name format as one-to-one chats", asy
   const headers = { authorization: "Bearer token", "content-type": "application/json" };
   try {
     // 群 store 落一个最小房间记录，绕开需要真实 backend 的建群流程
+    // members 必填：loadIndex → normalize 会 resolveDefaultHolderId(members)
     const groupsDir = path.join(root, "users", "patient", ".runtime", "groups");
     fs.mkdirSync(groupsDir, { recursive: true });
     fs.writeFileSync(
       path.join(groupsDir, "g1.json"),
       JSON.stringify({
         version: 3,
+        id: "g1",
         userId: "patient",
+        title: "附件群",
+        members: [
+          { agentId: "a1", name: "甲" },
+          { agentId: "a2", name: "乙" },
+        ],
         currentSessionId: "s0",
         sessionIds: [],
+        holderId: null,
+        holderSpeaking: false,
+        phase: "idle",
+        taskIds: [],
         pendingDelegations: [],
+        queue: [],
       }),
     );
 

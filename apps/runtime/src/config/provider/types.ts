@@ -42,6 +42,8 @@ export interface AvailableModelView {
   custom: boolean;
   /** credit 消耗倍率；只有本地 App 报得出来，API 服务商没有 */
   credits?: number;
+  /** 上下文窗口（token）；本地 SDK / 目录缓存有才显示 */
+  contextWindow?: number;
 }
 
 /**
@@ -64,6 +66,10 @@ export interface AgentSdkModel {
   name: string;
   /** credit 消耗倍率（如 1.33）；拿不到就没有 */
   credits?: number;
+  /** 上下文窗口（token）；上游有稳定数值才写 */
+  contextWindow?: number;
+  /** 单次输出上限（token）；有才写 */
+  maxTokens?: number;
 }
 
 /** CodeBuddy 登录站点：internal=中国站，external=国际站。 */
@@ -107,7 +113,7 @@ export interface AgentSdkView {
   /** 本机已选 / 上次登录站点；未选过为 undefined */
   authEnvironment?: AgentSdkAuthEnvironment;
   /** 粘贴 Key 文案档；未声明 = 无粘贴框能力 */
-  apiKeyPaste?: "opencode" | "github-pat" | "deepseek";
+  apiKeyPaste?: "opencode" | "github-pat" | "deepseek" | "anthropic";
 }
 
 export interface ProviderSettingsView {

@@ -22,22 +22,35 @@ import {
 /**
  * DeepSeek Harness 登录 / 登出 / 探测 / 列模型。
  *
- * 无 OAuth：开始登录 → 打开平台 API Keys 页 + needs_api_key；
- * 粘贴后写入隔离 home，列模型走显式 FALLBACK（公开 SDK 无 models.list）。
+ * 无 OAuth：开始登录 → auth_url + needs_api_key（Desktop 不自动开浏览器，粘贴框前手动开）；
+ * 粘贴后写入隔离 home。公开 SDK 无 models.list → curated 白名单（≠ 拉失败假回落）。
  */
 
 /** 平台 API Key 页；测例锁定，改版须重审。 */
 export const DSH_API_KEY_PAGE = "https://platform.deepseek.com/api_keys";
 
 /**
- * 公开 SDK 无 models.list → 显式 FALLBACK。
+ * curated：无活 list API 时的正式目录（≠ 拉失败假回落）。
  * 对齐官方 llm-deepseek 默认目录（V4.1 Flash + V4 Pro）；
  * 旧 id `deepseek-v4-flash` 已退休，仅作兼容别名，勿再当默认。
+ * 窗口：官方定价页 CONTEXT LENGTH=1M、MAX OUTPUT=384K；
+ * llm-deepseek `defaultContextWindow=1_000_000`（无 models.list 可拉）。
+ * @see https://api-docs.deepseek.com/quick_start/pricing/
  * @see https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm-deepseek/README.md
  */
-const FALLBACK_MODELS: ExternalModel[] = [
-  { id: "deepseek-flash", name: "DeepSeek V4.1 Flash" },
-  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+const CURATED_MODELS: ExternalModel[] = [
+  {
+    id: "deepseek-flash",
+    name: "DeepSeek V4.1 Flash",
+    contextWindow: 1_000_000,
+    maxTokens: 384_000,
+  },
+  {
+    id: "deepseek-v4-pro",
+    name: "DeepSeek V4 Pro",
+    contextWindow: 1_000_000,
+    maxTokens: 384_000,
+  },
 ];
 
 export interface LoginResult {
@@ -103,7 +116,7 @@ export async function submitDshApiKey(
   }
 
   writeDshApiKey(userDataRoot, templateId, value, "DeepSeek");
-  setAgentSdkModels(userDataRoot, templateId, [...FALLBACK_MODELS]);
+  setAgentSdkModels(userDataRoot, templateId, [...CURATED_MODELS]);
   return readyResult(userDataRoot, templateId);
 }
 
@@ -115,14 +128,13 @@ export async function logoutDsh(userDataRoot: string, templateId: string): Promi
 }
 
 /**
- * 公开 SDK / CLI 均无稳定 models.list → 显式 FALLBACK。
- * 勿伪装成账号可用发现；实录写明数据源。
+ * curated：公开 SDK / CLI 均无稳定 models.list（≠ 拉失败假回落）。
  */
 export async function fetchDshModels(
   _userDataRoot: string,
   _templateId: string,
 ): Promise<ExternalModel[]> {
-  return [...FALLBACK_MODELS];
+  return [...CURATED_MODELS];
 }
 
 export async function refreshDshModels(
@@ -143,7 +155,7 @@ export async function ensureDshModels(
 }
 
 export function dshModelsFallback(): ExternalModel[] {
-  return [...FALLBACK_MODELS];
+  return [...CURATED_MODELS];
 }
 
 function readyResult(userDataRoot: string, templateId: string): LoginResult {

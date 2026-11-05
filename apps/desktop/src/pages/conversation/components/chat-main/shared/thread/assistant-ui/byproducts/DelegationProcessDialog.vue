@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, inject, ref, watch } from "vue";
 
 import { DesktopApi } from "../../../../../../../../shared/api/runtime";
+import { stubAgentCard } from "../../../../../../../../shared/components/agent/agent-profile";
+import { agentProfileHostKey } from "../../../../../../../../shared/components/agent/agent-profile-host";
 import AgentAvatar from "../../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import AppDialog from "../../../../../../../../shared/components/AppDialog.vue";
 import { showToast } from "../../../../../../../../shared/model/ui/toast";
@@ -35,8 +37,24 @@ const {
 
 const api = new DesktopApi();
 const cancelling = ref(false);
+const profileHost = inject(agentProfileHostKey, null);
 
 const agentName = computed(() => props.target?.toAgentName?.trim() || t("assistLabel"));
+const canOpenProfile = computed(() => Boolean(profileHost && props.target?.toAgentId?.trim()));
+
+function openAgentProfile(): void {
+  const id = props.target?.toAgentId?.trim();
+  if (!profileHost || !id) return;
+  profileHost.open({
+    agent: stubAgentCard({
+      agentId: id,
+      name: agentName.value || id,
+      avatarUrl: props.target?.toAgentAvatarUrl,
+      kind: "recruited",
+      recruited: true,
+    }),
+  });
+}
 
 const title = computed(() => {
   const name = props.target?.toAgentName?.trim();
@@ -109,7 +127,23 @@ async function cancelTask(): Promise<void> {
     @update:open="onOpen"
   >
     <template #leading>
+      <!-- 过程弹窗标题旁头像：点开资料 -->
+      <button
+        v-if="canOpenProfile"
+        type="button"
+        class="shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+        :aria-label="tf('agentsViewProfile', { name: agentName })"
+        @click="openAgentProfile"
+      >
+        <AgentAvatar
+          :name="agentName"
+          :avatar-url="target?.toAgentAvatarUrl"
+          size="md"
+          round
+        />
+      </button>
       <AgentAvatar
+        v-else
         :name="agentName"
         :avatar-url="target?.toAgentAvatarUrl"
         size="md"

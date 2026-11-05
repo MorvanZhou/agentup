@@ -1,4 +1,5 @@
 import type {
+  ExternalCompactRequest,
   ExternalDriver,
   ExternalDriverCapabilities,
   ExternalLoginInput,
@@ -6,6 +7,7 @@ import type {
   ExternalTurnRequest,
   WorkerResult,
 } from "../../contract.js";
+import { collectCompactSummary } from "../../host/collect-compact-summary.js";
 import { hasDshApiKey } from "./home.js";
 import {
   checkDshLogin,
@@ -14,7 +16,11 @@ import {
   startDshLogin,
 } from "./lifecycle.js";
 import { loadDshModule, type DshHarness, type DshHarnessNotification } from "./load.js";
-import { dshHarnessOptionsOf, runDshAskUser } from "./options.js";
+import {
+  dshCompactHarnessOptionsOf,
+  dshHarnessOptionsOf,
+  runDshAskUser,
+} from "./options.js";
 import { mirrorDshRun, workerResultFromDshMessage } from "./stream.js";
 
 const CAPABILITIES: ExternalDriverCapabilities = {
@@ -22,6 +28,7 @@ const CAPABILITIES: ExternalDriverCapabilities = {
   // env + cordis 覆盖 system-prompt.personaPrefix（完整 sdk 不内建读 env）
   systemPromptMode: "replace",
   askUserToolNames: ["ask_user", "ask_user_question", "AskUserQuestion"],
+  compactSummarize: true,
 };
 
 /**
@@ -129,5 +136,49 @@ export const dshDriver: ExternalDriver = {
 
   normalizeResult(message: unknown): WorkerResult | null {
     return workerResultFromDshMessage(message);
+  },
+
+  async compactSummarize(input: ExternalCompactRequest): Promise<string> {
+    if (!hasDshApiKey(input.userDataRoot, input.templateId)) {
+      throw new Error("尚未登录 DeepSeek Harness（请先在设置里粘贴 API Key）");
+    }
+    const sdk = await loadDshModule(input.userDataRoot, input.templateId);
+    const { options } = dshCompactHarnessOptionsOf(input);
+    const harness: DshHarness = new sdk.DeepSeekHarness(options);
+    harness.client.start();
+    harness.client.onRequest(async (method) => {
+      if (method !== "approval/request") {
+        throw new Error(`Unsupported request: ${method}`);
+      }
+      // 压缩回合：拒绝工具审批
+      return { outcome: "denied" };
+    });
+
+    let pushNotification: ((n: DshHarnessNotification) => void) | null = null;
+    const runPromise = (async () => {
+      await harness.start();
+      return harness.run(input.prompt, {
+        onNotification: (notification) => {
+          pushNotification?.(notification);
+        },
+      });
+    })();
+
+    const onAbort = () => {
+      void harness.close().catch(() => undefined);
+    };
+    input.abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      const messages = mirrorDshRun(runPromise, (push) => {
+        pushNotification = push;
+      });
+      return await collectCompactSummary(messages, {
+        normalizeResult: workerResultFromDshMessage,
+      });
+    } finally {
+      input.abortController.signal.removeEventListener("abort", onAbort);
+      await harness.close().catch(() => undefined);
+    }
   },
 };

@@ -4,6 +4,7 @@ import {
   readInstalledSdk,
 } from "../../../config/providers/agent-sdk/installer.js";
 import { claudeCodeDriver } from "./adapters/claude-code/index.js";
+import { resolveClaudeCliPath } from "./adapters/claude-code/load.js";
 import { codebuddyDriver } from "./adapters/codebuddy/index.js";
 import { installedCliPath as codebuddyCliPath } from "./adapters/codebuddy/load.js";
 import { codexDriver } from "./adapters/codex/index.js";
@@ -62,6 +63,9 @@ export function installedCliPathFor(userDataRoot: string, templateId: string): s
   }
   if (profile.driverId === "dsh") {
     return resolveDshCliPath(userDataRoot, templateId);
+  }
+  if (profile.driverId === "claude-code") {
+    return resolveClaudeCliPath(userDataRoot, templateId);
   }
   // 其它厂商：有 CLI 时再按 profile 扩展；默认读安装记录
   return readInstalledSdk(agentSdkDir(userDataRoot, templateId), profile.package)?.cliPath ?? null;

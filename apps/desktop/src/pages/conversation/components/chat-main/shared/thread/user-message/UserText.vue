@@ -5,6 +5,10 @@ import { computed, ref, watch } from "vue";
 
 import { useDesktop } from "../../../../../../../app/desktop";
 import { DesktopApi } from "../../../../../../../shared/api/runtime";
+import {
+  loadInvocableSkills,
+  peekInvocableSkills,
+} from "../../../../../composables/invocable-skills-cache";
 import { useOpenWorkspaceFile } from "../../../../../composables/useOpenWorkspaceFile";
 import { splitEmojiText } from "../../../../../model/composer/emoji-data";
 import {
@@ -27,12 +31,6 @@ import SkillChip from "../composer/chips/SkillChip.vue";
 const text = useAuiState((s) =>
   s.part.type === "text" ? stripSyntheticImageCaption(s.part.text) : "",
 );
-const partitioned = computed(() =>
-  partitionDisplayAttachments(segmentDisplayMessage(text.value)),
-);
-const files = computed(() => partitioned.value.files);
-const body = computed(() => partitioned.value.body);
-const hasBody = computed(() => body.value.length > 0);
 
 const { openWorkspaceFile } = useOpenWorkspaceFile();
 
@@ -42,7 +40,44 @@ const surface = injectChatSurface();
 const extras = injectThreadExtras();
 const injectedAgentId = injectThreadAgentId();
 const { session } = useDesktop();
+/** 只高亮当前 agent 真实存在的 skill；未加载前用空集，避免把 /compact 等误成芯片。 */
+const knownSkillNames = ref<ReadonlySet<string>>(new Set());
 const previews = ref(new Map<string, string>());
+
+watch(
+  () =>
+    [session.value?.token ?? "", session.value?.userId ?? "", injectedAgentId] as const,
+  ([token, userId, agentId]) => {
+    if (!token || !userId || !agentId) {
+      knownSkillNames.value = new Set();
+      return;
+    }
+    const cached = peekInvocableSkills(userId, agentId);
+    if (cached) {
+      knownSkillNames.value = new Set(cached.map((skill) => skill.name));
+      return;
+    }
+    // 先空集再异步填充：未知 /name 在加载完成前也不高亮
+    knownSkillNames.value = new Set();
+    void loadInvocableSkills(token, agentId, userId, api)
+      .then((list) => {
+        if ((session.value?.userId ?? "") !== userId || injectedAgentId !== agentId) return;
+        knownSkillNames.value = new Set(list.map((skill) => skill.name));
+      })
+      .catch(() => {
+        if ((session.value?.userId ?? "") !== userId || injectedAgentId !== agentId) return;
+        knownSkillNames.value = new Set();
+      });
+  },
+  { immediate: true },
+);
+
+const partitioned = computed(() =>
+  partitionDisplayAttachments(segmentDisplayMessage(text.value, knownSkillNames.value)),
+);
+const files = computed(() => partitioned.value.files);
+const body = computed(() => partitioned.value.body);
+const hasBody = computed(() => body.value.length > 0);
 
 watch(
   files,

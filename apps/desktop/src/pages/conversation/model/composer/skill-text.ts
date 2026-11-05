@@ -76,7 +76,8 @@ export function insertSkillReference(
 
 /**
  * 将正文拆成 text / skill / mention / file 段（用于内联芯片）。
- * `knownNames` 有值时只高亮集合内 skill 名称；省略则高亮任意合法 `/skill-name` 形态（历史气泡）。
+ * `knownNames` 有值时只高亮集合内 skill 名称；省略则高亮任意合法 `/skill-name` 形态。
+ * 用户气泡请经 `segmentDisplayMessage(..., knownNames)` 传入当前 agent 的集合（可空）。
  * `knownMentions` 有值时把完整 `@成员名` 收成 mention 芯片（须带空格/标点边界）。
  */
 export function segmentComposerText(
@@ -150,8 +151,13 @@ export function segmentComposerText(
 
 /**
  * 历史/用户气泡：前置 `<skill>` 块 + 正文内 `/name`，拆成内联段（与 Composer 芯片同形）。
+ * `knownNames` 有值时正文只高亮集合内 skill；前置 `<skill>` 块仍一律成芯片（已由 runtime 展开）。
+ * 气泡展示应传入当前 agent 的 skill 名（可空集），避免把 `/compact` 等非 skill 误高亮。
  */
-export function segmentDisplayMessage(text: string): ComposerSegment[] {
+export function segmentDisplayMessage(
+  text: string,
+  knownNames?: ReadonlySet<string>,
+): ComposerSegment[] {
   const leading = splitLeadingSkillBlocks(text);
   const segments: ComposerSegment[] = [];
   for (const name of leading.skills) {
@@ -163,7 +169,7 @@ export function segmentDisplayMessage(text: string): ComposerSegment[] {
   if (segments.length && !/^\s/.test(body)) {
     segments.push({ type: "text", value: " " });
   }
-  segments.push(...segmentComposerText(body));
+  segments.push(...segmentComposerText(body, knownNames));
   return mergeTextSegments(segments);
 }
 

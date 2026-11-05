@@ -1,4 +1,5 @@
 import { ConfigError } from "./load.js";
+import { MODEL_CATALOG_UNAVAILABLE } from "./provider/model-list-policy.js";
 import type { ProviderTemplateKind } from "./provider-templates.js";
 
 const MAX_MODELS = 200;
@@ -39,8 +40,9 @@ export async function discoverRemoteModels(input: {
     }
   }
 
+  // 活拉取失败 / 空列表：统一提示，禁止静默塞假目录
   if (openAiError instanceof ConfigError) throw openAiError;
-  throw new ConfigError("无法获取模型列表，请检查服务地址与密钥");
+  throw new ConfigError(MODEL_CATALOG_UNAVAILABLE);
 }
 
 async function fetchOpenAiModels(url: string, headers: Record<string, string>): Promise<string[]> {

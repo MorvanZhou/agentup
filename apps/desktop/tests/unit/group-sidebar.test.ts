@@ -63,6 +63,7 @@ function room(partial: Partial<GroupRoom> & Pick<GroupRoom, "id">): GroupRoom {
     lines: [],
     phase: "idle",
     holderId: null,
+    defaultHolderId: "",
     holderSpeaking: false,
     taskIds: [],
     pendingDelegations: [],

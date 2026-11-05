@@ -12,6 +12,7 @@ import {
   threadRosterKey,
   type ThreadRoster,
 } from "../../src/pages/conversation/model/thread/thread-roster.js";
+import { agentProfileHostKey } from "../../src/shared/components/agent/agent-profile-host.js";
 import { mountView } from "./mount-view.js";
 
 const assist: AssistAgentRef = {
@@ -29,20 +30,25 @@ function mountPanel(
   roster: ThreadRoster,
   openProcess: ThreadDelegationApi["openProcess"] = () => undefined,
   assists: AssistAgentRef[] = [assist],
+  openProfile?: (input: { agent: { agentId: string } }) => void,
 ): HTMLElement {
+  const provide: Array<[symbol | string, unknown]> = [
+    [threadRosterKey, ref(roster)],
+    [
+      threadDelegationKey,
+      ref<ThreadDelegationApi>({
+        registerStarted: () => undefined,
+        resolveTaskId: () => undefined,
+        openProcess,
+      }),
+    ],
+  ];
+  if (openProfile) {
+    provide.push([agentProfileHostKey, { open: openProfile }]);
+  }
   return mountView(AssistAgentsPanel, {
     props: { assists, variant: "panel" },
-    provide: [
-      [threadRosterKey, ref(roster)],
-      [
-        threadDelegationKey,
-        ref<ThreadDelegationApi>({
-          registerStarted: () => undefined,
-          resolveTaskId: () => undefined,
-          openProcess,
-        }),
-      ],
-    ],
+    provide,
   });
 }
 
@@ -93,6 +99,32 @@ it("花名册有头像时用 img，详情与去对话可点", () => {
 
   host.querySelector<HTMLButtonElement>('button[aria-label="前往 Cody 的对话"]')?.click();
   expect(opened).toEqual(["cody"]);
+});
+
+it("点协助头像开资料", () => {
+  const profiles: string[] = [];
+  const host = mountPanel(
+    {
+      agents: [
+        {
+          agentId: "cody",
+          name: "Cody",
+          role: "工程师",
+          remark: "",
+          avatarUrl: "https://cdn.example/cody.webp",
+          available: true,
+        },
+      ],
+      openAgent: () => "opened",
+    },
+    () => undefined,
+    [assist],
+    (input) => {
+      profiles.push(input.agent.agentId);
+    },
+  );
+  host.querySelector<HTMLButtonElement>('button[aria-label="查看 Cody"]')?.click();
+  expect(profiles).toEqual(["cody"]);
 });
 
 it("花名册缺字段时仍渲染占位首字，按钮仍可触发", () => {

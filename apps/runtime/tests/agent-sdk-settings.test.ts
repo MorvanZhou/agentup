@@ -58,6 +58,38 @@ it("starts as not_installed and never disabled by stale files", () => {
   expect(sdk?.state).toBe("not_installed");
 });
 
+it("盘上已有包但状态丢失时，读设置对齐为 installed（勿仍显示开始接入）", () => {
+  const root = tempRoot();
+  const pkgDir = path.join(
+    root,
+    "agent-sdks",
+    "codebuddy-sdk",
+    "node_modules",
+    "@tencent-ai",
+    "agent-sdk",
+  );
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(pkgDir, "package.json"),
+    JSON.stringify({ name: "@tencent-ai/agent-sdk", version: "0.3.295" }),
+  );
+
+  const sdk = readProviderSettings(root, {}, "zh").agentSdks.find(
+    (item) => item.templateId === "codebuddy-sdk",
+  );
+  expect(sdk).toMatchObject({
+    state: "installed",
+    installedVersion: "0.3.295",
+  });
+  // 再读仍稳定；不覆盖已登录
+  setAgentSdkState(root, "codebuddy-sdk", "ready", { installedVersion: "0.3.295" });
+  expect(
+    readProviderSettings(root, {}, "zh").agentSdks.find(
+      (item) => item.templateId === "codebuddy-sdk",
+    )?.state,
+  ).toBe("ready");
+});
+
 it("migrates a v2 provider.json without losing connections", () => {
   const root = tempRoot();
   writeV2(root);

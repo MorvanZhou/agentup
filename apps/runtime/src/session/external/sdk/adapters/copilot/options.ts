@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { ExternalTurnRequest } from "../../contract.js";
+import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
 import {
   formatAskUserResultText,
   type AskUserAnswer,
@@ -9,6 +9,7 @@ import {
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
 import { agentSdkSkillsProjectRel } from "../../../../../config/provider-templates.js";
+import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
 
 /**
  * Host ExternalTurnRequest → CopilotClient / createSession / send 选项。
@@ -91,6 +92,35 @@ export function copilotSendOptionsOf(input: ExternalTurnRequest): Record<string,
     prompt: input.prompt,
     ...(attachments.length > 0 ? { attachments } : {}),
   };
+}
+
+/** 压缩：无 MCP/skills/AskUser；system 仅压缩器；permission 恒 deny。 */
+export function copilotCompactSessionConfigOf(
+  input: ExternalCompactRequest,
+  extras: {
+    denyAll: (request: unknown, invocation?: unknown) => unknown;
+  },
+): Record<string, unknown> {
+  const model =
+    input.modelId && input.modelId !== "default" && input.modelId !== "auto"
+      ? { model: input.modelId }
+      : { model: "auto" };
+  return {
+    ...model,
+    workingDirectory: input.cwd,
+    trustWorkingDirectory: "session",
+    infiniteSessions: { enabled: false },
+    enableSessionStore: false,
+    streaming: true,
+    systemMessage: { content: COMPACT_SYSTEM_PROMPT },
+    onPermissionRequest: extras.denyAll,
+  };
+}
+
+export function copilotCompactSendOptionsOf(
+  input: ExternalCompactRequest,
+): Record<string, unknown> {
+  return { prompt: input.prompt };
 }
 
 /** 方案 D：cwd 下 skillsProjectRel 父目录（内含各技能子目录的 SKILL.md）。 */

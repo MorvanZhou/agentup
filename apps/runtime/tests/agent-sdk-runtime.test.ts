@@ -313,49 +313,27 @@ it("占位模型 default 不传给外部 agent", async () => {
   expect(passed.options.model).toBeUndefined();
 });
 
-it("分层重放：最近几轮保留原文，更早的压成一行摘要", () => {
+it("主路径保留全部原文（不再滑动 6 轮 digest）；细节见 sdk-prompt-feed.test.ts", () => {
   const messages = [
     { role: "user", content: "第一轮很长的问题", timestamp: 1 } as Message,
     { role: "assistant", content: [{ type: "text", text: "第一轮很长的回答" }], timestamp: 2 } as Message,
     { role: "user", content: "最近的问题", timestamp: 3 } as Message,
     { role: "assistant", content: [{ type: "text", text: "最近的回答" }], timestamp: 4 } as Message,
   ];
-  const prompt = transcriptToPrompt(messages, { recentTurns: 1, digestChars: 6 });
-  expect(prompt).toContain("以下是更早对话的摘要");
-  // 最近的这一轮是原文
+  const prompt = transcriptToPrompt(messages);
+  expect(prompt).toContain("用户：第一轮很长的问题");
   expect(prompt).toContain("用户：最近的问题");
-  expect(prompt).toContain("助手：最近的回答");
-  // 更早的被压短（原文是「用户：第一轮很长的问题」）
-  expect(prompt).not.toContain("用户：第一轮很长的问题");
-  expect(prompt).toContain("第一轮");
+  expect(prompt).not.toContain("以下是更早对话的摘要");
 });
 
-it("默认保留最近 6 轮原文，更早的进摘要", () => {
-  const messages = Array.from(
-    { length: 8 },
-    (_, index) =>
-      ({
-        role: "user",
-        content: index < 2 ? `很早很早很早的第${index}轮内容` : `第${index}轮`,
-        timestamp: index + 1,
-      }) as Message,
-  );
-  const prompt = transcriptToPrompt(messages, { digestChars: 10 });
-  expect(prompt).toContain("以下是更早对话的摘要");
-  // 最近 6 轮（索引 2..7）是原文
-  expect(prompt).toContain("用户：第7轮");
-  // 更早的两条只留摘要，原文不再完整出现
-  expect(prompt).not.toContain("很早很早很早的第0轮内容");
-});
-
-it("超出预算时先丢更早的摘要，并明说省略了几条（不静默截尾）", () => {
+it("超出预算时先丢更早整行，并明说省略了几条（回退路径）", () => {
   const messages = [
-    { role: "user", content: "旧的一条", timestamp: 1 } as Message,
-    { role: "user", content: "旧的两条", timestamp: 2 } as Message,
+    { role: "user", content: "旧的一条xxxx", timestamp: 1 } as Message,
+    { role: "user", content: "旧的两条yyyy", timestamp: 2 } as Message,
     { role: "user", content: "最新的问题", timestamp: 3 } as Message,
   ];
-  const prompt = transcriptToPrompt(messages, { recentTurns: 1, maxChars: 30 });
-  expect(prompt).toContain("已省略更早 2 条消息");
+  const prompt = transcriptToPrompt(messages, { maxChars: 28 });
+  expect(prompt).toMatch(/已省略更早 \d+ 条消息/);
   expect(prompt).toContain("最新的问题");
 });
 

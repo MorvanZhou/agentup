@@ -13,6 +13,7 @@ import { decryptSecret, encryptSecret, secretEncryptionReady } from "../../../sh
 import { bumpProviderConfig, providerConfigEpoch } from "../../../shared/model/runtime/provider-config";
 import { showToast } from "../../../shared/model/ui/toast";
 import { readUiLocale, t, tf, uiLocale } from "../../../shared/model/ui/ui-locale";
+import { shouldAutoOpenLoginBrowser } from "../components/sections/app-settings/provider-sdk/sdk-state";
 
 export function useProviderSettings(api = new DesktopApi()) {
   const { session } = useDesktop();
@@ -282,10 +283,11 @@ export function useProviderSettings(api = new DesktopApi()) {
     if (!session.value) return false;
     try {
       settings.value = await api.refreshProviderModels(session.value.token, templateId, locale());
-      if (!options?.quiet) showToast("模型列表已更新", "success");
+      if (!options?.quiet) showToast(t("providerSdkModelsSynced"), "success");
       return true;
     } catch (caught) {
-      showToast(messageOf(caught), "error");
+      // runtime 已统一 MODEL_CATALOG_UNAVAILABLE 文案
+      showToast(messageOf(caught) || t("providerModelsUnavailable"), "error");
       return false;
     }
   }
@@ -315,7 +317,10 @@ export function useProviderSettings(api = new DesktopApi()) {
       const total = targets.length + sdkTargets.length;
       if (ok > 0) {
         notifyProviderConfigChanged();
-        showToast(ok === total ? "模型列表已更新" : `已更新 ${ok}/${total} 个服务商`, "success");
+        showToast(ok === total ? t("providerSdkModelsSynced") : `已更新 ${ok}/${total} 个服务商`, "success");
+      } else {
+        // 全部失败：与单家刷新同一句，禁静默
+        showToast(t("providerModelsUnavailable"), "error");
       }
     } finally {
       busy.value = false;
@@ -475,9 +480,11 @@ export function useProviderSettings(api = new DesktopApi()) {
   const sdkPhase = ref<{ templateId: string; phase: string; detail?: string } | null>(null);
   /** Codex device-auth 等：登录中展示的一次性验证码 */
   const sdkLoginDeviceCode = ref<string | null>(null);
-  /** OpenCode Zen Key 回落：登录中展示粘贴框 */
+  /** OpenCode Zen / Anthropic 等 Key 回落：登录中展示粘贴框 */
   const sdkLoginNeedsApiKey = ref(false);
   const sdkLoginApiKeyDraft = ref("");
+  /** Key 粘贴档申请页；不自动打开，交粘贴框前手动开 */
+  const sdkLoginAuthUrl = ref<string | null>(null);
   /** 取消进行中的登录轮询（含卡在 logging_in） */
   let sdkLoginAbort: AbortController | null = null;
   /** 取消进行中的安装轮询；与登录 Abort 分开，避免互相误杀 */
@@ -604,7 +611,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
-  /** 登录：拿到 authUrl 就交系统浏览器，之后轮询登录态直到 ready。 */
+  /** 登录：OAuth / device-auth 自动开浏览器；Key 粘贴档只展示手动打开入口。 */
   async function loginAgentSdk(
     templateId: string,
     options: { environment?: "internal" | "external" } = {},
@@ -617,22 +624,33 @@ export function useProviderSettings(api = new DesktopApi()) {
     try {
       sdkLoginNeedsApiKey.value = false;
       sdkLoginApiKeyDraft.value = "";
+      sdkLoginAuthUrl.value = null;
       const started = await api.loginAgentSdk(session.value.token, templateId, loginOpts);
       // 先展示验证码再开浏览器，避免用户盯着网页却不知道码在哪
       if (started.deviceCode) sdkLoginDeviceCode.value = started.deviceCode;
-      if (started.needsApiKey) sdkLoginNeedsApiKey.value = true;
+      if (started.needsApiKey) {
+        sdkLoginNeedsApiKey.value = true;
+        sdkLoginAuthUrl.value = started.authUrl;
+      }
       await reload().catch(() => undefined);
-      if (started.authUrl) {
+      // Key 粘贴：不自动 openExternal（已有 Key 免打扰）
+      if (
+        shouldAutoOpenLoginBrowser({
+          authUrl: started.authUrl,
+          needsApiKey: Boolean(started.needsApiKey),
+        })
+      ) {
         const open = window.agentUp?.openExternal;
         if (!open) {
           showToast(t("providerSdkOpenFailed"), "error");
           return;
         }
-        await open(started.authUrl);
+        await open(started.authUrl!);
       }
       if (started.state === "ready") {
         sdkLoginDeviceCode.value = null;
         sdkLoginNeedsApiKey.value = false;
+        sdkLoginAuthUrl.value = null;
         await reload();
         showToast(t("providerSdkLoginDone"), "success");
         return;
@@ -649,11 +667,13 @@ export function useProviderSettings(api = new DesktopApi()) {
         if (result.deviceCode) sdkLoginDeviceCode.value = result.deviceCode;
         if (result.needsApiKey) {
           sdkLoginNeedsApiKey.value = true;
+          if (result.authUrl) sdkLoginAuthUrl.value = result.authUrl;
           return;
         }
         if (result.state === "ready") {
           sdkLoginDeviceCode.value = null;
           sdkLoginNeedsApiKey.value = false;
+          sdkLoginAuthUrl.value = null;
           await reload();
           showToast(t("providerSdkLoginDone"), "success");
           return;
@@ -692,6 +712,22 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
+  /** Key 粘贴框「打开申请页」：仅用户点一下才 openExternal */
+  async function openAgentSdkApiKeyDoc(): Promise<void> {
+    const url = sdkLoginAuthUrl.value?.trim();
+    if (!url) return;
+    const open = window.agentUp?.openExternal;
+    if (!open) {
+      showToast(t("providerSdkOpenFailed"), "error");
+      return;
+    }
+    try {
+      await open(url);
+    } catch {
+      showToast(t("providerSdkOpenFailed"), "error");
+    }
+  }
+
   /** OpenCode Zen / GitHub PAT：提交官网复制的 Key；runtime 内会顺手刷模型 */
   async function submitAgentSdkApiKey(templateId: string): Promise<void> {
     if (!session.value) return;
@@ -705,7 +741,9 @@ export function useProviderSettings(api = new DesktopApi()) {
           ? t("providerSdkGithubPatRequired")
           : paste === "deepseek"
             ? t("providerSdkDeepseekKeyRequired")
-            : t("providerSdkApiKeyRequired"),
+            : paste === "anthropic"
+              ? t("providerSdkAnthropicKeyRequired")
+              : t("providerSdkApiKeyRequired"),
         "error",
       );
       return;
@@ -716,9 +754,10 @@ export function useProviderSettings(api = new DesktopApi()) {
       if (result.state === "ready") {
         sdkLoginNeedsApiKey.value = false;
         sdkLoginApiKeyDraft.value = "";
+        sdkLoginAuthUrl.value = null;
         await reload();
         notifyProviderConfigChanged();
-        // 目录是否已活：占位 / 空 → 提示可手动刷新；已有活列表 → 登录成功即可
+        // 目录是否已活：空 → 提示重新拉取/手动配置（Claude 等禁 FALLBACK 假目录）
         const sdk = settings.value?.agentSdks.find((item) => item.templateId === templateId);
         const catalogLive = Boolean(
           sdk?.models.some((model) => model.id !== "auto" && model.id !== "default"),
@@ -763,6 +802,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     sdkLoginDeviceCode.value = null;
     sdkLoginNeedsApiKey.value = false;
     sdkLoginApiKeyDraft.value = "";
+    sdkLoginAuthUrl.value = null;
     sdkBusy.value = false;
     try {
       settings.value = await api.logoutAgentSdk(session.value.token, templateId, locale());
@@ -785,6 +825,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       sdkLoginDeviceCode.value = null;
       sdkLoginNeedsApiKey.value = false;
       sdkLoginApiKeyDraft.value = "";
+      sdkLoginAuthUrl.value = null;
       settings.value = await api.logoutAgentSdk(session.value.token, templateId, locale());
       notifyProviderConfigChanged();
       showToast(t("providerSdkLogoutDone"), "success");
@@ -850,12 +891,14 @@ export function useProviderSettings(api = new DesktopApi()) {
     sdkLoginDeviceCode,
     sdkLoginNeedsApiKey,
     sdkLoginApiKeyDraft,
+    sdkLoginAuthUrl,
     load,
     startAgentSdkInstall,
     cancelAgentSdkInstall,
     loginAgentSdk,
     checkAgentSdkLogin,
     submitAgentSdkApiKey,
+    openAgentSdkApiKeyDoc,
     cancelAgentSdkLogin,
     logoutAgentSdk,
     uninstallAgentSdk,

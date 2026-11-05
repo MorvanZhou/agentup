@@ -84,6 +84,58 @@ export function removeProviderCatalog(userDataRoot: string, templateId: string):
 }
 
 /**
+ * 本地 SDK 目录写入 model-catalog（压缩预算 / resolveModelLimits 用）。
+ * 有上游窗口就覆盖；缺字段时保留旧值，勿用默认 128k 冲掉已知窗口。
+ * 空列表 → 清掉该供应商缓存（登出）。
+ */
+export function syncAgentSdkCatalog(
+  userDataRoot: string,
+  templateId: string,
+  models: Array<{
+    id: string;
+    name?: string;
+    contextWindow?: number;
+    maxTokens?: number;
+  }>,
+): void {
+  if (!templateId) return;
+  if (models.length === 0) {
+    removeProviderCatalog(userDataRoot, templateId);
+    return;
+  }
+  const previous = readModelCatalog(userDataRoot).providers[templateId]?.models ?? {};
+  const next: Record<string, ModelCatalogEntry> = {};
+  for (const model of models) {
+    const id = typeof model.id === "string" ? model.id.trim() : "";
+    if (!id) continue;
+    const prior = previous[id];
+    const contextWindow =
+      typeof model.contextWindow === "number" && model.contextWindow > 0
+        ? Math.floor(model.contextWindow)
+        : prior?.contextWindow && prior.contextWindow > 0
+          ? prior.contextWindow
+          : DEFAULT_CONTEXT_WINDOW;
+    const maxTokens =
+      typeof model.maxTokens === "number" && model.maxTokens > 0
+        ? Math.floor(model.maxTokens)
+        : prior?.maxTokens && prior.maxTokens > 0
+          ? prior.maxTokens
+          : DEFAULT_MAX_TOKENS;
+    next[id] = {
+      name: (typeof model.name === "string" && model.name.trim()) || prior?.name || id,
+      contextWindow,
+      maxTokens,
+    };
+  }
+  const stored = readModelCatalog(userDataRoot);
+  stored.providers[templateId] = {
+    refreshedAt: new Date().toISOString(),
+    models: next,
+  };
+  persistCatalog(userDataRoot, stored);
+}
+
+/**
  * 按当前连接已知模型 id 刷新该供应商目录缓存。
  * - pi-native / volcengine-ark：整表写入内置元数据（含 contextWindow）
  * - 可发现 / 自定义：为 id 列表写入条目；已有窗口保留，新 id 用默认值

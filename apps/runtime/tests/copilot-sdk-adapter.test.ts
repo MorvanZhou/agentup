@@ -198,15 +198,28 @@ it("isAuthenticated / accountLabelOf 鸭子解析", () => {
   expect(accountLabelOf({ user: { login: "octocat" } })).toBe("octocat");
 });
 
-it("normalizeModels 读 id/label，可选 credits", () => {
+it("normalizeModels 读 id/label，可选 credits 与 contextWindow", () => {
   expect(
     normalizeModels([
-      { id: "gpt-5", label: "GPT-5", billing: { creditsMultiplier: 1.5 } },
+      {
+        id: "gpt-5",
+        label: "GPT-5",
+        billing: { creditsMultiplier: 1.5 },
+        capabilities: {
+          limits: { max_context_window_tokens: 400_000, max_output_tokens: 128_000 },
+        },
+      },
       { id: "auto", label: "Auto" },
       { id: "gpt-5", label: "dup" },
     ]),
   ).toEqual([
-    { id: "gpt-5", name: "GPT-5", credits: 1.5 },
+    {
+      id: "gpt-5",
+      name: "GPT-5",
+      credits: 1.5,
+      contextWindow: 400_000,
+      maxTokens: 128_000,
+    },
     { id: "auto", name: "Auto" },
   ]);
 });

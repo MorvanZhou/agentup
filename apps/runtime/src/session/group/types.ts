@@ -86,6 +86,11 @@ export type GroupRoom = {
   members: GroupMember[];
   lines: GroupLine[];
   holderId: string | null;
+  /**
+   * 尚无执掌者且本句未有效 @ 时，用此人首启。
+   * 须为当前成员；改此字段不切换已有 holderId。
+   */
+  defaultHolderId: string;
   /** 执掌者会话正在处理用户刚说的话。 */
   holderSpeaking: boolean;
   phase: GroupPhase;

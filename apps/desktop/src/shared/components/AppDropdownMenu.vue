@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Component } from "vue";
+import { computed } from "vue";
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -8,21 +9,27 @@ import {
   DropdownMenuTrigger,
 } from "reka-ui";
 
+import AgentAvatar from "./avatar/AgentAvatar.vue";
+
 export type AppDropdownItem = {
   id: string;
   label: string;
   disabled?: boolean;
-  /** 禁用或补充说明（次行小字） */
+  /** 禁用或补充说明（次行小字，如职业） */
   hint?: string;
-  /** 左侧图标（如 Lucide 组件） */
+  /** 左侧图标（如 Lucide 组件）；有头像时优先头像 */
   icon?: Component;
+  /** 左侧头像：展示名（缺省用 label） */
+  avatarName?: string;
+  /** 左侧头像 URL；可与 avatarName 搭配 */
+  avatarUrl?: string;
   /** 危险操作（如解雇），用破坏性语义色 */
   danger?: boolean;
   /** 选项右侧小红点，仅作提示，不含业务语义 */
   dot?: boolean;
 };
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     items: AppDropdownItem[];
     align?: "start" | "center" | "end";
@@ -35,6 +42,10 @@ withDefaults(
 );
 
 defineEmits<{ select: [id: string] }>();
+
+const hasAvatarRow = computed(() =>
+  props.items.some((item) => item.avatarName !== undefined || item.avatarUrl !== undefined),
+);
 </script>
 
 <template>
@@ -47,19 +58,30 @@ defineEmits<{ select: [id: string] }>();
       <DropdownMenuContent
         :align="align"
         :side-offset="sideOffset"
-        class="app-no-drag z-50 min-w-36 rounded-lg border border-rule bg-paper p-1 text-foreground shadow-md"
+        class="app-no-drag z-50 rounded-lg border border-rule bg-paper p-1 text-foreground shadow-md"
+        :class="hasAvatarRow ? 'min-w-56' : 'min-w-36'"
       >
         <DropdownMenuItem
           v-for="item in items"
           :key="item.id"
-          class="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none transition duration-200 data-[disabled]:cursor-not-allowed data-[highlighted]:bg-paper-deep data-[disabled]:opacity-50"
-          :class="item.danger ? 'text-destructive data-[highlighted]:bg-danger-soft' : 'text-foreground'"
+          class="flex cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none transition duration-200 data-[disabled]:cursor-not-allowed data-[highlighted]:bg-paper-deep data-[disabled]:opacity-50"
+          :class="[
+            item.danger ? 'text-destructive data-[highlighted]:bg-danger-soft' : 'text-foreground',
+            item.avatarName !== undefined || item.avatarUrl !== undefined ? 'min-h-10 py-1.5' : 'min-h-8',
+          ]"
           :disabled="item.disabled"
           @select="$emit('select', item.id)"
         >
+          <AgentAvatar
+            v-if="item.avatarName !== undefined || item.avatarUrl !== undefined"
+            :name="item.avatarName || item.label"
+            :avatar-url="item.avatarUrl"
+            size="sm"
+            round
+          />
           <component
             :is="item.icon"
-            v-if="item.icon"
+            v-else-if="item.icon"
             class="size-3.5 shrink-0"
             :class="item.danger ? '' : 'text-muted-foreground'"
             aria-hidden="true"

@@ -19,6 +19,12 @@
  */
 
 export { supportsModelDiscovery } from "../discover-models.js";
+export {
+  MODEL_CATALOG_UNAVAILABLE,
+  modelCatalogUnavailableError,
+  requireNonEmptyModelCatalog,
+  throwModelCatalogUnavailable,
+} from "./model-list-policy.js";
 
 export type {
   AgentSdkAuthEnvironment,

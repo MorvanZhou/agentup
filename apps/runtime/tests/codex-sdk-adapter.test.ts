@@ -280,22 +280,22 @@ it("runStreamed 事件映射成 Host 可投影的正文与工具卡", async () =
   expect(done?.usage?.inputTokens).toBe(1);
 });
 
-it("parseCodexDebugModels：visibility=list 的 slug 进目录，隐藏项跳过", () => {
+it("parseCodexDebugModels：visibility=list 的 slug 进目录，隐藏项跳过，映射 context_window", () => {
   const models = parseCodexDebugModels(`
 noise before
 {
   "models": [
-    { "slug": "gpt-5.4", "display_name": "GPT-5.4", "visibility": "list" },
+    { "slug": "gpt-5.4", "display_name": "GPT-5.4", "visibility": "list", "context_window": 272000 },
     { "slug": "hidden-preview", "visibility": "hidden" },
     { "slug": "gpt-5.4", "visibility": "list" },
-    { "id": "legacy-id", "name": "Legacy", "visibility": "list" }
+    { "id": "legacy-id", "name": "Legacy", "visibility": "list", "max_context_window": 400000 }
   ]
 }
 trailing
 `);
   expect(models).toEqual([
-    { id: "gpt-5.4", name: "GPT-5.4" },
-    { id: "legacy-id", name: "Legacy" },
+    { id: "gpt-5.4", name: "GPT-5.4", contextWindow: 272_000 },
+    { id: "legacy-id", name: "Legacy", contextWindow: 400_000 },
   ]);
 });
 

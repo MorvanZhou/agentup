@@ -936,12 +936,30 @@ export class DesktopApi {
     userId: string,
     title: string,
     members: groupsApi.GroupMember[],
+    defaultHolderId?: string,
   ) {
-    return groupsApi.createGroup(this.http, token, userId, title, members);
+    return groupsApi.createGroup(this.http, token, userId, title, members, defaultHolderId);
   }
 
   renameGroup(token: string, userId: string, groupId: string, title: string) {
     return groupsApi.renameGroup(this.http, token, userId, groupId, title);
+  }
+
+  setGroupMembers(
+    token: string,
+    userId: string,
+    groupId: string,
+    members: groupsApi.GroupMember[],
+    defaultHolderId?: string,
+  ) {
+    return groupsApi.setGroupMembers(
+      this.http,
+      token,
+      userId,
+      groupId,
+      members,
+      defaultHolderId,
+    );
   }
 
   getGroup(token: string, userId: string, groupId: string) {

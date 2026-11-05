@@ -55,6 +55,20 @@ it("falls back to Ollama /api/tags when /v1/models is empty", async () => {
   ).resolves.toEqual(["qwen3:4b", "llama3.2:3b"]);
 });
 
+it("空列表 / 拉失败统一 MODEL_CATALOG_UNAVAILABLE，禁假目录", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ data: [] })),
+  );
+  await expect(
+    discoverRemoteModels({
+      baseUrl: "https://api.example.com/v1",
+      apiKey: "sk-test",
+      kind: "custom-openai",
+    }),
+  ).rejects.toThrow("暂时无法获取可用模型列表，请重新拉取，或手动配置");
+});
+
 it("persists discovered models onto a saved connection", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-discover-"));
   upsertProviderConnection(root, {

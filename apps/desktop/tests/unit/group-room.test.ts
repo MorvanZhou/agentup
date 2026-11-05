@@ -68,7 +68,7 @@ describe("group room", () => {
     expect(host.textContent).toContain("本轮结束后交给 设计师");
     expect(host.textContent).not.toContain("tool:read");
     expect(host.querySelector("[aria-label='提及成员']")).not.toBeNull();
-    expect(host.querySelector("[aria-label='群菜单']")).not.toBeNull();
+    expect(host.querySelector("[aria-label='群设置']")).not.toBeNull();
     expect(host.querySelector("[aria-label='插入 Skill']")).toBeNull();
     expect(host.querySelector("[aria-label='添加附件']")).not.toBeNull();
     expect(host.querySelector("[data-testid='wake-live-message']")).toBeNull();
@@ -127,51 +127,43 @@ describe("group room", () => {
   });
 
   it("clears artifacts unless the confirm checkbox also includes the work directory", async () => {
-    const cleared: boolean[] = [];
-    const host = mountRoom({
-      room: full,
-      token: "t",
-      userId: "u",
-      clearWorkspace: async (includeWork: boolean) => {
-        cleared.push(includeWork);
-      },
-    });
-    host.querySelector<HTMLButtonElement>("[aria-label='群菜单']")?.click();
-    await nextTick();
-    const item = [...document.querySelectorAll("[role='menuitem']")].find((entry) =>
-      entry.textContent?.includes("清空工作区"),
-    );
-    expect(item).toBeTruthy();
-    item?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    await nextTick();
-    const dialog = () =>
-      [...document.querySelectorAll("[role='dialog']")].find((entry) =>
-        entry.textContent?.includes("将清空这个群的输出产物"),
+    async function runClear(includeWork: boolean): Promise<boolean[]> {
+      const cleared: boolean[] = [];
+      const host = mountRoom({
+        room: full,
+        token: "t",
+        userId: "u",
+        clearWorkspace: async (withWork: boolean) => {
+          cleared.push(withWork);
+        },
+      });
+      host.querySelector<HTMLButtonElement>("[aria-label='群设置']")?.click();
+      await nextTick();
+      [...host.querySelectorAll("button")]
+        .find((entry) => entry.textContent?.includes("清空工作区"))
+        ?.click();
+      await nextTick();
+      const dialog = [...document.querySelectorAll('[role="dialog"][data-state="open"]')].find(
+        (entry) => entry.textContent?.includes("将清空这个群的输出产物"),
       );
-    expect(dialog()?.textContent).toContain("将清空这个群的输出产物");
-    const box = dialog()?.querySelector<HTMLInputElement>("input[type='checkbox']");
-    expect(box?.checked).toBe(false);
-    [...(dialog()?.querySelectorAll("button") ?? [])]
-      .find((entry) => entry.textContent?.trim() === "清空")
-      ?.click();
-    await nextTick();
-    expect(cleared).toEqual([false]);
+      expect(dialog).toBeTruthy();
+      const box = dialog?.querySelector<HTMLInputElement>("input[type='checkbox']");
+      expect(box?.checked).toBe(false);
+      if (includeWork && box) {
+        box.checked = true;
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+        await nextTick();
+      }
+      [...(dialog?.querySelectorAll("button") ?? [])]
+        .find((entry) => entry.textContent?.trim() === "清空")
+        ?.click();
+      await nextTick();
+      return cleared;
+    }
 
-    host.querySelector<HTMLButtonElement>("[aria-label='群菜单']")?.click();
-    await nextTick();
-    [...document.querySelectorAll("[role='menuitem']")]
-      .find((entry) => entry.textContent?.includes("清空工作区"))
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    await nextTick();
-    const again = dialog()?.querySelector<HTMLInputElement>("input[type='checkbox']");
-    expect(again?.checked).toBe(false);
-    if (again) again.checked = true;
-    again?.dispatchEvent(new Event("change", { bubbles: true }));
-    [...(dialog()?.querySelectorAll("button") ?? [])]
-      .find((entry) => entry.textContent?.trim() === "清空")
-      ?.click();
-    await nextTick();
-    expect(cleared).toEqual([false, true]);
+    expect(await runClear(false)).toEqual([false]);
+    expect(await runClear(true)).toEqual([true]);
   });
 
   it("confirms before deleting the group", async () => {
@@ -184,18 +176,18 @@ describe("group room", () => {
         deleted = true;
       },
     });
-    host.querySelector<HTMLButtonElement>("[aria-label='群菜单']")?.click();
+    host.querySelector<HTMLButtonElement>("[aria-label='群设置']")?.click();
     await nextTick();
-    const item = [...document.querySelectorAll("[role='menuitem']")].find((entry) =>
-      entry.textContent?.includes("删除群"),
+    const item = [...host.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.trim() === "删除群",
     );
     expect(item).toBeTruthy();
-    item?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    item?.click();
     await nextTick();
     expect(document.body.textContent).toContain("确认删除这个群？");
     expect(deleted).toBe(false);
     const confirm = [...document.querySelectorAll("button")].find(
-      (entry) => entry.textContent?.trim() === "删除群",
+      (entry) => entry.textContent?.trim() === "删除群" && entry.closest("[role='dialog']"),
     );
     confirm?.click();
     await nextTick();
@@ -206,11 +198,12 @@ describe("group room", () => {
     const host = mountRoom({ room: { id: "g2" }, token: "", userId: "" });
     expect(host.textContent).toContain("空闲");
     expect(host.textContent).toContain("发送");
-    expect(host.querySelector("[role=textbox]")?.getAttribute("aria-label")).toContain("成员");
+    // 无执掌者且成员列表缺失：placeholder 回落到「默认应答者」文案（name 为空）。
+    expect(host.querySelector("[role=textbox]")?.getAttribute("aria-label")).toContain("默认应答者");
     expect(host.querySelector("[aria-label='提及成员']")).toBeNull();
     expect(host.querySelector("[aria-label='插入 Skill']")).toBeNull();
     expect(host.querySelector("[aria-label='添加附件']")).toBeNull();
-    expect(host.querySelector("[aria-label='群菜单']")).not.toBeNull();
+    expect(host.querySelector("[aria-label='群设置']")).not.toBeNull();
   });
 
   it("wires AskUser / Approval / ShellHang docks from HITL props", () => {

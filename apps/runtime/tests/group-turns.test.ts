@@ -88,14 +88,16 @@ function scriptedDriver(): {
   };
 }
 
-it("does not start a holder when the message has no mention", () => {
+it("starts the default holder when the message has no mention", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-turn-"));
   const script = scriptedDriver();
   const turns = new GroupTurns(roomsAt(root), script.driver, root);
-  const room = turns.post("u1", createId(turns, root), "先看看");
-  expect(script.calls).toEqual([]);
-  expect(room.holderSpeaking).toBe(false);
-  expect(room.holderId).toBeNull();
+  const groupId = createId(turns, root);
+  const room = turns.post("u1", groupId, "先看看");
+  expect(script.calls).toHaveLength(1);
+  expect(script.calls[0]?.agentId).toBe("pm");
+  expect(room.holderSpeaking).toBe(true);
+  expect(room.holderId).toBe("pm");
 });
 
 it("runs the holder turn in the group session and publishes progress before the reply is stored", async () => {

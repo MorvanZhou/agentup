@@ -64,7 +64,12 @@ export class GroupRooms {
     this.effectListener = listener;
   }
 
-  create(input: { userId: string; title: string; members: GroupMember[] }): GroupRoom {
+  create(input: {
+    userId: string;
+    title: string;
+    members: GroupMember[];
+    defaultHolderId?: string | null;
+  }): GroupRoom {
     return this.store.create(input);
   }
 
@@ -74,12 +79,22 @@ export class GroupRooms {
     userId: string;
     title: string;
     members: GroupMember[];
+    defaultHolderId?: string | null;
   }): GroupRoom {
     return this.store.createWithId(input);
   }
 
   rename(userId: string, groupId: string, title: string): GroupRoom {
     return this.store.rename(userId, groupId, title);
+  }
+
+  setMembers(
+    userId: string,
+    groupId: string,
+    members: GroupMember[],
+    defaultHolderId?: string | null,
+  ): GroupRoom {
+    return this.store.setMembers(userId, groupId, members, defaultHolderId);
   }
 
   list(userId: string): GroupRoom[] {

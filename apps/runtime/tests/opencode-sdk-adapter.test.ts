@@ -109,9 +109,9 @@ it("模型目录只收 opencode provider，并显式回落 default", () => {
     { id: "opencode/big-pickle", name: "Big Pickle" },
     { id: "opencode/zen", name: "Zen" },
   ]);
-  expect(opencodeModelsOrFallback([])).toEqual([
-    { id: "default", name: "OpenCode 默认模型" },
-  ]);
+  expect(() => opencodeModelsOrFallback([])).toThrow(
+    "暂时无法获取可用模型列表，请重新拉取，或手动配置",
+  );
 });
 
 it("options 拆 provider/model，MCP 使用 headers", () => {

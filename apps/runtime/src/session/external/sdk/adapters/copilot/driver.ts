@@ -1,4 +1,5 @@
 import type {
+  ExternalCompactRequest,
   ExternalDriver,
   ExternalDriverCapabilities,
   ExternalLoginInput,
@@ -6,6 +7,7 @@ import type {
   ExternalTurnRequest,
   WorkerResult,
 } from "../../contract.js";
+import { collectCompactSummary } from "../../host/collect-compact-summary.js";
 import { disposeAgentSdkRuntimesForTemplate } from "../../host/runtime-pool.js";
 import { acquireCopilotClient } from "./client-pool.js";
 import {
@@ -17,6 +19,8 @@ import {
 import type { CopilotSdkClient } from "./load.js";
 import { loadCopilotModule } from "./load.js";
 import {
+  copilotCompactSendOptionsOf,
+  copilotCompactSessionConfigOf,
   copilotSendOptionsOf,
   copilotSessionConfigOf,
   runCopilotAskUser,
@@ -28,6 +32,7 @@ const CAPABILITIES: ExternalDriverCapabilities = {
   // systemMessage 默认 append Host context
   systemPromptMode: "append",
   askUserToolNames: ["ask_user", "AskUserQuestion"],
+  compactSummarize: true,
 };
 
 /**
@@ -170,6 +175,77 @@ export const copilotDriver: ExternalDriver = {
 
   normalizeResult(message: unknown): WorkerResult | null {
     return workerResultFromCopilotMessage(message);
+  },
+
+  async compactSummarize(input: ExternalCompactRequest): Promise<string> {
+    throwIfAborted(input.abortController.signal);
+    const lease = await raceAbort(
+      acquireCopilotClient({
+        userDataRoot: input.userDataRoot,
+        templateId: input.templateId,
+        cwd: input.cwd,
+      }),
+      input.abortController.signal,
+      () => undefined,
+    );
+    if (input.abortController.signal.aborted) {
+      lease.release();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    }
+
+    const { client } = lease.value;
+    const denyAll = async () => ({ kind: "denied", message: "压缩回合不允许使用工具" });
+    let session: Awaited<ReturnType<CopilotSdkClient["createSession"]>>;
+    try {
+      session = await raceAbort(
+        client.createSession(
+          copilotCompactSessionConfigOf(input, { denyAll }),
+        ),
+        input.abortController.signal,
+        () => undefined,
+      );
+    } catch (error) {
+      lease.release();
+      throw error;
+    }
+
+    let settled = false;
+    const waitIdle = new Promise<void>((resolve) => {
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      try {
+        session.on("session.idle", finish);
+        session.on("session.error", finish);
+        session.on("error", finish);
+      } catch {
+        /* ignore */
+      }
+      input.abortController.signal.addEventListener("abort", finish, { once: true });
+    });
+
+    const onAbort = () => {
+      void Promise.resolve(session.abort?.()).catch(() => undefined);
+    };
+    input.abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      await raceAbort(
+        session.send(copilotCompactSendOptionsOf(input)),
+        input.abortController.signal,
+        onAbort,
+      );
+      const messages = mirrorCopilotSession(session, waitIdle);
+      return await collectCompactSummary(messages, {
+        normalizeResult: workerResultFromCopilotMessage,
+      });
+    } finally {
+      input.abortController.signal.removeEventListener("abort", onAbort);
+      await session.disconnect().catch(() => undefined);
+      lease.release();
+    }
   },
 };
 

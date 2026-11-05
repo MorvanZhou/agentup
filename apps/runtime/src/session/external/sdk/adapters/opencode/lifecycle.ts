@@ -7,7 +7,9 @@ import {
   setAgentSdkModels,
   setAgentSdkState,
 } from "../../../../../config/provider/index.js";
+import { throwModelCatalogUnavailable } from "../../../../../config/provider/model-list-policy.js";
 import type { ExternalModel } from "../../contract.js";
+import { positiveTokenCount, withTokenLimits } from "../../host/model-meta.js";
 import {
   accountLabel,
   clearAuth,
@@ -31,10 +33,6 @@ const LOGIN_URL_WAIT_MS = 8_000;
 const LOGIN_MAX_MS = 15 * 60_000;
 const MODEL_TIMEOUT_MS = 30_000;
 const AUTH_PAGE_PROBE_MS = 15_000;
-const FALLBACK_MODELS: ExternalModel[] = [
-  { id: "default", name: "OpenCode 默认模型" },
-];
-
 /**
  * 探测登录页是否仍可达、仍落在 opencode.ai/console。
  * 失败 = 厂商改了入口；须重审 Key 粘贴 / AUTH_PAGE，不要静默换 URL。
@@ -162,7 +160,7 @@ export async function startOpencodeLogin(
   // 仅当 CLI 明确给出设备码时走 device 流；裸跳 Console 不算登录完成
   if (record.deviceCode && !record.finished) return pendingResult(record);
 
-  // Key 回落：停掉挂起的 CLI，打开 Account 页并展示粘贴框
+  // Key 回落：停掉挂起的 CLI；auth_url + needs_api_key（Desktop 手动开申请页）
   clearTimeout(record.timer);
   try {
     child.kill("SIGTERM");
@@ -238,7 +236,11 @@ export async function fetchOpencodeModels(
   const live = await withTimeout(fetchModelsFromServer(userDataRoot, templateId), MODEL_TIMEOUT_MS);
   if (live?.length) return live;
   const cli = await withTimeout(fetchModelsFromCli(userDataRoot, templateId), MODEL_TIMEOUT_MS);
-  return opencodeModelsOrFallback(cli ?? []);
+  if (cli?.length) {
+    return cli;
+  }
+  // 活拉取空：统一提示，禁 default FALLBACK
+  throwModelCatalogUnavailable();
 }
 
 export function normalizeOpencodeModels(raw: unknown): ExternalModel[] {
@@ -262,14 +264,30 @@ export function normalizeOpencodeModels(raw: unknown): ExternalModel[] {
     if (seen.has(id)) continue;
     seen.add(id);
     const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : rawId;
-    out.push({ id, name });
+    // server catalog：limit.context / limit.output
+    const limit =
+      row.limit && typeof row.limit === "object" && !Array.isArray(row.limit)
+        ? (row.limit as Record<string, unknown>)
+        : {};
+    const contextWindow = positiveTokenCount(limit.context);
+    const maxTokens = positiveTokenCount(limit.output);
+    out.push(
+      withTokenLimits({
+        id,
+        name,
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
+      }),
+    );
     if (out.length >= 200) break;
   }
   return out;
 }
 
+/** @deprecated 空目录须抛统一错误；保留名给旧测例迁移。 */
 export function opencodeModelsOrFallback(models: ExternalModel[]): ExternalModel[] {
-  return models.length > 0 ? models : [...FALLBACK_MODELS];
+  if (models.length > 0) return models;
+  throwModelCatalogUnavailable();
 }
 
 export function parseOpencodeModelsOutput(stdout: string): ExternalModel[] {
@@ -310,7 +328,8 @@ async function fetchModelsFromServer(
   try {
     const sdk = await loadOpencodeSdkModule(userDataRoot, templateId);
     const client = sdk.createOpencodeClient({ baseUrl: server.url });
-    return normalizeOpencodeModels(await client.config.providers());
+    const providers = await client.config.providers();
+    return normalizeOpencodeModels(providers);
   } finally {
     await server.close();
   }

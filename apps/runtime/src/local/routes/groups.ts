@@ -4,7 +4,7 @@ import { createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessageChu
 
 import { BackendClientError } from "../../control/errors.js";
 import { DelegationError } from "../../session/delegation/index.js";
-import { GroupError, type GroupMember } from "../../session/group/index.js";
+import { applyMemberChange, GroupError, type GroupMember } from "../../session/group/index.js";
 import { clearGroupWorkspace, ensureGroupWorkspace } from "../../session/group/workspace.js";
 import { pageItems, parseTranscriptPageQuery, TRANSCRIPT_PAGE_SIZE } from "../../session/transcript-page.js";
 import type { GroupRoom } from "../../session/group/types.js";
@@ -53,8 +53,9 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
     const userId = text(body, "user_id");
     const title = typeof body.title === "string" ? body.title : "";
     const members = parseMembers(body.members);
+    const defaultHolderId = optionalAgentId(body.defaultHolderId);
     try {
-      const room = deps.groups.create({ userId, title, members });
+      const room = deps.groups.create({ userId, title, members, defaultHolderId });
       try {
         await pushGroupMeta(deps.config.backendUrl, token, room);
       } catch (error) {
@@ -102,6 +103,34 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
         rethrowCloud(error);
       }
       const room = deps.groups.rename(userId, groupId, body.title);
+      return json(c, 200, { group: pagedRoom(room) });
+    } catch (error) {
+      rethrow(error);
+    }
+  });
+
+  /** 改成员（可顺带改默认执掌者）：先 upsert 控制面元信息，成功后再写本机；云失败不落盘。 */
+  app.put("/groups/:groupId/members", async (c) => {
+    const token = bearer(c);
+    const body = await readJson(c);
+    const userId = text(body, "user_id");
+    const groupId = c.req.param("groupId");
+    const members = parseMembers(body.members);
+    const defaultHolderId = optionalAgentId(body.defaultHolderId);
+    try {
+      const current = deps.groups.store.peek(userId, groupId);
+      // 先本地校验（含 busy），再推云，避免无效名单打到控制面
+      const preview = applyMemberChange(current, members, defaultHolderId);
+      try {
+        await pushGroupMeta(deps.config.backendUrl, token, {
+          id: groupId,
+          title: current.title,
+          members: preview.members,
+        });
+      } catch (error) {
+        rethrowCloud(error);
+      }
+      const room = deps.groups.setMembers(userId, groupId, members, defaultHolderId);
       return json(c, 200, { group: pagedRoom(room) });
     } catch (error) {
       rethrow(error);
@@ -365,6 +394,13 @@ function parseMembers(value: unknown): GroupMember[] {
     }
     return { agentId: record.agentId, name: record.name };
   });
+}
+
+/** 缺省或非字符串 → undefined（由 create / applyMemberChange 回落）；空串当未传。 */
+function optionalAgentId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
 function rethrow(error: unknown): never {

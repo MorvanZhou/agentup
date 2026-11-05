@@ -101,6 +101,32 @@ describe("segmentDisplayMessage", () => {
       { type: "text", value: " 东京" },
     ]);
   });
+
+  it("with knownNames, only chips skills that exist on the agent", () => {
+    const known = new Set(["check-weather"]);
+    expect(segmentDisplayMessage("/compact 请压缩上下文", known)).toEqual([
+      { type: "text", value: "/compact 请压缩上下文" },
+    ]);
+    expect(segmentDisplayMessage("/check-weather 杭州", known)).toEqual([
+      { type: "skill", name: "check-weather" },
+      { type: "text", value: " 杭州" },
+    ]);
+  });
+
+  it("with empty knownNames, keeps inline slash text plain but still chips leading blocks", () => {
+    expect(segmentDisplayMessage("/compact ", new Set())).toEqual([
+      { type: "text", value: "/compact " },
+    ]);
+    const text = `<skill name="check-world-clock" location="/tmp/SKILL.md">
+# body
+</skill>
+
+/compact 东京`;
+    expect(segmentDisplayMessage(text, new Set())).toEqual([
+      { type: "skill", name: "check-world-clock" },
+      { type: "text", value: " /compact 东京" },
+    ]);
+  });
 });
 
 describe("partitionDisplayAttachments", () => {

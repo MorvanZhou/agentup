@@ -6,6 +6,7 @@ import {
   setAgentSdkAccountLabel,
   setAgentSdkModels,
   setAgentSdkState,
+  throwModelCatalogUnavailable,
 } from "../../../../../config/provider/index.js";
 import {
   agentSdkDir,
@@ -24,6 +25,12 @@ const LOGIN_CHECK_TIMEOUT_MS = 15_000;
 const MODEL_QUERY_TIMEOUT_MS = 30_000;
 const MAX_MODELS = 200;
 const RETRY_COOLDOWN_MS = 60_000;
+
+/**
+ * Cursor.models.list 无 per-model 窗口数值；产品观察主流档 ≥200k。
+ * Host curated 默认，供压缩预算；非上游字段、勿当精确 per-id。
+ */
+export const CURSOR_DEFAULT_CONTEXT_WINDOW = 200_000;
 
 interface PendingLogin {
   templateId: string;
@@ -44,6 +51,9 @@ export interface AgentSdkModel {
   id: string;
   name: string;
   credits?: number;
+  /** 官方 list 无字段；normalize 写入 CURSOR_DEFAULT_CONTEXT_WINDOW */
+  contextWindow?: number;
+  maxTokens?: number;
 }
 
 export async function startCursorLogin(
@@ -159,8 +169,9 @@ export async function fetchCursorModels(
     sdk.Cursor.models.list({ apiKey }),
     MODEL_QUERY_TIMEOUT_MS,
   );
-  const models = normalizeModels(raw);
-  if (!models.length) throw new ConfigError("Cursor 没有返回可用模型");
+  // 空活目录：统一 MODEL_CATALOG_UNAVAILABLE（禁假目录）
+  const models = normalizeCursorModels(raw);
+  if (!models.length) throwModelCatalogUnavailable();
   return models;
 }
 
@@ -221,7 +232,8 @@ function waitForAuthUrl(get: () => string | undefined): Promise<string | null> {
   });
 }
 
-function normalizeModels(raw: unknown): AgentSdkModel[] {
+/** 测例共用：id/name + Host curated 默认窗。 */
+export function normalizeCursorModels(raw: unknown): AgentSdkModel[] {
   const list = Array.isArray(raw)
     ? raw
     : raw && typeof raw === "object" && Array.isArray((raw as { models?: unknown }).models)
@@ -239,7 +251,7 @@ function normalizeModels(raw: unknown): AgentSdkModel[] {
       (typeof row.displayName === "string" && row.displayName.trim()) ||
       id;
     seen.add(id);
-    out.push({ id, name });
+    out.push({ id, name, contextWindow: CURSOR_DEFAULT_CONTEXT_WINDOW });
     if (out.length >= MAX_MODELS) break;
   }
   return out;

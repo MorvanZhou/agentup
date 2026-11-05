@@ -34,6 +34,9 @@ export const en: Record<string, string> = {
   "provider.template.tencent-coding.hint": "OpenAI-compatible coding plan API",
   "provider.template.custom-openai.label": "Custom OpenAI Compatible",
 
+  "provider.template.claude-agent-sdk.label": "Claude Code",
+  "provider.template.claude-agent-sdk.hint":
+    "Runs Claude Code locally with an Anthropic Console API key",
   "provider.template.codebuddy-sdk.label": "Workbuddy / CodeBuddy",
   "provider.template.codebuddy-sdk.hint": "Runs tasks with your Workbuddy / CodeBuddy subscription — no API key",
   "provider.template.cursor-sdk.label": "Cursor",

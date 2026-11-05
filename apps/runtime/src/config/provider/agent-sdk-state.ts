@@ -1,4 +1,5 @@
 import type { UiLocale } from "../../i18n/index.js";
+import { syncAgentSdkCatalog } from "../model-catalog.js";
 import { ConfigError } from "../load.js";
 import { getProviderTemplate, listAgentSdkTemplates } from "../provider-templates.js";
 import type {
@@ -81,10 +82,13 @@ export function setAgentSdkModels(
 ): void {
   const id = clean(templateId);
   if (!id) return;
+  const normalized = normalizeAgentSdkModels(models);
   mutateAgentSdkRecords(userDataRoot, id, (item) => ({
     ...item,
-    models: normalizeAgentSdkModels(models),
+    models: normalized,
   }));
+  // 同步进 model-catalog，供 resolveModelLimits / Host 压缩预算读取
+  syncAgentSdkCatalog(userDataRoot, id, normalized);
 }
 
 /** 本地接入的本机状态；没记录（未装过）就是 null。开会话前先看它，别白跑一趟。 */

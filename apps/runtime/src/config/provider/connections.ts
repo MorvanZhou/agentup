@@ -3,6 +3,7 @@ import { ConfigError } from "../load.js";
 import { discoverRemoteModels, supportsModelDiscovery } from "../discover-models.js";
 import { removeProviderCatalog, syncProviderCatalog } from "../model-catalog.js";
 import { getProviderTemplate } from "../provider-templates.js";
+import { throwModelCatalogUnavailable } from "./model-list-policy.js";
 import { readProviderSettings } from "./settings-view.js";
 import { dropRuntimeApiKey, runtimeApiKey } from "./secrets.js";
 import { patchStored, readStored } from "./store.js";
@@ -178,7 +179,7 @@ export async function refreshProviderModels(
     kind: template.kind,
   });
   if (discoveredModelIds.length === 0) {
-    throw new ConfigError("服务商未返回可用模型");
+    throwModelCatalogUnavailable();
   }
 
   const nextConnection = validateConnection({

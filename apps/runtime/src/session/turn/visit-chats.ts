@@ -45,6 +45,8 @@ import {
 import { customMessageDelivery } from "./custom-message-delivery.js";
 import { rewindSession, slotModelKey, visitKey, visitKind } from "./helpers.js";
 import { FollowUpQueue, type FollowUpItem } from "./follow-up-queue.js";
+import { compactTurnOptions, maybeCompactApiSession } from "../model/agent-sdk.js";
+import { userDataRootFromVisit } from "../context/user-data-root.js";
 import { runExternalSessionTurn as runExternalPromptTurn } from "./external-turn.js";
 import { runObservedTurn } from "./turn-runner.js";
 import { openPromptSession } from "./open.js";
@@ -442,6 +444,14 @@ export class VisitChats {
             ...(delegationStarted ? { delegationStarted } : {}),
           });
           if (!external) {
+            // API/Pi：同会话模型按窗触发 Host 边界；Pi 内建 compact 另依 model.contextWindow
+            await maybeCompactApiSession({
+              session: slot.session,
+              userText: expanded,
+              userDataRoot: userDataRootFromVisit(visit),
+              model: slot.model,
+              ...(signal ? { signal } : {}),
+            });
             await runObservedTurn({
               session: slot.session,
               signal,
@@ -806,6 +816,11 @@ export class VisitChats {
     else input.signal?.addEventListener("abort", abortTurn, { once: true });
     const turnSignal = input.slot.turnAbort?.signal ?? input.signal;
     try {
+      const compact = compactTurnOptions({
+        userDataRoot: userDataRootFromVisit(input.slot.visit),
+        prefer: input.slot.model,
+        ...(turnSignal ? { signal: turnSignal } : {}),
+      });
       await runExternalPromptTurn({
         session: input.slot.session,
         text: input.text,
@@ -823,6 +838,7 @@ export class VisitChats {
           ...(this.askUser ? { askUser: this.askUser } : {}),
         },
         ...(input.delegationStarted ? { delegationStarted: input.delegationStarted } : {}),
+        ...compact,
       });
       return true;
     } finally {

@@ -28,6 +28,12 @@ import {
   submitCopilotApiKey,
 } from "../../../session/external/sdk/adapters/copilot/index.js";
 import {
+  checkClaudeLogin,
+  logoutClaude,
+  startClaudeLogin,
+  submitClaudeApiKey,
+} from "../../../session/external/sdk/adapters/claude-code/index.js";
+import {
   checkDshLogin,
   logoutDsh,
   startDshLogin,
@@ -64,6 +70,7 @@ export async function startAgentSdkLogin(
   if (driverId === "opencode") return startOpencodeLogin(userDataRoot, templateId);
   if (driverId === "copilot") return startCopilotLogin(userDataRoot, templateId);
   if (driverId === "dsh") return startDshLogin(userDataRoot, templateId);
+  if (driverId === "claude-code") return startClaudeLogin(userDataRoot, templateId);
   if (driverId === "codebuddy") {
     return startCodebuddyLogin(userDataRoot, templateId, {
       environment: request.environment,
@@ -83,6 +90,7 @@ export async function checkAgentSdkLogin(
   if (driverId === "opencode") return checkOpencodeLogin(userDataRoot, templateId);
   if (driverId === "copilot") return checkCopilotLogin(userDataRoot, templateId);
   if (driverId === "dsh") return checkDshLogin(userDataRoot, templateId);
+  if (driverId === "claude-code") return checkClaudeLogin(userDataRoot, templateId);
   if (driverId === "codebuddy") {
     return checkCodebuddyLogin(userDataRoot, templateId, {
       environment: request.environment,
@@ -106,6 +114,9 @@ export async function submitAgentSdkApiKey(
   }
   if (driverId === "dsh") {
     return submitDshApiKey(userDataRoot, templateId, apiKey);
+  }
+  if (driverId === "claude-code") {
+    return submitClaudeApiKey(userDataRoot, templateId, apiKey);
   }
   throw new ConfigError(`该接入方式不支持粘贴 API Key 登录`);
 }
@@ -132,6 +143,10 @@ export async function logoutAgentSdk(userDataRoot: string, templateId: string): 
   }
   if (driverId === "dsh") {
     await logoutDsh(userDataRoot, templateId);
+    return;
+  }
+  if (driverId === "claude-code") {
+    await logoutClaude(userDataRoot, templateId);
     return;
   }
   if (driverId === "codebuddy") {
