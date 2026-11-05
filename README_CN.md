@@ -101,6 +101,19 @@ xattr -cr /Applications/AgentUp.app
 
 聊天默认留在你的电脑上。我们不保存消息正文。如果需要外部服务，只发出完成这件事所必需的内容。
 
+## 两种接入方式
+
+**本地 Agents，或 API。两边都能用。**
+
+AgentUp 是本地运行时：左边接本地 Agent，右边接模型 API。选一种就能聊，两种也能一起用。
+
+<p align="center">
+  <img src="docs/images/providers.png" alt="两种接入：本地 Agents 与 API providers" width="640" />
+</p>
+
+- **本地 Agents** — Cursor、Claude Code、Codex、Workbuddy / CodeBuddy、OpenCode、DeepSeek、GitHub Copilot
+- **API** — OpenAI、Anthropic、Google Gemini、DeepSeek、阿里云 Qwen、Kimi、智谱、字节跳动火山方舟、腾讯云、Ollama、OpenRouter、xAI、Mistral、Groq、MiniMax、Meta、Fireworks、Together AI、NVIDIA NIM、Hugging Face、OpenCode，以及自定义 OpenAI 兼容接口
+
 ---
 
 ## 本仓库

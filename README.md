@@ -101,6 +101,19 @@ The assistant runs on your own computer. It can see desktop files, then put a PP
 
 Chats stay on your computer by default. We do not keep the message body. If an outside service is needed, only what the job needs goes out.
 
+## Two ways in
+
+**Local agents, or API. Both ready.**
+
+AgentUp is a local runtime: local agents on the left, model APIs on the right. Pick one to chat — or use both.
+
+<p align="center">
+  <img src="docs/images/providers.png" alt="Two ways in: local agents and API providers" width="640" />
+</p>
+
+- **Local agents** — Cursor, Claude Code, Codex, Workbuddy / CodeBuddy, OpenCode, DeepSeek, GitHub Copilot
+- **API** — OpenAI, Anthropic, Google Gemini, DeepSeek, Alibaba Cloud Qwen, Kimi, Zhipu, ByteDance Volcengine Ark, Tencent Cloud, Ollama, OpenRouter, xAI, Mistral, Groq, MiniMax, Meta, Fireworks, Together AI, NVIDIA NIM, Hugging Face, OpenCode, plus custom OpenAI-compatible endpoints
+
 ---
 
 ## This repository
