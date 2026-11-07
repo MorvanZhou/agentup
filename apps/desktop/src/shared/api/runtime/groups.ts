@@ -67,6 +67,10 @@ export type GroupRoom = {
   updatedAt: number;
   /** 这条记录之前还有更早的消息。 */
   linesHasMore?: boolean;
+  /** 缺省当统一。单配时成员各自用一对一里选的模型。 */
+  modelMode?: "unified" | "perAgent";
+  /** 本群统一模型。没有时界面先显示开口者的模型，选定后才写入。 */
+  model?: { templateId: string; modelId: string } | null;
 };
 
 export async function groupLines(
@@ -147,6 +151,40 @@ export async function setGroupMembers(
       members,
       ...(defaultHolderId ? { defaultHolderId } : {}),
     },
+    "PUT",
+  );
+  return readRoom(payload.group);
+}
+
+/** 改这间群的统一 / 单配。响应可能不带会话行，调用方只取 modelMode。 */
+export async function setGroupModelMode(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  groupId: string,
+  mode: "unified" | "perAgent",
+): Promise<GroupRoom> {
+  const payload = await http.request(
+    `/groups/${encodeURIComponent(groupId)}/model-mode`,
+    token,
+    { user_id: userId, mode: mode === "perAgent" ? "per_agent" : "unified" },
+    "PUT",
+  );
+  return readRoom(payload.group);
+}
+
+/** 只改这间群的统一模型，不改成员私聊。 */
+export async function setGroupModel(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  groupId: string,
+  ref: { templateId: string; modelId: string },
+): Promise<GroupRoom> {
+  const payload = await http.request(
+    `/groups/${encodeURIComponent(groupId)}/model`,
+    token,
+    { user_id: userId, template_id: ref.templateId, model_id: ref.modelId },
     "PUT",
   );
   return readRoom(payload.group);
@@ -353,7 +391,17 @@ function readRoom(value: unknown): GroupRoom {
     queue: Array.isArray(room.queue) ? room.queue : [],
     updatedAt: typeof room.updatedAt === "number" ? room.updatedAt : 0,
     linesHasMore: room.linesHasMore === true,
+    modelMode: room.modelMode === "perAgent" ? "perAgent" : "unified",
+    model: readRoomModel(room.model),
   };
+}
+
+function readRoomModel(value: unknown): { templateId: string; modelId: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const ref = value as { templateId?: unknown; modelId?: unknown };
+  if (typeof ref.templateId !== "string" || typeof ref.modelId !== "string") return null;
+  if (!ref.templateId.trim() || !ref.modelId.trim()) return null;
+  return { templateId: ref.templateId, modelId: ref.modelId };
 }
 
 function readLine(value: unknown): GroupLine {

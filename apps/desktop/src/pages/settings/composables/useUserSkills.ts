@@ -35,24 +35,50 @@ export function useUserSkills(api = new DesktopApi()) {
     }
     const packagePath = await bridge.selectSkillPackage(kind);
     if (!packagePath) return;
-    await installFromPath(packagePath, expectName);
+    await installFromPath(packagePath, { expectName });
   }
 
-  async function installFromPath(packagePath: string, expectName?: string): Promise<void> {
+  async function installFromPath(
+    packagePath: string,
+    options: {
+      expectName?: string;
+      /** 社区下载已解析的 name，可免再 inspect */
+      knownName?: string;
+      /** 同名已装时询问；返回 false 则取消。显式更新（expectName）不询问。 */
+      confirmOverwrite?: (name: string) => Promise<boolean>;
+    } = {},
+  ): Promise<void> {
     if (!session.value || busy.value) return;
+    const current = session.value;
+    try {
+      // 卡片「更新」已选定目标技能，不再弹覆盖确认。
+      if (!options.expectName) {
+        const name =
+          options.knownName ??
+          (await api.inspectUserSkill(current.token, current.userId, packagePath)).name;
+        if (skills.value.some((skill) => skill.name === name)) {
+          const ok = options.confirmOverwrite ? await options.confirmOverwrite(name) : true;
+          if (!ok) return;
+        }
+      }
+    } catch (caught) {
+      showToast(formatApiError(caught, "技能检查失败"), "error");
+      return;
+    }
+
     busy.value = true;
     try {
       const skill = await api.installUserSkill(
-        session.value.token,
-        session.value.userId,
+        current.token,
+        current.userId,
         packagePath,
-        expectName,
+        options.expectName,
       );
-      skills.value = await api.userSkills(session.value.token, session.value.userId);
+      skills.value = await api.userSkills(current.token, current.userId);
       loaded = true;
-      showToast(expectName ? `已更新 ${skill.name}` : `已安装 ${skill.name}`, "success");
+      showToast(options.expectName ? `已更新 ${skill.name}` : `已安装 ${skill.name}`, "success");
     } catch (caught) {
-      const fallback = expectName ? "技能更新失败" : "技能安装失败";
+      const fallback = options.expectName ? "技能更新失败" : "技能安装失败";
       const details = caught instanceof DesktopApiError ? caught.details : [];
       showToast(formatApiError(caught, fallback), "error", details.length ? 10000 : 4000);
     } finally {

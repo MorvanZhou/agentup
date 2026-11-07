@@ -2,6 +2,7 @@ import { ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
+import { clampUtf8, RULES_MAX_BYTES } from "../../../shared/model/input-limits";
 import { showToast } from "../../../shared/model/ui/toast";
 import { t } from "../../../shared/model/ui/ui-locale";
 
@@ -34,6 +35,8 @@ export function useUserAgentsMd(api = new DesktopApi()) {
 
   async function saveIfChanged(): Promise<void> {
     if (!session.value || !loaded || loading.value) return;
+    // 失焦保存前再按字节收一次，避免只靠字符 maxlength 把超长 UTF-8 写进规则。
+    text.value = clampUtf8(text.value, RULES_MAX_BYTES);
     if (text.value === snapshot) return;
     if (saving.value) {
       saveAgain = true;

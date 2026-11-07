@@ -6,9 +6,21 @@ import type { AddressInfo } from "node:net";
 
 import { expect, it } from "vitest";
 
-import { packTarGz, unpackTarGz } from "../src/package/archive.js";
+import { unpackTarGz } from "../src/package/archive.js";
 import { packageDigest } from "../src/package/digest.js";
+import { validateAgentPackage } from "../src/package/validate.js";
 import { startLocalServer } from "../src/local/server.js";
+
+const standardMcp = {
+  mcpServers: {
+    "server-name": {
+      type: "stdio",
+      command: "executable-path",
+      args: ["arg1", "arg2"],
+      env: { KEY: "value" },
+    },
+  },
+};
 
 const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/single/weather/agent");
 const avatarPng = fs.readFileSync(path.join(weatherDir, "assets", "avatar.png"));
@@ -16,33 +28,57 @@ const avatarDataUrl = `data:image/png;base64,${avatarPng.toString("base64")}`;
 
 it("publishes from form without creating loc-* under user agents", async () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-publish-form-"));
+  let endpoint = "127.0.0.1:9";
+  let stored: Uint8Array | undefined;
   const backend = await listen(async (req, res) => {
     const url = req.url ?? "";
+    if (req.method === "PUT") {
+      stored = new Uint8Array(await readRaw(req));
+      res.writeHead(200);
+      res.end();
+      return;
+    }
     if (req.method === "GET" && url === "/v1/agents/owned") {
       return json(res, 200, { agents: [] });
     }
-    if (req.method === "POST" && url === "/v1/agents") {
-      const { fields, files } = await readMultipart(req);
-      const archive = files.archive;
-      if (!archive) return json(res, 400, { error: "缺少 archive" });
-      const unpacked = await unpackTarGz(archive);
+    if (req.method === "POST" && url === "/v1/agents/publish-jobs/job-1/uploaded") {
+      if (!stored) return json(res, 400, { error: "还没上传" });
+      const unpacked = await unpackTarGz(stored);
       expect(unpacked["SYSTEM.md"]).toBeTruthy();
-      expect(fields.name).toBe("表单天气");
       const manifest = { version: 1, tools: [], modelCapabilities: [] };
-      return json(res, 202, {
+      return json(res, 200, {
         job_id: "job-1",
         status: "ready",
         agent_id: "formWx01",
-        name: fields.name,
-        role: fields.role,
-        background: fields.background,
+        name: "表单天气",
+        role: "气象员",
+        background: "查天气",
         manifest: { version: 1, tools: [], model_capabilities: [] },
         digest: packageDigest(manifest, unpacked),
-        byte_size: archive.byteLength,
+        byte_size: stored.byteLength,
+      });
+    }
+    if (req.method === "POST" && url === "/v1/agents") {
+      const { fields } = await readMultipart(req);
+      expect(fields.name).toBe("表单天气");
+      return json(res, 202, {
+        job_id: "job-1",
+        status: "awaiting_upload",
+        upload: {
+          bucket: endpoint,
+          region: "local",
+          key: "dev/packages/formWx01/v1.tar.gz",
+          tmp_secret_id: "id",
+          tmp_secret_key: "key",
+          session_token: "token",
+          content_type: "application/gzip",
+          expired_at: 1,
+        },
       });
     }
     return json(res, 404, { error: "没有这个接口" });
   });
+  endpoint = `127.0.0.1:${backend.address.port}`;
   const local = await startLocalServer({
     backendUrl: `http://127.0.0.1:${backend.address.port}`,
     userDataRoot,
@@ -78,9 +114,7 @@ it("publishes from form without creating loc-* under user agents", async () => {
 
 it("previews owned package without writing loc-*", async () => {
   const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-publish-preview-"));
-  const files = readAgentUp(weatherDir);
-  const archive = await packTarGz(files);
-  const digest = packageDigest({ version: 2, tools: [], modelCapabilities: [] }, files);
+  const digest = "ab".repeat(32);
   const backend = await listen(async (req, res) => {
     const url = req.url ?? "";
     if (req.method === "GET" && url === "/v1/agents/owned") {
@@ -92,6 +126,8 @@ it("previews owned package without writing loc-*", async () => {
             role: "气象员",
             background: "查天气",
             rules: "名片规则",
+            skills: [{ name: "check-weather", md5: "ab".repeat(16) }],
+            mcp_md5: "",
             latest_version: 2,
             latest_digest: digest,
             recruited: false,
@@ -106,17 +142,7 @@ it("previews owned package without writing loc-*", async () => {
       });
     }
     if (req.method === "GET" && url === "/v1/agents/hJsAC7Ph/package") {
-      res.writeHead(200, {
-        "content-type": "application/gzip",
-        "content-length": archive.byteLength,
-        "x-package-version": "2",
-        "x-package-digest": digest,
-        "x-package-name": encodeURIComponent("Weaty"),
-        "x-package-background": encodeURIComponent("查天气"),
-        "x-agent-id": "hJsAC7Ph",
-      });
-      res.end(Buffer.from(archive));
-      return;
+      return json(res, 500, { error: "预览不应下载运行包" });
     }
     return json(res, 404, { error: "没有这个接口" });
   });
@@ -141,8 +167,9 @@ it("previews owned package without writing loc-*", async () => {
       rules: "名片规则",
       avatar_url: "http://127.0.0.1/avatar.webp",
     });
-    expect(Array.isArray(body.skills)).toBe(true);
-    expect((body.skills as string[]).length).toBeGreaterThan(0);
+    expect(body.skills).toEqual(["check-weather"]);
+    expect(body.mcp_servers).toEqual({});
+    expect(body.mcp_present).toBe(false);
     expect(listLocAgents(path.join(userDataRoot, "users"))).toEqual([]);
   } finally {
     await local.close();
@@ -150,6 +177,162 @@ it("previews owned package without writing loc-*", async () => {
     fs.rmSync(userDataRoot, { recursive: true, force: true });
   }
 });
+
+it("stores a pasted mcp.json as one mcpServers layer", async () => {
+  const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-publish-mcp-doc-"));
+  let uploaded = "";
+  const backend = await listen(async (req, res) => {
+    const url = req.url ?? "";
+    if (req.method === "PUT") {
+      uploaded = (await readRaw(req)).toString("utf8");
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    if (req.method === "GET" && url === "/v1/agents/owned") return json(res, 200, { agents: [ownedCard()] });
+    if (req.method === "POST" && url === "/v1/agents/hJsAC7Ph/publish") {
+      return json(res, 202, {
+        job_id: "job-mcp",
+        status: "awaiting_upload",
+        uploads: [uploadGrant(backendPort(req), "dev/agents/hJsAC7Ph/mcp.json", "application/json")],
+      });
+    }
+    if (req.method === "POST" && url === "/v1/agents/publish-jobs/job-mcp/uploaded") {
+      return json(res, 200, readyJob());
+    }
+    return json(res, 404, { error: "没有这个接口" });
+  });
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot,
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const response = await fetch(`${local.url}/agents/publish-editor`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer owner" },
+      body: JSON.stringify({
+        agent_id: "hJsAC7Ph",
+        name: "Weaty",
+        role: "气象员",
+        background: "查天气",
+        rules: "名片规则",
+        mcp_servers: standardMcp,
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(uploaded)).toEqual(standardMcp);
+    expect(validateAgentPackage({ "SYSTEM.md": Buffer.from("ok\n"), "mcp.json": Buffer.from(uploaded) })).toEqual([]);
+  } finally {
+    await local.close();
+    await close(backend);
+    fs.rmSync(userDataRoot, { recursive: true, force: true });
+  }
+});
+
+it("rejects an mcp server value that is not an object before upload", async () => {
+  const userDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-publish-mcp-bad-"));
+  let uploaded = false;
+  const backend = await listen(async (req, res) => {
+    const url = req.url ?? "";
+    if (req.method === "PUT") {
+      uploaded = true;
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    if (req.method === "GET" && url === "/v1/agents/owned") return json(res, 200, { agents: [ownedCard()] });
+    if (req.method === "POST" && url === "/v1/agents/hJsAC7Ph/publish") {
+      return json(res, 202, {
+        job_id: "job-bad",
+        status: "awaiting_upload",
+        uploads: [uploadGrant(backendPort(req), "dev/agents/hJsAC7Ph/mcp.json", "application/json")],
+      });
+    }
+    return json(res, 404, { error: "没有这个接口" });
+  });
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot,
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const response = await fetch(`${local.url}/agents/publish-editor`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer owner" },
+      body: JSON.stringify({
+        agent_id: "hJsAC7Ph",
+        name: "Weaty",
+        role: "气象员",
+        background: "查天气",
+        mcp_servers: { s: "d" },
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      details: [{ path: "mcp.json", message: "mcpServers.s 必须是对象" }],
+    });
+    expect(uploaded).toBe(false);
+  } finally {
+    await local.close();
+    await close(backend);
+    fs.rmSync(userDataRoot, { recursive: true, force: true });
+  }
+});
+
+function ownedCard() {
+  return {
+    agent_id: "hJsAC7Ph",
+    name: "Weaty",
+    role: "气象员",
+    background: "查天气",
+    rules: "名片规则",
+    skills: [],
+    mcp_md5: "",
+    latest_version: 2,
+    latest_digest: "ab".repeat(32),
+    recruited: false,
+    has_avatar: false,
+    remark: "",
+    recruit_count: 0,
+    created_at: "2026-02-01T00:00:00Z",
+    updated_at: "2026-02-01T00:00:00Z",
+  };
+}
+
+function readyJob() {
+  return {
+    job_id: "job-mcp",
+    status: "ready",
+    agent_id: "hJsAC7Ph",
+    name: "Weaty",
+    role: "气象员",
+    background: "查天气",
+    manifest: { version: 3, tools: [], model_capabilities: [] },
+    digest: "cd".repeat(32),
+    byte_size: 1,
+  };
+}
+
+function uploadGrant(port: number, key: string, contentType: string) {
+  return {
+    bucket: `127.0.0.1:${port}`,
+    region: "local",
+    key,
+    tmp_secret_id: "id",
+    tmp_secret_key: "key",
+    session_token: "token",
+    content_type: contentType,
+    expired_at: 1,
+  };
+}
+
+function backendPort(req: http.IncomingMessage): number {
+  const host = req.headers.host ?? "";
+  return Number(host.split(":")[1] ?? 0);
+}
 
 function listLocAgents(usersRoot: string): string[] {
   if (!fs.existsSync(usersRoot)) return [];
@@ -162,25 +345,6 @@ function listLocAgents(usersRoot: string): string[] {
     }
   }
   return found;
-}
-
-function readAgentUp(agentDir: string): Record<string, Uint8Array> {
-  const root = path.join(agentDir, ".agentup");
-  const files: Record<string, Uint8Array> = {};
-  const walk = (directory: string) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const full = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const relative = path.relative(root, full).split(path.sep).join("/");
-      files[relative] = fs.readFileSync(full);
-    }
-  };
-  walk(root);
-  return files;
 }
 
 function json(res: http.ServerResponse, status: number, payload: unknown) {
@@ -199,6 +363,15 @@ function listen(handler: http.RequestListener) {
 function close(running: { server: http.Server }) {
   return new Promise<void>((resolve, reject) => {
     running.server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+function readRaw(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
   });
 }
 

@@ -62,6 +62,10 @@ export function agentCard(value: unknown): AgentCard {
     role,
     background: payload.background,
     rules,
+    skills: skillRefs(payload.skills),
+    mcpMd5: typeof payload.mcp_md5 === "string" ? payload.mcp_md5 : "",
+    settingsMd5: typeof payload.settings_md5 === "string" ? payload.settings_md5 : "",
+    hooksMd5: typeof payload.hooks_md5 === "string" ? payload.hooks_md5 : "",
     latestVersion: payload.latest_version,
     latestDigest: payload.latest_digest,
     recruited: payload.recruited,
@@ -95,6 +99,18 @@ export function recruit(payload: Record<string, unknown>): Recruit {
     latestDigest: payload.latest_digest,
     remark,
   };
+}
+
+function skillRefs(value: unknown): { name: string; md5: string }[] {
+  if (!Array.isArray(value)) return [];
+  const skills: { name: string; md5: string }[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.name !== "string" || typeof record.md5 !== "string") continue;
+    skills.push({ name: record.name, md5: record.md5 });
+  }
+  return skills;
 }
 
 export function preferences(payload: Record<string, unknown>): UserPreferences {

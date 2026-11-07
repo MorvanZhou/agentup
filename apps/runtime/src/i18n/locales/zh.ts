@@ -74,7 +74,7 @@ export const zh: Record<string, string> = {
     "本地 Agent App 执行失败（{detail}）。可在设置里重新登录，或移除接入后重新接入。",
 
   "identity.systemTemplate": "你是{name}。岗位：{role}。\n\n{background}",
-  "identity.err.nameLength": "名称须为 1–40 个字符",
+  "identity.err.nameLength": "名称须为 1–80 个字符",
   "identity.err.roleLength": "岗位须为 1–40 个字符",
   "identity.err.backgroundLength": "人物背景须为 1–300 个字符",
 
@@ -82,7 +82,7 @@ export const zh: Record<string, string> = {
   "pa.defaultRole": "我的助理",
   "pa.defaultBackground": "优先理解用户目标，使用用户为你配置的 Skills、MCP 与工作规则完成任务。",
 
-  "pa.err.nameLength": "助理名称须为 1–40 个字符",
+  "pa.err.nameLength": "助理名称须为 1–80 个字符",
   "pa.err.roleLength": "岗位须为 1–40 个字符",
   "pa.err.backgroundLength": "人物背景须为 1–300 个字符",
   "pa.err.avatarType": "头像只支持 PNG、JPEG 或 WebP",
@@ -94,7 +94,7 @@ export const zh: Record<string, string> = {
   "la.err.invalidId": "本机 Agent ID 无效",
   "la.err.notFound": "找不到本机 Agent",
   "la.err.createFailed": "创建本机 Agent 失败",
-  "la.err.nameLength": "名称须为 1–40 个字符",
+  "la.err.nameLength": "名称须为 1–80 个字符",
   "la.err.roleLength": "岗位须为 1–40 个字符",
   "la.err.backgroundLength": "人物背景须为 1–300 个字符",
   "la.err.corrupt": "本机 Agent 数据损坏",

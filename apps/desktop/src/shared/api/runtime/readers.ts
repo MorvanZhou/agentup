@@ -222,6 +222,7 @@ export function readSessionModelState(payload: Record<string, unknown>): Session
     }),
     configured: payload.configured,
     followUp: payload.follow_up === true,
+    modelMode: payload.model_mode === "per_agent" || payload.model_mode === "perAgent" ? "perAgent" : "unified",
   };
 }
 

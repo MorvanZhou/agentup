@@ -22,6 +22,7 @@ import {
   type DelegationSteerOutcome,
 } from "../delegation/service/index.js";
 import { STEER_NOTE_MAX } from "../delegation/steer.js";
+import type { DelegationModelPin } from "../model/assignment.js";
 import {
   MAX_DELEGATION_FANOUT,
   type DelegationTask,
@@ -161,7 +162,7 @@ export function createDelegateExtension(
   service: DelegationService,
   userId: string,
   agentId: string,
-  scope: { groupId?: string } = {},
+  scope: { groupId?: string; modelPin?: DelegationModelPin } = {},
 ): ExtensionFactory {
   return (pi) => {
     const inGroup = Boolean(scope.groupId);
@@ -344,6 +345,7 @@ export function createDelegateExtension(
               signal,
               toolCallId,
               groupId: scope.groupId,
+              ...(scope.modelPin ? { modelPin: scope.modelPin } : {}),
             });
             for (const id of result.steeredTaskIds ?? []) markResolved(id);
             return formatFanoutResult(result.tasks, result.texts, result.steeredTaskIds);

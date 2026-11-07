@@ -14,30 +14,55 @@ const weatherDir = path.resolve(import.meta.dirname, "../../agent_examples/singl
 
 it("publishes a selected agent directory and a later version", async () => {
   const seenVersions: number[] = [];
+  let endpoint = "127.0.0.1:9";
+  let stored: Uint8Array | undefined;
+  let currentVersion = 0;
   const backend = await listen(async (req, res) => {
-    if (req.method !== "POST" || !["/v1/agents", "/v1/agents/generated-id/publish"].includes(req.url ?? "")) {
+    const url = req.url ?? "";
+    if (req.method === "PUT") {
+      stored = new Uint8Array(await readRaw(req));
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    if (req.method === "POST" && url.endsWith("/uploaded")) {
+      if (!stored) return json(res, 400, { error: "还没上传" });
+      const unpacked = await unpackTarGz(stored);
+      const manifest = { version: currentVersion, tools: [], modelCapabilities: [] };
+      return json(res, 200, {
+        job_id: `job-${currentVersion}`,
+        status: "ready",
+        agent_id: "generated-id",
+        name: "Weaty",
+        role: "气象员",
+        background: "演示天气",
+        manifest: { version: currentVersion, tools: [], model_capabilities: [] },
+        digest: packageDigest(manifest, unpacked),
+        byte_size: stored.byteLength,
+      });
+    }
+    if (req.method !== "POST" || !["/v1/agents", "/v1/agents/generated-id/publish"].includes(url)) {
       return json(res, 404, { error: "没有这个接口" });
     }
-    const { fields, files } = await readMultipart(req);
-    const archive = files.archive;
-    if (!archive) return json(res, 400, { error: "缺少 archive" });
-    const version = seenVersions.length + 1;
-    seenVersions.push(version);
-    const unpacked = await unpackTarGz(archive);
-    const manifest = { version, tools: [], modelCapabilities: [] };
-    // 异步发布：可直接返回 ready，runtime 会跳过轮询。
+    await readMultipart(req);
+    currentVersion = seenVersions.length + 1;
+    seenVersions.push(currentVersion);
     return json(res, 202, {
-      job_id: `job-${version}`,
-      status: "ready",
-      agent_id: "generated-id",
-      name: fields.name,
-      role: fields.role,
-      background: fields.background,
-      manifest: { version, tools: [], model_capabilities: [] },
-      digest: packageDigest(manifest, unpacked),
-      byte_size: archive.byteLength,
+      job_id: `job-${currentVersion}`,
+      status: "awaiting_upload",
+      upload: {
+        bucket: endpoint,
+        region: "local",
+        key: `dev/packages/generated-id/v${currentVersion}.tar.gz`,
+        tmp_secret_id: "id",
+        tmp_secret_key: "key",
+        session_token: "token",
+        content_type: "application/gzip",
+        expired_at: 1,
+      },
     });
   });
+  endpoint = `127.0.0.1:${backend.address.port}`;
   const local = await startLocalServer({
     backendUrl: `http://127.0.0.1:${backend.address.port}`,
     userDataRoot: fs.mkdtempSync(path.join(os.tmpdir(), "agentup-publish-")),
@@ -280,6 +305,15 @@ function json(res: http.ServerResponse, status: number, payload: unknown) {
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(status, { "content-type": "application/json", "content-length": body.length });
   res.end(body);
+}
+
+function readRaw(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
 }
 
 async function readMultipart(req: http.IncomingMessage): Promise<{

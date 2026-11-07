@@ -8,6 +8,7 @@ import type {
   GroupQueueItem,
   GroupRoom,
 } from "./types.js";
+import type { ModelAssignmentMode } from "../model/assignment.js";
 import { GROUP_RECORD_VERSION } from "./types.js";
 import { MEMBER_MAX, MEMBER_MIN } from "./member-limits.js";
 import { GroupError } from "./types.js";
@@ -31,6 +32,8 @@ export function createGroupRoom(input: {
     lines: [],
     holderId: null,
     defaultHolderId: resolveDefaultHolderId(members, input.defaultHolderId),
+    modelMode: "unified" satisfies ModelAssignmentMode,
+    model: null,
     holderSpeaking: false,
     phase: "idle",
     taskIds: [],
@@ -170,6 +173,57 @@ export function noteTaskStarted(
   };
   if (speaking) return { ...next, pendingDelegations: [...room.pendingDelegations, item] };
   return { ...next, lines: [...room.lines, delegationLine(item)] };
+}
+
+/**
+ * 这名成员在最近一条用户发言之后已经完成，执掌者还没把结果说出去。
+ * 再派一次会让他把同一件事重做。失败或取消不挡，执掌者回复过之后也不挡。
+ */
+export function completedDelegationAwaitingReply(
+  room: GroupRoom,
+  agentId: string,
+): { taskId: string; summary: string } | null {
+  const id = agentId.trim();
+  if (!id) return null;
+  let lastUser = -1;
+  for (let index = room.lines.length - 1; index >= 0; index -= 1) {
+    if (room.lines[index]?.role === "user") {
+      lastUser = index;
+      break;
+    }
+  }
+  const hits: { taskId: string; summary: string; at: number }[] = [];
+  const consider = (item: {
+    authorId: string;
+    outcome?: GroupDelegationOutcome;
+    handoff?: GroupPendingDelegation["handoff"];
+    taskId: string;
+    summary?: string;
+    at: number;
+  }): void => {
+    if (item.authorId !== id || item.outcome !== "completed" || item.handoff === "consumed") return;
+    const summary = item.summary?.trim() || "";
+    if (!summary || !item.taskId) return;
+    hits.push({ taskId: item.taskId, summary, at: item.at });
+  };
+  for (const line of room.lines.slice(lastUser + 1)) {
+    if (line.role !== "delegation" || !line.taskId) continue;
+    consider({ ...line, taskId: line.taskId });
+  }
+  for (const item of room.pendingDelegations) consider(item);
+  hits.sort((left, right) => left.at - right.at);
+  const latest = hits.at(-1);
+  return latest ? { taskId: latest.taskId, summary: latest.summary } : null;
+}
+
+/** 交回执掌者的那一句。标明已经做完，避免他把「正在…」的过程正文当成还没做完再派一次。 */
+export function formatFinishedDelegationCue(summary: string): string {
+  return [
+    "Group task finished. Tell the user this result.",
+    "Do not call delegate_to_agent again for the same request.",
+    "",
+    summary.trim(),
+  ].join("\n");
 }
 
 /** 子会话拿到执行槽，从排队变成进行中。 */

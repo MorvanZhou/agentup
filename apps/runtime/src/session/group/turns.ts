@@ -11,7 +11,7 @@ import { TRANSCRIPT_PAGE_SIZE } from "../transcript-page.js";
 import { TurnStreamHub } from "../turn/turn-stream-hub.js";
 import { GroupRooms } from "./rooms.js";
 import type { GroupAssistantPayload, GroupEffect, GroupLine, GroupRoom } from "./types.js";
-import { holderSessionRelative, projectTranscript } from "./wave.js";
+import { formatFinishedDelegationCue, holderSessionRelative, projectTranscript } from "./wave.js";
 
 export type GroupTurnHandle = {
   /** 本轮还在跑时，把后到的用户话或交回并进当前回合。 */
@@ -449,11 +449,15 @@ function sessionHasFiles(sessionDir: string): boolean {
  */
 function holderCue(room: GroupRoom, effect: RunEffect, sessionReady: boolean): string {
   if (effect.type === "start_holder" || !sessionReady) return effect.prompt;
-  if (effect.type === "merge_holder") return openDelegationSummary(room) || effect.prompt;
+  if (effect.type === "merge_holder") {
+    const summary = openDelegationSummary(room);
+    if (summary) return formatFinishedDelegationCue(summary);
+    return effect.prompt;
+  }
   const latest = room.lines.at(-1);
   if (latest?.role === "delegation") {
     const summary = openDelegationSummary(room);
-    if (summary) return summary;
+    if (summary) return formatFinishedDelegationCue(summary);
   }
   if (latest && (latest.role === "handback" || latest.role === "system") && latest.text.trim()) {
     return latest.text.trim();

@@ -13,6 +13,7 @@ import {
 import { DesktopApi, DesktopApiError } from "../shared/api/runtime";
 import type { AttentionSnapshot, BackgroundJobDto, DelegationTaskDto } from "../shared/api/runtime/chat";
 import type { GroupRoom } from "../shared/api/runtime/groups";
+import { agentDisplayName } from "../shared/components/agent/agent-profile";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/avatar/personal-assistant-default";
 import {
   PERSONAL_ASSISTANT_ID,
@@ -43,6 +44,14 @@ import {
   desktopPulseIsActive,
 } from "./desktop-pulse-interval";
 import { syncAppBadge, syncMenuBarUnread } from "./native/app-badge";
+import {
+  freshHitlBanners,
+  hitlBannerCopy,
+  readBannerSurface,
+  replyBannerCopy,
+  suppressBecauseViewing,
+  type BannerSurface,
+} from "./native/system-banner";
 import {
   isMenuBarPrefAvailable,
   readMenuBarVisible,
@@ -92,8 +101,16 @@ export function useDesktopApp(api = new DesktopApi()) {
   /** pulse 附带：本机群列表（无云 backfill；显式 load 仍走 GET /groups）。 */
   const pulseGroups = ref<GroupRoom[]>([]);
   let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+  let unsubscribeBanner: (() => void) | undefined;
   let pulseInFlight = false;
   let pulseActive = false;
+  /** null：下一帧 attention 只播种，不弹横幅（冷启动 / 换账号）。 */
+  let hitlKnown: Set<string> | null = null;
+  let hitlEpoch = 0;
+  /** 会话页前台正在看的单聊或群；离开该页则为 null。 */
+  const bannerSurface = ref<BannerSurface | null>(null);
+  /** 点击系统横幅后要打开的会话；会话页消费后清空。 */
+  const pendingNotice = ref<BannerSurface | null>(null);
 
   /** 侧栏会话：私人助理 + 本机私有 + 已招募；不依赖控制面是否在线。 */
   const conversations = computed(() => [
@@ -170,6 +187,22 @@ export function useDesktopApp(api = new DesktopApi()) {
   onMounted(() => {
     if (session.value) void refresh();
     else applyTheme("system");
+    const bridge = typeof window !== "undefined" ? window.agentUp : undefined;
+    if (typeof bridge?.onSystemBannerOpen === "function") {
+      unsubscribeBanner = bridge.onSystemBannerOpen((payload) => {
+        const target = readBannerSurface(payload);
+        if (target) pendingNotice.value = target;
+      });
+    }
+    // 点击时窗口还在加载，事件会丢；启动后补取一次。
+    if (typeof bridge?.takePendingSystemBanner === "function") {
+      void bridge.takePendingSystemBanner().then((payload) => {
+        const target = readBannerSurface(payload);
+        if (target) pendingNotice.value = target;
+      }).catch(() => {
+        /* 主进程不可用时忽略 */
+      });
+    }
   });
 
   watch(
@@ -205,6 +238,9 @@ export function useDesktopApp(api = new DesktopApi()) {
     () => (session.value ? `${session.value.userId}:${session.value.token}` : ""),
     (key) => {
       stopPulsePoll();
+      // 换账号或登出后第一帧只播种，避免把已有待处理事项再弹一遍。
+      hitlEpoch += 1;
+      hitlKnown = null;
       if (!key) {
         attention.value = emptyAttention();
         pulseFleets.value = emptyPulseFleets();
@@ -231,6 +267,7 @@ export function useDesktopApp(api = new DesktopApi()) {
 
   onScopeDispose(() => {
     stopPulsePoll();
+    unsubscribeBanner?.();
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     }
@@ -649,6 +686,12 @@ export function useDesktopApp(api = new DesktopApi()) {
       agentId === selectedId.value
         ? unread.value
         : { ...unread.value, [agentId]: (unread.value[agentId] ?? 0) + 1 };
+    const agent = conversations.value.find((item) => item.agentId === agentId);
+    announceReply(
+      { kind: "agent", id: agentId },
+      agent ? agentDisplayName(agent) : agentId,
+      preview,
+    );
     await persistState(nextUnread, nextPreviews, nextLastActiveAt);
   }
 
@@ -677,6 +720,7 @@ export function useDesktopApp(api = new DesktopApi()) {
     if (pulseInFlight) return;
     pulseInFlight = true;
     const wasActive = pulseActive;
+    const epoch = hitlEpoch;
     try {
       const snap = await api.desktopPulse(session.value.token, session.value.userId);
       attention.value = snap.attention;
@@ -687,6 +731,8 @@ export function useDesktopApp(api = new DesktopApi()) {
         unseenJobs: snap.unseenJobs,
       };
       pulseGroups.value = snap.groups;
+      // 过期脉冲（换了账号）不弹，避免把上一身份的待处理事项通知出来。
+      if (epoch === hitlEpoch) publishHitlBanners(snap.attention);
       pulseActive = desktopPulseIsActive({
         busyAgentIds: snap.attention.busyAgentIds,
         approvals: snap.attention.approvals,
@@ -704,6 +750,47 @@ export function useDesktopApp(api = new DesktopApi()) {
       /* 保持上一帧；下次轮询再对齐 */
     } finally {
       pulseInFlight = false;
+    }
+  }
+
+  function windowFocused(): boolean {
+    return typeof document !== "undefined" && typeof document.hasFocus === "function" && document.hasFocus();
+  }
+
+  function setBannerSurface(next: BannerSurface | null): void {
+    bannerSurface.value = next;
+  }
+
+  function surfaceTitle(target: BannerSurface): string {
+    if (target.kind === "group") {
+      const title = pulseGroups.value.find((room) => room.id === target.id)?.title.trim() ?? "";
+      return title || t("groupTitle");
+    }
+    const agent = conversations.value.find((item) => item.agentId === target.id);
+    return agent ? agentDisplayName(agent) : t("navMessages");
+  }
+
+  /** 前台正看着这条会话时不弹。无桥接（浏览器 / 测试）时静默。 */
+  function announceBanner(input: { title: string; body: string; target: BannerSurface }): void {
+    if (suppressBecauseViewing(windowFocused(), bannerSurface.value, input.target)) return;
+    const bridge = typeof window !== "undefined" ? window.agentUp : undefined;
+    if (typeof bridge?.showSystemBanner !== "function") return;
+    void bridge.showSystemBanner(input).catch(() => {
+      /* 主进程不可用时忽略 */
+    });
+  }
+
+  function announceReply(target: BannerSurface, title: string, preview: string): void {
+    const copy = replyBannerCopy(title, preview);
+    announceBanner({ ...copy, target });
+  }
+
+  function publishHitlBanners(snap: AttentionSnapshot): void {
+    const step = freshHitlBanners(hitlKnown, snap);
+    hitlKnown = step.known;
+    for (const item of step.fresh) {
+      const copy = hitlBannerCopy(surfaceTitle(item.target), item);
+      announceBanner({ ...copy, target: item.target });
     }
   }
 
@@ -855,6 +942,9 @@ export function useDesktopApp(api = new DesktopApi()) {
     select,
     start,
     recordTurnEnd,
+    announceReply,
+    setBannerSurface,
+    pendingNotice,
     bumpUnread,
     clearUnread,
     setRemark,

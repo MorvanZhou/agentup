@@ -1,4 +1,4 @@
-/** 与 backend 头像压缩对齐：最长边 ≤256，输出小体积 WebP/JPEG。 */
+/** 头像只出 webp，再由临时密钥直传 COS。最长边 ≤256。 */
 export const AVATAR_MAX_EDGE = 256;
 /** 压缩目标约 80KB（data URL 仍远低于 runtime 1MB 上限）。 */
 export const AVATAR_TARGET_BYTES = 80_000;
@@ -39,8 +39,7 @@ export async function compressAvatarFile(file: File): Promise<string> {
     if (!context) throw new Error("无法压缩头像");
     context.drawImage(bitmap, 0, 0, size.width, size.height);
 
-    const blob =
-      (await encodeCanvas(canvas, "image/webp")) ?? (await encodeCanvas(canvas, "image/jpeg"));
+    const blob = await encodeCanvas(canvas, "image/webp");
     if (!blob) throw new Error("头像压缩失败");
     return blobToDataUrl(blob);
   } finally {

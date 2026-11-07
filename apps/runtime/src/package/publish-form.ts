@@ -6,12 +6,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { listOwnedAgents, publishAgent, type PublishedAgent } from "../control/client.js";
-import { HttpPackageSource } from "../control/package-source.js";
+import { packTarGz } from "./archive.js";
+import { md5Hex } from "./capability.js";
+import { normalizeMcpServers } from "./mcp-document.js";
+import { listOwnedAgents, publishAgent, publishManifest, type PublishedAgent } from "../control/client.js";
 import { type UiLocale } from "../i18n/index.js";
 import { installSkillPackageTo, UserResourceError } from "../local/assistant/user-resources.js";
 import { AgentSourceError, preparePublishSource } from "./source.js";
-import { isSafeSkillName } from "./validate.js";
+import { isSafeSkillName, validateAgentPackage } from "./validate.js";
 
 const MCP_MAX_BYTES = 200_000;
 const MAX_AVATAR_BYTES = 1_048_576;
@@ -24,6 +26,8 @@ export type PublishEditorPreview = {
   rules: string;
   skills: string[];
   mcpServers: Record<string, unknown>;
+  /** 名片上有 mcp 对象，正文要等用户点编辑再拉。 */
+  mcpPresent: boolean;
   avatarUrl?: string;
 };
 
@@ -52,16 +56,16 @@ export async function previewOwnedPublishEditor(
   const owned = await listOwnedAgents(backendUrl, token);
   const card = owned.find((item) => item.agentId === publishedId);
   if (!card) throw new AgentSourceError("找不到要更新的 Agent");
-  const release = await new HttpPackageSource(backendUrl, token).getPackage(publishedId);
-  const packageRules = Buffer.from(release.files["AGENTS.md"] ?? []).toString("utf8").trim();
+  // skill 名字和 MCP 是否存在都在名片上。正文等用户点编辑再拉，避免整包下载。
   return {
     agentId: card.agentId,
     name: card.name,
     role: card.role,
     background: card.background,
-    rules: card.rules || packageRules,
-    skills: skillsFromFiles(release.files),
-    mcpServers: mcpFromFiles(release.files),
+    rules: card.rules,
+    skills: card.skills.map((skill) => skill.name),
+    mcpServers: {},
+    mcpPresent: Boolean(card.mcpMd5),
     ...(card.avatarUrl ? { avatarUrl: card.avatarUrl } : {}),
   };
 }
@@ -85,15 +89,48 @@ export async function publishFromForm(
     const publishedId = input.agentId?.trim();
     if (publishedId) {
       const owned = await listOwnedAgents(backendUrl, token);
-      if (!owned.some((item) => item.agentId === publishedId)) {
-        throw new AgentSourceError("找不到要更新的 Agent");
+      const card = owned.find((item) => item.agentId === publishedId);
+      if (!card) throw new AgentSourceError("找不到要更新的 Agent");
+      const remove = new Set(input.removeSkills ?? []);
+      const skills = card.skills
+        .filter((skill) => !remove.has(skill.name))
+        .map((skill) => ({ name: skill.name, md5: skill.md5 }));
+      const skillsDir = path.join(pi, "skills");
+      fs.mkdirSync(skillsDir, { recursive: true });
+      for (const skillPath of input.skillPaths ?? []) {
+        let installed: { name: string };
+        try {
+          installed = await installSkillPackageTo(skillsDir, skillPath);
+        } catch (error) {
+          if (error instanceof UserResourceError) throw new AgentSourceError(error.message);
+          throw error;
+        }
+        const body = await packTarGz(readSkillFiles(path.join(skillsDir, installed.name)));
+        const next = { name: installed.name, md5: md5Hex(body), body };
+        const index = skills.findIndex((skill) => skill.name === next.name);
+        if (index >= 0) skills[index] = next;
+        else skills.push(next);
       }
-      const release = await new HttpPackageSource(backendUrl, token).getPackage(publishedId);
-      writePackageFiles(pi, release.files);
-    } else {
-      // 占位 SYSTEM；preparePublishSource 会按名片覆盖 compose。
-      fs.writeFileSync(path.join(pi, "SYSTEM.md"), "ok\n", { mode: 0o600 });
+      let avatar: Uint8Array | undefined;
+      if (input.avatarDataUrl) {
+        const decoded = decodeAvatar(input.avatarDataUrl);
+        avatar = decoded.bytes;
+      }
+      return await publishManifest({
+        backendUrl,
+        token,
+        name: input.name,
+        role: input.role,
+        background: input.background,
+        rules: input.rules ?? "",
+        agentId: publishedId,
+        skills,
+        mcp: mcpPart(input.mcpServers),
+        avatar,
+      });
     }
+    // 占位 SYSTEM；preparePublishSource 会按名片覆盖 compose。
+    fs.writeFileSync(path.join(pi, "SYSTEM.md"), "ok\n", { mode: 0o600 });
 
     const rules = input.rules ?? "";
     writeAgentsMd(pi, rules);
@@ -151,22 +188,39 @@ export async function publishFromForm(
   }
 }
 
-function writePackageFiles(pi: string, files: Record<string, Uint8Array>): void {
-  for (const [relative, bytes] of Object.entries(files)) {
-    const normalized = relative.replace(/\\/g, "/");
-    if (
-      !normalized ||
-      normalized.endsWith("/") ||
-      normalized.includes("..") ||
-      path.isAbsolute(normalized)
-    ) {
-      continue;
+function mcpPart(mcpServers: Record<string, unknown> | undefined): { md5: string; body: Uint8Array } | "" | undefined {
+  if (mcpServers === undefined) return undefined;
+  const servers = normalizeMcpServers(mcpServers);
+  if (Object.keys(servers).length === 0) return "";
+  const payload = `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
+  if (Buffer.byteLength(payload, "utf8") > MCP_MAX_BYTES) throw new AgentSourceError("mcp.json 过大");
+  const body = Buffer.from(payload);
+  // 更新发布不走整包校验。server 值不是对象时要在上传前拒绝，否则会写进 COS，招募时才失败。
+  const issues = validateAgentPackage({
+    "SYSTEM.md": Buffer.from("ok\n"),
+    "mcp.json": body,
+  }).filter((issue) => issue.path === "mcp.json");
+  if (issues.length > 0) throw new AgentSourceError("运行包校验失败: mcp.json", issues);
+  return { md5: md5Hex(body), body };
+}
+
+function readSkillFiles(skillDir: string): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+  const walk = (directory: string) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) throw new AgentSourceError("skill 不能包含链接");
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const relative = path.relative(skillDir, full).split(path.sep).join("/");
+      files[relative] = fs.readFileSync(full);
     }
-    const target = path.resolve(pi, normalized);
-    if (!target.startsWith(`${pi}${path.sep}`) && target !== pi) continue;
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, Buffer.from(bytes));
-  }
+  };
+  walk(skillDir);
+  return files;
 }
 
 function writeAgentsMd(pi: string, content: string): void {
@@ -183,7 +237,7 @@ function writeMcp(pi: string, mcpServers: Record<string, unknown>): void {
   if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
     throw new AgentSourceError("mcp_servers 无效");
   }
-  const payload = `${JSON.stringify({ mcpServers }, null, 2)}\n`;
+  const payload = `${JSON.stringify({ mcpServers: normalizeMcpServers(mcpServers) }, null, 2)}\n`;
   if (Buffer.byteLength(payload, "utf8") > MCP_MAX_BYTES) {
     throw new AgentSourceError("mcp.json 过大");
   }
@@ -222,7 +276,7 @@ export function mcpFromFiles(files: Record<string, Uint8Array>): Record<string, 
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const servers = (parsed as { mcpServers?: unknown }).mcpServers;
     if (!servers || typeof servers !== "object" || Array.isArray(servers)) return {};
-    return servers as Record<string, unknown>;
+    return normalizeMcpServers(servers as Record<string, unknown>);
   } catch {
     return {};
   }

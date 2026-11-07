@@ -17,15 +17,18 @@ import {
   updateAgentCard,
 } from "../../control/client.js";
 import type { AgentCard } from "../../control/types.js";
-import { previewOwnedPublishEditor, publishFromForm } from "../../package/publish-form.js";
+import { fetchCapabilityText } from "../../control/package-source.js";
+import { mcpFromFiles, previewOwnedPublishEditor, publishFromForm } from "../../package/publish-form.js";
 import { loadAgentSource, preparePublishSource } from "../../package/source.js";
 import { BackendClientError } from "../../control/client.js";
 import { Runtime, type Visit } from "../../package/sync.js";
 import { ConfigError } from "../../config/load.js";
+import type { UiLocale } from "../../i18n/index.js";
 import { requireEnabledModelRef } from "../../config/provider/index.js";
 import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
 import { clearContext, clearHistory, readHistory, readHistoryPage } from "../../session/history/history.js";
+import { modelModeFromBody, writeVisitModelMode } from "../../session/model/assignment.js";
 import { setVisitSessionModel } from "../../session/model/session-model.js";
 import { listVisitSkills } from "../../session/skills/skills.js";
 import {
@@ -76,12 +79,13 @@ async function resolveVisit(
   token: string,
   userId: string,
   agentId: string,
+  locale: UiLocale = "zh",
 ): Promise<Visit> {
   if (isLocalAgentId(agentId)) {
     return localAgentVisit(userDataRoot, userId, agentId);
   }
   try {
-    return await new Runtime(new HttpPackageSource(backendUrl, token), userDataRoot).sync(
+    return await new Runtime(new HttpPackageSource(backendUrl, token, fetch, locale), userDataRoot).sync(
       userId,
       agentId,
     );
@@ -129,6 +133,10 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
             role: agent.role,
             background: agent.background,
             rules: "",
+            skills: [],
+            mcpMd5: "",
+            settingsMd5: "",
+            hooksMd5: "",
             latestVersion: agent.packageVersion,
             latestDigest: agent.packageDigest,
             recruited: true,
@@ -243,8 +251,21 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
       rules: preview.rules,
       skills: preview.skills,
       mcp_servers: preview.mcpServers,
+      mcp_present: preview.mcpPresent,
       avatar_url: preview.avatarUrl ?? null,
     });
+  });
+
+  /** 更新页点「编辑 MCP」才拉这一个对象。 */
+  app.post("/agents/publish-editor/mcp", async (c) => {
+    const body = await readJson(c);
+    const raw = await fetchCapabilityText(
+      config.backendUrl,
+      bearer(c),
+      text(body, "published_agent_id"),
+      "mcp",
+    );
+    return json(c, 200, { text: mcpEditorText(raw) });
   });
 
   /**
@@ -364,7 +385,14 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const agentId = requireAgentId(c.req.param("agentId"));
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
+    const visit = await resolveVisit(
+      config.userDataRoot,
+      config.backendUrl,
+      token,
+      userId,
+      agentId,
+      uiLocaleFromRequest(c),
+    );
     const outcome = await chats.steer(visit, readModel(), promptText(body));
     return json(c, 200, outcome);
   });
@@ -481,6 +509,21 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
       if (error instanceof ConfigError) throw new LocalError(error.message, 400);
       throw error;
     }
+  });
+
+  app.put("/agents/:agentId/session/model-mode", async (c) => {
+    bearer(c);
+    const agentId = requireAgentId(c.req.param("agentId"));
+    const body = await readJson(c);
+    const userId = requirePathUserId(text(body, "user_id"));
+    const locale = uiLocaleFromRequest(c);
+    const mode = modelModeFromBody(body.mode);
+    if (!mode) throw new LocalError("模型分配方式无效", 400);
+    const visitRoot = path.join(config.userDataRoot, "users", userId, "agents", agentId);
+    const cwd = path.join(visitRoot, "cwd");
+    const sessionDir = path.join(visitRoot, "sessions");
+    writeVisitModelMode(sessionDir, mode);
+    return json(c, 200, sessionModelBody(config.userDataRoot, cwd, sessionDir, locale));
   });
 
   app.delete("/agents/:agentId/history", async (c) => {
@@ -615,7 +658,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const body = await readJson(c, { maxBytes: MAX_ATTACHMENT_BODY_BYTES });
     const userId = requirePathUserId(text(body, "user_id"));
     const locale = uiLocaleFromRequest(c);
-    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
+    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId, locale);
     delegation.bindAuth(userId, token);
     try {
       await streamPrompt(
@@ -641,7 +684,14 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
+    const visit = await resolveVisit(
+      config.userDataRoot,
+      config.backendUrl,
+      token,
+      userId,
+      agentId,
+      uiLocaleFromRequest(c),
+    );
     return json(c, 200, { path: visit.root });
   });
 
@@ -650,7 +700,14 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const token = bearer(c);
     const body = await readJson(c);
     const userId = requirePathUserId(text(body, "user_id"));
-    const visit = await resolveVisit(config.userDataRoot, config.backendUrl, token, userId, agentId);
+    const visit = await resolveVisit(
+      config.userDataRoot,
+      config.backendUrl,
+      token,
+      userId,
+      agentId,
+      uiLocaleFromRequest(c),
+    );
     // 运行包不含头像；同步后尽量把 statics 头像落到本机
     if (!isLocalAgentId(agentId)) {
       try {
@@ -768,6 +825,15 @@ function readStringList(value: unknown, field: string): string[] {
     throw new LocalError(`${field} 无效`, 400);
   }
   return value.map((item) => item.trim()).filter(Boolean);
+}
+
+function mcpEditorText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const servers = mcpFromFiles({ "mcp.json": Buffer.from(raw) });
+  if (!Object.keys(servers).length) return "";
+  // 编辑框展示整份 mcp.json，和云端对象一致。
+  return `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
 }
 
 function readOptionalMcp(body: Record<string, unknown>): Record<string, unknown> | undefined {

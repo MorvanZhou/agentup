@@ -415,6 +415,25 @@ export async function userSkills(
   return payload.skills.map(readUserSkill);
 }
 
+export async function inspectUserSkill(
+  http: RuntimeHttp,
+  token: string,
+  userId: string,
+  packagePath: string,
+): Promise<{ name: string; description: string }> {
+  const payload = await http.request("/settings/skills/inspect", token, {
+    user_id: userId,
+    path: packagePath,
+  });
+  if (typeof payload.name !== "string" || !payload.name.trim()) {
+    throw new DesktopApiError("技能名称无效");
+  }
+  return {
+    name: payload.name,
+    description: typeof payload.description === "string" ? payload.description : "",
+  };
+}
+
 export async function installUserSkill(
   http: RuntimeHttp,
   token: string,

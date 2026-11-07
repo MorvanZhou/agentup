@@ -1,10 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import type { Hono } from "hono";
 
 import {
-  downloadAgentSkill,
   HttpPackageSource,
   listOwnedAgents,
 } from "../../control/client.js";
@@ -13,6 +9,7 @@ import {
   createLocalAgent,
   deleteLocalAgent,
   exportLocalAgentSkill,
+  exportVisitSkill,
   importPublishedAsLocalDraft,
   LocalAgentError,
   listLocalAgents,
@@ -162,7 +159,7 @@ export function registerLocalAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalApp
       const owned = await listOwnedAgents(config.backendUrl, token);
       const card = owned.find((item) => item.agentId === publishedAgentId);
       if (!card) throw new LocalError("找不到要更新的 Agent", 404);
-      const release = await new HttpPackageSource(config.backendUrl, token).getPackage(publishedAgentId);
+      const release = await new HttpPackageSource(config.backendUrl, token, fetch, locale).getPackage(publishedAgentId);
       let avatarDataUrl: string | undefined;
       if (card.avatarUrl) {
         try {
@@ -266,20 +263,21 @@ export function registerLocalAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalApp
     }
   });
 
-  /** 从控制面下载已发布 skill zip 到本机路径。 */
+  /** 从已安装的 visit 文件树打包已发布 skill，不回控制面读包。 */
   app.post("/agents/published/:agentId/skills/:skillName/export", async (c) => {
     bearer(c);
     const agentId = requireAgentId(c.req.param("agentId"));
     const skillName = c.req.param("skillName");
     const body = await readJson(c);
+    const locale = uiLocaleFromRequest(c);
+    const userId = requirePathUserId(text(body, "user_id"));
     const destination = text(body, "destination");
-    if (!destination.toLowerCase().endsWith(".zip") || !path.isAbsolute(destination)) {
-      throw new LocalError("导出路径须为绝对路径 .zip", 400);
+    try {
+      return json(c, 200, exportVisitSkill(config.userDataRoot, userId, agentId, skillName, destination, locale));
+    } catch (error) {
+      if (error instanceof LocalAgentError) throw new LocalError(error.message, 400);
+      throw error;
     }
-    const zip = await downloadAgentSkill(config.backendUrl, bearer(c), agentId, skillName);
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.writeFileSync(destination, Buffer.from(zip));
-    return json(c, 200, { path: destination });
   });
 
   app.put("/agents/local/:agentId/published", async (c) => {

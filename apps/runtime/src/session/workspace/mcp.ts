@@ -3,6 +3,8 @@ import path from "node:path";
 
 import type { LoadedMcpConfig, McpServerConfig, McpServerEntry } from "@earendil-works/pi-coding-agent";
 
+import { normalizeMcpServers } from "../../package/mcp-document.js";
+
 /** 与医院 MCP 约定的请求头。运行包里的同名头会被这次出诊的用户覆盖。 */
 export const VISIT_USER_HEADER = "X-AgentUp-User-Id";
 
@@ -86,9 +88,10 @@ function readMcpFile(file: string, scope: "project" | "global"): LoadedMcpConfig
   if (!servers || typeof servers !== "object" || Array.isArray(servers)) {
     return { servers: [], errors: [`${file} 缺少 mcpServers`] };
   }
+  const serverMap = normalizeMcpServers(servers as Record<string, unknown>);
   const entries: McpServerEntry[] = [];
   const errors: string[] = [];
-  for (const [name, config] of Object.entries(servers)) {
+  for (const [name, config] of Object.entries(serverMap)) {
     if (!config || typeof config !== "object" || Array.isArray(config)) {
       errors.push(`${name} 的配置无效`);
       continue;

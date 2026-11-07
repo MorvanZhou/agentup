@@ -24,34 +24,57 @@ it("proxies account profile updates through the loopback API", async () => {
       },
     ],
   ]);
+  const webp = Buffer.from([
+    0x52, 0x49, 0x46, 0x46, 8, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0,
+  ]).toString("base64");
   const backend = await listen((req, res) => {
     const token = req.headers.authorization?.slice("Bearer ".length);
+    if (req.method === "PUT" && (req.url ?? "").includes(".webp")) {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
     if (!token) return json(res, 401, { error: "未登录" });
+    if (req.url === "/v1/me/avatar-upload" && req.method === "POST") {
+      const host = req.headers.host ?? "127.0.0.1";
+      return json(res, 200, {
+        bucket: host,
+        region: "local",
+        key: "dev/avatars/users/u-a/1.webp",
+        tmp_secret_id: "id",
+        tmp_secret_key: "key",
+        session_token: "token",
+        content_type: "image/webp",
+        expired_at: 1,
+      });
+    }
+    if (req.url?.startsWith("/v1/me/avatar-uploaded") && req.method === "POST") {
+      const current = accounts.get(token);
+      if (!current) return json(res, 401, { error: "未登录" });
+      const next = {
+        ...current,
+        has_avatar: true,
+        avatar_url: "https://agentup-test.cos.ap-guangzhou.myqcloud.com/dev/avatars/users/u-a/1.webp?q-sign-time=1",
+      };
+      accounts.set(token, next);
+      return json(res, 200, { ...next, token });
+    }
     if (req.url === "/v1/me" && req.method === "PUT") {
       return readBody(req).then((raw) => {
-        const body = JSON.parse(raw) as { nickname?: string; avatar?: string };
+        const body = JSON.parse(raw) as { nickname?: string };
         const current = accounts.get(token);
         if (!current) return json(res, 401, { error: "未登录" });
         if (!body.nickname || body.nickname !== body.nickname.trim()) {
           return json(res, 400, { error: "昵称无效" });
         }
-        const hasAvatar = typeof body.avatar === "string" && body.avatar.length > 0 ? true : current.has_avatar;
-        const avatarUrl = hasAvatar
-          ? `http://backend.test/statics/users/${current.user_id}/avatar.webp?v=1`
-          : null;
-        accounts.set(token, {
-          ...current,
-          nickname: body.nickname,
-          has_avatar: hasAvatar,
-          avatar_url: avatarUrl,
-        });
+        accounts.set(token, { ...current, nickname: body.nickname });
         json(res, 200, {
           user_id: current.user_id,
           email: current.email,
           nickname: body.nickname,
           token,
-          has_avatar: hasAvatar,
-          avatar_url: avatarUrl,
+          has_avatar: current.has_avatar,
+          avatar_url: current.avatar_url,
         });
       });
     }
@@ -90,7 +113,7 @@ it("proxies account profile updates through the loopback API", async () => {
     const withAvatar = await fetch(`${local.url}/me`, {
       method: "PUT",
       headers: { authorization: "Bearer token-a", "content-type": "application/json" },
-      body: JSON.stringify({ nickname: "小舟", avatar: "AAAA" }),
+      body: JSON.stringify({ nickname: "小舟", avatar: webp }),
     });
     expect(withAvatar.status).toBe(200);
     expect(await withAvatar.json()).toEqual({
@@ -99,7 +122,7 @@ it("proxies account profile updates through the loopback API", async () => {
       nickname: "小舟",
       token: "token-a",
       has_avatar: true,
-      avatar_url: "http://backend.test/statics/users/u-a/avatar.webp?v=1",
+      avatar_url: "https://agentup-test.cos.ap-guangzhou.myqcloud.com/dev/avatars/users/u-a/1.webp?q-sign-time=1",
     });
   } finally {
     await local.close();

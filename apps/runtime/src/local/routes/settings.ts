@@ -43,6 +43,7 @@ import { providerSettingsBody } from "../serialize.js";
 import {
   UserResourceError,
   deleteUserSkill,
+  inspectSkillPackage,
   installUserSkillPackage,
   listUserSkills,
   readUserAgentsMd,
@@ -65,6 +66,14 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
         enabled: skill.enabled,
       })),
     });
+  });
+
+  app.post("/settings/skills/inspect", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    requireUserId(text(body, "user_id"));
+    const inspected = await inspectSkillPackage(text(body, "path"));
+    return json(c, 200, { name: inspected.name, description: inspected.description });
   });
 
   app.post("/settings/skills/install", async (c) => {

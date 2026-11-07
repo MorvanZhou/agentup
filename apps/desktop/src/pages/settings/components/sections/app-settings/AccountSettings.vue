@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 
 import { useDesktop } from "../../../../../app/desktop";
 import UserAvatar from "../../../../../shared/components/avatar/UserAvatar.vue";
+import { NICKNAME_MAX } from "../../../../../shared/model/input-limits";
 import { isAccountSession, isGuestSession, sessionDisplayNickname } from "../../../../../shared/model/session/session";
 import { showToast } from "../../../../../shared/model/ui/toast";
 import { t } from "../../../../../shared/model/ui/ui-locale";
@@ -126,7 +127,7 @@ function onAvatar(event: Event): void {
           <input
             v-model="nickname"
             type="text"
-            maxlength="64"
+            :maxlength="NICKNAME_MAX"
             autocomplete="nickname"
             :disabled="busy || avatarBusy || signingOut"
             class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import type { ModelRef } from "../../config/provider/index.js";
 import { SHORT_ID_SIZE, shortId } from "../../ids/short-id.js";
 
 import {
@@ -21,6 +22,7 @@ import type {
   GroupMember,
   GroupRoom,
 } from "./types.js";
+import { parseModelAssignmentMode, type ModelAssignmentMode } from "../model/assignment.js";
 import { GROUP_RECORD_VERSION, GroupError } from "./types.js";
 import { isInside } from "../workspace/project-roots.js";
 import {
@@ -130,6 +132,22 @@ export class GroupStore {
       return { id, lines: readSessionFile(dir, id) };
     });
     return readGroupLinesPage(sessions, options);
+  }
+
+  /** 只改分配方式，不改任何人的一对一模型，也不改本群已经记下的模型。 */
+  setModelMode(userId: string, groupId: string, mode: ModelAssignmentMode): GroupRoom {
+    const index = this.loadIndex(userId, groupId);
+    index.modelMode = mode;
+    fs.writeFileSync(this.file(userId, groupId), JSON.stringify(index, null, 2));
+    return this.peek(userId, groupId);
+  }
+
+  /** 只写这间群的统一模型，不改成员的一对一会话，也不动设备「最近使用」。 */
+  setModel(userId: string, groupId: string, ref: ModelRef): GroupRoom {
+    const index = this.loadIndex(userId, groupId);
+    index.model = { templateId: ref.templateId, modelId: ref.modelId };
+    fs.writeFileSync(this.file(userId, groupId), JSON.stringify(index, null, 2));
+    return this.peek(userId, groupId);
   }
 
   /** 只改索引里的群名；空标题回落到成员名拼接，与建群一致。 */
@@ -395,6 +413,8 @@ export class GroupStore {
       currentSessionId,
       holderId: room.holderId,
       defaultHolderId: room.defaultHolderId,
+      modelMode: room.modelMode,
+      model: room.model,
       holderSpeaking: room.holderSpeaking,
       phase: room.phase,
       taskIds: room.taskIds,
@@ -516,6 +536,10 @@ type GroupIndexRaw = {
   holderId: GroupRoom["holderId"];
   /** 旧文件可能缺此字段，读时 normalize 补齐。 */
   defaultHolderId?: string;
+  /** 旧文件没有时当统一。 */
+  modelMode?: unknown;
+  /** 旧文件没有本群模型。 */
+  model?: unknown;
   holderSpeaking: boolean;
   phase: GroupRoom["phase"];
   taskIds: string[];
@@ -523,14 +547,30 @@ type GroupIndexRaw = {
   queue: GroupRoom["queue"];
 };
 
-type GroupIndex = GroupIndexRaw & { defaultHolderId: string };
+type GroupIndex = Omit<GroupIndexRaw, "modelMode" | "defaultHolderId" | "model"> & {
+  defaultHolderId: string;
+  modelMode: ModelAssignmentMode;
+  model: ModelRef | null;
+};
 
 /** 旧索引缺 defaultHolderId 时按 members[0] 补齐。 */
 function normalizeGroupIndex(index: GroupIndexRaw): GroupIndex {
   return {
     ...index,
     defaultHolderId: resolveDefaultHolderId(index.members, index.defaultHolderId),
+    modelMode: parseModelAssignmentMode(index.modelMode),
+    model: parseRoomModel(index.model),
   };
+}
+
+function parseRoomModel(value: unknown): ModelRef | null {
+  if (!value || typeof value !== "object") return null;
+  const ref = value as { templateId?: unknown; modelId?: unknown };
+  if (typeof ref.templateId !== "string" || typeof ref.modelId !== "string") return null;
+  const templateId = ref.templateId.trim();
+  const modelId = ref.modelId.trim();
+  if (!templateId || !modelId) return null;
+  return { templateId, modelId };
 }
 
 function roomShell(index: GroupIndex, lines: GroupLine[]): GroupRoom {
@@ -543,6 +583,8 @@ function roomShell(index: GroupIndex, lines: GroupLine[]): GroupRoom {
     lines,
     holderId: index.holderId,
     defaultHolderId: index.defaultHolderId,
+    modelMode: index.modelMode,
+    model: index.model,
     holderSpeaking: index.holderSpeaking,
     phase: index.phase,
     taskIds: index.taskIds,

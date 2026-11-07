@@ -3,9 +3,13 @@ import { computed, onActivated, onMounted, ref, watch, type Ref } from "vue";
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
 import { providerConfigEpoch } from "../../../shared/model/runtime/provider-config";
-import type { SessionModelOption, SessionModelState } from "../../../shared/model/runtime/runtime";
+import type {
+  ModelAssignmentMode,
+  SessionModelOption,
+  SessionModelState,
+} from "../../../shared/model/runtime/runtime";
 import { showToast } from "../../../shared/model/ui/toast";
-import { readUiLocale, uiLocale } from "../../../shared/model/ui/ui-locale";
+import { readUiLocale, t, uiLocale } from "../../../shared/model/ui/ui-locale";
 
 /** 当前对话 Pi session 的模型选择（Composer 下拉）。 */
 export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
@@ -16,6 +20,7 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
 
   const models = computed(() => state.value?.models ?? []);
   const current = computed(() => state.value?.current ?? null);
+  const modelMode = computed(() => state.value?.modelMode ?? "unified");
   const configured = computed(() => Boolean(state.value?.configured));
   const currentLabel = computed(() => {
     const ref = current.value;
@@ -64,6 +69,26 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
     }
   }
 
+  /** 只改分配方式，不改当前选中的模型。 */
+  async function setMode(mode: ModelAssignmentMode): Promise<void> {
+    if (!session.value || !agentId.value || busy.value) return;
+    if (modelMode.value === mode) return;
+    busy.value = true;
+    try {
+      state.value = await api.setSessionModelMode(
+        session.value.token,
+        agentId.value,
+        session.value.userId,
+        mode,
+        readUiLocale(),
+      );
+    } catch (caught) {
+      showToast(caught instanceof DesktopApiError ? caught.message : t("composerModelModeFailed"), "error");
+    } finally {
+      busy.value = false;
+    }
+  }
+
   onMounted(() => void load());
   onActivated(() => void load());
   watch([agentId, () => session.value?.userId, uiLocale], () => void load());
@@ -76,11 +101,13 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
     state,
     models,
     current,
+    modelMode,
     currentLabel,
     configured,
     busy,
     loaded,
     load,
     select,
+    setMode,
   };
 }

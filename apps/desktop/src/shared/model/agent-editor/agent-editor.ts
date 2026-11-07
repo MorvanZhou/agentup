@@ -49,7 +49,8 @@ export function agentEditorCapabilityChanged(
 ): boolean {
   if (input.skillPaths?.length) return true;
   if (input.removeSkills?.length) return true;
-  const nextMcp = input.mcpServers ?? {};
+  // 更新页没点开 MCP 时不带这个字段，服务端保留原对象。
+  if (input.mcpServers === undefined) return false;
   const prevMcp = initial?.mcpServers ?? {};
-  return JSON.stringify(nextMcp) !== JSON.stringify(prevMcp);
+  return JSON.stringify(input.mcpServers) !== JSON.stringify(prevMcp);
 }

@@ -11,6 +11,7 @@ import { buildConversationRows } from "../../src/pages/conversation/model/sideba
 import {
   buildGroupSidebarRow,
   collectGroupUnreadBumps,
+  groupIdleFinishes,
   groupAttentionFromSnapshot,
   groupIsWorking,
   groupSidebarPreview,
@@ -285,6 +286,16 @@ describe("sidebar groups", () => {
 
     const done = collectGroupUnreadBumps(first.phases, [{ id: "g1", phase: "idle" }], null, "replace");
     expect(done.bumpIds).toEqual(["g1"]);
+
+    // 横幅含当前打开的群（未读仍跳过）；首见不报，避免冷启动刷屏。
+    expect(groupIdleFinishes({}, [{ id: "g1", phase: "idle" }])).toEqual([]);
+    expect(
+      groupIdleFinishes({ g1: "holding", g2: "task" }, [
+        { id: "g1", phase: "idle" },
+        { id: "g2", phase: "idle" },
+      ]),
+    ).toEqual(["g1", "g2"]);
+    expect(groupIdleFinishes({ g1: "idle" }, [{ id: "g1", phase: "idle" }])).toEqual([]);
 
     const live = collectGroupUnreadBumps(
       { g1: "holding", g2: "task" },

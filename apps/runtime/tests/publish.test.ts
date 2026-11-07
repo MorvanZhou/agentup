@@ -222,72 +222,112 @@ it("rejects a package that chooses the user", () => {
 });
 
 it("publishes the pi files and checks the digest", async () => {
-  const source = preparePublishSource(
+  const prepared = preparePublishSource(
     agentDir,
     { name: "呼吸科医生", role: "医生", background: "演示问诊" },
     "zh",
   );
+  const webp = new Uint8Array([
+    0x52, 0x49, 0x46, 0x46, 8, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0,
+  ]);
+  const source = { ...prepared, avatar: webp, avatarMime: "image/webp" };
   const manifest = { version: 1, tools: [], modelCapabilities: [] };
   const digest = packageDigest(manifest, source.files);
-  let postedArchive: Uint8Array | undefined;
-  let postedAvatar = false;
-  const server = await listen(async (req, res) => {
-    if (req.headers.authorization !== "Bearer token") return json(res, 401, { error: "未登录" });
-    const { files } = await readMultipart(req);
-    postedArchive = files.archive;
-    postedAvatar = Boolean(files.avatar?.byteLength);
-    json(res, 200, {
+  const puts: Uint8Array[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    if (headers.get("authorization") !== "Bearer token" && !url.includes("myqcloud.com")) {
+      return new Response(JSON.stringify({ error: "未登录" }), { status: 401 });
+    }
+    if (url.includes("myqcloud.com") && init?.method === "PUT") {
+      const body = init.body;
+      puts.push(body instanceof Uint8Array ? body : new Uint8Array());
+      return new Response(null, { status: 200 });
+    }
+    if (url.endsWith("/uploaded")) {
+      const posted = JSON.parse(String(init?.body)) as { digest?: string };
+      return jsonResponse({
+        job_id: "job-1",
+        status: "ready",
+        agent_id: "generated-id",
+        name: "呼吸科医生",
+        role: "医生",
+        background: "演示问诊",
+        manifest: { version: 1, tools: [], model_capabilities: [] },
+        digest: posted.digest,
+      });
+    }
+    if (url.endsWith("/avatar-upload")) {
+      return jsonResponse({
+        bucket: "agentup-test",
+        region: "ap-guangzhou",
+        key: "dev/avatars/agents/generated-id/1.webp",
+        tmp_secret_id: "id",
+        tmp_secret_key: "key",
+        session_token: "token",
+        content_type: "image/webp",
+        expired_at: 1,
+      });
+    }
+    if (url.includes("avatar-uploaded")) return jsonResponse({ agent_id: "generated-id" });
+    return jsonResponse({
       job_id: "job-1",
-      status: "ready",
-      agent_id: "generated-id",
-      name: "呼吸科医生",
-      role: "医生",
-      background: "演示问诊",
-      manifest: {
-        version: 1,
-        tools: [],
-        model_capabilities: [],
+      status: "awaiting_upload",
+      upload: {
+        bucket: "agentup-test",
+        region: "ap-guangzhou",
+        key: "dev/packages/generated-id/v1.tar.gz",
+        tmp_secret_id: "id",
+        tmp_secret_key: "key",
+        session_token: "token",
+        content_type: "application/gzip",
+        expired_at: 1,
       },
-      digest,
-      byte_size: postedArchive?.byteLength ?? 0,
     });
+  };
+  const published = await publishAgent(
+    "http://127.0.0.1:9",
+    "token",
+    source,
+    "呼吸科医生",
+    "医生",
+    "演示问诊",
+    undefined,
+    "",
+    fetchImpl,
+  );
+  expect(published).toEqual({
+    agentId: "generated-id",
+    name: "呼吸科医生",
+    role: "医生",
+    background: "演示问诊",
+    version: 1,
+    digest,
   });
-  try {
-    const published = await publishAgent(
-      `http://127.0.0.1:${server.address.port}`,
-      "token",
-      source,
-      "呼吸科医生",
-      "医生",
-      "演示问诊",
-    );
-    expect(published).toEqual({
-      agentId: "generated-id",
-      name: "呼吸科医生",
-      role: "医生",
-      background: "演示问诊",
-      version: 1,
-      digest,
-    });
-    expect(postedArchive).toBeTruthy();
-    const unpacked = await unpackTarGz(postedArchive!);
-    expect(Buffer.from(unpacked["mcp.json"]!).toString("utf8")).toContain("http://127.0.0.1:8788/mcp");
-    expect(postedAvatar).toBe(true);
-    await expect(publishAgent(
-      `http://127.0.0.1:${server.address.port}`,
-      "token",
-      source,
-      "呼吸科医生",
-      "医生",
-      "演示问诊",
-      undefined,
-      "",
-      async () => new Response(JSON.stringify({ ...publishedBody(source), digest: "0".repeat(64) }), { status: 200 }),
-    )).rejects.toBeInstanceOf(BackendClientError);
-  } finally {
-    await close(server);
-  }
+  expect(puts.length).toBe(2);
+  const unpacked = await unpackTarGz(puts[0]!);
+  expect(Buffer.from(unpacked["mcp.json"]!).toString("utf8")).toContain("http://127.0.0.1:8788/mcp");
+  expect(Buffer.from(puts[1]!).toString("latin1")).toContain("WEBP");
+  await expect(publishAgent(
+    "http://127.0.0.1:9",
+    "token",
+    source,
+    "呼吸科医生",
+    "医生",
+    "演示问诊",
+    undefined,
+    "",
+    async () => jsonResponse({ ...publishedBody(source), status: "ready", digest: "0".repeat(64) }),
+  )).rejects.toBeInstanceOf(BackendClientError);
 });
+
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
 function publishedBody(source: ReturnType<typeof loadAgentSource>) {
   return {

@@ -56,6 +56,26 @@ if [ "$ready" -ne 1 ]; then
   exit 1
 fi
 
+# macOS 通知横幅左侧图标取宿主 App 的 bundle 图标，不看 Notification 的 icon。
+# 本脚本启动的是 Electron.app，不换掉 electron.icns 就会一直显示原子标。
+# 打包后的 AgentUp.app 已用自己的 icon.icns，不走这里。
+if [ "$(uname -s)" = "Darwin" ]; then
+  electron_app="apps/desktop/node_modules/electron/dist/Electron.app"
+  icon_src="apps/desktop/electron/assets/icon.icns"
+  icon_dst="${electron_app}/Contents/Resources/electron.icns"
+  if [ -f "$icon_src" ] && [ -f "$icon_dst" ]; then
+    if ! cmp -s "$icon_src" "$icon_dst"; then
+      cp "$icon_src" "$icon_dst"
+      touch "$electron_app" "${electron_app}/Contents/Info.plist"
+      lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+      if [ -x "$lsregister" ]; then
+        "$lsregister" -f "$electron_app" >/dev/null 2>&1 || true
+      fi
+      echo "Desktop: 已换上 AgentUp 图标，本次启动的通知横幅会用这个 logo。"
+    fi
+  fi
+fi
+
 # 从本脚本（已加载用户 shell）启动，跳过再采 login env；打包 App 无此变量会采一次
 export AGENTUP_CLI=1
 AGENTUP_OPEN_DEVTOOLS=1 pnpm --filter @agentup/desktop start

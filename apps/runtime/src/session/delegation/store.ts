@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { SHORT_ID_SIZE, shortId } from "../../ids/short-id.js";
+import { parseModelAssignmentMode } from "../model/assignment.js";
+import type { DelegationModelPin } from "../model/assignment.js";
 import type { DelegationStatus, DelegationTask } from "./types.js";
 
 const AGENT_ID = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
@@ -20,6 +22,7 @@ export class DelegationStore {
     brief: string;
     wait: boolean;
     groupId?: string;
+    modelPin?: DelegationModelPin;
   }): DelegationTask {
     const now = Date.now();
     const task: DelegationTask = {
@@ -36,6 +39,7 @@ export class DelegationStore {
       seen: false,
       notified: false,
       groupId: input.groupId,
+      ...(input.modelPin ? { modelPin: input.modelPin } : {}),
     };
     this.tasks.set(task.id, task);
     this.persist(task);
@@ -209,7 +213,21 @@ function parseTask(raw: unknown): DelegationTask | undefined {
     artifacts: parseArtifacts(value.artifacts),
     artifactsDelivered: value.artifactsDelivered === true,
     groupId: typeof value.groupId === "string" && value.groupId ? value.groupId : undefined,
+    modelPin: parseModelPin(value.modelPin),
   };
+}
+
+function parseModelPin(raw: unknown): DelegationModelPin | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const record = raw as { mode?: unknown; templateId?: unknown; modelId?: unknown };
+  if (parseModelAssignmentMode(record.mode) === "perAgent" && (record.mode === "perAgent" || record.mode === "per_agent")) {
+    return { mode: "perAgent" };
+  }
+  if (record.mode !== "unified") return undefined;
+  const templateId = typeof record.templateId === "string" ? record.templateId.trim() : "";
+  const modelId = typeof record.modelId === "string" ? record.modelId.trim() : "";
+  if (!templateId || !modelId) return undefined;
+  return { mode: "unified", templateId, modelId };
 }
 
 function parseArtifacts(

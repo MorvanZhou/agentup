@@ -354,6 +354,14 @@ export class DesktopApi {
     return settingsApi.userSkills(this.http, token, userId);
   }
 
+  inspectUserSkill(
+    token: string,
+    userId: string,
+    packagePath: string,
+  ): Promise<{ name: string; description: string }> {
+    return settingsApi.inspectUserSkill(this.http, token, userId, packagePath);
+  }
+
   installUserSkill(
     token: string,
     userId: string,
@@ -380,7 +388,7 @@ export class DesktopApi {
       owner?: string;
       version?: string;
     },
-  ): Promise<string> {
+  ): Promise<{ path: string; name: string }> {
     return communitySkillsApi.fetchCommunitySkill(this.http, token, input);
   }
 
@@ -478,6 +486,10 @@ export class DesktopApi {
     return agentsApi.publishFromEditor(this.http, token, input);
   }
 
+  loadPublishEditorMcp(token: string, publishedAgentId: string): Promise<string> {
+    return agentsApi.loadPublishEditorMcp(this.http, token, publishedAgentId);
+  }
+
   previewPublishEditor(
     token: string,
     publishedAgentId: string,
@@ -514,11 +526,12 @@ export class DesktopApi {
 
   exportPublishedSkill(
     token: string,
+    userId: string,
     agentId: string,
     skillName: string,
     destination: string,
   ): Promise<{ path: string }> {
-    return agentsApi.exportPublishedSkill(this.http, token, agentId, skillName, destination);
+    return agentsApi.exportPublishedSkill(this.http, token, userId, agentId, skillName, destination);
   }
 
   inspectAgent(token: string, agentDir: string): Promise<AgentSourcePreview> {
@@ -587,6 +600,16 @@ export class DesktopApi {
     locale?: UiLocale,
   ): Promise<SessionModelState> {
     return chatApi.setSessionModel(this.http, token, agentId, userId, ref, locale);
+  }
+
+  setSessionModelMode(
+    token: string,
+    agentId: string,
+    userId: string,
+    mode: "unified" | "perAgent",
+    locale?: UiLocale,
+  ): Promise<SessionModelState> {
+    return chatApi.setSessionModelMode(this.http, token, agentId, userId, mode, locale);
   }
 
   abortTurn(token: string, agentId: string, userId: string): Promise<void> {
@@ -960,6 +983,24 @@ export class DesktopApi {
       members,
       defaultHolderId,
     );
+  }
+
+  setGroupModelMode(
+    token: string,
+    userId: string,
+    groupId: string,
+    mode: "unified" | "perAgent",
+  ) {
+    return groupsApi.setGroupModelMode(this.http, token, userId, groupId, mode);
+  }
+
+  setGroupModel(
+    token: string,
+    userId: string,
+    groupId: string,
+    ref: { templateId: string; modelId: string },
+  ) {
+    return groupsApi.setGroupModel(this.http, token, userId, groupId, ref);
   }
 
   getGroup(token: string, userId: string, groupId: string) {

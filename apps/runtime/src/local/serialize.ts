@@ -1,6 +1,7 @@
 import type { UiLocale } from "../i18n/index.js";
 import { readProviderSettings } from "../config/provider/index.js";
 import { getProviderTemplate } from "../config/provider-templates.js";
+import { modelModeWire, readVisitModelMode } from "../session/model/assignment.js";
 import { peekVisitModelRef } from "../session/model/session-model.js";
 import type { UserState } from "./user/state.js";
 
@@ -215,6 +216,7 @@ export function sessionModelBody(
       context_window: model.contextWindow ?? null,
     })),
     configured: settings.configured,
+    model_mode: modelModeWire(readVisitModelMode(sessionDir)),
     // 会话当前模型是不是本地 Agent App（SDK）接入：桌面据此把「回合中发送」改成排队（§12.8）
     follow_up: current ? getProviderTemplate(current.templateId)?.kind === "agent-sdk" : false,
   };

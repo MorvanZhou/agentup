@@ -13,7 +13,9 @@ import { SquareIcon, XIcon } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDesktop } from "../../../../../../../app/desktop";
-import { t } from "../../../../../../../shared/model/ui/ui-locale";
+import { DesktopApi, DesktopApiError } from "../../../../../../../shared/api/runtime";
+import { readUiLocale, t } from "../../../../../../../shared/model/ui/ui-locale";
+import type { ModelAssignmentMode, SessionModelOption } from "../../../../../../../shared/model/runtime/runtime";
 import { useComposerFiles, isImageFile } from "../../../../../composables/useComposerFiles";
 import { useComposerInputHeight } from "../../../../../composables/useComposerHeight";
 import { addComposerImage } from "../../../../../model/composer/add-composer-image";
@@ -39,11 +41,13 @@ import { injectThreadBusyTurn } from "../../../../../model/thread/thread-busy-tu
 import {
   composerResourceAgentId,
   composerShowAttachments,
+  injectChatModelMode,
   injectChatSurface,
   injectChatWaveBusy,
   sessionModelAgentId,
 } from "../../../../../model/thread/chat-surface";
 import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
+import { injectThreadRoster, resolveRosterAgent } from "../../../../../model/thread/thread-roster";
 import { showToast } from "../../../../../../../shared/model/ui/toast";
 import ImageAttachmentPreview from "./chips/ImageAttachmentPreview.vue";
 import MentionPicker from "./chips/MentionPicker.vue";
@@ -59,6 +63,7 @@ const aui = useAui();
 const { session } = useDesktop();
 const surface = injectChatSurface();
 const agentId = injectThreadAgentId();
+const roster = injectThreadRoster();
 const extras = injectThreadExtras();
 const actions = injectThreadActions();
 const askUser = injectThreadAskUser();
@@ -87,9 +92,63 @@ const {
   current: sessionModelCurrent,
   currentLabel: sessionModelLabel,
   busy: sessionModelBusy,
+  modelMode: sessionModelMode,
   select: selectSessionModel,
+  setMode: setSessionModelMode,
   state: sessionModelState,
 } = useSessionModel(modelAgentId);
+const groupModelMode = injectChatModelMode();
+/** 群的开关记在房间上；一对一记在这个 Agent 的会话上。 */
+const assignmentMode = computed<ModelAssignmentMode>(() =>
+  surface.value.groupId
+    ? (groupModelMode?.mode.value ?? "unified")
+    : sessionModelMode.value,
+);
+const roomModel = computed(() => groupModelMode?.roomModel.value ?? null);
+function namedModel(ref: { templateId: string; modelId: string } | null | undefined): string {
+  if (!ref) return "";
+  return (
+    sessionModels.value.find(
+      (model) => model.templateId === ref.templateId && model.modelId === ref.modelId,
+    )?.name ?? ref.modelId
+  );
+}
+/** 群单配的按钮是「供应商标叠放 + 各用各的」；统一是「共用 + 供应商标 + 模型名」。 */
+const pickerLabel = computed(() => {
+  if (surface.value.groupId && assignmentMode.value === "perAgent") {
+    return t("composerModelEach");
+  }
+  if (surface.value.groupId) {
+    const ref = roomModel.value ?? sessionModelCurrent.value;
+    return namedModel(ref) || sessionModelLabel.value;
+  }
+  return sessionModelLabel.value;
+});
+/** 群统一时写在供应商标前面；单配和一对一没有这段。 */
+const pickerLabelPrefix = computed(() =>
+  surface.value.groupId && assignmentMode.value !== "perAgent" ? t("composerModelRoom") : "",
+);
+/** 一对一单配只把当前这位放进名单，头像和名字来自侧栏名片。 */
+const directMember = computed(() => {
+  if (surface.value.groupId || !agentId) return null;
+  const card = resolveRosterAgent(roster.value, agentId);
+  const named = (card.remark || card.name).trim();
+  return {
+    id: agentId,
+    name: named && named !== agentId ? named : "",
+    ...(card.avatarUrl ? { avatarUrl: card.avatarUrl } : {}),
+  };
+});
+const pickerMembers = computed(() =>
+  surface.value.groupId ? surface.value.mentions : directMember.value ? [directMember.value] : [],
+);
+const pickerCurrent = computed(() => {
+  if (surface.value.groupId && assignmentMode.value === "perAgent") return null;
+  if (surface.value.groupId) return roomModel.value ?? sessionModelCurrent.value;
+  return sessionModelCurrent.value;
+});
+const memberModelApi = new DesktopApi();
+const memberModels = ref<Record<string, { templateId: string; modelId: string; name: string }>>({});
 /** 会话当前模型就是本地 Agent App（SDK）接入：单聊回合中发送进 followUp 队列。 */
 const sdkAccess = computed(() => sessionModelState.value?.followUp === true);
 /** 群不接 followUp 队列（走 post+inject）；误入队会被 GroupThread 空实现吞掉。 */
@@ -99,6 +158,103 @@ const useFollowUpQueue = computed(() =>
     groupId: surface.value.groupId,
   }),
 );
+async function loadMemberModels(): Promise<void> {
+  if (!surface.value.groupId || assignmentMode.value !== "perAgent" || !session.value) {
+    memberModels.value = {};
+    return;
+  }
+  const tokenValue = session.value.token;
+  const user = session.value.userId;
+  const locale = readUiLocale();
+  const rows = await Promise.all(
+    surface.value.mentions.map(async (member) => {
+      try {
+        const state = await memberModelApi.sessionModel(tokenValue, member.id, user, locale);
+        const current = state.current;
+        if (!current) return [member.id, null] as const;
+        const name =
+          state.models.find(
+            (model) => model.templateId === current.templateId && model.modelId === current.modelId,
+          )?.name ?? current.modelId;
+        return [member.id, { templateId: current.templateId, modelId: current.modelId, name }] as const;
+      } catch {
+        return [member.id, null] as const;
+      }
+    }),
+  );
+  const next: Record<string, { templateId: string; modelId: string; name: string }> = {};
+  for (const [id, model] of rows) {
+    if (model) next[id] = model;
+  }
+  memberModels.value = next;
+}
+
+// 房间每秒刷新会换新的 mentions 数组。用字符串比较，成员没变就不重拉每人的一对一模型。
+watch(
+  () =>
+    [
+      assignmentMode.value,
+      surface.value.groupId ?? "",
+      surface.value.mentions.map((member) => member.id).join("\0"),
+    ].join("|"),
+  () => {
+    void loadMemberModels();
+  },
+  { immediate: true },
+);
+
+async function onSetModelMode(mode: ModelAssignmentMode): Promise<void> {
+  if (surface.value.groupId) {
+    const hadRoomModel = Boolean(roomModel.value);
+    await groupModelMode?.setMode(mode);
+    // 第一次切到全员时，把当前开口者的模型抄进这间群，之后私聊再改也不带动群。
+    if (mode === "unified" && !hadRoomModel && sessionModelCurrent.value) {
+      try {
+        await groupModelMode?.setRoomModel(sessionModelCurrent.value);
+      } catch (caught) {
+        showToast(caught instanceof DesktopApiError ? caught.message : t("composerModelSwitchFailed"), "error");
+      }
+    }
+    return;
+  }
+  await setSessionModelMode(mode);
+}
+
+async function onSelectShownModel(model: SessionModelOption): Promise<void> {
+  if (surface.value.groupId && assignmentMode.value === "unified") {
+    try {
+      await groupModelMode?.setRoomModel({ templateId: model.templateId, modelId: model.modelId });
+    } catch (caught) {
+      showToast(caught instanceof DesktopApiError ? caught.message : t("composerModelSwitchFailed"), "error");
+    }
+    return;
+  }
+  await selectSessionModel(model);
+}
+
+async function onSelectMemberModel(agentId: string, model: SessionModelOption): Promise<void> {
+  memberModels.value = {
+    ...memberModels.value,
+    [agentId]: { templateId: model.templateId, modelId: model.modelId, name: model.name },
+  };
+  if (agentId === modelAgentId.value) {
+    await selectSessionModel(model);
+    return;
+  }
+  if (!session.value) return;
+  try {
+    await memberModelApi.setSessionModel(
+      session.value.token,
+      agentId,
+      session.value.userId,
+      { templateId: model.templateId, modelId: model.modelId },
+      readUiLocale(),
+    );
+  } catch (caught) {
+    showToast(caught instanceof DesktopApiError ? caught.message : t("composerModelSwitchFailed"), "error");
+  }
+}
+
 const cursor = ref(0);
 const caretRect = ref<CaretClientRect | null>(null);
 
@@ -552,14 +708,24 @@ function onToolbarPickFiles(files: File[]): void {
 
         <div class="flex items-center justify-end gap-2 pt-2 pb-2 pr-2">
           <!-- 会话级模型：绑定当前 Pi session -->
+          <!-- 回合进行中仍可改：只作用于下一次开口或下一张工单 -->
           <ComposerModelPicker
             v-if="surface.modelPicker"
             :models="sessionModels"
-            :current="sessionModelCurrent"
-            :current-label="sessionModelLabel"
-            :disabled="inputDisabled || turnBusy"
+            :current="pickerCurrent"
+            :current-label="pickerLabel"
+            :label-prefix="pickerLabelPrefix"
+            :mode="assignmentMode"
+            :scope="surface.groupId ? 'group' : 'direct'"
+            :show-logo="!(surface.groupId && assignmentMode === 'perAgent')"
+            :members="pickerMembers"
+            :speaker-id="modelAgentId"
+            :member-models="memberModels"
+            :disabled="inputDisabled"
             :busy="sessionModelBusy"
-            @select="selectSessionModel"
+            @select="onSelectShownModel"
+            @select-member="onSelectMemberModel"
+            @set-mode="onSetModelMode"
           />
           <!-- HITL 等待时 isRunning 常为 false，PrimitiveCancel 会禁用；统一走 stopTurn -->
           <button

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import { openPromise as openZipPromise } from "yauzl";
 
+import { normalizeMcpServers } from "../../package/mcp-document.js";
 import {
   isSafeSkillName,
   repairSkillMarkdown,
@@ -15,7 +16,8 @@ import { ensurePersonalAssistant } from "./personal-assistant.js";
 const SKILL_MAX_BYTES = 200_000;
 const SKILL_PACKAGE_MAX_BYTES = 5_000_000;
 const MCP_MAX_BYTES = 200_000;
-const AGENTS_MD_MAX_BYTES = 200_000;
+/** 与 backend `RULES_MAX_BYTES` 对齐：5000 个汉字。 */
+const AGENTS_MD_MAX_BYTES = 15_000;
 
 export class UserResourceError extends Error {
   constructor(
@@ -109,6 +111,21 @@ export function setUserSkillEnabled(
 }
 
 /**
+ * 只解析 Skill 包内 SKILL.md 的 name（不解压落盘到 skills/）。
+ * 供社区下载后展示真名、安装前做同名冲突提示。
+ */
+export async function inspectSkillPackage(
+  packagePath: string,
+): Promise<{ name: string; description: string }> {
+  const prepared = await prepareSkillPackage(packagePath);
+  try {
+    return { name: prepared.name, description: prepared.description };
+  } finally {
+    prepared.cleanup();
+  }
+}
+
+/**
  * 将 Skill 文件夹或 zip 安装到任意 `skills/` 父目录（私人助理或本机 Agent 的 `.pi/skills`）。
  * `expectName` 用于「更新」：包内 name 必须与目标技能一致。
  */
@@ -117,11 +134,49 @@ export async function installSkillPackageTo(
   packagePath: string,
   options: { expectName?: string } = {},
 ): Promise<{ name: string; description: string }> {
+  const prepared = await prepareSkillPackage(packagePath);
+  try {
+    if (options.expectName && options.expectName !== prepared.name) {
+      throw new UserResourceError(
+        `更新失败：包内 name 为 ${prepared.name}，与 ${options.expectName} 不一致`,
+      );
+    }
+
+    const parent = path.resolve(skillsParentDir);
+    fs.mkdirSync(parent, { recursive: true });
+    const target = path.join(parent, prepared.name);
+    if (!target.startsWith(`${parent}${path.sep}`)) {
+      throw new UserResourceError("请求无效");
+    }
+    const temporary = path.join(parent, `.install-${randomUUID()}`);
+    fs.mkdirSync(temporary, { recursive: true });
+    copyTree(prepared.skillRoot, temporary, SKILL_PACKAGE_MAX_BYTES);
+    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+    fs.renameSync(temporary, target);
+
+    return { name: prepared.name, description: prepared.description };
+  } finally {
+    prepared.cleanup();
+  }
+}
+
+type PreparedSkillPackage = {
+  name: string;
+  description: string;
+  skillRoot: string;
+  cleanup: () => void;
+};
+
+/** 解压 / 拷贝到临时目录并校验；调用方负责 cleanup。 */
+async function prepareSkillPackage(packagePath: string): Promise<PreparedSkillPackage> {
   if (!packagePath || typeof packagePath !== "string") throw new UserResourceError("路径无效");
   const resolved = path.resolve(packagePath);
   if (!fs.existsSync(resolved)) throw new UserResourceError("Skill 包不存在");
 
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-skill-"));
+  const cleanup = (): void => {
+    fs.rmSync(staging, { recursive: true, force: true });
+  };
   try {
     const stats = fs.statSync(resolved);
     if (stats.isDirectory()) {
@@ -142,9 +197,6 @@ export async function installSkillPackageTo(
     if (!name || !isSafeSkillName(name)) {
       throw new UserResourceError("技能名称无效");
     }
-    if (options.expectName && options.expectName !== name) {
-      throw new UserResourceError(`更新失败：包内 name 为 ${name}，与 ${options.expectName} 不一致`);
-    }
 
     const files = collectSkillFiles(skillRoot, name);
     const issues = validateAgentPackage({
@@ -153,21 +205,15 @@ export async function installSkillPackageTo(
     }).filter((issue) => issue.path.startsWith("skills/"));
     if (issues.length) throw new UserResourceError("技能校验失败", issues);
 
-    const parent = path.resolve(skillsParentDir);
-    fs.mkdirSync(parent, { recursive: true });
-    const target = path.join(parent, name);
-    if (!target.startsWith(`${parent}${path.sep}`)) {
-      throw new UserResourceError("请求无效");
-    }
-    const temporary = path.join(parent, `.install-${randomUUID()}`);
-    fs.mkdirSync(temporary, { recursive: true });
-    copyTree(skillRoot, temporary, SKILL_PACKAGE_MAX_BYTES);
-    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
-    fs.renameSync(temporary, target);
-
-    return { name, description: skillDescription(content) };
-  } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
+    return {
+      name,
+      description: skillDescription(content),
+      skillRoot,
+      cleanup,
+    };
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }
 
@@ -258,7 +304,7 @@ export function readUserMcpServers(userDataRoot: string, userId: string): Record
   if (!servers || typeof servers !== "object" || Array.isArray(servers)) {
     throw new UserResourceError("mcp.json 缺少 mcpServers");
   }
-  return servers as Record<string, unknown>;
+  return normalizeMcpServers(servers as Record<string, unknown>);
 }
 
 export function writeUserMcpServers(
@@ -269,7 +315,8 @@ export function writeUserMcpServers(
   if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
     throw new UserResourceError("mcpServers 必须是对象");
   }
-  const payload = `${JSON.stringify({ mcpServers }, null, 2)}\n`;
+  const servers = normalizeMcpServers(mcpServers);
+  const payload = `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
   if (Buffer.byteLength(payload, "utf8") > MCP_MAX_BYTES) {
     throw new UserResourceError("mcp.json 过大");
   }
@@ -284,7 +331,7 @@ export function writeUserMcpServers(
   const temporary = `${file}.tmp`;
   fs.writeFileSync(temporary, payload, { mode: 0o600 });
   fs.renameSync(temporary, file);
-  return mcpServers;
+  return servers;
 }
 
 function resolveSkillRoot(staging: string): string {

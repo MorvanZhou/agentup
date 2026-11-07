@@ -6,8 +6,10 @@ import { expect, it } from "vitest";
 
 import { GroupStore, holderSessionRelative, projectTranscript } from "../src/session/group/index.js";
 import {
+  completedDelegationAwaitingReply,
   createGroupRoom,
   finishHolderTurn,
+  formatFinishedDelegationCue,
   postUserMessage,
   replaceUserMessage,
 } from "../src/session/group/wave.js";
@@ -553,6 +555,28 @@ it("persists assistant parts through GroupStore.finishHolder", () => {
   });
   const reloaded = store.get("u1", room.id);
   expect(reloaded.lines.find((line) => line.role === "agent")?.parts).toEqual(parts);
+});
+
+it("blocks another delegation to a member who already finished and has not been relayed", () => {
+  const store = new GroupStore(fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-repeat-")));
+  const room = store.create({ userId: "u1", title: "组", members });
+  store.post("u1", room.id, "@产品经理 让开发说一句话");
+  store.startTask("u1", room.id, "task-dev", { keepSpeaking: true, authorId: "dev", authorName: "开发" });
+  store.finishTask("u1", room.id, "task-dev", "今天风挺大");
+  const waiting = store.get("u1", room.id);
+  expect(completedDelegationAwaitingReply(waiting, "dev")).toEqual({
+    taskId: "task-dev",
+    summary: "今天风挺大",
+  });
+  expect(completedDelegationAwaitingReply(waiting, "design")).toBeNull();
+  expect(formatFinishedDelegationCue("今天风挺大")).toContain("delegate_to_agent");
+  expect(formatFinishedDelegationCue("今天风挺大")).toContain("今天风挺大");
+
+  store.finishHolder("u1", room.id, "开发说：今天风挺大");
+  expect(completedDelegationAwaitingReply(store.get("u1", room.id), "dev")).toBeNull();
+
+  store.post("u1", room.id, "@产品经理 再让开发说一句");
+  expect(completedDelegationAwaitingReply(store.get("u1", room.id), "dev")).toBeNull();
 });
 
 it("starts a new group session on clear context and keeps the old one out of the model transcript", () => {

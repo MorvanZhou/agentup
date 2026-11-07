@@ -11,6 +11,22 @@ import {
 } from "./helpers";
 import { installRuntime } from "./runtime";
 
+test("一对一可以在统一和单配之间切换", async ({ page }) => {
+  await installRuntime(page);
+  await signIn(page);
+  await page.getByRole("button", { name: "选择本会话使用的模型" }).click();
+  const mode = page.getByRole("group", { name: "分配方式" });
+  await expect(mode.getByRole("button", { name: "全员共用" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("派出的人也用这个")).toBeVisible();
+  const saved = page.waitForRequest(
+    (request) => request.method() === "PUT" && request.url().includes("/session/model-mode"),
+  );
+  await mode.getByRole("button", { name: "各用各的" }).click();
+  expect((await saved).postDataJSON()).toMatchObject({ mode: "per_agent" });
+  await expect(mode.getByRole("button", { name: "各用各的" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("派出的人用他自己的")).toBeVisible();
+});
+
 test("私人助理无需招募即可独立对话", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);

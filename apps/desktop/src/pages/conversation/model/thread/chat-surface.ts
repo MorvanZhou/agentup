@@ -1,6 +1,8 @@
 import type { Component, ComputedRef, InjectionKey, Ref } from "vue";
 import { computed, inject } from "vue";
 
+import type { ModelAssignmentMode, ProviderModelRef } from "../../../../shared/model/runtime/runtime";
+
 /** 单聊默认开模型、附件、改发和建议。Skill 入口先关掉，以后再开。 */
 export type ChatSurfaceCapabilities = {
   modelPicker: boolean;
@@ -28,6 +30,23 @@ const full: ChatSurfaceCapabilities = {
   defaultResourceAgentId: "",
   placeholder: "",
 };
+
+/** 群的分配方式记在房间上。统一模型也记在房间上，不写执掌者的私聊。 */
+export const chatModelModeKey = Symbol("chatModelMode") as InjectionKey<{
+  mode: Ref<ModelAssignmentMode> | ComputedRef<ModelAssignmentMode>;
+  setMode: (mode: ModelAssignmentMode) => Promise<void> | void;
+  roomModel: Ref<ProviderModelRef | null> | ComputedRef<ProviderModelRef | null>;
+  setRoomModel: (ref: ProviderModelRef) => Promise<void> | void;
+}>;
+
+export function injectChatModelMode(): {
+  mode: Ref<ModelAssignmentMode> | ComputedRef<ModelAssignmentMode>;
+  setMode: (mode: ModelAssignmentMode) => Promise<void> | void;
+  roomModel: Ref<ProviderModelRef | null> | ComputedRef<ProviderModelRef | null>;
+  setRoomModel: (ref: ProviderModelRef) => Promise<void> | void;
+} | null {
+  return inject(chatModelModeKey, null);
+}
 
 export const chatSurfaceKey = Symbol("chatSurface") as InjectionKey<
   Ref<ChatSurfaceCapabilities> | ComputedRef<ChatSurfaceCapabilities>

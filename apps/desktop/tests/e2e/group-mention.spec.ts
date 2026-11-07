@@ -38,4 +38,12 @@ test("群聊 @ 成员会插入芯片，发送正文保留 @名字", async ({ pag
     user_id: "patient-a",
     text: "@Weaty 帮我看天气",
   });
+
+  await page.getByRole("button", { name: "选择本会话使用的模型" }).click();
+  const saved = page.waitForRequest(
+    (request) => request.method() === "PUT" && request.url().includes("/groups/g1/model-mode"),
+  );
+  await page.getByRole("group", { name: "分配方式" }).getByRole("button", { name: "各用各的" }).click();
+  expect((await saved).postDataJSON()).toMatchObject({ mode: "per_agent" });
+  await expect(page.locator("[data-member-id='weather']")).toBeVisible();
 });

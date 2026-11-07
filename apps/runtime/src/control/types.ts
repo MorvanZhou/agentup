@@ -21,6 +21,11 @@ export interface PublishedAgent {
   digest: string;
 }
 
+export interface AgentSkillRef {
+  name: string;
+  md5: string;
+}
+
 export interface AgentCard {
   agentId: string;
   name: string;
@@ -29,6 +34,11 @@ export interface AgentCard {
   background: string;
   /** 工作规则（名片层）；可空。 */
   rules: string;
+  /** 当前能力清单里的 skill。编辑页用名字，发布时用 md5 判断要不要重传。 */
+  skills: AgentSkillRef[];
+  mcpMd5: string;
+  settingsMd5: string;
+  hooksMd5: string;
   latestVersion: number;
   latestDigest: string;
   recruited: boolean;

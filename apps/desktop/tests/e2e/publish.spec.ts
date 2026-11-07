@@ -47,6 +47,8 @@ test("用共用表单发布 Agent 并支持只改名片", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "更新 Agent" })).toBeVisible();
   await expect(page.getByLabel("名字")).toHaveValue("写作助手");
   await expect(page.getByLabel("它是干什么的")).toHaveValue("编辑");
+  await page.getByRole("button", { name: "高级设置（可选）" }).click();
+  await expect(page.getByRole("button", { name: "编辑 MCP" })).toBeVisible();
 
   await page.getByLabel("名字").fill("写作助手 Pro");
   // 只改名片走 PUT /card，不升版本。

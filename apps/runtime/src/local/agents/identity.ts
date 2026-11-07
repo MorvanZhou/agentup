@@ -1,6 +1,8 @@
 import { t, type UiLocale } from "../../i18n/index.js";
 
-/** 名片人物背景上限（字/字符）。 */
+/** 与 backend `core/limits.py` 的名称 / 背景上限对齐。 */
+export const NAME_MAX = 80;
+export const ROLE_MAX = 40;
 export const BACKGROUND_MAX = 300;
 
 export class AgentIdentityError extends Error {}
@@ -29,13 +31,13 @@ export function withComposedSystemMd(
 
 export function normalizeAgentName(value: string, locale: UiLocale = "zh"): string {
   const name = value.trim().replace(/\s+/g, " ");
-  if (!name || name.length > 40) throw new AgentIdentityError(t("identity.err.nameLength", locale));
+  if (!name || name.length > NAME_MAX) throw new AgentIdentityError(t("identity.err.nameLength", locale));
   return name;
 }
 
 export function normalizeAgentRole(value: string, locale: UiLocale = "zh"): string {
   const role = value.trim().replace(/\s+/g, " ");
-  if (!role || role.length > 40) throw new AgentIdentityError(t("identity.err.roleLength", locale));
+  if (!role || role.length > ROLE_MAX) throw new AgentIdentityError(t("identity.err.roleLength", locale));
   return role;
 }
 

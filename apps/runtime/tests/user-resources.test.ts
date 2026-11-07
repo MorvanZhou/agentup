@@ -9,6 +9,7 @@ import { startLocalServer } from "../src/local/server.js";
 import {
   UserResourceError,
   deleteUserSkill,
+  inspectSkillPackage,
   installSkillPackageTo,
   installUserSkillPackage,
   listEnabledUserSkillPaths,
@@ -39,6 +40,12 @@ function writeSkillDir(root: string, name: string, description: string): string 
   fs.writeFileSync(path.join(dir, "SKILL.md"), skillMd(name, description));
   return dir;
 }
+
+it("inspects skill package name without installing", async () => {
+  const source = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), "skill-src-")), "note-taker", "整理笔记");
+  const inspected = await inspectSkillPackage(source);
+  expect(inspected).toEqual({ name: "note-taker", description: "整理笔记" });
+});
 
 it("persists repaired frontmatter when community skill has nested quotes", async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-skill-parent-"));
@@ -87,6 +94,23 @@ it("installs account skills from a folder and toggles enabled state", async () =
   await expect(installUserSkillPackage(data, "patient", source, { expectName: "other" })).rejects.toBeInstanceOf(
     UserResourceError,
   );
+});
+
+it("keeps one mcpServers layer when the editor pastes a full mcp.json", () => {
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mcp-doc-"));
+  const document = {
+    mcpServers: {
+      "server-name": {
+        type: "stdio",
+        command: "executable-path",
+        args: ["arg1", "arg2"],
+        env: { KEY: "value" },
+      },
+    },
+  };
+  const saved = writeUserMcpServers(data, "patient", document);
+  expect(saved).toEqual(document.mcpServers);
+  expect(JSON.parse(fs.readFileSync(userMcpPath(data, "patient"), "utf8"))).toEqual(document);
 });
 
 it("installs a skill from zip through the loopback API", async () => {

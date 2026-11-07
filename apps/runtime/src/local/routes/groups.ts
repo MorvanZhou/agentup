@@ -4,6 +4,8 @@ import { createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessageChu
 
 import { BackendClientError } from "../../control/errors.js";
 import { DelegationError } from "../../session/delegation/index.js";
+import { tryEnabledModelRef } from "../../config/provider/index.js";
+import { modelModeFromBody } from "../../session/model/assignment.js";
 import { applyMemberChange, GroupError, type GroupMember } from "../../session/group/index.js";
 import { clearGroupWorkspace, ensureGroupWorkspace } from "../../session/group/workspace.js";
 import { pageItems, parseTranscriptPageQuery, TRANSCRIPT_PAGE_SIZE } from "../../session/transcript-page.js";
@@ -131,6 +133,41 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
         rethrowCloud(error);
       }
       const room = deps.groups.setMembers(userId, groupId, members, defaultHolderId);
+      return json(c, 200, { group: pagedRoom(room) });
+    } catch (error) {
+      rethrow(error);
+    }
+  });
+
+  /** 只改这间群的统一 / 单配，不上传、也不改成员的一对一模型。 */
+  app.put("/groups/:groupId/model-mode", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = text(body, "user_id");
+    const groupId = c.req.param("groupId");
+    const mode = modelModeFromBody(body.mode);
+    if (!mode) throw new LocalError("模型分配方式无效", 400);
+    try {
+      const room = deps.groups.setModelMode(userId, groupId, mode);
+      return json(c, 200, { group: pagedRoom(room) });
+    } catch (error) {
+      rethrow(error);
+    }
+  });
+
+  /** 只改这间群的统一模型，不改成员私聊，也不上传。 */
+  app.put("/groups/:groupId/model", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = text(body, "user_id");
+    const groupId = c.req.param("groupId");
+    const templateId = text(body, "template_id");
+    const modelId = text(body, "model_id");
+    if (!templateId || !modelId) throw new LocalError("模型无效", 400);
+    const ref = tryEnabledModelRef(deps.config.userDataRoot, { templateId, modelId });
+    if (!ref) throw new LocalError("模型未启用", 400);
+    try {
+      const room = deps.groups.setModel(userId, groupId, ref);
       return json(c, 200, { group: pagedRoom(room) });
     } catch (error) {
       rethrow(error);

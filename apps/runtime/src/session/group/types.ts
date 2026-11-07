@@ -1,5 +1,7 @@
 import type { UIMessage } from "ai";
 
+import type { ModelAssignmentMode } from "../model/assignment.js";
+
 /** 群是独立会话。任一时刻只有一个执掌者；工作单是他派出的任务。 */
 
 export type GroupPhase = "idle" | "holding" | "task";
@@ -91,6 +93,10 @@ export type GroupRoom = {
    * 须为当前成员；改此字段不切换已有 holderId。
    */
   defaultHolderId: string;
+  /** 统一：开口和委派都用本群模型。单配：每人用自己的一对一模型。 */
+  modelMode: ModelAssignmentMode;
+  /** 本群统一模型。单配不读它。没有时，下一次统一开口从开口者抄一份进来。 */
+  model: { templateId: string; modelId: string } | null;
   /** 执掌者会话正在处理用户刚说的话。 */
   holderSpeaking: boolean;
   phase: GroupPhase;

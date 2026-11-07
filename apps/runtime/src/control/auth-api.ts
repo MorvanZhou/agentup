@@ -1,3 +1,4 @@
+import { isWebp, putCosObject, type ObjectCredential } from "./cos-put.js";
 import { requestJson } from "./http.js";
 import { credential } from "./parse.js";
 import { BackendClientError } from "./errors.js";
@@ -129,8 +130,50 @@ export async function updateProfile(
   options: { avatarBase64?: string } = {},
   fetchImpl: typeof fetch = fetch,
 ): Promise<SessionCredential> {
-  const body: Record<string, string> = { nickname };
-  if (options.avatarBase64) body.avatar = options.avatarBase64;
-  const payload = await requestJson(fetchImpl, backendUrl, "PUT", "/v1/me", body, token);
-  return credential(payload);
+  const payload = await requestJson(fetchImpl, backendUrl, "PUT", "/v1/me", { nickname }, token);
+  if (!options.avatarBase64) return credential(payload);
+  const bytes = Buffer.from(options.avatarBase64, "base64");
+  if (!isWebp(bytes)) throw new BackendClientError("头像必须是 webp", 400);
+  const grant = await requestJson(fetchImpl, backendUrl, "POST", "/v1/me/avatar-upload", undefined, token);
+  const credentialGrant = readProfileCredential(grant);
+  await putCosObject({ ...credentialGrant, content_type: "image/webp" }, bytes, fetchImpl);
+  const rev = /\/(\d+)\.webp$/.exec(credentialGrant.key)?.[1];
+  if (!rev) throw new BackendClientError("上传凭证无效", 502);
+  const confirmed = await requestJson(
+    fetchImpl,
+    backendUrl,
+    "POST",
+    `/v1/me/avatar-uploaded?rev=${rev}`,
+    undefined,
+    token,
+  );
+  return credential(confirmed);
+}
+
+function readProfileCredential(value: Record<string, unknown>): ObjectCredential {
+  const bucket = value.bucket;
+  const region = value.region;
+  const key = value.key;
+  const secretId = value.tmp_secret_id;
+  const secretKey = value.tmp_secret_key;
+  const session = value.session_token;
+  if (
+    typeof bucket !== "string"
+    || typeof region !== "string"
+    || typeof key !== "string"
+    || typeof secretId !== "string"
+    || typeof secretKey !== "string"
+    || typeof session !== "string"
+  ) {
+    throw new BackendClientError("上传凭证无效", 502);
+  }
+  return {
+    bucket,
+    region,
+    key,
+    tmp_secret_id: secretId,
+    tmp_secret_key: secretKey,
+    session_token: session,
+    content_type: "image/webp",
+  };
 }

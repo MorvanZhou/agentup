@@ -32,6 +32,7 @@ export {
   listOwnedAgents,
   listPublicAgents,
   publishAgent,
+  publishManifest,
   recruitAgent,
   setAgentRemark,
   unrecruitAgent,

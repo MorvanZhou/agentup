@@ -21,8 +21,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  /** 已下载到本机临时 zip，由调用方安装或加入待装路径 */
-  fetched: [path: string, hit: CommunitySkillHit];
+  /** 已下载并解析出 SKILL.md name；调用方安装或加入待装列表 */
+  fetched: [result: { path: string; name: string }, hit: CommunitySkillHit];
 }>();
 
 const api = new DesktopApi();
@@ -130,13 +130,14 @@ async function installHit(hit: CommunitySkillHit): Promise<void> {
   error.value = "";
   errorDetails.value = [];
   try {
-    const path = await api.fetchCommunitySkill(session.value.token, {
+    const fetched = await api.fetchCommunitySkill(session.value.token, {
       source: hit.source,
       slug: hit.slug,
       ...(hit.owner ? { owner: hit.owner } : {}),
       ...(hit.version ? { version: hit.version } : {}),
     });
-    emit("fetched", path, hit);
+    // 优先用包内 SKILL.md name；旧 runtime 未回 name 时用市场 slug。
+    emit("fetched", { path: fetched.path, name: fetched.name || hit.slug }, hit);
     emit("update:open", false);
   } catch (caught) {
     error.value = formatApiError(caught, t("skillsCommunityInstallFailed"));

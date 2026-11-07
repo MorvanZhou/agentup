@@ -17,6 +17,13 @@ import {
   formatDelegationSteerNote,
   STEER_NOTE_MAX,
 } from "../steer.js";
+import type { ModelRef } from "../../../config/provider/index.js";
+import {
+  agentSessionDir,
+  readVisitModelMode,
+  type DelegationModelPin,
+} from "../../model/assignment.js";
+import { peekVisitModelRef } from "../../model/session-model.js";
 import { DelegationStore } from "../store.js";
 import {
   MAX_DELEGATION_FANOUT,
@@ -73,6 +80,21 @@ export class DelegationService {
     toAgentId: string;
     brief: string;
   }) => void;
+  /** 群统一抄本群模型；单配让调用方不写具体模型。 */
+  private groupSpeakerModel?: (input: {
+    userId: string;
+    groupId: string;
+    speaker: ModelRef | null;
+  }) => { kind: "visit" } | { kind: "room"; ref: ModelRef };
+  /**
+   * 这名成员本轮已经交回、执掌者还没告诉用户。
+   * 再派只会把同一件事重做一遍。
+   */
+  private groupAwaitingReply?: (input: {
+    userId: string;
+    groupId: string;
+    agentId: string;
+  }) => { taskId: string; summary: string } | null;
   /** 群不存在时返回 undefined，避免把群外已招募的人当成可派对象。 */
   private groupMembers?: (input: {
     userId: string;
@@ -125,7 +147,28 @@ export class DelegationService {
     this.groupQueue = handler;
   }
 
-  /** 群成员。群不存在时返回 undefined。 */
+  /**
+   * 群里统一时工单抄本群模型。单配返回 visit，调用方不再写具体模型。
+   * 房间还没有模型时，实现方负责把开口者的模型抄进群里。
+   */
+  setGroupSpeakerModel(
+    handler: (input: { userId: string; groupId: string; speaker: ModelRef | null }) =>
+      | { kind: "visit" }
+      | { kind: "room"; ref: ModelRef },
+  ): void {
+    this.groupSpeakerModel = handler;
+  }
+
+  setGroupAwaitingReply(
+    handler: (input: {
+      userId: string;
+      groupId: string;
+      agentId: string;
+    }) => { taskId: string; summary: string } | null,
+  ): void {
+    this.groupAwaitingReply = handler;
+  }
+
   setGroupMembers(
     handler: (input: { userId: string; groupId: string }) => { agentId: string; name: string }[] | undefined,
   ): void {
@@ -409,6 +452,8 @@ export class DelegationService {
     signal?: AbortSignal;
     toolCallId?: string;
     groupId?: string;
+    /** 子会话再委派时带上父工单的 pin，整条链不再回读会话模式。 */
+    modelPin?: DelegationModelPin;
   }): Promise<DelegateFanoutResult> {
     if (input.items.length === 0) {
       throw new DelegationError("tasks 不能为空");
@@ -419,6 +464,20 @@ export class DelegationService {
     }
     if (input.items.length > MAX_DELEGATION_FANOUT) {
       throw new DelegationError(`一次最多委托 ${MAX_DELEGATION_FANOUT} 个专家`);
+    }
+
+    if (groupId && this.groupAwaitingReply) {
+      for (const item of input.items) {
+        const done = this.groupAwaitingReply({
+          userId: input.userId,
+          groupId,
+          agentId: item.toAgentId,
+        });
+        if (!done) continue;
+        throw new DelegationError(
+          `This member already finished task ${done.taskId} in this turn. Do not call delegate_to_agent again. Reply to the user with the result below.\n${done.summary}`,
+        );
+      }
     }
 
     const roster = await this.listRecruited(input.userId);
@@ -449,6 +508,8 @@ export class DelegationService {
     // 群里只有异步：执掌者拿 task_id 结束回合，工作单交回后由群重新唤醒；模型传什么都压成 false。
     // 一对一：扇出仅显式 wait=true 才同步汇合；单项省略 wait 回落同步（避免漏参整轮空等）。
     const wait = groupId ? false : input.items.length > 1 ? input.wait === true : input.wait !== false;
+    const modelPin =
+      input.modelPin ?? this.pinFor(input.userId, input.fromAgentId, groupId);
 
     const planned: Array<{
       item: (typeof resolved)[number];
@@ -512,6 +573,7 @@ export class DelegationService {
         brief: item.brief,
         wait,
         groupId,
+        modelPin,
       });
       this.store.update(task.id, { status: "running" });
       this.owned.add(task.id);
@@ -555,6 +617,26 @@ export class DelegationService {
       tasks: done,
       texts: done.map((task) => task.resultSummary ?? ""),
     };
+  }
+
+  /**
+   * 一对一统一：记下开口者此刻的一对一模型。
+   * 群统一：记下这间群自己的模型。单配：工单上不写具体模型。
+   * 显式传入的 pin（嵌套）原样沿用。
+   */
+  private pinFor(userId: string, fromAgentId: string, groupId?: string): DelegationModelPin {
+    const speaker = peekVisitModelRef(
+      this.options.userDataRoot,
+      agentSessionDir(this.options.userDataRoot, userId, fromAgentId),
+    );
+    if (groupId) {
+      const plan = this.groupSpeakerModel?.({ userId, groupId, speaker });
+      if (!plan || plan.kind === "visit") return { mode: "perAgent" };
+      return { mode: "unified", templateId: plan.ref.templateId, modelId: plan.ref.modelId };
+    }
+    const mode = readVisitModelMode(agentSessionDir(this.options.userDataRoot, userId, fromAgentId));
+    if (mode === "perAgent" || !speaker) return { mode: "perAgent" };
+    return { mode: "unified", templateId: speaker.templateId, modelId: speaker.modelId };
   }
 
   private async executeTask(taskId: string, visit: Visit, signal?: AbortSignal): Promise<void> {

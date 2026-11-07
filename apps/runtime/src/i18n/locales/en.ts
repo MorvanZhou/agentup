@@ -74,7 +74,7 @@ export const en: Record<string, string> = {
     "The local agent app failed ({detail}). Sign in again, or remove the connection and connect again in Settings.",
 
   "identity.systemTemplate": "You are {name}. Role: {role}.\n\n{background}",
-  "identity.err.nameLength": "Name must be 1–40 characters",
+  "identity.err.nameLength": "Name must be 1–80 characters",
   "identity.err.roleLength": "Role must be 1–40 characters",
   "identity.err.backgroundLength": "Background must be 1–300 characters",
 
@@ -83,7 +83,7 @@ export const en: Record<string, string> = {
   "pa.defaultBackground":
     "Focus on the user's goals. Use the Skills, MCP, and work rules they configured for you.",
 
-  "pa.err.nameLength": "Name must be 1–40 characters",
+  "pa.err.nameLength": "Name must be 1–80 characters",
   "pa.err.roleLength": "Role must be 1–40 characters",
   "pa.err.backgroundLength": "Background must be 1–300 characters",
   "pa.err.avatarType": "Avatar must be PNG, JPEG, or WebP",
@@ -95,7 +95,7 @@ export const en: Record<string, string> = {
   "la.err.invalidId": "Invalid local agent id",
   "la.err.notFound": "Local agent not found",
   "la.err.createFailed": "Failed to create local agent",
-  "la.err.nameLength": "Name must be 1–40 characters",
+  "la.err.nameLength": "Name must be 1–80 characters",
   "la.err.roleLength": "Role must be 1–40 characters",
   "la.err.backgroundLength": "Background must be 1–300 characters",
   "la.err.corrupt": "Local agent data is corrupt",

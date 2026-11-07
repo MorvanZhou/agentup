@@ -39,7 +39,7 @@ export type HolderSessionOpener = (
  */
 export function createHolderTurnDriver(deps: {
   resolveVisit: (userId: string, agentId: string) => Visit | null | Promise<Visit | null>;
-  resolveModel: (visit: Visit) => ModelConfig;
+  resolveModel: (visit: Visit, scope: { userId: string; groupId: string }) => ModelConfig;
   open: HolderSessionOpener;
   approvals?: ApprovalBroker;
   askUser?: AskUserBroker;
@@ -55,7 +55,7 @@ export function createHolderTurnDriver(deps: {
         groupId: input.groupId,
         holderAgentId: input.agentId,
       });
-      const model = deps.resolveModel(visit);
+      const model = deps.resolveModel(visit, { userId: input.userId, groupId: input.groupId });
       const session = await deps.open(visit, model, input.sessionDir, conversation);
       const stopController = new AbortController();
       const abortTurn = () => stopController.abort();

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { t, type UiLocale } from "../../i18n/index.js";
 import { packageDigest } from "../../package/digest.js";
+import { normalizeMcpServers } from "../../package/mcp-document.js";
 import type { Visit } from "../../package/sync.js";
 import { isSafeSkillName, validateAgentPackage } from "../../package/validate.js";
 import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
@@ -442,6 +443,40 @@ export function exportLocalAgentSkill(
   return { path: out };
 }
 
+/** 已安装的市场 Agent：从 visit 的 cwd/.pi/skills 打包，不再让控制面读运行包。 */
+export function exportVisitSkill(
+  userDataRoot: string,
+  userId: string,
+  agentId: string,
+  skillName: string,
+  destination: string,
+  locale: UiLocale = "zh",
+): { path: string } {
+  validateSegment(userId);
+  validateSegment(agentId);
+  if (!isSafeSkillName(skillName)) {
+    throw new LocalAgentError(t("la.err.invalidRequest", locale));
+  }
+  if (!destination || !path.isAbsolute(destination) || !destination.toLowerCase().endsWith(".zip")) {
+    throw new LocalAgentError(t("la.err.skillExportPath", locale));
+  }
+  const skillsDir = path.resolve(userDataRoot, "users", userId, "agents", agentId, "cwd", ".pi", "skills");
+  const skillDir = path.resolve(skillsDir, skillName);
+  if (!skillDir.startsWith(`${skillsDir}${path.sep}`)) {
+    throw new LocalAgentError(t("la.err.invalidRequest", locale));
+  }
+  if (!fs.existsSync(skillDir) || !fs.existsSync(path.join(skillDir, "SKILL.md"))) {
+    throw new LocalAgentError(t("la.err.skillNotFound", locale));
+  }
+  const out = path.resolve(destination);
+  try {
+    writeZipFromDirectory(skillDir, out, { maxBytes: 5_000_000 });
+  } catch {
+    throw new LocalAgentError(t("la.err.skillExportFailed", locale));
+  }
+  return { path: out };
+}
+
 export function localAgentVisit(userDataRoot: string, userId: string, agentId: string): Visit {
   const root = ensureLocalAgent(userDataRoot, userId, agentId);
   const stored = readStoredInstance(root);
@@ -571,7 +606,7 @@ function readPiMcpServers(root: string): Record<string, unknown> {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     const servers = (parsed as { mcpServers?: unknown }).mcpServers;
     if (!servers || typeof servers !== "object" || Array.isArray(servers)) return {};
-    return servers as Record<string, unknown>;
+    return normalizeMcpServers(servers as Record<string, unknown>);
   } catch {
     return {};
   }
@@ -598,7 +633,8 @@ function writePiMcp(cwd: string, mcpServers: Record<string, unknown>, locale: Ui
   if (!mcpServers || typeof mcpServers !== "object" || Array.isArray(mcpServers)) {
     throw new LocalAgentError(t("la.err.mcpInvalid", locale));
   }
-  const payload = `${JSON.stringify({ mcpServers }, null, 2)}\n`;
+  const servers = normalizeMcpServers(mcpServers);
+  const payload = `${JSON.stringify({ mcpServers: servers }, null, 2)}\n`;
   if (Buffer.byteLength(payload, "utf8") > MCP_MAX_BYTES) {
     throw new LocalAgentError(t("la.err.mcpTooLarge", locale));
   }

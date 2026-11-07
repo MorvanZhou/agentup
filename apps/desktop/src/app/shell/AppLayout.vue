@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { RouterView } from "vue-router";
+import { computed, watch } from "vue";
+import { RouterView, useRouter } from "vue-router";
 
 import { detectDesktopPlatform } from "../../shared/model/ui/reveal-in-folder";
 import { useDesktop } from "../desktop";
@@ -10,7 +10,15 @@ import AppUserMenu from "./AppUserMenu.vue";
 const electron = navigator.userAgent.includes("Electron");
 /** 仅 macOS hiddenInset 需要给红绿灯留顶空；Windows 用系统标题栏。 */
 const isMac = detectDesktopPlatform() === "darwin";
-const { session } = useDesktop();
+const router = useRouter();
+const { session, pendingNotice } = useDesktop();
+// 人在别的页时点了系统横幅，先回到会话页，再由会话页打开对应单聊或群。
+watch(pendingNotice, (target) => {
+  if (!target) return;
+  if (router.currentRoute.value.name !== "conversation") {
+    void router.push({ name: "conversation" });
+  }
+});
 /** 会话页按用户缓存；切到市场 / Agents / 设置时不销毁，进行中的 stream 可接回。 */
 const conversationCacheKey = computed(() => `conversation:${session.value?.userId ?? "anon"}`);
 </script>

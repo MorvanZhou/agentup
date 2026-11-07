@@ -1,4 +1,5 @@
 import type { ModelConfig } from "../../../config/load.js";
+import type { Visit } from "../../../package/sync.js";
 import type { ApprovalBroker } from "../../hitl/approval/index.js";
 import type { ShellHangBroker } from "../../hitl/shell-hang/index.js";
 import type { AskUserBroker } from "../../tools/ask-user.js";
@@ -9,7 +10,8 @@ import type { DelegationTask } from "../types.js";
 export type DelegationServiceOptions = {
   userDataRoot: string;
   backendUrl: string;
-  getModel: () => ModelConfig;
+  /** 有 pin 时按工单解析；旧工单不传 task，回落设备最近使用。 */
+  getModel: (task?: DelegationTask, visit?: Visit) => ModelConfig;
   approvals: ApprovalBroker;
   askUser: AskUserBroker;
   shellHang?: ShellHangBroker;

@@ -724,7 +724,9 @@ it("merges a handback into the holder turn that is still speaking", async () => 
   expect(taskId).toBeTruthy();
   delegation.cancel(taskId!, "u1");
   expect(script.calls).toHaveLength(1);
-  expect(script.injected).toContain("用户已取消");
+  // 交回会包一层「已完成、不要再派」提示，数组 toContain 只认整段相等。
+  expect(script.injected.join("\n")).toContain("用户已取消");
+  expect(script.injected.join("\n")).toContain("Do not call delegate_to_agent again");
   script.release("收到，这轮收口");
   await vi.waitFor(() => {
     const settled = turns.get("u1", room.id);

@@ -2,14 +2,16 @@ import { ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
+import {
+  formatMcpDocument,
+  invalidMcpServerName,
+  mcpServersFromEditor,
+  MCP_PLACEHOLDER,
+} from "../../../shared/model/agent-editor/mcp-document";
 import { showToast } from "../../../shared/model/ui/toast";
+import { tf } from "../../../shared/model/ui/ui-locale";
 
-export const MCP_PLACEHOLDER = `{
-  "example": {
-    "url": "http://127.0.0.1:9001/mcp"
-  }
-}
-`;
+export { MCP_PLACEHOLDER };
 
 export function useUserMcp(api = new DesktopApi()) {
   const { session } = useDesktop();
@@ -63,7 +65,7 @@ export function useUserMcp(api = new DesktopApi()) {
           session.value.userId,
           servers,
         );
-        const formatted = formatServers(saved);
+        const formatted = formatMcpDocument(saved);
         if (text.value === submitted) apply(saved);
         else {
           serverCount.value = Object.keys(saved).length;
@@ -80,14 +82,10 @@ export function useUserMcp(api = new DesktopApi()) {
 
   function apply(servers: Record<string, unknown>): void {
     serverCount.value = Object.keys(servers).length;
-    text.value = formatServers(servers);
+    text.value = formatMcpDocument(servers);
   }
 
   return { text, serverCount, loading, saving, load, commitField };
-}
-
-function formatServers(servers: Record<string, unknown>): string {
-  return Object.keys(servers).length ? `${JSON.stringify(servers, null, 2)}\n` : "";
 }
 
 function parseMcpServers(raw: string): Record<string, unknown> | undefined {
@@ -102,7 +100,13 @@ function parseMcpServers(raw: string): Record<string, unknown> | undefined {
     showToast("服务配置必须是 JSON 对象", "error");
     return undefined;
   }
-  return parsed as Record<string, unknown>;
+  const servers = mcpServersFromEditor(parsed as Record<string, unknown>);
+  const invalid = invalidMcpServerName(servers);
+  if (invalid) {
+    showToast(tf("agentsLocalMcpServerObject", { name: invalid }), "error");
+    return undefined;
+  }
+  return servers;
 }
 
 function messageOf(caught: unknown): string {

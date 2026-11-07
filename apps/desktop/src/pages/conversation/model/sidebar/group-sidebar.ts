@@ -62,6 +62,28 @@ export function shouldBumpGroupUnread(input: {
 }
 
 /**
+ * 群从执掌 / 子任务落到 idle。含当前打开的群，供系统横幅；
+ * 未读角标仍走 shouldBumpGroupUnread（人正在看的群不加未读）。
+ * 首见（无 prev）不报，避免冷启动把已有空闲群刷成通知。
+ */
+export function groupIdleFinishes(
+  prevPhases: Readonly<Record<string, GroupRoom["phase"] | undefined>>,
+  rooms: ReadonlyArray<Pick<GroupRoom, "id" | "phase">>,
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const room of rooms) {
+    if (seen.has(room.id)) continue;
+    seen.add(room.id);
+    const prev = prevPhases[room.id];
+    if (prev !== "holding" && prev !== "task") continue;
+    if (room.phase !== "idle") continue;
+    ids.push(room.id);
+  }
+  return ids;
+}
+
+/**
  * 对照上一帧 phase，收集本帧该累加未读的群 id，并返回下一帧 phase 表。
  * `replace`：完整列表拉取，丢掉已不存在的群；`merge`：单群 live 更新，保留其它群。
  */

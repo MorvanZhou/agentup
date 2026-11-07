@@ -5,6 +5,7 @@ import { PlusIcon, SearchIcon } from "@lucide/vue";
 
 import { useDesktop } from "../../../../app/desktop";
 import type { GroupRoom } from "../../../../shared/api/runtime/groups";
+import { SEARCH_QUERY_MAX } from "../../../../shared/model/input-limits";
 import type { AgentCard } from "../../../../shared/model/runtime/runtime";
 import { t } from "../../../../shared/model/ui/ui-locale";
 import type { ConversationRow } from "../../model/sidebar/conversation-row";
@@ -90,6 +91,7 @@ function goLocalCreate(): void {
         <input
           v-model="query"
           type="search"
+          :maxlength="SEARCH_QUERY_MAX"
           :placeholder="t('sideSearchPlaceholder')"
           class="min-h-8 w-full rounded-md border-0 bg-background py-1.5 pr-2 pl-7 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:bg-muted focus:ring-2 focus:ring-accent/30"
         />

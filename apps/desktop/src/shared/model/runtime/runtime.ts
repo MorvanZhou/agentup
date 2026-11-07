@@ -233,12 +233,17 @@ export interface SessionModelOption {
   contextWindow?: number;
 }
 
+/** 统一：本会话开口和委派用同一个模型。单配：每人用自己一对一里选的模型。 */
+export type ModelAssignmentMode = "unified" | "perAgent";
+
 export interface SessionModelState {
   current: ProviderModelRef | null;
   models: SessionModelOption[];
   configured: boolean;
   /** 当前模型是本地 Agent App（SDK）接入：回合中的发送走 followUp 队列。 */
   followUp: boolean;
+  /** 一对一会话的分配方式。老响应没有时当统一。 */
+  modelMode: ModelAssignmentMode;
 }
 
 export interface ProviderSettings {

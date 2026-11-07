@@ -9,6 +9,7 @@ import AppDropdownMenu, {
 import AgentAvatar from "../../../../../shared/components/avatar/AgentAvatar.vue";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "../../../model/group/group-limits";
+import { GROUP_TITLE_MAX, SEARCH_QUERY_MAX } from "../../../../../shared/model/input-limits";
 
 const props = defineProps<{
   title: string;
@@ -108,6 +109,7 @@ function atCap(agentId: string): boolean {
           <input
             :value="title"
             type="text"
+            :maxlength="GROUP_TITLE_MAX"
             :placeholder="t('groupTitlePlaceholder')"
             class="mt-1.5 min-h-9 w-full rounded-lg border border-rule bg-paper px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
             @input="emit('update:title', ($event.target as HTMLInputElement).value)"
@@ -143,6 +145,7 @@ function atCap(agentId: string): boolean {
               <input
                 v-model="query"
                 type="search"
+                :maxlength="SEARCH_QUERY_MAX"
                 :placeholder="t('groupMembersSearchPlaceholder')"
                 class="min-h-9 w-full rounded-lg border border-rule bg-paper py-1.5 pr-3 pl-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
               />

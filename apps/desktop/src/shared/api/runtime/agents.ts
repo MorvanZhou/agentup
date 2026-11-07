@@ -275,7 +275,20 @@ export async function publishFromEditor(
   return readPublished(payload);
 }
 
-/** 更新页预览：名片 + skills/MCP，不 hydrate loc-*。 */
+/** 更新页点编辑后才拉 mcp.json，不带 skill 包。 */
+export async function loadPublishEditorMcp(
+  http: RuntimeHttp,
+  token: string,
+  publishedAgentId: string,
+): Promise<string> {
+  const payload = await http.request("/agents/publish-editor/mcp", token, {
+    published_agent_id: publishedAgentId,
+  });
+  if (typeof payload.text !== "string") throw new DesktopApiError("MCP 内容无效");
+  return payload.text;
+}
+
+/** 更新页预览：名片 + skill 名字。MCP 正文另接口按需拉。 */
 export async function previewPublishEditor(
   http: RuntimeHttp,
   token: string,
@@ -386,6 +399,7 @@ export async function importPublishedLocal(
 export async function exportPublishedSkill(
   http: RuntimeHttp,
   token: string,
+  userId: string,
   agentId: string,
   skillName: string,
   destination: string,
@@ -393,7 +407,7 @@ export async function exportPublishedSkill(
   const payload = await http.request(
     `/agents/published/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(skillName)}/export`,
     token,
-    { destination },
+    { user_id: userId, destination },
     "POST",
   );
   if (!payload || typeof payload !== "object" || typeof (payload as { path?: unknown }).path !== "string") {

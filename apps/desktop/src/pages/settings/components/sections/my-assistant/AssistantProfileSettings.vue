@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 
 import AgentAvatarField from "../../../../../shared/components/avatar/AgentAvatarField.vue";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../../../../../shared/model/avatar/personal-assistant-default";
+import { BACKGROUND_MAX, NAME_MAX, ROLE_MAX } from "../../../../../shared/model/input-limits";
 import { t } from "../../../../../shared/model/ui/ui-locale";
 import { usePersonalAssistantSettings } from "../../../composables/usePersonalAssistantSettings";
 
@@ -47,7 +48,7 @@ function onAvatarPick(dataUrl: string, officialId: string): void {
           <input
             v-model="name"
             type="text"
-            maxlength="40"
+            :maxlength="NAME_MAX"
             :disabled="loading"
             class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
             :placeholder="t('assistantNamePlaceholder')"
@@ -60,7 +61,7 @@ function onAvatarPick(dataUrl: string, officialId: string): void {
           <input
             v-model="role"
             type="text"
-            maxlength="40"
+            :maxlength="ROLE_MAX"
             :disabled="loading"
             class="min-h-8 rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
             :placeholder="t('agentsLocalRolePlaceholder')"
@@ -75,7 +76,7 @@ function onAvatarPick(dataUrl: string, officialId: string): void {
             <textarea
               v-model="background"
               rows="6"
-              maxlength="300"
+              :maxlength="BACKGROUND_MAX"
               :disabled="loading"
               class="min-h-32 w-full resize-y rounded-lg border border-rule bg-paper px-3 py-2.5 text-sm leading-relaxed outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
               :placeholder="t('agentsLocalBackgroundPlaceholder')"

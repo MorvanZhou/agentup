@@ -57,6 +57,16 @@ interface Window {
     setThemeSource?(mode: "system" | "light" | "dark"): Promise<void>;
     /** 同步 Dock / 任务栏待处理角标（0 清除）。 */
     setAppBadge?(count: number): Promise<void>;
+    /** 弹出系统横幅（macOS 通知中心 / Windows toast）。 */
+    showSystemBanner?(payload: {
+      title: string;
+      body: string;
+      target: { kind: "agent" | "group"; id: string };
+    }): Promise<void>;
+    /** 取走点击横幅时窗口尚未就绪而记下的会话。 */
+    takePendingSystemBanner?(): Promise<{ kind: string; id: string } | null>;
+    /** 点击系统横幅：主进程已把窗口拉到前台。 */
+    onSystemBannerOpen?(listener: (payload: { kind: string; id: string }) => void): () => void;
     /** 同步 macOS 菜单栏图标右侧数字（待审批 + 未读，0 清除）。非 darwin 主进程忽略。 */
     setMenuBarUnread?(count: number): Promise<void>;
     /** 显示或隐藏 macOS 菜单栏图标（含未读提示）。非 darwin 主进程忽略。 */

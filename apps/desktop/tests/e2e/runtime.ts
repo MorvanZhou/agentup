@@ -36,6 +36,7 @@ function sessionModelPayload(
     credits?: number;
   }>;
   configured: boolean;
+  model_mode?: string;
   templates?: Array<{ id: string; access?: string; label?: string }>;
 },
   followUp = false,
@@ -60,6 +61,7 @@ function sessionModelPayload(
       credits: model.credits ?? null,
     })),
     configured: settings.configured,
+    model_mode: settings.model_mode === "per_agent" ? "per_agent" : "unified",
     // 本地 Agent App 当前模型 → 桌面回合中发送改成排队（也可由 prompt 场景强制）
     follow_up: followUp || activeAccess === "agent-sdk",
   };
@@ -455,6 +457,7 @@ export async function installRuntime(
             credits?: number;
           }>),
     configured: options?.modelConfigured !== false,
+    model_mode: "unified" as "unified" | "per_agent",
     overridden_by_environment: false,
     vendors: [
       { id: "ollama", label: "Ollama", options: [ollamaTemplate] },
@@ -818,6 +821,22 @@ export async function installRuntime(
       if (typeof body.defaultHolderId === "string" && body.defaultHolderId.trim()) {
         room.defaultHolderId = body.defaultHolderId.trim();
       }
+      return json(route, 200, { group: room });
+    }
+    if (request.method() === "PUT" && /^\/groups\/[^/]+\/model-mode$/.test(path)) {
+      const groupId = path.split("/")[2]!;
+      const room = groupRooms.find((item) => item.id === groupId);
+      if (!room) return json(route, 404, { error: "找不到群" });
+      const body = request.postDataJSON() as { mode?: string };
+      room.modelMode = body.mode === "per_agent" || body.mode === "perAgent" ? "perAgent" : "unified";
+      return json(route, 200, { group: room });
+    }
+    if (request.method() === "PUT" && /^\/groups\/[^/]+\/model$/.test(path)) {
+      const groupId = path.split("/")[2]!;
+      const room = groupRooms.find((item) => item.id === groupId);
+      if (!room) return json(route, 404, { error: "找不到群" });
+      const body = request.postDataJSON() as { template_id?: string; model_id?: string };
+      room.model = { templateId: body.template_id ?? "", modelId: body.model_id ?? "" };
       return json(route, 200, { group: room });
     }
     if (request.method() === "POST" && /^\/groups\/[^/]+\/messages$/.test(path)) {
@@ -1280,6 +1299,15 @@ export async function installRuntime(
     if (request.method() === "GET" && path === "/settings/skills") {
       return json(route, 200, { skills: userSkills });
     }
+    if (request.method() === "POST" && path === "/settings/skills/inspect") {
+      const body = request.postDataJSON() as { path?: string };
+      if (typeof body.path !== "string" || !body.path.trim()) {
+        return json(route, 400, { error: "请求无效" });
+      }
+      const base = body.path.replace(/\\/g, "/").split("/").pop() || "note-taker";
+      const name = base.replace(/\.zip$/i, "") || "note-taker";
+      return json(route, 200, { name, description: "整理笔记" });
+    }
     if (request.method() === "POST" && path === "/settings/skills/install") {
       const body = request.postDataJSON() as { path?: string; expect_name?: string };
       if (typeof body.path !== "string" || !body.path.trim()) {
@@ -1394,6 +1422,14 @@ export async function installRuntime(
     if (request.method() === "GET" && path === "/personal-assistant/session/model") {
       return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
     }
+    if (request.method() === "PUT" && path === "/personal-assistant/session/model-mode") {
+      const body = request.postDataJSON() as { mode?: string };
+      providerSettings = {
+        ...providerSettings,
+        model_mode: body.mode === "per_agent" ? "per_agent" : "unified",
+      };
+      return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
+    }
     if (request.method() === "PUT" && path === "/personal-assistant/session/model") {
       const body = request.postDataJSON() as { template_id: string; model_id: string };
       providerSettings = {
@@ -1405,6 +1441,14 @@ export async function installRuntime(
     }
     const agentSessionModel = path.match(/^\/agents\/([^/]+)\/session\/model$/);
     if (agentSessionModel && request.method() === "GET") {
+      return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
+    }
+    if (path.match(/^\/agents\/([^/]+)\/session\/model-mode$/) && request.method() === "PUT") {
+      const body = request.postDataJSON() as { mode?: string };
+      providerSettings = {
+        ...providerSettings,
+        model_mode: body.mode === "per_agent" ? "per_agent" : "unified",
+      };
       return json(route, 200, sessionModelPayload(providerSettings, options?.prompt === "follow-up" || options?.prompt === "follow-up-drain"));
     }
     if (agentSessionModel && request.method() === "PUT") {

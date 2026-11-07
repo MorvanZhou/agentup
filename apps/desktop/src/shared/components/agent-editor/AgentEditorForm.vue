@@ -9,18 +9,33 @@ import type {
   AgentEditorInput,
   AgentEditorVariant,
 } from "../../model/agent-editor/agent-editor";
+import {
+  formatMcpDocument,
+  invalidMcpServerName,
+  mcpServersFromEditor,
+  MCP_PLACEHOLDER,
+} from "../../model/agent-editor/mcp-document";
+import {
+  BACKGROUND_MAX,
+  clampUtf8,
+  NAME_MAX,
+  ROLE_MAX,
+  RULES_MAX_BYTES,
+  RULES_MAX_CHARS,
+} from "../../model/input-limits";
+import {
+  skillAddConflict,
+  upsertPendingSkill,
+  visibleInstalledSkills,
+  type PendingSkill,
+} from "../../model/skills/pending-skill";
+import { formatApiError } from "../../model/runtime/package-issues";
 import { showToast } from "../../model/ui/toast";
-import { t } from "../../model/ui/ui-locale";
+import { t, tf } from "../../model/ui/ui-locale";
 import AgentAvatarField from "../avatar/AgentAvatarField.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../AppDropdownMenu.vue";
 import CommunitySkillDialog from "../skills/CommunitySkillDialog.vue";
-
-const MCP_PLACEHOLDER = `{
-  "example": {
-    "url": "http://127.0.0.1:9001/mcp"
-  }
-}
-`;
+import SkillOverwriteDialog from "../skills/SkillOverwriteDialog.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -44,19 +59,35 @@ const name = ref("");
 const role = ref("");
 const background = ref("");
 const rules = ref("");
+
+// 规则按 UTF-8 字节封顶；maxlength 只数字符，中文会先顶满字节。
+function onRulesInput(event: Event): void {
+  rules.value = clampUtf8((event.target as HTMLTextAreaElement).value, RULES_MAX_BYTES);
+}
 const mcpText = ref("");
+const mcpOriginal = ref("");
+const mcpLoaded = ref(true);
+const mcpLoading = ref(false);
 const advancedOpen = ref(false);
-/** 新建待安装路径 */
-const skillPaths = ref<string[]>([]);
+/** 待保存安装的 Skill（path + SKILL.md name） */
+const pendingSkills = ref<PendingSkill[]>([]);
 /** 编辑：仍保留的已装技能名 */
 const installedSkills = ref<string[]>([]);
 /** 编辑：从已装列表移除的技能名 */
 const removeSkills = ref<string[]>([]);
 const downloadingSkill = ref("");
 const communityOpen = ref(false);
+const overwriteOpen = ref(false);
+const overwriteKind = ref<"installed" | "pending">("installed");
+const overwriteName = ref("");
+let overwriteResolve: ((ok: boolean) => void) | null = null;
 const avatarPreview = ref("");
 const avatarChange = ref("");
 const officialAvatarId = ref("");
+
+const listedInstalledSkills = computed(() =>
+  visibleInstalledSkills(installedSkills.value, pendingSkills.value),
+);
 
 const isEdit = computed(
   () => props.variant === "local-edit" || props.variant === "publish-edit",
@@ -64,6 +95,7 @@ const isEdit = computed(
 const isPublish = computed(
   () => props.variant === "publish-create" || props.variant === "publish-edit",
 );
+const isPublishEdit = computed(() => props.variant === "publish-edit");
 
 const skillUploadItems = computed((): AppDropdownItem[] => [
   { id: "directory", label: t("skillsPickDir"), icon: FolderUpIcon },
@@ -97,11 +129,6 @@ const submitBusyLabel = computed(() => {
   return isEdit.value ? t("agentsLocalSaving") : t("agentsLocalCreating");
 });
 
-function skillLabel(filePath: string): string {
-  const parts = filePath.replace(/\\/g, "/").split("/");
-  return parts[parts.length - 1] || filePath;
-}
-
 function applyInitial(value: AgentEditorInitial | null | undefined): void {
   if (!value) {
     avatarPreview.value = "";
@@ -114,14 +141,23 @@ function applyInitial(value: AgentEditorInitial | null | undefined): void {
   background.value = value.background;
   rules.value = value.rules ?? "";
   const servers = value.mcpServers ?? {};
-  mcpText.value = formatMcpText(servers);
+  // 市场更新不预填 MCP 正文。点编辑后再向 COS 拉这一个文件。
+  if (props.variant === "publish-edit") {
+    mcpText.value = "";
+    mcpOriginal.value = "";
+    mcpLoaded.value = false;
+  } else {
+    mcpText.value = formatMcpDocument(servers);
+    mcpOriginal.value = mcpText.value;
+    mcpLoaded.value = true;
+  }
   installedSkills.value = [...(value.skills ?? [])];
   removeSkills.value = [];
-  skillPaths.value = [];
+  pendingSkills.value = [];
   avatarPreview.value = value.avatarUrl ?? "";
   avatarChange.value = "";
   officialAvatarId.value = "";
-  if (rules.value.trim() || installedSkills.value.length || Object.keys(servers).length) {
+  if (rules.value.trim() || installedSkills.value.length || (props.variant !== "publish-edit" && Object.keys(servers).length)) {
     advancedOpen.value = true;
   }
 }
@@ -147,16 +183,57 @@ async function addSkill(kind: string): Promise<void> {
   }
   const packagePath = await bridge.selectSkillPackage(kind);
   if (!packagePath) return;
-  addSkillPath(packagePath);
+  const session = readSession();
+  if (!session?.token || !session.userId) {
+    showToast(t("agentsLocalSkillNeedDesktop"), "error");
+    return;
+  }
+  try {
+    const inspected = await api.inspectUserSkill(session.token, session.userId, packagePath);
+    await queuePendingSkill({ path: packagePath, name: inspected.name });
+  } catch (caught) {
+    showToast(formatApiError(caught, t("skillsInstallFailed")), "error");
+  }
 }
 
-function addSkillPath(packagePath: string): void {
-  if (skillPaths.value.includes(packagePath)) return;
-  skillPaths.value = [...skillPaths.value, packagePath];
+async function onCommunityFetched(result: { path: string; name: string }): Promise<void> {
+  await queuePendingSkill(result);
 }
+
+async function queuePendingSkill(next: PendingSkill): Promise<void> {
+  if (pendingSkills.value.some((item) => item.path === next.path)) return;
+  const conflict = skillAddConflict(next.name, installedSkills.value, pendingSkills.value);
+  if (conflict) {
+    const ok = await askOverwrite(next.name, conflict);
+    if (!ok) return;
+  }
+  // 若用户刚删过同名已装项，再加回来等于覆盖安装，不再记删除。
+  removeSkills.value = removeSkills.value.filter((item) => item !== next.name);
+  pendingSkills.value = upsertPendingSkill(pendingSkills.value, next);
+}
+
+function askOverwrite(skillName: string, kind: "installed" | "pending"): Promise<boolean> {
+  overwriteName.value = skillName;
+  overwriteKind.value = kind;
+  overwriteOpen.value = true;
+  return new Promise((resolve) => {
+    overwriteResolve = resolve;
+  });
+}
+
+function onOverwriteConfirm(): void {
+  overwriteResolve?.(true);
+  overwriteResolve = null;
+}
+
+watch(overwriteOpen, (open) => {
+  if (open || !overwriteResolve) return;
+  overwriteResolve(false);
+  overwriteResolve = null;
+});
 
 function removePendingSkill(filePath: string): void {
-  skillPaths.value = skillPaths.value.filter((item) => item !== filePath);
+  pendingSkills.value = pendingSkills.value.filter((item) => item.path !== filePath);
 }
 
 function removeInstalledSkill(skillName: string): void {
@@ -195,6 +272,7 @@ async function downloadInstalledSkill(skillName: string): Promise<void> {
         if (!props.publishedAgentId) throw new Error("local export failed");
         await api.exportPublishedSkill(
           session.token,
+          session.userId,
           props.publishedAgentId,
           skillName,
           destination,
@@ -203,6 +281,7 @@ async function downloadInstalledSkill(skillName: string): Promise<void> {
     } else if (props.publishedAgentId) {
       await api.exportPublishedSkill(
         session.token,
+        session.userId,
         props.publishedAgentId,
         skillName,
         destination,
@@ -216,6 +295,29 @@ async function downloadInstalledSkill(skillName: string): Promise<void> {
     );
   } finally {
     downloadingSkill.value = "";
+  }
+}
+
+async function loadMcp(): Promise<void> {
+  if (!props.publishedAgentId || mcpLoading.value) return;
+  const session = readSession();
+  if (!session?.token) {
+    showToast(t("agentsLocalMcpLoadFailed"), "error");
+    return;
+  }
+  mcpLoading.value = true;
+  try {
+    const text = await api.loadPublishEditorMcp(session.token, props.publishedAgentId);
+    mcpText.value = text;
+    mcpOriginal.value = text;
+    mcpLoaded.value = true;
+  } catch (caught) {
+    showToast(
+      caught instanceof DesktopApiError ? caught.message : t("agentsLocalMcpLoadFailed"),
+      "error",
+    );
+  } finally {
+    mcpLoading.value = false;
   }
 }
 
@@ -233,31 +335,37 @@ function parseMcpServers(raw: string): Record<string, unknown> | undefined | nul
     showToast(t("agentsLocalMcpObjectInvalid"), "error");
     return null;
   }
-  return parsed as Record<string, unknown>;
-}
-
-function formatMcpText(servers: Record<string, unknown> | undefined): string {
-  if (!servers || !Object.keys(servers).length) return "";
-  return `${JSON.stringify(servers, null, 2)}\n`;
+  const servers = mcpServersFromEditor(parsed as Record<string, unknown>);
+  // 字符串值会通过发布写进 COS，招募时才报 mcpServers.x 必须是对象。
+  const invalid = invalidMcpServerName(servers);
+  if (invalid) {
+    showToast(tf("agentsLocalMcpServerObject", { name: invalid }), "error");
+    return null;
+  }
+  return servers;
 }
 
 function submit(): void {
   if (!canSubmit.value) return;
   const mcpServers = parseMcpServers(mcpText.value);
   if (mcpServers === null) return;
-  mcpText.value = formatMcpText(mcpServers);
+  mcpText.value = formatMcpDocument(mcpServers);
   const payload: AgentEditorInput = {
     name: name.value.trim(),
     role: role.value.trim(),
     background: background.value.trim(),
-    ...(skillPaths.value.length ? { skillPaths: [...skillPaths.value] } : {}),
+    ...(pendingSkills.value.length
+      ? { skillPaths: pendingSkills.value.map((item) => item.path) }
+      : {}),
     ...(avatarChange.value ? { avatarDataUrl: avatarChange.value } : {}),
   };
   if (isEdit.value) {
     payload.rules = rules.value;
     if (removeSkills.value.length) payload.removeSkills = [...removeSkills.value];
-    // 编辑始终覆盖 MCP（空对象清除）
-    payload.mcpServers = mcpServers ?? {};
+    // 市场更新没改 MCP 文本就不提交，服务端保留原对象。本机编辑仍始终覆盖。
+    if (props.variant !== "publish-edit" || (mcpLoaded.value && mcpText.value !== mcpOriginal.value)) {
+      payload.mcpServers = mcpServers ?? {};
+    }
   } else if (mcpServers && Object.keys(mcpServers).length) {
     payload.mcpServers = mcpServers;
   }
@@ -278,7 +386,7 @@ function submit(): void {
         v-model="name"
         type="text"
         required
-        maxlength="40"
+        :maxlength="NAME_MAX"
         class="min-h-8 rounded-lg border border-rule bg-paper px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
         :placeholder="t('agentsLocalNamePlaceholder')"
       />
@@ -302,7 +410,7 @@ function submit(): void {
         v-model="role"
         type="text"
         required
-        maxlength="40"
+        :maxlength="ROLE_MAX"
         class="min-h-8 rounded-lg border border-rule bg-paper px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
         :placeholder="t('agentsLocalRolePlaceholder')"
       />
@@ -316,7 +424,7 @@ function submit(): void {
         v-model="background"
         rows="4"
         required
-        maxlength="300"
+        :maxlength="BACKGROUND_MAX"
         class="min-h-24 resize-y rounded-lg border border-rule bg-paper px-2.5 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
         :placeholder="t('agentsLocalBackgroundPlaceholder')"
       />
@@ -346,11 +454,13 @@ function submit(): void {
       <label class="grid gap-1.5">
         <span class="text-sm font-medium text-foreground">{{ t("rulesTitle") }}</span>
         <textarea
-          v-model="rules"
+          :value="rules"
           rows="8"
+          :maxlength="RULES_MAX_CHARS"
           class="min-h-40 resize-y rounded-lg border border-rule bg-paper px-2.5 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
           :placeholder="t('rulesPlaceholder')"
           spellcheck="false"
+          @input="onRulesInput"
         />
         <span class="text-xs font-normal text-muted-foreground">{{ t("agentsLocalRulesHint") }}</span>
       </label>
@@ -384,11 +494,11 @@ function submit(): void {
         </div>
         <p class="m-0 text-xs text-muted-foreground">{{ t("agentsLocalSkillsHint") }}</p>
         <ul
-          v-if="installedSkills.length || skillPaths.length"
+          v-if="listedInstalledSkills.length || pendingSkills.length"
           class="m-0 flex list-none flex-col gap-1.5 p-0"
         >
           <li
-            v-for="skillName in installedSkills"
+            v-for="skillName in listedInstalledSkills"
             :key="`installed-${skillName}`"
             class="flex min-h-8 items-center justify-between gap-2 rounded-lg border border-rule bg-paper px-2.5 text-sm"
           >
@@ -428,17 +538,19 @@ function submit(): void {
             </div>
           </li>
           <li
-            v-for="path in skillPaths"
-            :key="path"
+            v-for="pending in pendingSkills"
+            :key="pending.path"
             class="flex min-h-8 items-center justify-between gap-2 rounded-lg border border-rule bg-paper px-2.5 text-sm"
           >
-            <span class="min-w-0 truncate text-foreground" :title="path">{{ skillLabel(path) }}</span>
+            <span class="min-w-0 truncate text-foreground" :title="pending.path">{{
+              pending.name
+            }}</span>
             <button
               type="button"
               class="inline-flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-accent/10 hover:text-accent"
               :aria-label="t('agentsLocalSkillsRemove')"
               :disabled="busy"
-              @click="removePendingSkill(path)"
+              @click="removePendingSkill(pending.path)"
             >
               <Trash2Icon class="size-3.5" aria-hidden="true" />
             </button>
@@ -446,7 +558,20 @@ function submit(): void {
         </ul>
       </div>
 
-      <label class="grid gap-1.5">
+      <!-- 市场更新默认不展示 MCP 正文 -->
+      <div v-if="isPublishEdit && !mcpLoaded" class="grid gap-1.5">
+        <span class="text-sm font-medium text-foreground">{{ t("agentsLocalMcp") }}</span>
+        <button
+          type="button"
+          class="inline-flex min-h-8 w-fit items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-accent/10 disabled:opacity-50"
+          :disabled="busy || mcpLoading"
+          @click="loadMcp"
+        >
+          {{ mcpLoading ? t("agentsLocalMcpLoading") : t("agentsLocalMcpEdit") }}
+        </button>
+        <span class="text-xs font-normal text-muted-foreground">{{ t("agentsLocalMcpHint") }}</span>
+      </div>
+      <label v-else class="grid gap-1.5">
         <span class="text-sm font-medium text-foreground">{{ t("agentsLocalMcp") }}</span>
         <textarea
           v-model="mcpText"
@@ -478,5 +603,11 @@ function submit(): void {
     </div>
   </form>
 
-  <CommunitySkillDialog v-model:open="communityOpen" @fetched="addSkillPath" />
+  <CommunitySkillDialog v-model:open="communityOpen" @fetched="onCommunityFetched" />
+  <SkillOverwriteDialog
+    v-model:open="overwriteOpen"
+    :skill-name="overwriteName"
+    :kind="overwriteKind"
+    @confirm="onOverwriteConfirm"
+  />
 </template>

@@ -356,6 +356,31 @@ export async function sessionModel(
   return readSessionModelState(payload);
 }
 
+export async function setSessionModelMode(
+  http: RuntimeHttp,
+  token: string,
+  agentId: string,
+  userId: string,
+  mode: "unified" | "perAgent",
+  locale?: UiLocale,
+): Promise<SessionModelState> {
+  const endpoint =
+    agentId === PERSONAL_ASSISTANT_ID
+      ? "/personal-assistant/session/model-mode"
+      : `/agents/${encodeURIComponent(agentId)}/session/model-mode`;
+  const payload = await http.request(
+    endpoint,
+    token,
+    {
+      user_id: userId,
+      mode: mode === "perAgent" ? "per_agent" : "unified",
+      ...(locale ? { lang: locale } : {}),
+    },
+    "PUT",
+  );
+  return readSessionModelState(payload);
+}
+
 export async function setSessionModel(
   http: RuntimeHttp,
   token: string,

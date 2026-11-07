@@ -1,5 +1,5 @@
 const { createOAuthLoopback } = require("./oauth-loopback.cjs");
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, shell, systemPreferences, Tray } =
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, systemPreferences, Tray } =
   require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -8,6 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { applyAppBadge } = require("./app-badge.cjs");
+const { showSystemBanner } = require("./system-banner.cjs");
 const { createMenuBarController } = require("./menu-bar.cjs");
 const { ensureRuntimeModules } = require("./ensure-runtime-modules.cjs");
 const {
@@ -90,6 +91,8 @@ const appProductName =
 const appProductVersion =
   typeof desktopPkg.version === "string" && desktopPkg.version.trim() ? desktopPkg.version.trim() : "0.0.0";
 app.setName(appProductName);
+// Windows toast 要认这个 ID，须与 electron-builder appId 一致；开发态不设则横幅被系统丢掉。
+if (process.platform === "win32") app.setAppUserModelId("com.agentup.app");
 
 /* nativeTheme 跟随应用主题（system/light/dark），DevTools / 菜单与内容一致。 */
 
@@ -200,6 +203,22 @@ if (gotSingleInstanceLock) {
     logInfo(`deep-link open-url ${url}`);
     focusAppWindows();
   });
+}
+
+/** 窗口还在加载时先记下，等渲染进程起来再取；已加载则直接推给监听。 */
+let pendingSystemBanner = null;
+
+function deliverSystemBanner(target) {
+  focusAppWindows();
+  const ready = BrowserWindow.getAllWindows().filter(
+    (win) => !win.isDestroyed() && !win.webContents.isLoading(),
+  );
+  if (ready.length === 0) {
+    pendingSystemBanner = target;
+    return;
+  }
+  pendingSystemBanner = null;
+  for (const win of ready) win.webContents.send("agentup:system-banner-open", target);
 }
 
 function focusAppWindows() {
@@ -441,6 +460,21 @@ app.whenReady().then(async () => {
       dock: app.dock,
       setBadgeCount: (value) => app.setBadgeCount(value),
     });
+  });
+  ipcMain.handle("agentup:show-system-banner", (_event, payload) => {
+    showSystemBanner(payload, {
+      Notification,
+      isSupported: () => (typeof Notification.isSupported === "function" ? Notification.isSupported() : true),
+      icon: appIconPath,
+      onClick(target) {
+        deliverSystemBanner(target);
+      },
+    });
+  });
+  ipcMain.handle("agentup:take-pending-system-banner", () => {
+    const pending = pendingSystemBanner;
+    pendingSystemBanner = null;
+    return pending;
   });
   ipcMain.handle("agentup:set-menu-bar-unread", (_event, count) => menuBar.setUnread(count));
   ipcMain.handle("agentup:check-for-updates", async () => {

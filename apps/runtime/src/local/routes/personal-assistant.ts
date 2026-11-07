@@ -9,6 +9,7 @@ import { requireEnabledModelRef } from "../../config/provider/index.js";
 import { MAX_ATTACHMENT_BODY_BYTES, parsePromptAttachments, removeStagedAttachment, stageAttachment, stageAttachmentFromPath } from "../../session/workspace/attachments.js";
 import { clearPersonalContext, clearPersonalHistory, readPersonalHistory, readPersonalHistoryPage } from "../../session/history/history.js";
 import { parseTranscriptPageQuery } from "../../session/transcript-page.js";
+import { modelModeFromBody, writeVisitModelMode } from "../../session/model/assignment.js";
 import { resolveVisitModelConfig, setVisitSessionModel } from "../../session/model/session-model.js";
 import { listVisitSkills } from "../../session/skills/skills.js";
 import {
@@ -147,6 +148,20 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
       if (error instanceof ConfigError) throw new LocalError(error.message, 400);
       throw error;
     }
+  });
+
+  app.put("/personal-assistant/session/model-mode", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const userId = requireUserId(text(body, "user_id"));
+    const locale = uiLocaleFromRequest(c);
+    const mode = modelModeFromBody(body.mode);
+    if (!mode) throw new LocalError("模型分配方式无效", 400);
+    const visit = personalAssistantVisit(config.userDataRoot, userId);
+    const cwd = path.join(visit.root, "cwd");
+    const sessionDir = path.join(visit.root, "sessions");
+    writeVisitModelMode(sessionDir, mode);
+    return json(c, 200, sessionModelBody(config.userDataRoot, cwd, sessionDir, locale));
   });
 
   app.delete("/personal-assistant/history", async (c) => {

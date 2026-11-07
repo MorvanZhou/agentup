@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { FolderUpIcon, SearchIcon, UploadIcon } from "@lucide/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../../shared/components/AppDropdownMenu.vue";
 import CommunitySkillDialog from "../../../../../shared/components/skills/CommunitySkillDialog.vue";
+import SkillOverwriteDialog from "../../../../../shared/components/skills/SkillOverwriteDialog.vue";
 import { t } from "../../../../../shared/model/ui/ui-locale";
 import { useUserSkills } from "../../../composables/useUserSkills";
 import SkillCard from "./SkillCard.vue";
 
 const { skills, busy, load, upload, installFromPath, setEnabled, remove } = useUserSkills();
 const communityOpen = ref(false);
+const overwriteOpen = ref(false);
+const overwriteName = ref("");
+let overwriteResolve: ((ok: boolean) => void) | null = null;
 
 const uploadItems = computed((): AppDropdownItem[] => [
   { id: "directory", label: t("skillsPickDir"), icon: FolderUpIcon },
@@ -18,12 +22,39 @@ const uploadItems = computed((): AppDropdownItem[] => [
 
 onMounted(() => void load());
 
-function onUpload(id: string): void {
-  if (id === "directory" || id === "zip") void upload(id);
+function askOverwrite(name: string): Promise<boolean> {
+  overwriteName.value = name;
+  overwriteOpen.value = true;
+  return new Promise((resolve) => {
+    overwriteResolve = resolve;
+  });
 }
 
-function onCommunityFetched(path: string): void {
-  void installFromPath(path);
+function onOverwriteConfirm(): void {
+  overwriteResolve?.(true);
+  overwriteResolve = null;
+}
+
+watch(overwriteOpen, (open) => {
+  if (open || !overwriteResolve) return;
+  overwriteResolve(false);
+  overwriteResolve = null;
+});
+
+function onCommunityFetched(result: { path: string; name: string }): void {
+  void installFromPath(result.path, {
+    knownName: result.name,
+    confirmOverwrite: askOverwrite,
+  });
+}
+
+async function onUploadSelect(id: string): Promise<void> {
+  if (id !== "directory" && id !== "zip") return;
+  const bridge = window.agentUp;
+  if (!bridge?.selectSkillPackage) return;
+  const packagePath = await bridge.selectSkillPackage(id);
+  if (!packagePath) return;
+  await installFromPath(packagePath, { confirmOverwrite: askOverwrite });
 }
 </script>
 
@@ -52,7 +83,7 @@ function onCommunityFetched(path: string): void {
               <SearchIcon class="size-3.5" aria-hidden="true" />
               {{ t("skillsCommunitySearchEntry") }}
             </button>
-            <AppDropdownMenu :items="uploadItems" @select="onUpload">
+            <AppDropdownMenu :items="uploadItems" @select="onUploadSelect">
               <template #trigger>
                 <button
                   type="button"
@@ -69,6 +100,12 @@ function onCommunityFetched(path: string): void {
       </header>
 
       <CommunitySkillDialog v-model:open="communityOpen" @fetched="onCommunityFetched" />
+      <SkillOverwriteDialog
+        v-model:open="overwriteOpen"
+        :skill-name="overwriteName"
+        kind="immediate"
+        @confirm="onOverwriteConfirm"
+      />
 
       <!-- 空状态 -->
       <section

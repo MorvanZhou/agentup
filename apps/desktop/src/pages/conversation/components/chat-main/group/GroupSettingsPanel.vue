@@ -22,6 +22,7 @@ import AgentAvatar from "../../../../../shared/components/avatar/AgentAvatar.vue
 import type { AgentCard } from "../../../../../shared/model/runtime/runtime";
 import { showToast } from "../../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
+import { GROUP_TITLE_MAX, SEARCH_QUERY_MAX } from "../../../../../shared/model/input-limits";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "../../../model/group/group-limits";
 import SettingsDrawerFrame from "../shared/settings/SettingsDrawerFrame.vue";
 
@@ -354,6 +355,7 @@ async function confirmDeleteGroup(): Promise<void> {
         <input
           v-model="query"
           type="search"
+          :maxlength="SEARCH_QUERY_MAX"
           :placeholder="t('groupMembersSearchPlaceholder')"
           class="min-h-8 w-full rounded-lg border border-rule bg-paper py-1.5 pr-3 pl-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
         />
@@ -544,7 +546,7 @@ async function confirmDeleteGroup(): Promise<void> {
           id="group-settings-title"
           v-model="draft"
           type="text"
-          maxlength="40"
+          :maxlength="GROUP_TITLE_MAX"
           class="min-h-8 w-full rounded-lg border border-rule bg-paper px-3 text-sm outline-none transition duration-200 placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
           :placeholder="t('groupTitlePlaceholder')"
           :disabled="savingTitle"
@@ -678,6 +680,7 @@ async function confirmDeleteGroup(): Promise<void> {
           <input
             v-model="addQuery"
             type="search"
+            :maxlength="SEARCH_QUERY_MAX"
             :placeholder="t('groupMembersSearchPlaceholder')"
             class="min-h-8 w-full rounded-lg border border-rule bg-paper py-1.5 pr-3 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
           />

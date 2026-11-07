@@ -8,8 +8,9 @@ import { Runtime, type Visit } from "../package/sync.js";
 import { BackgroundJobs } from "../session/background/index.js";
 import { ApprovalBroker } from "../session/hitl/approval/index.js";
 import { ShellHangBroker } from "../session/hitl/shell-hang/index.js";
-import { DelegationService } from "../session/delegation/index.js";
+import { DelegationService, type DelegationTask } from "../session/delegation/index.js";
 import { createHolderTurnDriver, GroupRooms, GroupTurns } from "../session/group/index.js";
+import { resolveDelegationModelConfig } from "../session/model/assignment.js";
 import { resolveVisitModelConfig } from "../session/model/session-model.js";
 import { AskUserBroker } from "../session/tools/index.js";
 import { VisitChats, openPromptSession, type PromptSession } from "../session/turn/index.js";
@@ -56,11 +57,15 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
   const askUser = new AskUserBroker(config.userDataRoot);
   const shellHang = new ShellHangBroker();
   const readModel = options.readModel ?? (() => loadModelConfig(config.userDataRoot));
+  const delegationModel = (task?: DelegationTask, visit?: Visit) => {
+    if (task?.modelPin && visit) return resolveDelegationModelConfig(config.userDataRoot, task, visit);
+    return readModel();
+  };
   let chats!: VisitChats;
   const delegation = new DelegationService({
     userDataRoot: config.userDataRoot,
     backendUrl: config.backendUrl,
-    getModel: readModel,
+    getModel: delegationModel,
     approvals,
     askUser,
     shellHang,
@@ -81,7 +86,7 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
       resolveVisit: (userId, agentId) =>
         resolveWakeVisit(config.userDataRoot, userId, agentId, "recruited") ??
         resolveWakeVisit(config.userDataRoot, userId, agentId, "local"),
-      resolveModel: (visit) => resolveVisitModelConfig(config.userDataRoot, visit),
+      resolveModel: (visit, scope) => groups.resolveHolderModel(scope.userId, scope.groupId, visit),
       approvals,
       askUser,
       shellHang,

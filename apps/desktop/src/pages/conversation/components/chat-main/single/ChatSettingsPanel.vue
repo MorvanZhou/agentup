@@ -11,6 +11,7 @@ import type {
 } from "../../../../../shared/api/runtime/agents";
 import AppDialog from "../../../../../shared/components/AppDialog.vue";
 import UiSkeleton from "../../../../../shared/components/UiSkeleton.vue";
+import { REMARK_MAX } from "../../../../../shared/model/input-limits";
 import { showToast } from "../../../../../shared/model/ui/toast";
 import { t } from "../../../../../shared/model/ui/ui-locale";
 import { injectThreadActions } from "../../../model/thread/thread-actions";
@@ -188,7 +189,8 @@ async function confirmClearHistoryAction(): Promise<void> {
 </script>
 
 <template>
-  <!-- 对话设置：备注 + 审批范围；底部清空聊天 -->
+  <!-- 对话设置：单根才能接住侧栏传入的 class；备注 + 审批范围；底部清空聊天 -->
+  <div class="relative h-full min-h-0 w-full">
   <SettingsDrawerFrame :close-label="t('chatSettingsClose')" @close="emit('close')">
     <div class="flex flex-col gap-3">
       <!-- 备注 -->
@@ -204,7 +206,7 @@ async function confirmClearHistoryAction(): Promise<void> {
             id="chat-settings-remark"
             v-model="remarkDraft"
             type="text"
-            maxlength="40"
+            :maxlength="REMARK_MAX"
             class="min-h-8 w-full rounded-lg border border-rule bg-background px-3 text-sm outline-none transition duration-200 placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
             :placeholder="t('threadRemarkPlaceholder')"
             :disabled="remarkSaving || extras.busy"
@@ -456,4 +458,5 @@ async function confirmClearHistoryAction(): Promise<void> {
       </button>
     </template>
   </AppDialog>
+  </div>
 </template>

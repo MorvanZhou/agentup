@@ -1,3 +1,5 @@
+import type { DelegationModelPin } from "../model/assignment.js";
+
 /** 本机跨 Agent 委托任务状态。 */
 
 /** 写入私人助理会话的异步完成通知 customType。 */
@@ -43,6 +45,11 @@ export type DelegationTask = {
   artifactsDelivered?: boolean;
   /** 群内派出的工作单。有值时结果回到群，不唤醒一对一。 */
   groupId?: string;
+  /**
+   * 派出时记下的模型策略。统一带具体模型；单配开跑时再读被派者。
+   * 旧工单没有这份时，仍用设备最近使用。
+   */
+  modelPin?: DelegationModelPin;
 };
 
 /** 已招募（或本机离线回退）专家名片；检索用语料。 */

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { UIMessage } from "ai";
-import { computed, onActivated, provide, ref, watch } from "vue";
+import { computed, onActivated, onDeactivated, provide, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
@@ -66,6 +66,8 @@ const {
   refresh,
   pullAttention,
   pullPulse,
+  setBannerSurface,
+  pendingNotice,
 } = useDesktop();
 const roomGroups = useConversationGroups();
 
@@ -470,6 +472,55 @@ function onTurnEnd(agentId: string, preview: string, messages: UIMessage[]): voi
 
 const groupSurface = computed(() => Boolean(roomGroups.openRoom.value) || roomGroups.creating.value);
 
+/** 只有会话页在前台时才算「正在看」，切到市场 / 设置后横幅照常弹。 */
+const bannerPageActive = ref(false);
+
+function syncBannerSurface(): void {
+  if (!bannerPageActive.value) {
+    setBannerSurface(null);
+    return;
+  }
+  const groupId = roomGroups.selectedGroupId.value;
+  if (groupId && !roomGroups.creating.value) {
+    setBannerSurface({ kind: "group", id: groupId });
+    return;
+  }
+  // 建群面板盖住了单聊，不能把底下的会话当成正在看。
+  if (groupSurface.value || !selectedId.value) {
+    setBannerSurface(null);
+    return;
+  }
+  setBannerSurface({ kind: "agent", id: selectedId.value });
+}
+
+onActivated(() => {
+  bannerPageActive.value = true;
+  syncBannerSurface();
+});
+onDeactivated(() => {
+  bannerPageActive.value = false;
+  setBannerSurface(null);
+});
+watch([groupSurface, () => roomGroups.selectedGroupId.value, selectedId], () => {
+  if (!bannerPageActive.value) return;
+  syncBannerSurface();
+});
+
+// 系统横幅点击：打开对应单聊或群。Agent 列表还没到时先留着，到了再开。
+watch([pendingNotice, conversations], () => {
+  const target = pendingNotice.value;
+  if (!target) return;
+  if (target.kind === "group") {
+    roomGroups.selectGroup(target.id);
+    pendingNotice.value = null;
+    return;
+  }
+  const agent = conversations.value.find((item) => item.agentId === target.id);
+  if (!agent) return;
+  selectAgent(agent);
+  pendingNotice.value = null;
+});
+
 watch(
   () => session.value?.userId,
   () => {
@@ -574,6 +625,8 @@ const threadRoster = computed((): ThreadRoster => ({
           :delete-group="roomGroups.remove"
           :clear-workspace="roomGroups.clearWorkspace"
           :rename-title="roomGroups.rename"
+          :set-model-mode="roomGroups.setModelMode"
+          :set-group-model="roomGroups.setModel"
           :set-members="roomGroups.setMembers"
           :agents="roomGroups.roster.value"
           :history-has-more="roomGroups.historyHasMore.value"

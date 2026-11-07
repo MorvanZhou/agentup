@@ -50,6 +50,7 @@ import {
   chatQueueCancelKey,
   chatSurfaceKey,
   chatWaveBusyKey,
+  chatModelModeKey,
   groupChatCapabilities,
 } from "../../../model/thread/chat-surface";
 import {
@@ -113,6 +114,8 @@ const props = defineProps<{
   deleteGroup?: () => Promise<void>;
   clearWorkspace?: (includeWork: boolean) => Promise<void>;
   renameTitle?: (title: string) => Promise<void>;
+  setModelMode?: (mode: "unified" | "perAgent") => Promise<void>;
+  setGroupModel?: (ref: { templateId: string; modelId: string }) => Promise<void>;
   setMembers?: (members: GroupMember[], defaultHolderId?: string) => Promise<void>;
   /** 可加入群的本机名单（已招募，不含私人助理）。 */
   agents?: AgentCard[];
@@ -493,6 +496,12 @@ const delegationApi = computed<ThreadDelegationApi>(() => ({
 }));
 provide(threadDelegationKey, delegationApi);
 
+provide(chatModelModeKey, {
+  mode: computed(() => (props.room.modelMode === "perAgent" ? "perAgent" : "unified")),
+  setMode: (mode) => props.setModelMode?.(mode),
+  roomModel: computed(() => props.room.model ?? null),
+  setRoomModel: (ref) => props.setGroupModel?.(ref),
+});
 provide(
   chatSurfaceKey,
   computed(() =>

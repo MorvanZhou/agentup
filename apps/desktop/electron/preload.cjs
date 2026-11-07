@@ -39,6 +39,15 @@ contextBridge.exposeInMainWorld("agentUp", {
   getAppAbout: () => ipcRenderer.invoke("agentup:app-about"),
   setThemeSource: (mode) => ipcRenderer.invoke("agentup:set-theme-source", mode),
   setAppBadge: (count) => ipcRenderer.invoke("agentup:set-app-badge", count),
+  /** macOS 通知中心 / Windows toast。target 为 { kind: "agent"|"group", id }。 */
+  showSystemBanner: (payload) => ipcRenderer.invoke("agentup:show-system-banner", payload),
+  /** 点击横幅时窗口尚在加载，启动后取走一次待打开的会话。 */
+  takePendingSystemBanner: () => ipcRenderer.invoke("agentup:take-pending-system-banner"),
+  onSystemBannerOpen: (listener) => {
+    const handler = (_event, payload) => listener(payload);
+    ipcRenderer.on("agentup:system-banner-open", handler);
+    return () => ipcRenderer.removeListener("agentup:system-banner-open", handler);
+  },
   setMenuBarUnread: (count) => ipcRenderer.invoke("agentup:set-menu-bar-unread", count),
   setMenuBarVisible: (visible) => ipcRenderer.invoke("agentup:set-menu-bar-visible", visible),
   /** 菜单 / 设置触发的手动检查更新 */

@@ -1,6 +1,14 @@
+import path from "node:path";
+
+import type { ModelConfig } from "../../config/load.js";
+import { loadModelConfig, loadModelConfigFromRef, type ModelRef } from "../../config/provider/index.js";
+import type { Visit } from "../../package/sync.js";
 import type { DelegationService } from "../delegation/index.js";
 import type { DelegationTask } from "../delegation/types.js";
+import { planGroupSpeakerModel, type ModelAssignmentMode } from "../model/assignment.js";
+import { peekVisitModelRef, resolveVisitModelConfig } from "../model/session-model.js";
 import { GroupStore } from "./store.js";
+import { completedDelegationAwaitingReply } from "./wave.js";
 import type { GroupEffect, GroupMember, GroupRoom } from "./types.js";
 import { GroupError } from "./types.js";
 
@@ -13,10 +21,21 @@ export class GroupRooms {
   private effectListener?: GroupEffectListener;
 
   constructor(
-    userDataRoot: string,
+    private readonly userDataRoot: string,
     private readonly delegation: DelegationService,
   ) {
     this.store = new GroupStore(userDataRoot);
+    this.delegation.setGroupSpeakerModel((input) => this.speakerPlan(input.userId, input.groupId, input.speaker));
+    this.delegation.setGroupAwaitingReply((input) => {
+      try {
+        return completedDelegationAwaitingReply(
+          this.store.get(input.userId, input.groupId),
+          input.agentId,
+        );
+      } catch {
+        return null;
+      }
+    });
     this.delegation.setGroupMembers(({ userId, groupId }) => {
       try {
         return this.store.get(userId, groupId).members;
@@ -82,6 +101,48 @@ export class GroupRooms {
     defaultHolderId?: string | null;
   }): GroupRoom {
     return this.store.createWithId(input);
+  }
+
+  setModelMode(userId: string, groupId: string, mode: ModelAssignmentMode): GroupRoom {
+    return this.store.setModelMode(userId, groupId, mode);
+  }
+
+  /** 只写本群统一模型。 */
+  setModel(userId: string, groupId: string, ref: ModelRef): GroupRoom {
+    return this.store.setModel(userId, groupId, ref);
+  }
+
+  /**
+   * 执掌者这一轮的模型。单配走他的一对一会话。
+   * 统一用本群模型；还没有时抄他当前的一对一模型落到群上，不改他的私聊，也不改设备最近使用。
+   */
+  resolveHolderModel(userId: string, groupId: string, visit: Visit): ModelConfig {
+    if (process.env.AGENTUP_MODEL_NAME?.trim()) return loadModelConfig(this.userDataRoot);
+    const speaker = peekVisitModelRef(this.userDataRoot, path.join(visit.root, "sessions"));
+    const plan = this.speakerPlan(userId, groupId, speaker);
+    if (plan.kind === "visit") return resolveVisitModelConfig(this.userDataRoot, visit);
+    return loadModelConfigFromRef(this.userDataRoot, plan.ref);
+  }
+
+  private speakerPlan(
+    userId: string,
+    groupId: string,
+    speaker: ModelRef | null,
+  ): { kind: "visit" } | { kind: "room"; ref: ModelRef } {
+    let room: GroupRoom;
+    try {
+      room = this.store.peek(userId, groupId);
+    } catch {
+      return { kind: "visit" };
+    }
+    const plan = planGroupSpeakerModel(this.userDataRoot, {
+      mode: room.modelMode,
+      roomModel: room.model,
+      speaker,
+    });
+    if (plan.kind === "visit") return plan;
+    if (plan.persist) this.store.setModel(userId, groupId, plan.ref);
+    return { kind: "room", ref: plan.ref };
   }
 
   rename(userId: string, groupId: string, title: string): GroupRoom {

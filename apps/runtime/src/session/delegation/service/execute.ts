@@ -20,7 +20,7 @@ export type ExecuteTaskContext = {
   slots: DelegationSlots;
   controllers: Map<string, AbortController>;
   userDataRoot: string;
-  getModel: () => ModelConfig;
+  getModel: (task?: DelegationTask, visit?: Visit) => ModelConfig;
   approvals: ApprovalBroker;
   askUser: AskUserBroker;
   shellHang?: ShellHangBroker;
@@ -62,9 +62,10 @@ export async function executeDelegationTask(
     try {
       // 排队期间 brief 可能被二次 delegate 改过；开跑前再读一次
       const latestBrief = ctx.store.get(task.id)?.brief ?? task.brief;
+      const latestTask = ctx.store.get(task.id) ?? task;
       const outcome = await runDelegatedPrompt(
         visit,
-        ctx.getModel(),
+        ctx.getModel(latestTask, visit),
         latestBrief,
         ctx.approvals,
         ctx.askUser,

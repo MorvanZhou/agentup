@@ -34,7 +34,7 @@ export async function fetchCommunitySkill(
     owner?: string;
     version?: string;
   },
-): Promise<string> {
+): Promise<{ path: string; name: string }> {
   const payload = await http.request("/community-skills/fetch", token, {
     source: input.source,
     slug: input.slug,
@@ -44,7 +44,9 @@ export async function fetchCommunitySkill(
   if (typeof payload.path !== "string" || !payload.path.trim()) {
     throw new DesktopApiError("社区技能下载路径无效");
   }
-  return payload.path;
+  // 旧 runtime 只回 path；名称由调用方用 hit.slug 回落，避免版本错位时报「名称无效」。
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  return { path: payload.path, name };
 }
 
 function readCommunitySkillHit(value: unknown): CommunitySkillHit {

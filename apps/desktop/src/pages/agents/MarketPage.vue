@@ -5,6 +5,7 @@ import { RouterLink, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import type { AgentCard } from "../../shared/model/runtime/runtime";
+import { SEARCH_QUERY_MAX } from "../../shared/model/input-limits";
 import { t } from "../../shared/model/ui/ui-locale";
 import AgentCatalogSkeleton from "./components/AgentCatalogSkeleton.vue";
 import AgentMarketCard from "./components/market/AgentMarketCard.vue";
@@ -47,6 +48,7 @@ function openChat(agent: AgentCard): void {
           <input
             v-model="query"
             type="search"
+            :maxlength="SEARCH_QUERY_MAX"
             :placeholder="t('agentsSearchPlaceholder')"
             class="min-h-8 w-full rounded-lg border border-rule bg-paper py-1.5 pr-2.5 pl-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
           />

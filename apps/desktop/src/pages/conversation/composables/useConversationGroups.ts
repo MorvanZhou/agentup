@@ -22,6 +22,8 @@ import { showToast } from "../../../shared/model/ui/toast";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "../model/group/group-limits";
 import {
   collectGroupUnreadBumps,
+  groupIdleFinishes,
+  groupSidebarPreview,
   groupUnreadKey,
 } from "../model/sidebar/group-sidebar";
 import { THREAD_WINDOW_PAGE } from "../model/thread/thread-window";
@@ -47,6 +49,7 @@ export function useConversationGroups() {
     pullAttention,
     bumpUnread,
     clearUnread,
+    announceReply,
   } = useDesktop();
   const api = new DesktopApi();
   const groups = ref<GroupRoom[]>([]);
@@ -95,9 +98,10 @@ export function useConversationGroups() {
 
   /** 对照 knownPhases：你不在的群从进行中落到 idle 则 +1；并刷新 phase 表。 */
   function notePhases(
-    rooms: ReadonlyArray<Pick<GroupRoom, "id" | "phase">>,
+    rooms: ReadonlyArray<Pick<GroupRoom, "id" | "phase" | "title" | "lines">>,
     mode: "merge" | "replace",
   ): void {
+    const finishes = groupIdleFinishes(knownPhases.value, rooms);
     const { phases, bumpIds } = collectGroupUnreadBumps(
       knownPhases.value,
       rooms,
@@ -106,6 +110,16 @@ export function useConversationGroups() {
     );
     knownPhases.value = phases;
     for (const groupId of bumpIds) void bumpUnread(groupUnreadKey(groupId));
+    // 未读跳过「正在看的群」，横幅仍发；人正盯着且窗口聚焦时由 announceReply 自己压掉。
+    for (const groupId of finishes) {
+      const room = rooms.find((item) => item.id === groupId);
+      const preview = room ? groupSidebarPreview(room) : "";
+      announceReply(
+        { kind: "group", id: groupId },
+        room?.title.trim() || t("groupTitle"),
+        preview,
+      );
+    }
   }
 
   /** 列表拉取后合并进侧栏；当前打开的群保留已翻历史。 */
@@ -423,6 +437,30 @@ export function useConversationGroups() {
     );
   }
 
+  /** 只改这间群的统一 / 单配，不碰会话行和成员模型。 */
+  async function setModelMode(mode: "unified" | "perAgent"): Promise<void> {
+    const current = session.value;
+    const room = openRoom.value;
+    if (!current || !room) return;
+    const next = await api.setGroupModelMode(current.token, current.userId, room.id, mode);
+    groups.value = groups.value.map((item) =>
+      item.id === next.id
+        ? { ...item, modelMode: next.modelMode ?? "unified", model: next.model ?? item.model ?? null }
+        : item,
+    );
+  }
+
+  /** 只改这间群的统一模型，不改成员私聊。 */
+  async function setModel(ref: { templateId: string; modelId: string }): Promise<void> {
+    const current = session.value;
+    const room = openRoom.value;
+    if (!current || !room) return;
+    const next = await api.setGroupModel(current.token, current.userId, room.id, ref);
+    groups.value = groups.value.map((item) =>
+      item.id === next.id ? { ...item, model: next.model ?? ref } : item,
+    );
+  }
+
   /** 改成员（可顺带改默认执掌者）；合并 members / holderId / defaultHolderId / queue，不碰会话行。 */
   async function setMembers(
     members: GroupMember[],
@@ -680,6 +718,8 @@ export function useConversationGroups() {
     clearWorkspace,
     clearContext,
     rename,
+    setModelMode,
+    setModel,
     setMembers,
     remove,
     reloadOpen,

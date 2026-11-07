@@ -1,19 +1,33 @@
 <script setup lang="ts">
 import { ChevronDownIcon, FolderUpIcon, SearchIcon, Trash2Icon, UploadIcon } from "@lucide/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import AgentAvatarField from "../../shared/components/avatar/AgentAvatarField.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../shared/components/AppDropdownMenu.vue";
 import CommunitySkillDialog from "../../shared/components/skills/CommunitySkillDialog.vue";
+import SkillOverwriteDialog from "../../shared/components/skills/SkillOverwriteDialog.vue";
 import UiFormSkeleton from "../../shared/components/UiFormSkeleton.vue";
 import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../../shared/model/avatar/personal-assistant-default";
 import { DesktopApi, DesktopApiError } from "../../shared/api/runtime";
 import { useDesktop } from "../../app/desktop";
+import {
+  BACKGROUND_MAX,
+  clampUtf8,
+  NAME_MAX,
+  ROLE_MAX,
+  RULES_MAX_BYTES,
+  RULES_MAX_CHARS,
+} from "../../shared/model/input-limits";
 import { formatApiError } from "../../shared/model/runtime/package-issues";
 import { showToast } from "../../shared/model/ui/toast";
-import { readUiLocale, t } from "../../shared/model/ui/ui-locale";
+import { readUiLocale, t, tf } from "../../shared/model/ui/ui-locale";
 import type { UserSkill } from "../../shared/model/runtime/runtime";
-import { MCP_PLACEHOLDER } from "../settings/composables/useUserMcp";
+import {
+  formatMcpDocument,
+  invalidMcpServerName,
+  mcpServersFromEditor,
+  MCP_PLACEHOLDER,
+} from "../../shared/model/agent-editor/mcp-document";
 
 const api = new DesktopApi();
 const { session, refresh } = useDesktop();
@@ -26,11 +40,19 @@ const avatarDataUrl = ref("");
 const officialAvatarId = ref("");
 const mcpText = ref("");
 const rulesText = ref("");
+
+// 规则按 UTF-8 字节封顶；maxlength 只数字符，中文会先顶满字节。
+function onRulesInput(event: Event): void {
+  rulesText.value = clampUtf8((event.target as HTMLTextAreaElement).value, RULES_MAX_BYTES);
+}
 const skills = ref<UserSkill[]>([]);
 const advancedOpen = ref(false);
 const loading = ref(true);
 const saving = ref(false);
 const communityOpen = ref(false);
+const overwriteOpen = ref(false);
+const overwriteName = ref("");
+let overwriteResolve: ((ok: boolean) => void) | null = null;
 
 const skillUploadItems = computed((): AppDropdownItem[] => [
   { id: "directory", label: t("skillsPickDir"), icon: FolderUpIcon },
@@ -66,8 +88,7 @@ async function loadAll(): Promise<void> {
     avatarPreview.value = profile.avatarUrl ?? "";
     avatarDataUrl.value = "";
     officialAvatarId.value = "";
-    mcpText.value =
-      mcp && Object.keys(mcp).length ? `${JSON.stringify(mcp, null, 2)}\n` : "";
+    mcpText.value = formatMcpDocument(mcp);
     rulesText.value = rules;
     skills.value = skillList;
     if (skills.value.length || mcpText.value.trim() || rulesText.value.trim()) {
@@ -89,7 +110,13 @@ function parseMcpServers(raw: string): Record<string, unknown> | null {
       showToast(t("agentsLocalMcpObjectInvalid"), "error");
       return null;
     }
-    return parsed as Record<string, unknown>;
+    const servers = mcpServersFromEditor(parsed as Record<string, unknown>);
+    const invalid = invalidMcpServerName(servers);
+    if (invalid) {
+      showToast(tf("agentsLocalMcpServerObject", { name: invalid }), "error");
+      return null;
+    }
+    return servers;
   } catch {
     showToast(t("agentsLocalMcpJsonInvalid"), "error");
     return null;
@@ -108,9 +135,39 @@ async function addSkill(kind: string): Promise<void> {
   await installSkillPath(packagePath);
 }
 
-async function installSkillPath(packagePath: string): Promise<void> {
+function askOverwrite(skillName: string): Promise<boolean> {
+  overwriteName.value = skillName;
+  overwriteOpen.value = true;
+  return new Promise((resolve) => {
+    overwriteResolve = resolve;
+  });
+}
+
+function onOverwriteConfirm(): void {
+  overwriteResolve?.(true);
+  overwriteResolve = null;
+}
+
+watch(overwriteOpen, (open) => {
+  if (open || !overwriteResolve) return;
+  overwriteResolve(false);
+  overwriteResolve = null;
+});
+
+async function onCommunityFetched(result: { path: string; name: string }): Promise<void> {
+  await installSkillPath(result.path, result.name);
+}
+
+async function installSkillPath(packagePath: string, knownName?: string): Promise<void> {
   if (!session.value) return;
   try {
+    const skillName =
+      knownName ??
+      (await api.inspectUserSkill(session.value.token, session.value.userId, packagePath)).name;
+    if (skills.value.some((skill) => skill.name === skillName)) {
+      const ok = await askOverwrite(skillName);
+      if (!ok) return;
+    }
     await api.installUserSkill(session.value.token, session.value.userId, packagePath);
     skills.value = await api.userSkills(session.value.token, session.value.userId);
     showToast(t("skillsInstalled"), "success");
@@ -144,10 +201,7 @@ async function submit(): Promise<void> {
   if (!session.value || !canSubmit.value || saving.value) return;
   const mcpServers = parseMcpServers(mcpText.value);
   if (mcpServers === null) return;
-  mcpText.value =
-    mcpServers && Object.keys(mcpServers).length
-      ? `${JSON.stringify(mcpServers, null, 2)}\n`
-      : "";
+  mcpText.value = formatMcpDocument(mcpServers);
   saving.value = true;
   try {
     await api.savePersonalAssistantProfile(
@@ -188,7 +242,7 @@ async function submit(): Promise<void> {
           v-model="name"
           type="text"
           required
-          maxlength="40"
+          :maxlength="NAME_MAX"
           class="min-h-8 rounded-lg border border-rule bg-paper px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
           :placeholder="t('assistantNamePlaceholder')"
         />
@@ -213,7 +267,7 @@ async function submit(): Promise<void> {
           v-model="role"
           type="text"
           required
-          maxlength="40"
+          :maxlength="ROLE_MAX"
           class="min-h-8 rounded-lg border border-rule bg-paper px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
           :placeholder="t('agentsLocalRolePlaceholder')"
         />
@@ -227,7 +281,7 @@ async function submit(): Promise<void> {
         <textarea
           v-model="background"
           rows="4"
-          maxlength="300"
+          :maxlength="BACKGROUND_MAX"
           required
           class="min-h-24 resize-y rounded-lg border border-rule bg-paper px-2.5 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
           :placeholder="t('agentsLocalBackgroundPlaceholder')"
@@ -303,11 +357,13 @@ async function submit(): Promise<void> {
         <label class="grid gap-1.5">
           <span class="text-sm font-medium text-foreground">{{ t("settingsRules") }}</span>
           <textarea
-            v-model="rulesText"
+            :value="rulesText"
             rows="8"
+            :maxlength="RULES_MAX_CHARS"
             class="min-h-40 resize-y rounded-lg border border-rule bg-paper px-2.5 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
             :placeholder="t('rulesPlaceholder')"
             spellcheck="false"
+            @input="onRulesInput"
           />
           <span class="text-xs font-normal text-muted-foreground">{{ t("rulesHint") }}</span>
         </label>
@@ -336,6 +392,12 @@ async function submit(): Promise<void> {
       </div>
     </form>
 
-    <CommunitySkillDialog v-model:open="communityOpen" @fetched="installSkillPath" />
+    <CommunitySkillDialog v-model:open="communityOpen" @fetched="onCommunityFetched" />
+    <SkillOverwriteDialog
+      v-model:open="overwriteOpen"
+      :skill-name="overwriteName"
+      kind="immediate"
+      @confirm="onOverwriteConfirm"
+    />
   </div>
 </template>
