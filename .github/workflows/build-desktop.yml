@@ -35,7 +35,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          # macos-14 已退役；macos-latest 当前为 macos-26（arm64）
+          - os: macos-latest
             script: sh/build-mac.sh
             platform: mac
           - os: windows-latest
