@@ -145,8 +145,8 @@ export function useLocalAgents(
         await reloadCatalog();
         showToast(
           agent.publishedAgentId
-            ? tf("agentsLocalRepublished", { id: published.agentId })
-            : tf("agentsLocalPublished", { id: published.agentId }),
+            ? tf("agentsLocalRepublished", { name: published.name })
+            : tf("agentsLocalPublished", { name: published.name }),
           "success",
         );
       } catch (caught) {

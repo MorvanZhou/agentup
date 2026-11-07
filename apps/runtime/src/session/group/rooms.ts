@@ -88,6 +88,7 @@ export class GroupRooms {
     title: string;
     members: GroupMember[];
     defaultHolderId?: string | null;
+    sourceTeamId?: string | null;
   }): GroupRoom {
     return this.store.create(input);
   }

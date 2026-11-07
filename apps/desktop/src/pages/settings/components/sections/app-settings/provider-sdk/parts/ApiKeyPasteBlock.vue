@@ -20,6 +20,13 @@ defineProps<{
    * 不自动 openExternal——已有 Key 时可跳过步骤 1。
    */
   docUrl?: string | null;
+  /** 权限示意块标题（如 GitHub Account permissions）；有清单时才渲染 */
+  permissionsTitle?: string | null;
+  /** 必须勾选的权限名；空则不渲染示意块（OpenCode 等旧粘贴档不受影响） */
+  requiredPermissions?: string[] | null;
+  /** 勾选示意截图（Vite 打包后的 URL） */
+  hintImageSrc?: string | null;
+  hintImageAlt?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -69,6 +76,40 @@ const emit = defineEmits<{
         <p v-else class="m-0 text-xs text-muted-foreground">
           {{ t("providerSdkApiKeyStep1NoUrl") }}
         </p>
+        <!-- 必勾权限 + 截图：强化易被忽略的 Account permissions -->
+        <div
+          v-if="requiredPermissions?.length"
+          class="grid gap-2 rounded-lg border border-accent/35 bg-accent/5 p-2.5"
+          data-testid="sdk-api-key-permissions"
+        >
+          <p v-if="permissionsTitle" class="m-0 text-xs font-medium text-foreground">
+            {{ permissionsTitle }}
+          </p>
+          <ul class="m-0 grid list-none gap-1 p-0">
+            <li
+              v-for="perm in requiredPermissions"
+              :key="perm"
+              class="flex items-start gap-1.5 text-xs leading-snug text-foreground"
+            >
+              <span
+                class="mt-0.5 inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm border border-accent bg-accent/15 text-[9px] font-bold text-accent"
+                aria-hidden="true"
+              >
+                ✓
+              </span>
+              <span>{{ perm }}</span>
+            </li>
+          </ul>
+          <img
+            v-if="hintImageSrc"
+            :src="hintImageSrc"
+            :alt="hintImageAlt || ''"
+            class="mt-0.5 w-full rounded-md border border-rule"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+        
       </div>
     </div>
 

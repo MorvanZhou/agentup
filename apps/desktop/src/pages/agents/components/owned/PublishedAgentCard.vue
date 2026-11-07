@@ -6,6 +6,7 @@ import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
 import AgentCatalogCard from "../../../../shared/components/agent/AgentCatalogCard.vue";
 import type { AgentCard } from "../../../../shared/model/runtime/runtime";
+import { showToast } from "../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../shared/model/ui/ui-locale";
 import AgentProfileDialog from "../AgentProfileDialog.vue";
 
@@ -27,6 +28,7 @@ const menuItems = computed((): AppDropdownItem[] => [
     icon: PencilIcon,
     disabled: props.busy,
   },
+  { id: "copy-id", label: t("agentsCopyId"), icon: CopyIcon },
   {
     id: "remove",
     label: t("publishDelete"),
@@ -44,7 +46,20 @@ watch(confirmDelete, (open) => {
   }
 });
 
+async function copyAgentId(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(props.agent.agentId);
+    showToast(t("agentsCopyIdDone"), "success");
+  } catch {
+    showToast(t("agentsCopyIdFailed"), "error");
+  }
+}
+
 function onSelect(id: string): void {
+  if (id === "copy-id") {
+    void copyAgentId();
+    return;
+  }
   if (id === "update") {
     emit("update", props.agent.agentId);
     return;

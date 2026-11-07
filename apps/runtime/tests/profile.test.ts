@@ -116,14 +116,30 @@ it("proxies account profile updates through the loopback API", async () => {
       body: JSON.stringify({ nickname: "小舟", avatar: webp }),
     });
     expect(withAvatar.status).toBe(200);
-    expect(await withAvatar.json()).toEqual({
+    const body = (await withAvatar.json()) as {
+      user_id: string;
+      email: string;
+      nickname: string;
+      token: string;
+      has_avatar: boolean;
+      avatar_url: string | null;
+    };
+    expect(body).toMatchObject({
       user_id: "u-a",
       email: "alice@example.com",
       nickname: "小舟",
       token: "token-a",
       has_avatar: true,
-      avatar_url: "https://agentup-test.cos.ap-guangzhou.myqcloud.com/dev/avatars/users/u-a/1.webp?q-sign-time=1",
     });
+    // 上传字节直接写入本机缓存，会话返回 data URL 而非易过期的签名 GET
+    expect(body.avatar_url).toMatch(/^data:image\/webp;base64,/);
+    expect(
+      fs.existsSync(path.join(root, "users/u-a/account/assets/avatar.webp")),
+    ).toBe(true);
+
+    const cached = await fetch(`${local.url}/local/account-avatar?user_id=u-a`);
+    expect(cached.status).toBe(200);
+    expect(await cached.json()).toEqual({ avatar_url: body.avatar_url });
   } finally {
     await local.close();
     await backend.close();

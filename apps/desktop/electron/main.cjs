@@ -8,7 +8,11 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { applyAppBadge } = require("./app-badge.cjs");
-const { showSystemBanner } = require("./system-banner.cjs");
+const {
+  flashTaskbarAttention,
+  parseNoticeDeepLink,
+  showSystemBanner,
+} = require("./system-banner.cjs");
 const { createMenuBarController } = require("./menu-bar.cjs");
 const { ensureRuntimeModules } = require("./ensure-runtime-modules.cjs");
 const {
@@ -194,14 +198,18 @@ if (!gotSingleInstanceLock) {
 let runtime = null;
 if (gotSingleInstanceLock) {
   app.on("second-instance", (_event, argv) => {
-    focusAppWindows();
     const url = argv.find((arg) => typeof arg === "string" && arg.startsWith(`${DEEP_LINK_SCHEME}://`));
-    if (url) logInfo(`deep-link second-instance ${url}`);
+    if (url) {
+      logInfo(`deep-link second-instance ${url}`);
+      handleDeepLink(url);
+      return;
+    }
+    focusAppWindows();
   });
   app.on("open-url", (event, url) => {
     event.preventDefault();
     logInfo(`deep-link open-url ${url}`);
-    focusAppWindows();
+    handleDeepLink(url);
   });
 }
 
@@ -221,6 +229,16 @@ function deliverSystemBanner(target) {
   for (const win of ready) win.webContents.send("agentup:system-banner-open", target);
 }
 
+/** Windows toast 按钮走协议激活；其它深链只拉前台。 */
+function handleDeepLink(url) {
+  const notice = parseNoticeDeepLink(url);
+  if (notice) {
+    deliverSystemBanner(notice);
+    return;
+  }
+  focusAppWindows();
+}
+
 function focusAppWindows() {
   const windows = BrowserWindow.getAllWindows();
   if (windows.length === 0) {
@@ -229,6 +247,8 @@ function focusAppWindows() {
   }
   for (const win of windows) {
     if (win.isMinimized()) win.restore();
+    // 拉前台前先停掉黄闪，避免 focus 后仍闪。
+    if (typeof win.flashFrame === "function") win.flashFrame(false);
     win.show();
     win.focus();
   }
@@ -463,9 +483,16 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("agentup:show-system-banner", (_event, payload) => {
     showSystemBanner(payload, {
+      platform: process.platform,
       Notification,
       isSupported: () => (typeof Notification.isSupported === "function" ? Notification.isSupported() : true),
       icon: appIconPath,
+      flashTaskbar() {
+        flashTaskbarAttention({
+          platform: process.platform,
+          getWindows: () => BrowserWindow.getAllWindows(),
+        });
+      },
       onClick(target) {
         deliverSystemBanner(target);
       },
@@ -553,6 +580,11 @@ app.whenReady().then(async () => {
     logInfo(`runtime 就绪：${runtimeUrl}`);
   }
   createWindow();
+  // Windows toast 按钮在应用未运行时会再启一份进程；冷启动 argv 里带 notice 深链。
+  const launchUrl = process.argv.find(
+    (arg) => typeof arg === "string" && arg.startsWith(`${DEEP_LINK_SCHEME}://`),
+  );
+  if (launchUrl) handleDeepLink(launchUrl);
   // 启动后稍晚静默查一次，再每 4 小时；有新版本才推提示条
   setTimeout(() => {
     void runAppUpdateCheck({ interactive: false });

@@ -101,6 +101,28 @@ export async function turnstileInfo(http: RuntimeHttp): Promise<TurnstileInfo> {
   };
 }
 
+/** 向控制面续签会话头像，runtime 会写成 data URL。 */
+export async function fetchMe(http: RuntimeHttp, token: string): Promise<Session> {
+  const payload = await http.request("/me", token, undefined, "GET");
+  return readSession(payload, "账号资料响应无效");
+}
+
+/** 只读本机用户头像缓存（vault 仍是过期签名 URL 时的回落）。 */
+export async function accountAvatar(
+  http: RuntimeHttp,
+  userId: string,
+): Promise<string | undefined> {
+  const payload = await http.request(
+    `/local/account-avatar?user_id=${encodeURIComponent(userId)}`,
+    undefined,
+    undefined,
+    "GET",
+  );
+  return typeof payload.avatar_url === "string" && payload.avatar_url.trim()
+    ? payload.avatar_url.trim()
+    : undefined;
+}
+
 export async function updateProfile(
   http: RuntimeHttp,
   token: string,

@@ -1,0 +1,79 @@
+<script setup lang="ts">
+import { computed } from "vue";
+
+import GroupAvatar from "../avatar/GroupAvatar.vue";
+import type { TeamCard } from "../../model/runtime/runtime";
+import { tf } from "../../model/ui/ui-locale";
+
+const props = defineProps<{
+  team: TeamCard;
+  /** 标题用 id，避免同页多卡撞 id */
+  titleId: string;
+}>();
+
+const emit = defineEmits<{ "view-profile": [] }>();
+
+const faces = computed(() =>
+  props.team.members.map((member) => ({
+    agentId: member.agentId,
+    avatarUrl: member.avatarUrl,
+  })),
+);
+</script>
+
+<template>
+  <!-- 与 AgentCatalogCard 同构：拼图头像 / 名称 / 简介；点空白开资料；trailing·footer 盖在上层 -->
+  <article
+    class="group relative flex h-full w-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 text-left shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+    :aria-labelledby="titleId"
+  >
+    <button
+      type="button"
+      class="absolute inset-0 z-10 cursor-pointer rounded-xl border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"
+      :aria-label="tf('teamsViewProfile', { name: team.name })"
+      @click="emit('view-profile')"
+    />
+    <!-- 身份行 -->
+    <div class="flex shrink-0 items-start gap-2.5">
+      <GroupAvatar
+        class="ring-1 ring-rule ring-offset-1 ring-offset-paper"
+        :faces="faces"
+        :show-user="false"
+        size="sidebar"
+      />
+      <div class="min-w-0 flex-1 pt-0.5">
+        <div class="flex min-w-0 items-center gap-1.5">
+          <h2
+            :id="titleId"
+            class="m-0 min-w-0 truncate text-[15px] font-bold leading-snug tracking-tight text-foreground"
+            :title="team.name"
+          >
+            {{ team.name }}
+          </h2>
+          <slot name="badge" />
+        </div>
+        <p
+          class="m-0 mt-1 truncate text-xs font-semibold leading-tight text-accent"
+          :title="tf('teamsMemberCount', { n: team.members.length })"
+        >
+          {{ tf("teamsMemberCount", { n: team.members.length }) }}
+        </p>
+      </div>
+      <div v-if="$slots.trailing" class="relative z-20 shrink-0">
+        <slot name="trailing" />
+      </div>
+    </div>
+
+    <!-- 简介：固定两行 -->
+    <p
+      class="m-0 line-clamp-2 min-h-[2.5rem] flex-1 text-xs leading-snug text-muted-foreground"
+      :title="team.background"
+    >
+      {{ team.background }}
+    </p>
+
+    <footer v-if="$slots.footer" class="relative z-20 mt-auto flex shrink-0 items-center gap-2 pt-0.5">
+      <slot name="footer" />
+    </footer>
+  </article>
+</template>

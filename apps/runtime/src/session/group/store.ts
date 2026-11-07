@@ -52,6 +52,7 @@ export class GroupStore {
     title: string;
     members: GroupMember[];
     defaultHolderId?: string | null;
+    sourceTeamId?: string | null;
   }): GroupRoom {
     const room = createGroupRoom({
       id: this.allocateId(input.userId),
@@ -59,6 +60,7 @@ export class GroupStore {
       title: input.title,
       members: input.members,
       defaultHolderId: input.defaultHolderId,
+      sourceTeamId: input.sourceTeamId,
     });
     this.save(room);
     return room;
@@ -420,6 +422,7 @@ export class GroupStore {
       taskIds: room.taskIds,
       pendingDelegations: room.pendingDelegations,
       queue: room.queue,
+      ...(room.sourceTeamId ? { sourceTeamId: room.sourceTeamId } : {}),
     };
     fs.writeFileSync(this.file(room.userId, room.id), JSON.stringify(index, null, 2));
   }
@@ -545,6 +548,8 @@ type GroupIndexRaw = {
   taskIds: string[];
   pendingDelegations: GroupRoom["pendingDelegations"];
   queue: GroupRoom["queue"];
+  /** 旧文件可缺；有则透传。 */
+  sourceTeamId?: string | null;
 };
 
 type GroupIndex = Omit<GroupIndexRaw, "modelMode" | "defaultHolderId" | "model"> & {
@@ -590,6 +595,7 @@ function roomShell(index: GroupIndex, lines: GroupLine[]): GroupRoom {
     taskIds: index.taskIds,
     pendingDelegations: index.pendingDelegations,
     queue: index.queue,
+    ...(index.sourceTeamId ? { sourceTeamId: index.sourceTeamId } : {}),
   };
 }
 

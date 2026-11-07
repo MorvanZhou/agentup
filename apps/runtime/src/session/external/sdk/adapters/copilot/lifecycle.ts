@@ -310,9 +310,13 @@ async function listModelsOnce(client: {
   }
 }
 
-/** 把 SDK GenericFailure / DNS / SSL 收成可读短句。 */
+/** 把 SDK GenericFailure / DNS / SSL / PAT 权限收成可读短句。 */
 export function formatCopilotModelsError(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error ?? "");
+  // 鉴权能过、listModels 仍 401：多为 Account permissions 未配齐（不假定只缺某一项）
+  if (/Copilot Requests/i.test(text) || /does not have .+permission/i.test(text) || /"status":\s*401/i.test(text)) {
+    return "GitHub Token 权限配置不正确。请核对 Account permissions 是否已勾选 Copilot Requests、Copilot Chat、Copilot Editor Context，修正后重新生成并粘贴";
+  }
   if (/api\.individual\.githubcopilot\.com/i.test(text) || /models\.list/i.test(text)) {
     if (/ENOTFOUND|dns|lookup/i.test(text)) {
       return "无法解析 api.individual.githubcopilot.com，请检查 DNS / 代理后再刷新模型列表";

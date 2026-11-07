@@ -87,7 +87,7 @@ export function useAgentPublish(
             mcpServers: input.mcpServers,
             avatarDataUrl: input.avatarDataUrl,
           });
-          showToast(tf("agentsLocalPublished", { id: published.value.agentId }), "success");
+          showToast(tf("agentsLocalPublished", { name: published.value.name }), "success");
         } else {
           const profileDirty = agentEditorProfileChanged(input, initial.value);
           const capabilityDirty = agentEditorCapabilityChanged(input, initial.value);
@@ -126,7 +126,7 @@ export function useAgentPublish(
               mcpServers: input.mcpServers,
               avatarDataUrl: input.avatarDataUrl,
             });
-            showToast(tf("agentsLocalRepublished", { id: published.value.agentId }), "success");
+            showToast(tf("agentsLocalRepublished", { name: published.value.name }), "success");
           }
         }
         await refresh();

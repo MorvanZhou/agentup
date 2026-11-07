@@ -59,6 +59,16 @@ it("formatCopilotModelsError 收窄网络 / DNS 失败文案", () => {
   ).toContain("网络或代理");
 });
 
+it("formatCopilotModelsError 收窄 PAT 权限配置不正确", () => {
+  const msg = formatCopilotModelsError(
+    new Error(
+      'Request models.list failed with message: GenericFailure, {"kind":"http","status":401,"body":"checking third-party user token: unauthorized: Personal Access Token does not have \\"Copilot Requests\\" permission\\n"}',
+    ),
+  );
+  expect(msg).toMatch(/权限配置不正确/);
+  expect(msg).toMatch(/Account permissions/);
+});
+
 it("模板 copilot-sdk 声明 driverId=copilot 与 .github/skills", () => {
   const template = getProviderTemplate("copilot-sdk");
   expect(template?.access).toBe("agent-sdk");

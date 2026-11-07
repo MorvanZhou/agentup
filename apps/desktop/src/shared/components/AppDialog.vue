@@ -18,8 +18,8 @@ const props = withDefaults(
     open: boolean;
     title: string;
     description?: string;
-    /** md：确认框默认；lg：过程/历史等较宽内容 */
-    size?: "md" | "lg";
+    /** md：确认框默认；lg：过程/历史；xl：团队资料等需铺成员卡 */
+    size?: "md" | "lg" | "xl";
     /** start：确认框；center：头像与标题垂直居中 */
     align?: "start" | "center";
     titleClass?: string;
@@ -99,9 +99,11 @@ onUnmounted(() => descriptionObserver?.disconnect());
       <DialogContent
         class="app-no-drag fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-rule bg-paper text-foreground shadow-xl outline-none"
         :class="
-          size === 'lg'
-            ? 'max-h-[min(85dvh,44rem)] w-[min(calc(100vw-2rem),40rem)]'
-            : 'max-h-[min(80dvh,36rem)] w-[min(calc(100vw-2rem),32rem)]'
+          size === 'xl'
+            ? 'max-h-[min(88dvh,52rem)] w-[min(calc(100vw-2rem),52rem)]'
+            : size === 'lg'
+              ? 'max-h-[min(85dvh,44rem)] w-[min(calc(100vw-2rem),40rem)]'
+              : 'max-h-[min(80dvh,36rem)] w-[min(calc(100vw-2rem),32rem)]'
         "
       >
         <!-- 关钮贴齐弹窗右上角，不随页头 leading 垂直居中 -->
@@ -120,7 +122,12 @@ onUnmounted(() => descriptionObserver?.disconnect());
             <slot name="leading" />
           </div>
           <div class="min-w-0 flex-1">
-            <DialogTitle :class="titleClass">{{ title }}</DialogTitle>
+            <DialogTitle :class="['flex min-w-0 flex-wrap items-center gap-2', titleClass]">
+              <span class="min-w-0 break-words">{{ title }}</span>
+              <span v-if="$slots['title-trailing']" class="inline-flex shrink-0 items-center">
+                <slot name="title-trailing" />
+              </span>
+            </DialogTitle>
             <DialogDescription v-if="description && !descriptionClamp" :class="descriptionClass">
               {{ description }}
             </DialogDescription>

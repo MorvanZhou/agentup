@@ -61,6 +61,8 @@ interface Window {
     showSystemBanner?(payload: {
       title: string;
       body: string;
+      /** Windows toast 上的操作按钮；点后打开对应会话。 */
+      actionLabel?: string;
       target: { kind: "agent" | "group"; id: string };
     }): Promise<void>;
     /** 取走点击横幅时窗口尚未就绪而记下的会话。 */

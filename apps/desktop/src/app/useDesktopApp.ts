@@ -498,8 +498,13 @@ export function useDesktopApp(api = new DesktopApi()) {
 
   async function refresh(): Promise<void> {
     if (!session.value) return;
-    const { token, userId } = session.value;
     const guest = isGuestSession(session.value);
+    // 账号：先顶掉 vault 里过期的 COS 签名，再续签刷新本机头像缓存
+    if (!guest && isAccountSession(session.value)) {
+      await hydrateAccountAvatar(session.value);
+    }
+    if (!session.value) return;
+    const { token, userId } = session.value;
 
     try {
       personalAssistant.value = await api.personalAssistantProfile(token, userId, readUiLocale());
@@ -775,9 +780,15 @@ export function useDesktopApp(api = new DesktopApi()) {
     if (suppressBecauseViewing(windowFocused(), bannerSurface.value, input.target)) return;
     const bridge = typeof window !== "undefined" ? window.agentUp : undefined;
     if (typeof bridge?.showSystemBanner !== "function") return;
-    void bridge.showSystemBanner(input).catch(() => {
-      /* 主进程不可用时忽略 */
-    });
+    void bridge
+      .showSystemBanner({
+        ...input,
+        // Windows toast 按钮文案；macOS 点横幅本体即可，有签名时也会显示按钮。
+        actionLabel: t("osBannerOpenChat"),
+      })
+      .catch(() => {
+        /* 主进程不可用时忽略 */
+      });
   }
 
   function announceReply(target: BannerSurface, title: string, preview: string): void {
@@ -836,6 +847,33 @@ export function useDesktopApp(api = new DesktopApi()) {
       await refresh();
     } finally {
       busyAgent.value = "";
+    }
+  }
+
+  /**
+   * 冷启动 / refresh：本机缓存优先展示，再向控制面续签并更新缓存。
+   * 避免 session.enc 里过期的 q-sign URL 一打开就 403。
+   */
+  async function hydrateAccountAvatar(current: Session): Promise<void> {
+    if (!isAccountSession(current) || !current.hasAvatar) return;
+    if (current.avatarUrl && !current.avatarUrl.startsWith("data:")) {
+      try {
+        const local = await api.accountAvatar(current.userId);
+        if (local) {
+          const patched = { ...current, avatarUrl: local };
+          session.value = patched;
+          await saveSession(patched);
+        }
+      } catch {
+        /* 无本机缓存时继续尝试控制面续签 */
+      }
+    }
+    try {
+      const fresh = await api.fetchMe(current.token);
+      session.value = fresh;
+      await saveSession(fresh);
+    } catch {
+      /* 离线保留当前（已尽量换成 data URL） */
     }
   }
 

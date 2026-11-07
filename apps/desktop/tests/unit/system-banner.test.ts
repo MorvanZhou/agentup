@@ -9,19 +9,37 @@ import {
   suppressBecauseViewing,
 } from "../../src/app/native/system-banner";
 
-const { normalizeBannerTarget, showSystemBanner } = createRequire(import.meta.url)(
-  "../../electron/system-banner.cjs",
-) as {
+const {
+  buildWindowsToastXml,
+  flashTaskbarAttention,
+  normalizeBannerTarget,
+  parseNoticeDeepLink,
+  showSystemBanner,
+} = createRequire(import.meta.url)("../../electron/system-banner.cjs") as {
+  buildWindowsToastXml: (input: unknown) => string;
+  flashTaskbarAttention: (deps: {
+    platform?: string;
+    getWindows?: () => Array<{
+      isDestroyed?: () => boolean;
+      isFocused?: () => boolean;
+      once?: (event: string, listener: () => void) => void;
+      flashFrame?: (value: boolean) => void;
+    }>;
+  }) => number;
   normalizeBannerTarget: (value: unknown) => { kind: "agent" | "group"; id: string } | null;
+  parseNoticeDeepLink: (url: unknown) => { kind: "agent" | "group"; id: string } | null;
   showSystemBanner: (
     payload: unknown,
     deps: {
-      Notification?: new (options: { title: string; body: string }) => {
+      platform?: string;
+      Notification?: new (options: Record<string, unknown>) => {
         on: (event: string, listener: () => void) => void;
         show: () => void;
       };
       isSupported?: () => boolean;
       onClick?: (target: { kind: string; id: string }) => void;
+      flashTaskbar?: () => void;
+      icon?: string;
     },
   ) => boolean;
 };
@@ -127,13 +145,69 @@ it("rejects a banner target that is not an agent or group id", () => {
   expect(normalizeBannerTarget({ kind: "group", id: "g1" })).toEqual({ kind: "group", id: "g1" });
 });
 
+it("builds a Windows toast with an open-chat button that deep-links the conversation", () => {
+  const xml = buildWindowsToastXml({
+    title: "小A",
+    body: "你好",
+    actionLabel: "打开对话",
+    target: { kind: "agent", id: "weather" },
+    icon: "C:\\AgentUp\\icon.ico",
+  });
+  expect(xml).toContain('activationType="protocol"');
+  expect(xml).toContain("agentup://notice?kind=agent&amp;id=weather");
+  expect(xml).toContain('content="打开对话"');
+  expect(xml).toContain("<text>小A</text>");
+  expect(xml).toContain("<text>你好</text>");
+  expect(xml).toContain("file:///C:/AgentUp/icon.ico");
+  expect(buildWindowsToastXml({ title: "x", body: "y", actionLabel: "", target: { kind: "agent", id: "a" } })).toBe(
+    "",
+  );
+});
+
+it("parses notice deep links from Windows toast activation", () => {
+  expect(parseNoticeDeepLink("agentup://notice?kind=agent&id=weather")).toEqual({
+    kind: "agent",
+    id: "weather",
+  });
+  expect(parseNoticeDeepLink("agentup://notice?kind=group&id=g1")).toEqual({
+    kind: "group",
+    id: "g1",
+  });
+  expect(parseNoticeDeepLink("agentup://open")).toBeNull();
+  expect(parseNoticeDeepLink("https://example.com")).toBeNull();
+});
+
+it("flashes only unfocused Windows windows and clears on focus", () => {
+  const focused = { isFocused: () => true, flashFrame: vi.fn(), once: vi.fn() };
+  const background = {
+    isFocused: () => false,
+    flashFrame: vi.fn(),
+    once: vi.fn((event: string, listener: () => void) => {
+      if (event === "focus") listener();
+    }),
+  };
+  expect(
+    flashTaskbarAttention({
+      platform: "win32",
+      getWindows: () => [focused, background],
+    }),
+  ).toBe(1);
+  expect(focused.flashFrame).not.toHaveBeenCalled();
+  expect(background.flashFrame).toHaveBeenCalledWith(true);
+  expect(background.flashFrame).toHaveBeenCalledWith(false);
+  expect(flashTaskbarAttention({ platform: "darwin", getWindows: () => [background] })).toBe(0);
+});
+
 it("shows a system banner and focuses the conversation on click", () => {
   const show = vi.fn();
   const on = vi.fn();
   const onClick = vi.fn();
+  const flashTaskbar = vi.fn();
   class FakeNotification {
-    static shown = 0;
-    constructor(public options: { title: string; body: string }) {}
+    options: Record<string, unknown>;
+    constructor(options: Record<string, unknown>) {
+      this.options = options;
+    }
     on(event: string, listener: () => void) {
       on(event);
       if (event === "click") listener();
@@ -144,12 +218,48 @@ it("shows a system banner and focuses the conversation on click", () => {
   }
   expect(
     showSystemBanner(
-      { title: "天气", body: "明天有雨", target: { kind: "agent", id: "weather" } },
-      { Notification: FakeNotification, isSupported: () => true, onClick },
+      {
+        title: "天气",
+        body: "明天有雨",
+        actionLabel: "打开对话",
+        target: { kind: "agent", id: "weather" },
+      },
+      {
+        platform: "darwin",
+        Notification: FakeNotification,
+        isSupported: () => true,
+        onClick,
+        flashTaskbar,
+      },
     ),
   ).toBe(true);
   expect(show).toHaveBeenCalledOnce();
   expect(onClick).toHaveBeenCalledWith({ kind: "agent", id: "weather" });
+  expect(flashTaskbar).toHaveBeenCalledOnce();
+});
+
+it("uses toastXml with an action button on Windows", () => {
+  const shown: Array<Record<string, unknown>> = [];
+  class FakeNotification {
+    constructor(options: Record<string, unknown>) {
+      shown.push(options);
+    }
+    on() {}
+    show() {}
+  }
+  expect(
+    showSystemBanner(
+      {
+        title: "天气",
+        body: "明天有雨",
+        actionLabel: "打开对话",
+        target: { kind: "agent", id: "weather" },
+      },
+      { platform: "win32", Notification: FakeNotification, isSupported: () => true },
+    ),
+  ).toBe(true);
+  expect(String(shown[0]?.toastXml)).toContain('content="打开对话"');
+  expect(String(shown[0]?.toastXml)).toContain("agentup://notice?kind=agent&amp;id=weather");
 });
 
 it("skips the banner when the system cannot show one", () => {

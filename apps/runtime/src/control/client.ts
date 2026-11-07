@@ -9,11 +9,16 @@ export type {
   Recruit,
   RegisterPending,
   SessionCredential,
+  TeamCard,
+  TeamMember,
+  TeamRecruitResult,
+  TeamUpsertInput,
   ThemeMode,
   UiLocale,
   UserPreferences,
 } from "./types.js";
 export {
+  fetchProfile,
   forgotPassword,
   login,
   oauthAuthorizeUrl,
@@ -47,4 +52,14 @@ export {
 } from "./groups-api.js";
 export type { CloudGroup } from "./groups-api.js";
 export { getPreferences, putPreferences } from "./preferences-api.js";
+export {
+  createTeam,
+  deleteTeam,
+  getTeam,
+  listOwnedTeams,
+  listPublicTeams,
+  listTeams,
+  recruitTeam,
+  updateTeam,
+} from "./teams-api.js";
 export { HttpPackageSource } from "./package-source.js";

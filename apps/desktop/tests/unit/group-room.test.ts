@@ -198,8 +198,8 @@ describe("group room", () => {
     const host = mountRoom({ room: { id: "g2" }, token: "", userId: "" });
     expect(host.textContent).toContain("空闲");
     expect(host.textContent).toContain("发送");
-    // 无执掌者且成员列表缺失：placeholder 回落到「默认应答者」文案（name 为空）。
-    expect(host.querySelector("[role=textbox]")?.getAttribute("aria-label")).toContain("默认应答者");
+    // 无执掌者且成员列表缺失：placeholder 回落到「默认接话」文案（name 为空）。
+    expect(host.querySelector("[role=textbox]")?.getAttribute("aria-label")).toContain("默认接话");
     expect(host.querySelector("[aria-label='提及成员']")).toBeNull();
     expect(host.querySelector("[aria-label='插入 Skill']")).toBeNull();
     expect(host.querySelector("[aria-label='添加附件']")).toBeNull();

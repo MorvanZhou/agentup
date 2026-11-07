@@ -224,20 +224,6 @@ test("消费轮进行中还能继续排队：发送按钮可见，消息进队�
 
   const composer = page.getByRole("textbox", { name: /^发送消息/ });
 
-  // 入队前就轮询：消费轮窗口短，childList 观察容易漏
-  await page.evaluate(() => {
-    const holder = window as unknown as {
-      __drainSeen?: string[];
-      __drainTimer?: number;
-    };
-    holder.__drainSeen = [];
-    holder.__drainTimer = window.setInterval(() => {
-      const text = document.body.innerText;
-      if (text.includes("只要北京")) holder.__drainSeen?.push("user");
-      if (text.includes("已收到，正在查")) holder.__drainSeen?.push("assistant");
-    }, 16);
-  });
-
   await composer.fill("先查全国");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("先查全国")).toBeVisible();
@@ -253,18 +239,12 @@ test("消费轮进行中还能继续排队：发送按钮可见，消息进队�
   await page.getByRole("button", { name: "发送" }).click();
   await firstQueued;
 
-  // 等第一轮收完：历史里出现「旧回复」，队列随后被 runtime 消费（条子撤掉）
+  // 等第一轮收完：历史里出现「旧回复」，队列被消费后进入 wake 消费轮（编排条）。
+  // 勿等瞬时助手正文——SSE 窗口短，并发行下重连易漏；本例只关心「仍在消费轮」。
   await expect(page.getByText("旧回复").last()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("status", { name: /已排队/ })).toHaveCount(0, { timeout: 20_000 });
-  await page.waitForFunction(
-    () =>
-      ((window as unknown as { __drainSeen?: string[] }).__drainSeen ?? []).includes("assistant"),
-    undefined,
-    { timeout: 20_000 },
-  );
-  await page.evaluate(() => {
-    const holder = window as unknown as { __drainTimer?: number };
-    if (holder.__drainTimer) window.clearInterval(holder.__drainTimer);
+  await expect(page.getByRole("region", { name: /编排进行中/ })).toBeVisible({
+    timeout: 20_000,
   });
 
   // 消费轮跑过之后 wake busy 仍持续（desktop-pulse 保持 busy_turns）：composer 处于第二轮状态。

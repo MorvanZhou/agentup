@@ -15,6 +15,7 @@ import type {
   Session,
   SessionModelState,
   SyncedVisit,
+  TeamCard,
   PreferencesUpdate,
   UiLocale,
   UserSkill,
@@ -35,6 +36,7 @@ import * as groupsApi from "./groups";
 import * as projectRootsApi from "./project-roots";
 import * as followUpsApi from "./follow-ups";
 import * as pulseApi from "./pulse";
+import * as teamsApi from "./teams";
 import * as workspaceApi from "./workspace";
 import type { WorkspaceEntry, WorkspaceFile } from "./workspace";
 import type { StagedAttachment } from "./attachments";
@@ -85,6 +87,14 @@ export class DesktopApi {
 
   turnstileInfo(): Promise<authApi.TurnstileInfo> {
     return authApi.turnstileInfo(this.http);
+  }
+
+  fetchMe(token: string): Promise<Session> {
+    return authApi.fetchMe(this.http, token);
+  }
+
+  accountAvatar(userId: string): Promise<string | undefined> {
+    return authApi.accountAvatar(this.http, userId);
   }
 
   updateProfile(
@@ -190,6 +200,38 @@ export class DesktopApi {
 
   publicAgents(options?: { q?: string }): Promise<AgentCard[]> {
     return agentsApi.publicAgents(this.http, options);
+  }
+
+  publicTeams(options?: { q?: string }): Promise<TeamCard[]> {
+    return teamsApi.publicTeams(this.http, options);
+  }
+
+  teams(token: string, options?: { q?: string; recruited?: boolean }): Promise<TeamCard[]> {
+    return teamsApi.teams(this.http, token, options);
+  }
+
+  ownedTeams(token: string, options?: { q?: string }): Promise<TeamCard[]> {
+    return teamsApi.ownedTeams(this.http, token, options);
+  }
+
+  getTeam(token: string, teamId: string): Promise<TeamCard> {
+    return teamsApi.getTeam(this.http, token, teamId);
+  }
+
+  createTeam(token: string, input: teamsApi.TeamUpsertInput): Promise<TeamCard> {
+    return teamsApi.createTeam(this.http, token, input);
+  }
+
+  updateTeam(token: string, teamId: string, input: teamsApi.TeamUpsertInput): Promise<TeamCard> {
+    return teamsApi.updateTeam(this.http, token, teamId, input);
+  }
+
+  deleteTeam(token: string, teamId: string): Promise<void> {
+    return teamsApi.deleteTeam(this.http, token, teamId);
+  }
+
+  recruitTeam(token: string, userId: string, teamId: string): Promise<teamsApi.TeamRecruitResult> {
+    return teamsApi.recruitTeam(this.http, token, userId, teamId);
   }
 
   state(token: string, userId: string): Promise<UserState> {

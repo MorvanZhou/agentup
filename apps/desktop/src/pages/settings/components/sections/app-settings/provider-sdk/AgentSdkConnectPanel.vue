@@ -7,6 +7,7 @@ import type {
   AgentSdkAuthEnvironment,
   AgentSdkOption,
 } from "../../../../../../shared/model/runtime/runtime";
+import githubPatAccountPermissions from "../../../../../../shared/assets/providers/github-pat-account-permissions.webp";
 import { readUiLocale, t, tf } from "../../../../../../shared/model/ui/ui-locale";
 import ApiKeyPasteBlock from "./parts/ApiKeyPasteBlock.vue";
 import AuthEnvironmentPicker from "./parts/AuthEnvironmentPicker.vue";
@@ -94,6 +95,15 @@ const apiKeyCopy = computed(() => {
       placeholder: t("providerSdkGithubPatPlaceholder"),
       submitLabel: t("providerSdkGithubPatSubmit"),
       cancelLabel: t("providerSdkGithubPatCancel"),
+      // 三项缺一不可；配截图，避免只扫过 hint 漏勾 Copilot Requests
+      permissionsTitle: t("providerSdkGithubPatPermTitle"),
+      requiredPermissions: [
+        t("providerSdkGithubPatPermRequests"),
+        t("providerSdkGithubPatPermChat"),
+        t("providerSdkGithubPatPermEditor"),
+      ],
+      hintImageSrc: githubPatAccountPermissions,
+      hintImageAlt: t("providerSdkGithubPatPermImageAlt"),
     };
   }
   if (props.sdk.apiKeyPaste === "deepseek") {
@@ -278,6 +288,10 @@ function runPrimary(): void {
         :submit-label="apiKeyCopy.submitLabel"
         :cancel-label="apiKeyCopy.cancelLabel"
         :doc-url="loginAuthUrl"
+        :permissions-title="apiKeyCopy.permissionsTitle"
+        :required-permissions="apiKeyCopy.requiredPermissions"
+        :hint-image-src="apiKeyCopy.hintImageSrc"
+        :hint-image-alt="apiKeyCopy.hintImageAlt"
         @update:model-value="emit('update:apiKeyDraft', $event)"
         @submit="emit('submit-api-key')"
         @cancel="emit('cancel-login')"

@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 
 import { t } from "../../../../shared/model/ui/ui-locale";
 
-export type AgentsSection = "assistant" | "local" | "recruited" | "owned";
+export type AgentsSection = "assistant" | "local" | "recruited" | "owned" | "teams";
 
 defineProps<{ section: AgentsSection }>();
 
@@ -13,6 +13,7 @@ const items = computed(() => [
   { id: "assistant" as const, name: "agents-assistant" as const, label: t("agentsSectionAssistant") },
   { id: "recruited" as const, name: "agents-recruited" as const, label: t("agentsSectionRecruited") },
   { id: "owned" as const, name: "agents-owned" as const, label: t("agentsSectionOwned") },
+  { id: "teams" as const, name: "teams-owned" as const, label: t("teamsOwnedTitle") },
 ]);
 </script>
 

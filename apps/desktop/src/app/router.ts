@@ -3,8 +3,12 @@ import { createRouter, createWebHashHistory, createWebHistory } from "vue-router
 import AgentsPage from "../pages/agents/AgentsPage.vue";
 import LocalAgentCreatePage from "../pages/agents/LocalAgentCreatePage.vue";
 import LocalAgentEditPage from "../pages/agents/LocalAgentEditPage.vue";
+import MarketAgentsPage from "../pages/agents/MarketAgentsPage.vue";
 import MarketPage from "../pages/agents/MarketPage.vue";
+import MarketTeamsPage from "../pages/agents/MarketTeamsPage.vue";
 import PublishEditorPage from "../pages/agents/PublishEditorPage.vue";
+import TeamEditorPage from "../pages/agents/TeamEditorPage.vue";
+import TeamsOwnedPage from "../pages/agents/TeamsOwnedPage.vue";
 import ConversationPage from "../pages/conversation/ConversationPage.vue";
 import SettingsPage from "../pages/settings/SettingsPage.vue";
 import { isAccountSession } from "../shared/model/session/session";
@@ -24,6 +28,8 @@ export const router = createRouter({
         { path: "", name: "conversation", component: ConversationPage },
         { path: "groups", redirect: { name: "conversation" } },
         { path: "market", name: "market", component: MarketPage },
+        { path: "market/teams", name: "market-teams", component: MarketTeamsPage },
+        { path: "market/agents", name: "market-agents", component: MarketAgentsPage },
         { path: "agents", redirect: { name: "agents-local" } },
         {
           path: "agents/assistant",
@@ -65,6 +71,24 @@ export const router = createRouter({
           path: "agents/owned/:agentId",
           name: "agents-owned-edit",
           component: PublishEditorPage,
+          meta: { requiresAccount: true },
+        },
+        {
+          path: "teams/owned",
+          name: "teams-owned",
+          component: TeamsOwnedPage,
+          meta: { requiresAccount: true },
+        },
+        {
+          path: "teams/owned/new",
+          name: "teams-owned-new",
+          component: TeamEditorPage,
+          meta: { requiresAccount: true },
+        },
+        {
+          path: "teams/owned/:teamId",
+          name: "teams-owned-edit",
+          component: TeamEditorPage,
           meta: { requiresAccount: true },
         },
         { path: "settings", name: "settings", component: SettingsPage },

@@ -742,13 +742,33 @@ export async function installRuntime(
    * 仍发同一条，保证晚连上的客户端也先看到用户那条。
    */
   let drainedEcho: string | null = null;
-  /** 首轮 SSE 常被 reload 打断；允许再回放 1 次给观察者抓到，随后挂住防风暴。 */
+  /**
+   * 首轮 SSE 常被 reload / wake 依赖抖动打断。
+   * 多回放几次（带短延迟）给观察者抓到；次数用尽再挂住防风暴。
+   * 只回放 1 次时，并发行下第二次重连会空挂，消费轮文案永远进不了 DOM。
+   */
   let drainReplayCount = 0;
   /** 队列被消费后发的那一轮：先 echo 用户那条，再出助手正文（顺序 = 用户 → 助手）。 */
-  function followUpDrainSse(): string {
+  function followUpDrainSse(agentId: string): string {
     if (drainedEcho === null) {
       drainedEcho = followUpQueue.map((item) => item.text).join("\n");
       followUpQueue = [];
+      // 写入 history：wake 流 onDone→reloadHistory 时不至于把线程刷空
+      if (agentId && drainedEcho) {
+        const list = histories[agentId] ?? (histories[agentId] = []);
+        list.push(
+          {
+            id: "follow-up-drain-user",
+            role: "user",
+            parts: [{ type: "text", text: drainedEcho }],
+          },
+          {
+            id: "follow-up-drain",
+            role: "assistant",
+            parts: [{ type: "text", text: "已收到，正在查" }],
+          },
+        );
+      }
     }
     const joined = drainedEcho;
     return sse([
@@ -772,13 +792,16 @@ export async function installRuntime(
       /* 页面关了 */
     }
   }
-  function fulfillDrain(route: {
-    fulfill: (r: {
-      status: number;
-      headers: Record<string, string>;
-      body: string;
-    }) => Promise<unknown>;
-  }) {
+  function fulfillDrain(
+    route: {
+      fulfill: (r: {
+        status: number;
+        headers: Record<string, string>;
+        body: string;
+      }) => Promise<unknown>;
+    },
+    agentId: string,
+  ) {
     return route.fulfill({
       status: 200,
       headers: {
@@ -786,7 +809,7 @@ export async function installRuntime(
         "x-vercel-ai-ui-message-stream": "v1",
         "cache-control": "no-cache",
       },
-      body: followUpDrainSse(),
+      body: followUpDrainSse(agentId),
     });
   }
   await page.route(/^https?:\/\/[^/]+\/runtime(?:\/|$)/, async (route) => {
@@ -1613,6 +1636,20 @@ export async function installRuntime(
         avatar_url: accountAvatarUrl,
       });
     }
+    if (request.method() === "GET" && path === "/me") {
+      // 冷启动续签头像：与 PUT /me 同形状，e2e 不模拟过期签名
+      return json(route, 200, {
+        user_id: "patient-a",
+        email: "patient-a@example.com",
+        nickname: "patient-a",
+        token: "token-a",
+        has_avatar: Boolean(accountAvatarUrl),
+        avatar_url: accountAvatarUrl,
+      });
+    }
+    if (request.method() === "GET" && path === "/local/account-avatar") {
+      return json(route, 200, { avatar_url: accountAvatarUrl });
+    }
     if (request.method() === "PUT" && path === "/me") {
       const body = request.postDataJSON() as { nickname?: string; avatar?: string };
       const nickname = typeof body.nickname === "string" ? body.nickname.trim() : "";
@@ -1979,11 +2016,13 @@ export async function installRuntime(
     // runtime 的顺序是先 echo 拼好的用户那条，再出助手正文——错的那个版本反过来。
     if (request.method() === "GET" && path === "/turn-stream") {
       if (options?.prompt !== "follow-up-drain") return json(route, 404, { error: "本场景没有旁路流" });
-      // 已播过：立即回放至多 1 次（首轮常被 reload 掐断）；再多就挂住，勿空等 15s
+      const turnAgentId = url.searchParams.get("agent_id") ?? "";
+      // 已播过：回放同一份（首轮常被 reload / wake 抖动掐断）。次数用尽再挂住。
       if (drainedEcho !== null) {
-        if (drainReplayCount >= 1) return holdTurnStream(route);
+        if (drainReplayCount >= 8) return holdTurnStream(route);
         drainReplayCount += 1;
-        return fulfillDrain(route);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return fulfillDrain(route, turnAgentId);
       }
       // 等第一轮收完、队列里真有东西，再发消费轮
       const deadline = Date.now() + 15_000;
@@ -1991,11 +2030,12 @@ export async function installRuntime(
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       if (drainedEcho !== null) {
-        if (drainReplayCount >= 1) return holdTurnStream(route);
+        if (drainReplayCount >= 8) return holdTurnStream(route);
         drainReplayCount += 1;
-        return fulfillDrain(route);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return fulfillDrain(route, turnAgentId);
       }
-      return fulfillDrain(route);
+      return fulfillDrain(route, turnAgentId);
     }
 
     // 插话：API / Pi 原生接入走 runtime 的 Pi 原生 steer（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。

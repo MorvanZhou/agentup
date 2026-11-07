@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UIMessage } from "ai";
 import { computed, onActivated, onDeactivated, provide, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import AgentProfileDialog from "../agents/components/AgentProfileDialog.vue";
@@ -37,6 +37,7 @@ import { useProviderSettings } from "../settings/composables/useProviderSettings
 defineOptions({ name: "ConversationPage" });
 
 const router = useRouter();
+const route = useRoute();
 const emptyMessages: UIMessage[] = [];
 const layoutEl = ref<HTMLElement | null>(null);
 const { width: sidebarWidth, startResize: startSidebarResize } = useSidebarPaneWidth();
@@ -525,6 +526,20 @@ watch(
   () => session.value?.userId,
   () => {
     void roomGroups.load();
+  },
+  { immediate: true },
+);
+
+// 市场一键成群：带 ?group= 进来时打开对应群，并清掉 query 以免刷新重复选中
+watch(
+  [() => route.query.group, () => roomGroups.groups.value],
+  () => {
+    const raw = route.query.group;
+    const groupId = typeof raw === "string" ? raw.trim() : "";
+    if (!groupId) return;
+    if (!roomGroups.groups.value.some((room) => room.id === groupId)) return;
+    roomGroups.selectGroup(groupId);
+    void router.replace({ name: "conversation", query: {} });
   },
   { immediate: true },
 );

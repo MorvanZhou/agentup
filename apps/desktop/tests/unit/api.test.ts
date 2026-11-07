@@ -265,6 +265,37 @@ it("preserves structured package validation errors", async () => {
   });
 });
 
+it("fetches account session and local avatar cache through runtime", async () => {
+  const dataUrl = "data:image/webp;base64,AAAA";
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith("/me") && (init?.method ?? "GET") === "GET") {
+      return json({
+        user_id: "patient-a",
+        email: "patient-a@example.com",
+        nickname: "patient-a",
+        token: "token",
+        has_avatar: true,
+        avatar_url: dataUrl,
+      });
+    }
+    if (path.includes("/local/account-avatar")) {
+      return json({ avatar_url: dataUrl });
+    }
+    throw new Error(`unexpected ${path}`);
+  });
+  const api = new DesktopApi("http://runtime", fetchImpl);
+  await expect(api.fetchMe("token")).resolves.toMatchObject({
+    userId: "patient-a",
+    hasAvatar: true,
+    avatarUrl: dataUrl,
+  });
+  await expect(api.accountAvatar("patient-a")).resolves.toBe(dataUrl);
+  expect(String(fetchImpl.mock.calls[1]?.[0])).toContain(
+    "/local/account-avatar?user_id=patient-a",
+  );
+});
+
 it("reads a workspace directory and file", async () => {
   const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);

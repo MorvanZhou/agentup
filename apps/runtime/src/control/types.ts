@@ -76,6 +76,43 @@ export type PreferencesUpdate = {
   uiLocale?: UiLocale;
 };
 
+export interface TeamMember {
+  agentId: string;
+  name: string;
+  role: string;
+  sortOrder: number;
+  hasAvatar: boolean;
+  avatarUrl?: string;
+}
+
+export interface TeamCard {
+  teamId: string;
+  name: string;
+  background: string;
+  defaultHolderAgentId: string;
+  members: TeamMember[];
+  recruited: boolean;
+  hasAvatar: boolean;
+  avatarUrl?: string;
+  recruitCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamRecruitResult {
+  teamId: string;
+  name: string;
+  defaultHolderAgentId: string;
+  members: TeamMember[];
+}
+
+export interface TeamUpsertInput {
+  name: string;
+  background: string;
+  memberIds: string[];
+  defaultHolderAgentId: string;
+}
+
 export type AgentListQuery = {
   q?: string;
   recruited?: boolean;

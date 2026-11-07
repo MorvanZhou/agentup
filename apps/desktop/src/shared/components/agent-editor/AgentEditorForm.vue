@@ -46,12 +46,24 @@ const props = withDefaults(
     localAgentId?: string;
     /** 已发布 agent id；无本机 skill 时从云端下载 */
     publishedAgentId?: string;
+    /** 供顶栏 submit 按钮关联；hideActions 时必填 */
+    formId?: string;
+    /** 操作钮挪到 PageEditorHeader 时隐藏表单底栏 */
+    hideActions?: boolean;
   }>(),
-  { variant: "local-create", initial: null, localAgentId: "", publishedAgentId: "" },
+  {
+    variant: "local-create",
+    initial: null,
+    localAgentId: "",
+    publishedAgentId: "",
+    formId: "agent-editor-form",
+    hideActions: false,
+  },
 );
 const emit = defineEmits<{
   submit: [input: AgentEditorInput];
   cancel: [];
+  "update:canSubmit": [value: boolean];
 }>();
 
 const api = new DesktopApi();
@@ -128,6 +140,17 @@ const submitBusyLabel = computed(() => {
   if (isPublish.value) return t("publishPublishing");
   return isEdit.value ? t("agentsLocalSaving") : t("agentsLocalCreating");
 });
+
+/** 顶栏关联 submit / disabled 文案 */
+defineExpose({ canSubmit, submitIdleLabel, submitBusyLabel });
+
+watch(
+  canSubmit,
+  (value) => {
+    emit("update:canSubmit", value);
+  },
+  { immediate: true },
+);
 
 function applyInitial(value: AgentEditorInitial | null | undefined): void {
   if (!value) {
@@ -376,7 +399,7 @@ function submit(): void {
 
 <template>
   <!-- Agent 共用编辑表单：本机创建/编辑 · 市场发布/更新 -->
-  <form class="flex flex-col gap-4" @submit.prevent="submit">
+  <form :id="formId" class="flex flex-col gap-4" @submit.prevent="submit">
     <label class="grid gap-1.5">
       <span class="text-sm font-medium text-foreground">
         {{ t("agentsLocalName") }}
@@ -584,7 +607,10 @@ function submit(): void {
       </label>
     </template>
 
-    <div class="flex flex-wrap justify-end gap-2 border-t border-rule pt-4">
+    <div
+      v-if="!hideActions"
+      class="flex flex-wrap justify-end gap-2 border-t border-rule pt-4"
+    >
       <button
         type="button"
         class="inline-flex min-h-8 items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-accent/10"

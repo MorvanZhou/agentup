@@ -104,6 +104,8 @@ export type GroupRoom = {
   /** 执掌者气泡还在直播时，子任务先排在它后面，落盘后再写入 lines。 */
   pendingDelegations: GroupPendingDelegation[];
   queue: GroupQueueItem[];
+  /** 若由市场团队一键成群写入；仅本机记录，不上云。 */
+  sourceTeamId?: string | null;
 };
 
 export type GroupEffect =

@@ -123,6 +123,16 @@ export async function turnstilePublic(
   };
 }
 
+/** 续签会话（含短期头像 GET）；Desktop 冷启动用来刷新本机头像缓存。 */
+export async function fetchProfile(
+  backendUrl: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<SessionCredential> {
+  const payload = await requestJson(fetchImpl, backendUrl, "GET", "/v1/me", undefined, token);
+  return credential(payload);
+}
+
 export async function updateProfile(
   backendUrl: string,
   token: string,

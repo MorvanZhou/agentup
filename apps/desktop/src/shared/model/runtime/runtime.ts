@@ -13,6 +13,31 @@ export interface Session {
   avatarUrl?: string;
 }
 
+/** 市场团队花名册成员摘要。 */
+export interface TeamMemberCard {
+  agentId: string;
+  name: string;
+  role: string;
+  sortOrder: number;
+  hasAvatar: boolean;
+  avatarUrl?: string;
+}
+
+/** 市场团队套装名片。 */
+export interface TeamCard {
+  teamId: string;
+  name: string;
+  background: string;
+  defaultHolderAgentId: string;
+  members: TeamMemberCard[];
+  recruited: boolean;
+  hasAvatar: boolean;
+  avatarUrl?: string;
+  recruitCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AgentCard {
   /** recruited=市场；personal=私人助理；local=本机私有（cwd/.pi 同构） */
   kind?: "recruited" | "personal" | "local";

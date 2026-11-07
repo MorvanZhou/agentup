@@ -5,21 +5,58 @@ import { isLocalAgentId } from "./local-agent.js";
 
 const MAX_BYTES = 1_048_576;
 const SEGMENT = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
-/** 记录缓存对应的远程 URL（含 ?v=）；版本变了则重拉。 */
+/** 记录缓存对应的远程身份（pathname + 可选 ?v=）；签名 query 不计入。 */
 const SOURCE_FILE = "source.url";
 
-/** 市场 Agent 头像本机缓存：`users/<uid>/agents/<id>/assets/avatar.(webp|png|jpg)` */
-export function cachedAvatarDir(userDataRoot: string, userId: string, agentId: string): string | null {
-  if (!safeSegment(userId) || !safeSegment(agentId) || isLocalAgentId(agentId)) return null;
-  return path.join(userDataRoot, "users", userId, "agents", agentId, "assets");
+export type AvatarSubject = { kind: "agent"; agentId: string } | { kind: "user" };
+
+export type EnsureCachedAvatarOptions = {
+  fetch?: typeof fetch;
+  /** 为 true 时即使身份未变也尝试重拉（登录 / 重启续签）。失败回落已有缓存。 */
+  refresh?: boolean;
+};
+
+/**
+ * 头像缓存身份：去掉 COS 签名等易变 query，保留路径与可选 `v=`。
+ * 同 rev 的预签名 URL 轮换不会误判成「需要重拉」。
+ */
+export function avatarCacheKey(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    const version = parsed.searchParams.get("v");
+    return version ? `${parsed.pathname}?v=${version}` : parsed.pathname;
+  } catch {
+    const q = trimmed.indexOf("?");
+    if (q < 0) return trimmed;
+    const pathname = trimmed.slice(0, q);
+    const version = new URLSearchParams(trimmed.slice(q + 1)).get("v");
+    return version ? `${pathname}?v=${version}` : pathname;
+  }
+}
+
+/** Agent：`users/<uid>/agents/<id>/assets/`；用户：`users/<uid>/account/assets/` */
+export function cachedAvatarDir(
+  userDataRoot: string,
+  userId: string,
+  subject: AvatarSubject | string,
+): string | null {
+  const resolved = normalizeSubject(subject);
+  if (!resolved || !safeSegment(userId)) return null;
+  if (resolved.kind === "user") {
+    return path.join(userDataRoot, "users", userId, "account", "assets");
+  }
+  if (!safeSegment(resolved.agentId) || isLocalAgentId(resolved.agentId)) return null;
+  return path.join(userDataRoot, "users", userId, "agents", resolved.agentId, "assets");
 }
 
 export function readCachedAvatarDataUrl(
   userDataRoot: string,
   userId: string,
-  agentId: string,
+  subject: AvatarSubject | string,
 ): string | undefined {
-  const dir = cachedAvatarDir(userDataRoot, userId, agentId);
+  const dir = cachedAvatarDir(userDataRoot, userId, subject);
   if (!dir || !fs.existsSync(dir)) return undefined;
   for (const name of ["avatar.webp", "avatar.png", "avatar.jpg", "avatar.jpeg"]) {
     const file = path.join(dir, name);
@@ -34,14 +71,21 @@ export function readCachedAvatarDataUrl(
   return undefined;
 }
 
+export function readCachedUserAvatarDataUrl(
+  userDataRoot: string,
+  userId: string,
+): string | undefined {
+  return readCachedAvatarDataUrl(userDataRoot, userId, { kind: "user" });
+}
+
 /**
  * 把 data URL 头像写入本机缓存（覆盖旧文件）。
- * `sourceUrl` 有值时一并记下，供 ensureCachedAvatar 判断是否还需重拉。
+ * `sourceUrl` 有值时一并记下，供 ensure 判断是否还需重拉。
  */
 export function writeCachedAvatarDataUrl(
   userDataRoot: string,
   userId: string,
-  agentId: string,
+  subject: AvatarSubject | string,
   dataUrl: string,
   sourceUrl?: string,
 ): string | undefined {
@@ -51,39 +95,44 @@ export function writeCachedAvatarDataUrl(
   const bytes = Buffer.from(match[2]!.replace(/\s/g, ""), "base64");
   if (!bytes.length || bytes.length > MAX_BYTES) return undefined;
   const extension = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
-  const dir = cachedAvatarDir(userDataRoot, userId, agentId);
+  const dir = cachedAvatarDir(userDataRoot, userId, subject);
   if (!dir) return undefined;
   writeAvatarFiles(dir, bytes, extension, sourceUrl);
   return `data:${mime};base64,${bytes.toString("base64")}`;
 }
 
+export function writeCachedUserAvatarDataUrl(
+  userDataRoot: string,
+  userId: string,
+  dataUrl: string,
+  sourceUrl?: string,
+): string | undefined {
+  return writeCachedAvatarDataUrl(userDataRoot, userId, { kind: "user" }, dataUrl, sourceUrl);
+}
+
 /**
  * 从远程 URL 拉一头像落到本机。
- * 带 `?v=`（或 `&v=`）且 `source.url` 未变则跳过；无版本号时每次尝试重拉
- * （兼容尚未部署 mtime cache-bust 的控制面，避免永久卡在旧图）。
- * 失败时尽量回落已有缓存。
+ * 身份（pathname / ?v=）未变且未要求 refresh 则跳过；失败时回落已有缓存。
  */
 export async function ensureCachedAvatar(
   userDataRoot: string,
   userId: string,
-  agentId: string,
+  subject: AvatarSubject | string,
   remoteUrl: string | undefined,
-  fetchImpl: typeof fetch = fetch,
+  options: EnsureCachedAvatarOptions = {},
 ): Promise<string | undefined> {
-  const existing = readCachedAvatarDataUrl(userDataRoot, userId, agentId);
+  const fetchImpl = options.fetch ?? fetch;
+  const refresh = options.refresh === true;
+  const existing = readCachedAvatarDataUrl(userDataRoot, userId, subject);
   const normalizedRemote = remoteUrl?.trim() ?? "";
-  const versioned = /[?&]v=/.test(normalizedRemote);
-  if (
-    existing &&
-    normalizedRemote &&
-    versioned &&
-    readCachedSourceUrl(userDataRoot, userId, agentId) === normalizedRemote
-  ) {
+  const remoteKey = avatarCacheKey(normalizedRemote);
+  const storedKey = avatarCacheKey(readCachedSourceUrl(userDataRoot, userId, subject) ?? "");
+  if (existing && remoteKey && !refresh && storedKey && storedKey === remoteKey) {
     return existing;
   }
   // 无 remote：保留现有，避免离线被清空
   if (!normalizedRemote) return existing;
-  const dir = cachedAvatarDir(userDataRoot, userId, agentId);
+  const dir = cachedAvatarDir(userDataRoot, userId, subject);
   if (!dir) return existing;
   try {
     const response = await fetchImpl(normalizedRemote);
@@ -98,6 +147,15 @@ export async function ensureCachedAvatar(
   } catch {
     return existing;
   }
+}
+
+export async function ensureCachedUserAvatar(
+  userDataRoot: string,
+  userId: string,
+  remoteUrl: string | undefined,
+  options: EnsureCachedAvatarOptions = {},
+): Promise<string | undefined> {
+  return ensureCachedAvatar(userDataRoot, userId, { kind: "user" }, remoteUrl, options);
 }
 
 function writeAvatarFiles(
@@ -137,9 +195,9 @@ function writeAvatarFiles(
 function readCachedSourceUrl(
   userDataRoot: string,
   userId: string,
-  agentId: string,
+  subject: AvatarSubject | string,
 ): string | undefined {
-  const dir = cachedAvatarDir(userDataRoot, userId, agentId);
+  const dir = cachedAvatarDir(userDataRoot, userId, subject);
   if (!dir) return undefined;
   const file = path.join(dir, SOURCE_FILE);
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return undefined;
@@ -173,6 +231,16 @@ function resolveMime(
     return { mime: "image/jpeg", extension: "jpg" };
   }
   return { mime: null, extension: null };
+}
+
+function normalizeSubject(subject: AvatarSubject | string): AvatarSubject | null {
+  if (typeof subject === "string") {
+    if (!subject) return null;
+    return { kind: "agent", agentId: subject };
+  }
+  if (subject.kind === "user") return subject;
+  if (subject.kind === "agent" && subject.agentId) return subject;
+  return null;
 }
 
 function safeSegment(value: string): boolean {

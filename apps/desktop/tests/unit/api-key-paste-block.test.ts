@@ -37,3 +37,30 @@ it("无申请页 URL 时仍是两步壳，步骤 1 无外跳按钮", () => {
   expect(host.querySelector('[data-testid="sdk-api-key-step-2"]')).toBeTruthy();
   expect(host.querySelector('[data-testid="sdk-api-key-open-doc"]')).toBeNull();
 });
+
+it("有 requiredPermissions / hintImage 时步骤 1 展示必勾清单与截图", () => {
+  const host = mountView(ApiKeyPasteBlock, {
+    props: {
+      ...baseProps,
+      permissionsTitle: "Must enable:",
+      requiredPermissions: ["Copilot Requests", "Copilot Chat"],
+      hintImageSrc: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+      hintImageAlt: "permissions screenshot",
+    },
+  });
+  const callout = host.querySelector('[data-testid="sdk-api-key-permissions"]');
+  expect(callout).toBeTruthy();
+  expect(callout?.textContent).toContain("Must enable:");
+  expect(callout?.textContent).toContain("Copilot Requests");
+  expect(callout?.textContent).toContain("Copilot Chat");
+  const img = callout?.querySelector("img");
+  expect(img?.getAttribute("alt")).toBe("permissions screenshot");
+  expect(img?.getAttribute("src")).toContain("data:image/gif");
+});
+
+it("未传权限清单时不渲染权限示意块（旧粘贴档仍可用）", () => {
+  const host = mountView(ApiKeyPasteBlock, {
+    props: baseProps,
+  });
+  expect(host.querySelector('[data-testid="sdk-api-key-permissions"]')).toBeNull();
+});

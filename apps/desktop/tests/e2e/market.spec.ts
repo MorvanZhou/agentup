@@ -42,7 +42,9 @@ test("市场列出 Agent，并能招募Weaty", async ({ page }) => {
   const weather = page.getByRole("article").filter({ hasText: "Weaty" });
   await expect(weather).toContainText("气象员");
   await expect(weather.getByLabel("0 次招募")).toBeVisible();
+  // 市场卡只有「更多操作」（复制 ID）；开目录 / 解雇在「已招募」的「管理」。
   await expect(weather.getByRole("button", { name: "管理 Weaty" })).toHaveCount(0);
+  await expect(weather.getByRole("button", { name: "更多操作：Weaty" })).toBeVisible();
   const synced = page.waitForRequest(
     (request) => request.method() === "POST" && request.url().endsWith("/runtime/agents/weather/sync"),
   );

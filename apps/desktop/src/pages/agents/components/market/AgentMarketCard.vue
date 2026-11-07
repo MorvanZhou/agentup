@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { EllipsisIcon, FolderOpenIcon, UserMinusIcon, UserPlusIcon, UsersIcon } from "@lucide/vue";
+import {
+  CopyIcon,
+  EllipsisIcon,
+  FolderOpenIcon,
+  UserMinusIcon,
+  UserPlusIcon,
+  UsersIcon,
+} from "@lucide/vue";
 import { computed, ref } from "vue";
 
 import AppDialog from "../../../../shared/components/AppDialog.vue";
 import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
 import AgentCatalogCard from "../../../../shared/components/agent/AgentCatalogCard.vue";
 import type { AgentCard } from "../../../../shared/model/runtime/runtime";
+import { showToast } from "../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../shared/model/ui/ui-locale";
 import AgentProfileDialog from "../AgentProfileDialog.vue";
 
@@ -13,8 +21,8 @@ const props = withDefaults(
   defineProps<{
     agent: AgentCard;
     busy: boolean;
-    /** market：只招募/标已招；manage：开目录与解雇 */
-    surface?: "market" | "manage";
+    /** market：招募；manage：开目录与解雇；roster：团队弹窗花名册（无单招/次数） */
+    surface?: "market" | "manage" | "roster";
   }>(),
   { surface: "market" },
 );
@@ -29,14 +37,19 @@ const confirmDismiss = ref(false);
 const profileOpen = ref(false);
 
 const showManageMenu = computed(() => props.surface === "manage" && props.agent.recruited);
+const showMarketMenu = computed(() => props.surface === "market");
 const showRecruit = computed(() => props.surface === "market" && !props.agent.recruited);
 const showRecruited = computed(() => props.surface === "market" && props.agent.recruited);
-const profileScene = computed(() =>
-  props.surface === "manage" || props.agent.recruited ? "recruited" : "market",
-);
+const showFooterStats = computed(() => props.surface !== "roster");
+const profileScene = computed(() => {
+  // 团队花名册只读看资料，不提供单招 CTA
+  if (props.surface === "roster") return "readonly";
+  return props.surface === "manage" || props.agent.recruited ? "recruited" : "market";
+});
 
-const menuItems = computed((): AppDropdownItem[] => [
+const manageMenuItems = computed((): AppDropdownItem[] => [
   { id: "open", label: t("agentsOpenDir"), icon: FolderOpenIcon, disabled: props.busy },
+  { id: "copy-id", label: t("agentsCopyId"), icon: CopyIcon },
   {
     id: "dismiss",
     label: props.busy ? t("threadDismissing") : t("threadDismiss"),
@@ -46,7 +59,24 @@ const menuItems = computed((): AppDropdownItem[] => [
   },
 ]);
 
+const marketMenuItems = computed((): AppDropdownItem[] => [
+  { id: "copy-id", label: t("agentsCopyId"), icon: CopyIcon },
+]);
+
+async function copyAgentId(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(props.agent.agentId);
+    showToast(t("agentsCopyIdDone"), "success");
+  } catch {
+    showToast(t("agentsCopyIdFailed"), "error");
+  }
+}
+
 function onSelect(id: string): void {
+  if (id === "copy-id") {
+    void copyAgentId();
+    return;
+  }
   if (id === "open") {
     emit("open", props.agent.agentId);
     return;
@@ -74,21 +104,24 @@ function confirmDismissAction(): void {
         {{ t("agentsRecruited") }}
       </span>
     </template>
-    <template v-if="showManageMenu" #trailing>
-      <AppDropdownMenu :items="menuItems" @select="onSelect">
+    <template v-if="showManageMenu || showMarketMenu" #trailing>
+      <AppDropdownMenu
+        :items="showManageMenu ? manageMenuItems : marketMenuItems"
+        @select="onSelect"
+      >
         <template #trigger>
           <button
             type="button"
             :disabled="busy"
             class="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted-foreground outline-none transition duration-200 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
-            :aria-label="tf('agentsManageAria', { name: agent.name })"
+            :aria-label="tf(showManageMenu ? 'agentsManageAria' : 'agentsMoreAria', { name: agent.name })"
           >
             <EllipsisIcon class="size-3.5" aria-hidden="true" />
           </button>
         </template>
       </AppDropdownMenu>
     </template>
-    <template #footer>
+    <template v-if="showFooterStats" #footer>
       <span
         class="inline-flex min-w-0 flex-1 items-center gap-1 truncate text-[11px] tabular-nums text-muted-foreground"
         :aria-label="tf('agentsRecruitCount', { n: agent.recruitCount })"

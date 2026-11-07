@@ -21,8 +21,13 @@ export function createGroupRoom(input: {
   title: string;
   members: GroupMember[];
   defaultHolderId?: string | null;
+  sourceTeamId?: string | null;
 }): GroupRoom {
   const members = normalizeMembers(input.members);
+  const sourceTeamId =
+    typeof input.sourceTeamId === "string" && input.sourceTeamId.trim()
+      ? input.sourceTeamId.trim()
+      : null;
   return {
     version: GROUP_RECORD_VERSION,
     id: input.id,
@@ -39,6 +44,7 @@ export function createGroupRoom(input: {
     taskIds: [],
     pendingDelegations: [],
     queue: [],
+    ...(sourceTeamId ? { sourceTeamId } : {}),
   };
 }
 

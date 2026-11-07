@@ -52,7 +52,7 @@ describe("GroupSettingsPanel", () => {
     expect(host.textContent).toContain("工程师");
     expect(host.querySelector('[aria-label="添加"]')).toBeTruthy();
     expect(host.querySelector('[aria-label="移除"]')).toBeTruthy();
-    expect(host.querySelector('[aria-label="默认应答者"]')).toBeTruthy();
+    expect(host.querySelector('[aria-label="默认接话"]')).toBeTruthy();
     expect(host.textContent).toContain("清空工作区");
     expect(host.textContent).toContain("删除群");
     expect((host.querySelector("#group-settings-title") as HTMLInputElement | null)?.value).toBe(

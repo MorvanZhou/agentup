@@ -8,6 +8,9 @@ export const RULES_MAX_CHARS = 5_000;
 export const RULES_MAX_BYTES = RULES_MAX_CHARS * 3;
 export const REMARK_MAX = 40;
 export const GROUP_TITLE_MAX = 40;
+/** 与 backend TEAM_MEMBER_* / 建群人数对齐。 */
+export const TEAM_MEMBER_MIN = 2;
+export const TEAM_MEMBER_MAX = 6;
 export const NICKNAME_MAX = 64;
 export const SEARCH_QUERY_MAX = 64;
 

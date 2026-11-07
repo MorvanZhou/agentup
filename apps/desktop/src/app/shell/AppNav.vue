@@ -23,7 +23,7 @@ function itemActive(id: "conversation" | "market" | "agents"): boolean {
   const name = String(route.name ?? "");
   if (id === "conversation") return name === "conversation";
   if (id === "market") return name === "market";
-  return name === "agents" || name.startsWith("agents-");
+  return name === "agents" || name.startsWith("agents-") || name.startsWith("teams-");
 }
 
 function itemAriaLabel(item: { id: string; label: string }): string {

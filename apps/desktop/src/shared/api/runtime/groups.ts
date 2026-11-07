@@ -71,6 +71,8 @@ export type GroupRoom = {
   modelMode?: "unified" | "perAgent";
   /** 本群统一模型。没有时界面先显示开口者的模型，选定后才写入。 */
   model?: { templateId: string; modelId: string } | null;
+  /** 市场团队一键成群来源；仅本机。 */
+  sourceTeamId?: string | null;
 };
 
 export async function groupLines(
@@ -393,6 +395,9 @@ function readRoom(value: unknown): GroupRoom {
     linesHasMore: room.linesHasMore === true,
     modelMode: room.modelMode === "perAgent" ? "perAgent" : "unified",
     model: readRoomModel(room.model),
+    ...(typeof room.sourceTeamId === "string" && room.sourceTeamId
+      ? { sourceTeamId: room.sourceTeamId }
+      : {}),
   };
 }
 

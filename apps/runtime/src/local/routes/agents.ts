@@ -73,7 +73,8 @@ function visitKind(agentId: string): Visit["kind"] {
  * 解析对话用 visit：本机私有不经控制面；市场 Agent 优先 sync，
  * 控制面不可达时回落本机已投影目录（本地 App 离线可聊）。
  */
-async function resolveVisit(
+/** 团队一键招募也会复用：优先 sync，失败且有磁盘投影则离线回落。 */
+export async function resolveVisit(
   userDataRoot: string,
   backendUrl: string,
   token: string,
