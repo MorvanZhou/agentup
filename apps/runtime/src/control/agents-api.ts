@@ -543,6 +543,7 @@ function readCredential(value: unknown): ObjectCredential {
     tmp_secret_key: secretKey,
     session_token: session,
     content_type: typeof record.content_type === "string" ? record.content_type : "",
+    ...(typeof record.host === "string" && record.host.trim() ? { host: record.host.trim() } : {}),
   };
 }
 

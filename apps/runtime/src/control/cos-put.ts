@@ -11,6 +11,8 @@ export interface ObjectCredential {
   tmp_secret_key: string;
   session_token: string;
   content_type?: string;
+  /** 自定义源站域名；有则签名 Host 与请求都用它。 */
+  host?: string;
 }
 
 export async function putCosObject(
@@ -62,6 +64,8 @@ export function isWebp(bytes: Uint8Array): boolean {
 function cosHost(credential: ObjectCredential): string {
   // region=local 只给测试把请求打回本机。正式凭证的 region 是 ap- 开头。
   if (credential.region === "local") return credential.bucket;
+  const custom = credential.host?.trim();
+  if (custom) return custom.replace(/^https?:\/\//i, "").split("/")[0]!;
   return `${credential.bucket}.cos.${credential.region}.myqcloud.com`;
 }
 

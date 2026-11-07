@@ -175,5 +175,6 @@ function readProfileCredential(value: Record<string, unknown>): ObjectCredential
     tmp_secret_key: secretKey,
     session_token: session,
     content_type: "image/webp",
+    ...(typeof value.host === "string" && value.host.trim() ? { host: value.host.trim() } : {}),
   };
 }

@@ -237,5 +237,6 @@ function readCredential(payload: Record<string, unknown>): ObjectCredential {
     tmp_secret_key: secretKey,
     session_token: token,
     content_type: typeof payload.content_type === "string" ? payload.content_type : "",
+    ...(typeof payload.host === "string" && payload.host.trim() ? { host: payload.host.trim() } : {}),
   };
 }
