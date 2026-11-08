@@ -1,4 +1,5 @@
 import { isContextResetMessage } from "../../../../shared/model/chat/chat";
+import { t, tf, type UiLocale } from "../../../../shared/model/ui/ui-locale";
 
 /** 相邻消息间隔超过该值时显示时间分隔（与微信常见阈值一致）。 */
 export const MESSAGE_TIME_GAP_MS = 5 * 60 * 1000;
@@ -31,6 +32,36 @@ export function formatChatTimeLabel(atMs: number, nowMs = Date.now()): string {
     return `${at.getMonth() + 1}月${at.getDate()}日 ${time}`;
   }
   return `${at.getFullYear()}年${at.getMonth() + 1}月${at.getDate()}日 ${time}`;
+}
+
+/**
+ * 会话侧栏「最新消息」时间：对齐微信会话列表。
+ * 今天 HH:mm；昨天；近一周内星期；同年月日；跨年带年份。无有效时间返回空串。
+ */
+export function formatSidebarTimeLabel(
+  atMs: number,
+  locale: UiLocale,
+  nowMs = Date.now(),
+): string {
+  if (!Number.isFinite(atMs) || atMs <= 0) return "";
+  const at = new Date(atMs);
+  if (Number.isNaN(at.getTime())) return "";
+  const now = new Date(nowMs);
+  if (sameCalendarDay(at, now)) {
+    return `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+  }
+  const dayDiff = calendarDayDiff(at, now);
+  if (dayDiff === 1) return t("timeYesterdayOnly");
+  if (dayDiff >= 2 && dayDiff <= 6) {
+    const tag = locale === "en" ? "en-US" : "zh-CN";
+    return new Intl.DateTimeFormat(tag, { weekday: "long" }).format(at);
+  }
+  const month = at.getMonth() + 1;
+  const day = at.getDate();
+  if (at.getFullYear() === now.getFullYear()) {
+    return tf("timeMonthDayOnly", { month, day });
+  }
+  return tf("timeYearMonthDayOnly", { year: at.getFullYear(), month, day });
 }
 
 /**
@@ -101,6 +132,13 @@ function sameCalendarDay(left: Date, right: Date): boolean {
     left.getMonth() === right.getMonth() &&
     left.getDate() === right.getDate()
   );
+}
+
+/** 按本地日历日：from → to 相差几天（同日 0，昨天 1）。 */
+function calendarDayDiff(from: Date, to: Date): number {
+  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((end - start) / 86_400_000);
 }
 
 function pad2(value: number): string {

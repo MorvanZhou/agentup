@@ -15,6 +15,10 @@ import {
   AGENTUP_ARTIFACTS_CUSTOM_TYPE,
   parseArtifactsEntryData,
 } from "./artifacts.js";
+import {
+  AGENTUP_REPLY_MODEL_CUSTOM_TYPE,
+  parseReplyModelEntryData,
+} from "./reply-model.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE, parseSummaryEntryData } from "./summary.js";
 import { projectToolOutput, projectToolText } from "./tool-output.js";
 
@@ -276,6 +280,20 @@ export function projectHistoryFromManager(manager: SessionManager, idPrefix = "s
       }
       continue;
     }
+    if (entry.type === "custom" && entry.customType === AGENTUP_REPLY_MODEL_CUSTOM_TYPE) {
+      const replyModel = parseReplyModelEntryData(entry.data);
+      if (!replyModel) continue;
+      // 挂到最近一条非委托 assistant，供合并投影写入 metadata.custom.agentUpReplyModel
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const raw = messages[index];
+        if (!raw || typeof raw !== "object") continue;
+        const message = raw as { role?: unknown; __agentUpDelegation?: unknown };
+        if (message.role !== "assistant" || message.__agentUpDelegation === true) continue;
+        messages[index] = { ...message, __agentUpReplyModel: replyModel };
+        break;
+      }
+      continue;
+    }
     if (
       entry.type === "custom_message" &&
       entry.customType === ASYNC_WAKE_CUSTOM_TYPE
@@ -362,10 +380,14 @@ export function projectHistory(
         const entryId = entryIds?.[index];
         const id =
           typeof entryId === "string" && entryId ? entryId : `${idPrefix}-assistant-${index}`;
+        const replyModel = parseReplyModelEntryData(
+          (raw as { __agentUpReplyModel?: unknown }).__agentUpReplyModel,
+        );
         const custom = {
           ...(createdAt?.custom ?? {}),
           ...(typeof entryId === "string" && entryId ? { agentUpEntryId: entryId } : {}),
           ...(proactive ? { agentUpProactiveSync: true } : {}),
+          ...(replyModel ? { agentUpReplyModel: replyModel } : {}),
         };
         assistant = {
           id,
@@ -374,6 +396,25 @@ export function projectHistory(
           ...(Object.keys(custom).length > 0 ? { metadata: { custom } } : {}),
         };
         result.push(assistant);
+      } else {
+        // 合并气泡：后附的 reply-model 挂在后续 Pi assistant 上时仍并进 metadata
+        const replyModel = parseReplyModelEntryData(
+          (raw as { __agentUpReplyModel?: unknown }).__agentUpReplyModel,
+        );
+        if (replyModel && assistant) {
+          const prev =
+            typeof assistant.metadata === "object" && assistant.metadata
+              ? (assistant.metadata as Record<string, unknown>)
+              : {};
+          const prevCustom =
+            prev.custom && typeof prev.custom === "object"
+              ? (prev.custom as Record<string, unknown>)
+              : {};
+          assistant.metadata = {
+            ...prev,
+            custom: { ...prevCustom, agentUpReplyModel: replyModel },
+          };
+        }
       }
       for (const part of Array.isArray(message.content) ? message.content : []) {
         if (!part || typeof part !== "object") continue;

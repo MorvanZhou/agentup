@@ -4,8 +4,10 @@ import { HourglassIcon, LoaderCircleIcon } from "@lucide/vue";
 
 import { useDesktop } from "../../../../app/desktop";
 import GroupAvatar from "../../../../shared/components/avatar/GroupAvatar.vue";
-import { t, tf } from "../../../../shared/model/ui/ui-locale";
+import { t, tf, uiLocale } from "../../../../shared/model/ui/ui-locale";
+import { formatSidebarTimeLabel } from "../../model/message/message-time";
 import {
+  groupActivityAt,
   groupSidebarPreviewLabel,
   groupUnreadLabel,
   type GroupSidebarRow,
@@ -35,6 +37,10 @@ const awaitingUser = computed(() => props.row.awaitingApproval || props.row.awai
 const showWorking = computed(() => props.row.working && !awaitingUser.value);
 const badge = computed(() => groupUnreadLabel(props.row));
 const previewLabel = computed(() => groupSidebarPreviewLabel(props.row));
+/** 微信式：群名右侧显示最近一条可见消息时间。 */
+const timeLabel = computed(() =>
+  formatSidebarTimeLabel(groupActivityAt(props.row.room), uiLocale.value),
+);
 const ariaLabel = computed(() => {
   const parts = [title.value];
   if (awaitingUser.value) parts.push(previewLabel.value);
@@ -42,6 +48,7 @@ const ariaLabel = computed(() => {
     if (showWorking.value) parts.push(t("sideWorking"));
     if (badge.value) parts.push(tf("sideUnread", { n: badge.value }));
   }
+  if (timeLabel.value) parts.push(timeLabel.value);
   return parts.join("，");
 });
 </script>
@@ -50,8 +57,8 @@ const ariaLabel = computed(() => {
   <!-- 群会话行：成员头像拼成一格；进行中转圈 / HITL 红点与单聊对齐 -->
   <button
     type="button"
-    class="grid w-full grid-cols-[48px_minmax(0,1fr)] gap-2.5 border-0 bg-transparent px-3 py-2.5 pr-10 text-left text-inherit transition duration-200 hover:bg-accent/8"
-    :class="{ 'bg-accent/12!': row.selected }"
+    class="grid w-full grid-cols-[48px_minmax(0,1fr)] gap-2.5 border-0 bg-transparent px-3 py-3.5 text-left text-inherit transition duration-200 hover:bg-muted"
+    :class="{ 'bg-muted!': row.selected }"
     :aria-current="row.selected ? 'true' : undefined"
     :aria-label="ariaLabel"
     @click="emit('select')"
@@ -74,7 +81,15 @@ const ariaLabel = computed(() => {
       </span>
     </span>
     <span class="grid min-w-0 content-center gap-0.5 leading-snug">
-      <strong class="truncate text-sm font-medium text-foreground" :title="title">{{ title }}</strong>
+      <strong class="flex min-w-0 items-baseline gap-2 text-sm font-medium text-foreground">
+        <span class="min-w-0 flex-1 truncate" :title="title">{{ title }}</span>
+        <time
+          v-if="timeLabel"
+          class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
+        >
+          {{ timeLabel }}
+        </time>
+      </strong>
       <span
         v-if="awaitingUser"
         class="inline-flex max-w-full items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning-foreground"

@@ -80,7 +80,7 @@ function openParent(fromAgentId: string): void {
   <!-- 专家直聊：别人派来的活。不进历史，任务结束前不收起。 -->
   <div
     v-if="lines.length > 0"
-    class="shrink-0 border-b border-rule bg-paper px-3 py-1.5"
+    class="shrink-0 border-b border-rule/80 bg-background px-3 py-1.5"
     role="region"
     :aria-label="t('delegationBannerAria')"
   >
@@ -113,7 +113,7 @@ function openParent(fromAgentId: string): void {
           </button>
           <button
             type="button"
-            class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-accent transition duration-200 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-accent transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             :aria-label="openLabel(line.fromName)"
             @click="openParent(line.fromAgentId)"
           >

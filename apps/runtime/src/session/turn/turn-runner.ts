@@ -1,9 +1,11 @@
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { UIMessageChunk } from "ai";
 
+import type { ModelConfig } from "../../config/load.js";
 import type { UiLocale } from "../../i18n/locale.js";
 import type { DelegationStartedEvent } from "../delegation/progress.js";
 import { PiUIMessageProjector } from "../history/frames.js";
+import { replyModelFromConfig } from "../history/reply-model.js";
 import type { ApprovalRequest } from "../hitl/approval/types.js";
 import type { ShellHangRequest } from "../hitl/shell-hang/types.js";
 import {
@@ -63,10 +65,18 @@ export type ObservedTurnInput = {
   };
   /** 注入上下文并调用 prompt / sendCustomMessage。订阅已经接好。 */
   run: () => Promise<void>;
+  /** 本轮回复模型；写入流式 start metadata（jsonl 由 reply-model extension 落盘）。 */
+  model?: ModelConfig;
+  /** 解析模型展示名用的本机数据根。 */
+  userDataRoot?: string;
 };
 
 export async function runObservedTurn(input: ObservedTurnInput): Promise<{ visibleText: string }> {
-  const projector = new PiUIMessageProjector();
+  const projector = new PiUIMessageProjector({
+    replyModel: input.model
+      ? replyModelFromConfig(input.model, input.userDataRoot ?? "")
+      : undefined,
+  });
   let lastModelError = "";
   let lastFailureError = "";
   let sawAssistantText = false;
@@ -142,6 +152,7 @@ export async function runObservedTurn(input: ObservedTurnInput): Promise<{ visib
         toAgentName: event.toAgentName,
         brief: event.brief,
         wait: event.wait,
+        ...(event.replyModel ? { replyModel: event.replyModel } : {}),
       }),
     );
   });

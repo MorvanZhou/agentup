@@ -155,8 +155,9 @@ function onRootKeydown(event: KeyboardEvent): void {
   max-width: 100%;
   overflow-wrap: break-word;
   color: var(--color-foreground);
-  font-size: 1rem;
-  line-height: 1.75;
+  /* 聊天气泡内继承 .chat-message-text；工作区等外层无该变量时回落 1rem */
+  font-size: var(--chat-message-fs, 1rem);
+  line-height: var(--chat-message-lh, 1.75);
   letter-spacing: 0.02em;
 }
 

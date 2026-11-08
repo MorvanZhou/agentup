@@ -10,6 +10,8 @@ import { modelSourceLabel } from "../../../../../shared/model/provider/model-sou
 import type { AgentSdkAuthEnvironment } from "../../../../../shared/model/runtime/runtime";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useProviderSettings } from "../../../composables/useProviderSettings";
+import SettingsBlock from "../../SettingsBlock.vue";
+import SettingsSectionShell from "../../SettingsSectionShell.vue";
 import AgentSdkConnectPanel from "./provider-sdk/AgentSdkConnectPanel.vue";
 import { sdkReady, sdkStateLabel } from "./provider-sdk/sdk-state";
 
@@ -179,33 +181,18 @@ function modelRowTitle(model: {
 </script>
 
 <template>
-  <main class="min-h-0 min-w-0 overflow-auto bg-background">
-    <div class="mx-auto w-full max-w-3xl px-4 py-4 sm:px-5 sm:py-5">
-      <!-- 页头 -->
-      <header class="mb-4 border-b border-rule pb-4">
-        <p class="m-0 text-xs font-medium tracking-wider text-accent">{{ t("providerKicker") }}</p>
-        <h1 class="mb-0 mt-2 text-lg font-semibold tracking-tight text-foreground">{{ t("providerTitle") }}</h1>
-        <p class="mb-0 mt-1.5 max-w-2xl text-sm leading-snug text-muted-foreground">
-          {{ t("providerLead") }}
-        </p>
-      </header>
-
+  <SettingsSectionShell :title="t('providerTitle')" :lead="t('providerLead')">
       <!-- 主区：启用服务（API Key 与本地 Agent App 的模型都在这里） -->
-      <article class="rounded-xl border border-rule bg-background p-3 shadow-sm sm:p-4">
-        <div class="flex flex-wrap items-start justify-between gap-2">
-          <div class="min-w-0 flex-1">
-            <p class="m-0 text-xs font-medium tracking-wider text-accent">{{ t("providerModelsKicker") }}</p>
-            <h2 class="mb-0 mt-1 text-sm font-semibold tracking-tight text-foreground">{{ t("providerEnableServices") }}</h2>
-            <p class="mb-0 mt-1 text-xs leading-snug text-muted-foreground">
-              {{ t("providerEnableLead") }}
-            </p>
-          </div>
+      <SettingsBlock
+        :title="t('providerEnableServices')"
+        :description="t('providerEnableLead')"
+      >
+        <template v-if="canRefreshModels" #actions>
           <!-- 刷新全部：busy 整段可能很长，钮上转圈 + 文案，避免用户以为点了没反应 -->
           <button
-            v-if="canRefreshModels"
             type="button"
             :disabled="busy || sdkModelsBusy"
-            class="inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background disabled:opacity-50"
+            class="inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
             :aria-busy="busy || sdkModelsBusy ? 'true' : undefined"
             @click="refreshAllDiscoverableModels"
           >
@@ -220,12 +207,12 @@ function modelRowTitle(model: {
                 : t("providerRefreshModels")
             }}
           </button>
-        </div>
+        </template>
 
         <!-- 首次拉配置用骨架，不做纯文案加载态 -->
         <div
           v-if="!loaded"
-          class="mt-3 grid gap-2"
+          class="grid gap-2"
           role="status"
           aria-busy="true"
           :aria-label="t('providerLoading')"
@@ -241,7 +228,7 @@ function modelRowTitle(model: {
         <template v-else>
           <!-- 供应商下拉 + 搜索：先按已存在供应商收窄，再按关键字搜；两列都 min-w-0 防长名撑破叠遮 -->
           <div
-            class="mt-3 grid gap-2 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] sm:items-end"
+            class="grid gap-2 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] sm:items-end"
           >
             <AppSelect
               v-model="modelProviderFilter"
@@ -274,13 +261,13 @@ function modelRowTitle(model: {
             <span>{{ t("providerFilterEnabledOnly") }}</span>
           </label>
 
-          <!-- 手动添加：默认折叠；箭头 + 实线边框示意可展开 -->
+          <!-- 手动添加：顶部分隔折叠，不加内层纸面卡 -->
           <details
             v-if="canAddCustomModel"
-            class="group/add relative z-10 mt-3 rounded-lg border border-rule bg-paper"
+            class="group/add relative z-10 mt-3 border-t border-rule pt-2"
           >
             <summary
-              class="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm text-muted-foreground outline-none transition duration-200 hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/15 [&::-webkit-details-marker]:hidden"
+              class="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 py-1.5 text-sm text-muted-foreground outline-none transition duration-200 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/15 [&::-webkit-details-marker]:hidden"
             >
               <span class="min-w-0 flex-1 text-left leading-snug">{{ t("providerAddModelToggle") }}</span>
               <ChevronDownIcon
@@ -288,7 +275,7 @@ function modelRowTitle(model: {
                 aria-hidden="true"
               />
             </summary>
-            <form class="border-t border-rule bg-paper-deep/40 px-3 py-3" @submit.prevent="addCustomModel">
+            <form class="pt-2" @submit.prevent="addCustomModel">
               <p class="mb-0 text-xs leading-snug text-muted-foreground">
                 {{ t("providerAddModelLead") }}
               </p>
@@ -318,7 +305,7 @@ function modelRowTitle(model: {
                 <button
                   type="submit"
                   :disabled="busy"
-                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-background disabled:opacity-50"
+                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
                 >
                   {{ t("providerAddModel") }}
                 </button>
@@ -331,7 +318,7 @@ function modelRowTitle(model: {
             <li
               v-for="model in visibleModels"
               :key="`${model.templateId}::${model.modelId}`"
-              class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 transition duration-150 hover:bg-paper"
+              class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 transition duration-150 hover:bg-muted"
               :title="modelRowTitle(model)"
             >
               <ProviderLogo size="md" :vendor-id="model.vendorId" :label="model.vendorLabel" />
@@ -402,7 +389,7 @@ function modelRowTitle(model: {
           <button
             v-if="modelListOverflow"
             type="button"
-            class="mt-2 min-h-8 w-full rounded-lg px-2 text-sm font-medium text-muted-foreground transition duration-200 hover:bg-paper hover:text-foreground"
+            class="mt-2 min-h-8 w-full rounded-lg px-2 text-sm font-medium text-muted-foreground transition duration-200 hover:bg-muted hover:text-foreground"
             @click="modelsExpanded = !modelsExpanded"
           >
             {{
@@ -416,37 +403,42 @@ function modelRowTitle(model: {
           </p>
         </template>
 
-        <!-- 平台 AI 占位 -->
-        <div class="mt-4 rounded-lg border border-dashed border-rule bg-paper-deep/70 p-3 text-muted-foreground">
+        <!-- 平台 AI 占位：虚线提示，不算内容卡 -->
+        <div class="mt-10 border-t border-dashed border-rule pt-4 text-muted-foreground">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="m-0 text-sm font-semibold text-foreground">{{ t("providerPlatformTitle") }}</p>
-            <span class="rounded-md border border-rule bg-background px-2 py-0.5 text-xs font-medium">{{ t("providerPlatformSoon") }}</span>
+            <span class="rounded-md border border-rule bg-paper px-2 py-0.5 text-xs font-medium">{{ t("providerPlatformSoon") }}</span>
           </div>
           <p class="mb-0 mt-1.5 text-xs leading-snug">{{ t("providerPlatformBody") }}</p>
         </div>
-      </article>
+      </SettingsBlock>
 
-      <!-- 次区：添加服务。级联：左接入方式（默认 Agent App）· 右接入商 -->
+      <!-- 次区：添加服务；扁平折叠，不套纸面卡 -->
       <details
-        class="mt-3 rounded-xl border border-rule bg-background shadow-sm open:shadow-sm"
+        class="group/connect"
         :open="providerOpen || !connections.length || sdkSelected"
         @toggle="providerOpen = ($event.target as HTMLDetailsElement).open"
       >
         <summary
-          class="cursor-pointer list-none px-3 py-3 text-sm font-semibold text-foreground outline-none transition duration-200 hover:bg-paper sm:px-4 [&::-webkit-details-marker]:hidden"
+          class="cursor-pointer list-none outline-none [&::-webkit-details-marker]:hidden"
         >
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <p class="m-0 text-xs font-medium tracking-wider text-muted-foreground">{{ t("providerConnectKicker") }}</p>
-              <p class="mb-0 mt-1">{{ t("providerConnect") }}</p>
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <p class="m-0 text-sm font-semibold text-foreground">{{ t("providerConnect") }}</p>
             </div>
-            <span class="text-xs font-normal text-muted-foreground">
-              {{ connections.length ? tf("providerConnectedCount", { count: connections.length }) : t("providerConnectHint") }}
-            </span>
+            <div class="flex shrink-0 items-center gap-2 pt-0.5">
+              <span class="text-xs text-muted-foreground">
+                {{ connections.length ? tf("providerConnectedCount", { count: connections.length }) : t("providerConnectHint") }}
+              </span>
+              <ChevronDownIcon
+                class="size-3.5 text-muted-foreground transition-transform duration-200 group-open/connect:rotate-180 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </div>
           </div>
         </summary>
 
-        <div class="border-t border-rule px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
+        <div class="mt-3 grid gap-3">
           <!-- 骨架：级联两列下拉 + 表单占位 -->
           <div
             v-if="!loaded"
@@ -554,7 +546,7 @@ function modelRowTitle(model: {
                     v-if="existingConnection"
                     type="button"
                     :disabled="busy"
-                    class="min-h-8 shrink-0 rounded-lg border border-rule px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
+                    class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
                     @click="removeConnection(existingConnection.templateId)"
                   >
                     {{ t("providerRemove") }}
@@ -572,6 +564,5 @@ function modelRowTitle(model: {
           </div>
         </div>
       </details>
-    </div>
-  </main>
+  </SettingsSectionShell>
 </template>

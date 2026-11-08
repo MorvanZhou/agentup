@@ -453,13 +453,14 @@ test("没有配置模型时，会话在发送前提示前往设置", async ({ pa
   await expect(page).toHaveURL(/\/settings\?section=provider$/);
 });
 
-test("未同步 Agent 的菜单显示更新红点，同步后清除", async ({ page }) => {
+test("未同步 Agent 的顶栏菜单显示更新红点，同步后清除", async ({ page }) => {
   await installRuntime(page, { recruited: ["respiratory-doctor"] });
   await signIn(page);
-  await expect(page.getByRole("button", { name: "更多操作：呼吸科医生（有可用更新）" })).toBeVisible();
+  await conversationItem(page, "呼吸科医生").click();
+  await expect(page.getByRole("button", { name: "会话菜单（有可用更新）" })).toBeVisible();
   await syncAgent(page, "呼吸科医生");
   await expect(page.getByRole("heading", { name: "今天想让它做什么？" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "更多操作：呼吸科医生", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "会话菜单", exact: true })).toBeVisible();
 });
 
 test("消息列表显示未读角标，选中后清除", async ({ page }) => {

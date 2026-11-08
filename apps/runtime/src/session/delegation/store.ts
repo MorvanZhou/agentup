@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { SHORT_ID_SIZE, shortId } from "../../ids/short-id.js";
+import { parseReplyModelEntryData } from "../history/reply-model.js";
 import { parseModelAssignmentMode } from "../model/assignment.js";
 import type { DelegationModelPin } from "../model/assignment.js";
 import type { DelegationStatus, DelegationTask } from "./types.js";
@@ -23,6 +24,7 @@ export class DelegationStore {
     wait: boolean;
     groupId?: string;
     modelPin?: DelegationModelPin;
+    replyModel?: DelegationTask["replyModel"];
   }): DelegationTask {
     const now = Date.now();
     const task: DelegationTask = {
@@ -40,6 +42,7 @@ export class DelegationStore {
       notified: false,
       groupId: input.groupId,
       ...(input.modelPin ? { modelPin: input.modelPin } : {}),
+      ...(input.replyModel ? { replyModel: input.replyModel } : {}),
     };
     this.tasks.set(task.id, task);
     this.persist(task);
@@ -65,6 +68,7 @@ export class DelegationStore {
         | "artifactsDelivered"
         | "groupId"
         | "brief"
+        | "replyModel"
       >
     >,
   ): DelegationTask | undefined {
@@ -214,6 +218,7 @@ function parseTask(raw: unknown): DelegationTask | undefined {
     artifactsDelivered: value.artifactsDelivered === true,
     groupId: typeof value.groupId === "string" && value.groupId ? value.groupId : undefined,
     modelPin: parseModelPin(value.modelPin),
+    replyModel: parseReplyModelEntryData(value.replyModel),
   };
 }
 

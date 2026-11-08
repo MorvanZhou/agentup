@@ -2,18 +2,15 @@
 import { computed, inject } from "vue";
 import {
   CircleDotIcon,
-  EllipsisVerticalIcon,
   HourglassIcon,
   LoaderCircleIcon,
-  SettingsIcon,
 } from "@lucide/vue";
-import { useRouter } from "vue-router";
 
 import { stubAgentCard } from "../../../../shared/components/agent/agent-profile";
 import { agentProfileHostKey } from "../../../../shared/components/agent/agent-profile-host";
 import AgentAvatar from "../../../../shared/components/avatar/AgentAvatar.vue";
-import AppDropdownMenu, { type AppDropdownItem } from "../../../../shared/components/AppDropdownMenu.vue";
-import { t, tf } from "../../../../shared/model/ui/ui-locale";
+import { t, tf, uiLocale } from "../../../../shared/model/ui/ui-locale";
+import { formatSidebarTimeLabel } from "../../model/message/message-time";
 import {
   attentionBadgeCount,
   conversationDisplayName,
@@ -27,8 +24,7 @@ const props = defineProps<{
   row: ConversationRow;
 }>();
 
-const emit = defineEmits<{ select: []; start: [] }>();
-const router = useRouter();
+const emit = defineEmits<{ select: [] }>();
 const profileHost = inject(agentProfileHostKey, null);
 
 /** 待用户操作（本会话 Dock 或子 Agent 提醒）；进行中用转圈占角标，二者不同时叠红点。 */
@@ -48,7 +44,10 @@ const badge = computed(() =>
 );
 const displayName = computed(() => conversationDisplayName(props.row));
 const previewLabel = computed(() => conversationPreviewLabel(props.row));
-const personal = computed(() => props.row.agent.kind === "personal");
+/** 微信式：名称行右侧显示最近活跃时间；无消息则空。 */
+const timeLabel = computed(() =>
+  formatSidebarTimeLabel(props.row.lastActiveAt, uiLocale.value),
+);
 const awaitingLabel = computed(() => previewLabel.value);
 const ariaLabel = computed(() => {
   const parts = [displayName.value];
@@ -58,35 +57,9 @@ const ariaLabel = computed(() => {
     if (delegationLine.value) parts.push(delegationLine.value);
     else if (badge.value) parts.push(tf("sideUnread", { n: badge.value }));
   }
+  if (timeLabel.value) parts.push(timeLabel.value);
   return parts.join("，");
 });
-
-const actionItems = computed((): AppDropdownItem[] =>
-  personal.value
-    ? [
-        {
-          id: "assistant-settings",
-          label: t("threadAssistantSettings"),
-          icon: SettingsIcon,
-        },
-      ]
-    : [
-        {
-          id: "start",
-          label: props.row.busy ? t("sidePreparing") : t("sideUpdate"),
-          disabled: props.row.busy || !props.row.hasUpdate,
-          dot: props.row.hasUpdate && !props.row.busy,
-        },
-      ],
-);
-
-function onAction(id: string): void {
-  if (id === "assistant-settings") {
-    void router.push({ name: "agents-assistant" });
-    return;
-  }
-  if (id === "start") emit("start");
-}
 
 /** 点头像开资料，不切换当前会话 */
 function openAgentProfile(): void {
@@ -108,12 +81,12 @@ function openAgentProfile(): void {
 </script>
 
 <template>
-  <!-- 会话列表项：头像单独可点开资料，不嵌套在选会话按钮里 -->
+  <!-- 会话列表项：头像单独可点开资料；更新 / 助理设置已迁到会话顶栏 -->
   <div
-    class="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-stretch transition duration-200 hover:bg-accent/8"
-    :class="{ 'bg-accent/12!': row.selected }"
+    class="group grid grid-cols-[auto_minmax(0,1fr)] items-stretch transition duration-200 hover:bg-muted"
+    :class="{ 'bg-muted!': row.selected }"
   >
-    <div class="relative flex items-center py-2.5 pl-3">
+    <div class="relative flex items-center py-3.5 pl-3">
       <button
         v-if="profileHost"
         type="button"
@@ -143,12 +116,12 @@ function openAgentProfile(): void {
     </div>
     <button
       type="button"
-      class="grid min-w-0 content-center gap-0.5 border-0 bg-transparent py-2.5 pr-1 pl-2.5 text-left text-inherit leading-snug"
+      class="grid min-w-0 content-center gap-0.5 border-0 bg-transparent py-2.5 pr-3 pl-2.5 text-left text-inherit leading-snug"
       :aria-label="ariaLabel"
       @click="emit('select')"
     >
       <strong class="flex min-w-0 items-baseline gap-1.5 overflow-hidden text-sm font-medium text-foreground">
-        <!-- 名字优先完整显示；岗位吃剩余宽度并可截断 -->
+        <!-- 名字优先完整显示；岗位吃剩余宽度并可截断；右侧时间对齐微信会话列表 -->
         <span class="max-w-[70%] shrink-0 truncate" :title="displayName">{{ displayName }}</span>
         <span
           v-if="row.agent.role"
@@ -157,6 +130,12 @@ function openAgentProfile(): void {
         >
           {{ row.agent.role }}
         </span>
+        <time
+          v-if="timeLabel"
+          class="ml-auto shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
+        >
+          {{ timeLabel }}
+        </time>
       </strong>
       <span
         v-if="awaitingUser"
@@ -179,26 +158,5 @@ function openAgentProfile(): void {
         <span class="truncate">{{ previewLabel }}</span>
       </small>
     </button>
-    <AppDropdownMenu :items="actionItems" @select="onAction">
-      <template #trigger>
-        <button
-          type="button"
-          class="relative mr-1.5 grid size-7 shrink-0 place-self-center place-items-center rounded-md border-0 bg-transparent text-muted-foreground outline-none transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40 max-[729px]:opacity-100 min-[730px]:opacity-0 min-[730px]:group-hover:opacity-100 min-[730px]:focus-visible:opacity-100"
-          :class="{ 'min-[730px]:opacity-100!': row.hasUpdate || personal }"
-          :aria-label="
-            row.hasUpdate
-              ? tf('sideMoreUpdate', { name: displayName })
-              : tf('sideMore', { name: displayName })
-          "
-        >
-          <EllipsisVerticalIcon class="size-3.5" />
-          <span
-            v-if="row.hasUpdate"
-            class="absolute top-1 right-1 size-1.5 rounded-full bg-destructive"
-            aria-hidden="true"
-          />
-        </button>
-      </template>
-    </AppDropdownMenu>
   </div>
 </template>

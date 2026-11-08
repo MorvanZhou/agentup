@@ -14,6 +14,7 @@ import {
 import type {
   AgentUpApprovalData,
   AgentUpAskUserData,
+  AgentUpDelegationStartedData,
   AgentUpShellHangData,
   ApprovalScope,
   AskUserAnswer,
@@ -476,6 +477,10 @@ provide(composerAttachKey, shallowRef<ComposerAttachApi | null>(null));
 
 /** toolCallId → taskId；过程弹窗旁路打开（与单聊同一套注入）。 */
 const taskIdByToolCall = ref(new Map<string, string>());
+/** toolCallId / taskId → 派出时模型快照（协助面板状态旁标形）。 */
+const replyModelByKey = ref(
+  new Map<string, NonNullable<AgentUpDelegationStartedData["replyModel"]>>(),
+);
 const processOpen = ref(false);
 const processTarget = ref<DelegationProcessTarget | null>(null);
 const delegationApi = computed<ThreadDelegationApi>(() => ({
@@ -485,9 +490,18 @@ const delegationApi = computed<ThreadDelegationApi>(() => ({
       next.set(data.toolCallId, data.taskId);
       taskIdByToolCall.value = next;
     }
+    if (data.replyModel) {
+      const models = new Map(replyModelByKey.value);
+      models.set(data.taskId, data.replyModel);
+      if (data.toolCallId) models.set(data.toolCallId, data.replyModel);
+      replyModelByKey.value = models;
+    }
   },
   resolveTaskId(toolCallId) {
     return taskIdByToolCall.value.get(toolCallId);
+  },
+  resolveReplyModel(toolCallIdOrTaskId) {
+    return replyModelByKey.value.get(toolCallIdOrTaskId);
   },
   openProcess(target) {
     processTarget.value = target;

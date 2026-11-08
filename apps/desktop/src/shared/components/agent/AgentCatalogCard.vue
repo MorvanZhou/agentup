@@ -18,7 +18,7 @@ const displayName = () => agentDisplayName(props.agent);
 <template>
   <!-- 共享目录卡：头像 / 名职 / 背景；点空白开资料；trailing·footer 盖在上层 -->
   <article
-    class="group relative flex h-full w-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 text-left shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/35 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+    class="group relative flex h-full w-full flex-col gap-1.5 rounded-xl border border-rule bg-paper p-2.5 text-left shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-foreground/12 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
     :aria-labelledby="titleId"
   >
     <button
@@ -48,7 +48,7 @@ const displayName = () => agentDisplayName(props.agent);
         </div>
         <p
           v-if="agent.role"
-          class="m-0 mt-1 truncate text-xs font-semibold leading-tight text-accent"
+          class="m-0 mt-1 truncate text-xs font-semibold leading-tight text-muted-foreground"
           :title="agent.role"
         >
           {{ agent.role }}
@@ -62,7 +62,7 @@ const displayName = () => agentDisplayName(props.agent);
 
     <!-- 简介：固定两行 -->
     <p
-      class="m-0 line-clamp-2 min-h-[2.5rem] flex-1 text-xs leading-snug text-muted-foreground"
+      class="m-0 line-clamp-2 min-h-[2.1rem] flex-1 text-xs leading-snug text-muted-foreground"
       :title="agent.background"
     >
       {{ agent.background }}

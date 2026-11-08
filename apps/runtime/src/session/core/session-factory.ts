@@ -22,6 +22,7 @@ import { createCheckpointExtension } from "../checkpoint/extension.js";
 import { formatEnvironmentPrompt } from "../environment.js";
 import { createArtifactsExtension } from "../history/artifacts.js";
 import { healInterruptedSessionTools } from "../history/history.js";
+import { createReplyModelExtension } from "../history/reply-model.js";
 import { createSummaryExtension } from "../history/summary.js";
 import { ApprovalBroker, createApprovalExtension } from "../hitl/approval/index.js";
 import { hitlScopeFields, type HitlExtensionContext } from "../hitl/origin.js";
@@ -212,6 +213,8 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
       createLocalTimeExtension(),
       createAskUserExtension(input.askUser, visit.userId, visit.agentId, hitl),
       createTodoExtension(),
+      // 每轮回复记下 provider/模型（与 summary 同形 custom entry），历史气泡可还原标形。
+      createReplyModelExtension(input.model, userDataRootFromVisit(visit)),
       ...(profile.summary ? [createSummaryExtension()] : []),
       ...(profile.artifactPanel ? [createArtifactsExtension()] : []),
       ...(profile.delegationInbox ? parent.afterArtifacts ?? [] : []),

@@ -217,12 +217,13 @@ onUnmounted(() => {
 <style>
 /* 棋盘格：内容区提示透明像素 */
 .image-preview-body {
-  background-color: #f7f2ea;
+  /* 冷灰棋盘，对齐微信式 light token */
+  background-color: #ededed;
   background-image:
-    linear-gradient(45deg, #e6ddd0 25%, transparent 25%),
-    linear-gradient(-45deg, #e6ddd0 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #e6ddd0 75%),
-    linear-gradient(-45deg, transparent 75%, #e6ddd0 75%);
+    linear-gradient(45deg, #e5e5e5 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e5e5 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e5e5 75%),
+    linear-gradient(-45deg, transparent 75%, #e5e5e5 75%);
   background-size: 16px 16px;
   background-position:
     0 0,

@@ -25,6 +25,7 @@ import {
   type ByproductTabId,
 } from "../../../../../model/message/message-byproducts";
 import { shouldShowAssistantReload } from "../../../../../model/message/assistant-reload";
+import { readAgentUpReplyModel } from "../../../../../model/message/message-reply-model";
 import { injectPendingAskUserToolCallId } from "../../../../../model/thread/thread-ask-user";
 import { chatMessageAuthor } from "../../../../../model/thread/chat-surface";
 import { injectThreadAgentId } from "../../../../../model/thread/thread-agent-id";
@@ -32,6 +33,7 @@ import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
 import { injectThreadWakeLive } from "../../../../../model/thread/thread-wake-live";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
 import AssistantByproductContent from "./byproducts/AssistantByproductContent.vue";
+import ReplyModelMark from "./ReplyModelMark.vue";
 import ChatBubble from "../../ChatBubble.vue";
 
 /** 选区复制：跳过 tab/操作栏等 chrome，压掉块级壳带来的尾部空行。 */
@@ -58,6 +60,8 @@ const threadRunning = useAuiState((s) => s.thread.isRunning);
 const messageAuthor = computed(() => chatMessageAuthor(metadata.value));
 const agentName = computed(() => messageAuthor.value?.name || extras.value.name);
 const agentRole = computed(() => messageAuthor.value?.role || "");
+/** 本轮回复所用 provider/模型（jsonl → metadata.custom.agentUpReplyModel）。 */
+const replyModel = computed(() => readAgentUpReplyModel(metadata.value));
 /** 群消息才带 author；单聊页头已有身份，气泡上不再重复。 */
 const showAuthorByline = computed(() => Boolean(messageAuthor.value?.name));
 const agentAvatar = computed(
@@ -146,6 +150,10 @@ const byproducts = computed(() =>
     metadata: metadata.value,
     streaming: streaming.value,
   }),
+);
+/** 顶栏：有副产物 tab，或仅有模型标时也铺一条右对齐区。 */
+const showChromeBar = computed(
+  () => byproducts.value.showTabBar || Boolean(replyModel.value),
 );
 
 const activeTab = ref<ByproductTabId>("process");
@@ -315,40 +323,52 @@ const hasArtifactsTab = computed(
           class="flex w-full min-w-0 flex-col"
           @update:model-value="onActiveTabChange"
         >
-          <!-- 顶栏：Chrome 式标签条（不进拖选） -->
-          <TabsList
-            v-if="byproducts.showTabBar"
-            class="flex min-w-0 flex-wrap items-end gap-0.5 border-b border-rule/70 bg-paper/70 px-2 pt-1.5 select-none"
+          <!-- 顶栏：标签条 + 右上角本轮模型标（不进拖选） -->
+          <!-- 标签条：灰阶顶栏 + 白底激活页签与正文衔接（勿用发黄/accent） -->
+          <div
+            v-if="showChromeBar"
+            class="flex min-w-0 items-end gap-2 border-b border-rule/60 bg-paper px-2 pt-1.5 select-none"
             data-copy-ignore
-            :aria-label="t('msgProducts')"
           >
-            <template v-for="tab in byproducts.tabs" :key="tab.id">
-              <TabsTrigger
-                v-if="tab.id !== 'subagents'"
-                :value="tab.id"
-                class="relative -mb-px inline-flex min-h-8 max-w-[9rem] items-center gap-1 truncate rounded-t-lg border border-transparent px-3 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground data-[state=active]:border-rule/70 data-[state=active]:border-b-muted data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
-              >
-                <span class="truncate">{{ tab.label }}</span>
-                <span
-                  v-if="tab.badge"
-                  class="inline-flex min-w-4 shrink-0 items-center justify-center rounded-md bg-accent/15 px-1 text-[10px] font-semibold tabular-nums leading-4 text-accent"
+            <TabsList
+              v-if="byproducts.showTabBar"
+              class="flex min-w-0 flex-1 flex-wrap items-end gap-0.5"
+              :aria-label="t('msgProducts')"
+            >
+              <template v-for="tab in byproducts.tabs" :key="tab.id">
+                <TabsTrigger
+                  v-if="tab.id !== 'subagents'"
+                  :value="tab.id"
+                  class="relative -mb-px inline-flex min-h-8 max-w-[9rem] items-center gap-1 truncate rounded-t-lg border border-transparent px-3 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground data-[state=active]:border-rule/70 data-[state=active]:border-b-bubble data-[state=active]:bg-bubble data-[state=active]:text-foreground data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
                 >
-                  {{ tab.badge }}
-                </span>
-              </TabsTrigger>
-              <TabsTrigger
-                v-else
-                :value="tab.id"
-                class="relative -mb-px inline-flex min-h-8 items-center rounded-t-lg border border-transparent px-2 transition duration-200 data-[state=active]:border-rule/70 data-[state=active]:border-b-muted data-[state=active]:bg-muted data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
-                :aria-label="t('msgAssistAgents')"
-              >
-                <AssistAgentsPanel
-                  :assists="byproducts.assists"
-                  variant="trigger"
-                />
-              </TabsTrigger>
-            </template>
-          </TabsList>
+                  <span class="truncate">{{ tab.label }}</span>
+                  <span
+                    v-if="tab.badge"
+                    class="inline-flex min-w-4 shrink-0 items-center justify-center rounded-md bg-muted px-1 text-[10px] font-semibold tabular-nums leading-4 text-muted-foreground"
+                  >
+                    {{ tab.badge }}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger
+                  v-else
+                  :value="tab.id"
+                  class="relative -mb-px inline-flex min-h-8 items-center rounded-t-lg border border-transparent px-2 transition duration-200 data-[state=active]:border-rule/70 data-[state=active]:border-b-bubble data-[state=active]:bg-bubble data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
+                  :aria-label="t('msgAssistAgents')"
+                >
+                  <AssistAgentsPanel
+                    :assists="byproducts.assists"
+                    variant="trigger"
+                  />
+                </TabsTrigger>
+              </template>
+            </TabsList>
+            <div v-else class="min-h-8 min-w-0 flex-1" aria-hidden="true" />
+            <ReplyModelMark
+              v-if="replyModel"
+              class="mb-1.5 ml-auto shrink-0 self-center"
+              :model="replyModel"
+            />
+          </div>
 
           <div class="px-3 py-3">
           <!-- 总结：仅主产物 text -->

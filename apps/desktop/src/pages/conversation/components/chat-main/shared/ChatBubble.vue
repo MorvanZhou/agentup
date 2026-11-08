@@ -51,11 +51,12 @@ defineExpose({ surfaceEl });
       <div
         v-if="surface"
         ref="surfaceEl"
-        class="min-w-0 max-w-full wrap-break-word overflow-x-hidden text-sm shadow-sm"
+        class="chat-message-text min-w-0 max-w-full wrap-break-word overflow-x-hidden shadow-sm"
         :class="[
           side === 'user'
             ? 'rounded-lg rounded-tr-sm bg-primary font-medium leading-snug text-on-primary'
-            : 'w-full rounded-lg rounded-tl-sm bg-muted leading-relaxed text-foreground',
+            /* 对方气泡：bubble 白面抬升于聊天区 background（微信式） */
+            : 'w-full rounded-lg rounded-tl-sm bg-bubble leading-relaxed text-foreground',
           padded ? 'px-3 py-3' : '',
           flash
             ? 'relative z-[1] animate-thread-insert-flash motion-reduce:animate-none motion-reduce:outline motion-reduce:outline-2 motion-reduce:outline-offset-2 motion-reduce:outline-accent motion-reduce:ring-4 motion-reduce:ring-accent/40'

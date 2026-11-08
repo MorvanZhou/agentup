@@ -33,6 +33,7 @@ export {
   type PublishedAgent,
   type Recruit,
   type SessionCredential,
+  type ChatFontSize,
   type PreferencesUpdate,
   type ThemeMode,
   type UserPreferences,

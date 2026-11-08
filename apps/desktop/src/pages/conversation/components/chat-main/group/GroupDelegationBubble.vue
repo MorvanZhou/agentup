@@ -1,14 +1,4 @@
 <script setup lang="ts">
-import {
-  BanIcon,
-  CircleCheckIcon,
-  CircleXIcon,
-  ClockIcon,
-  HourglassIcon,
-  InboxIcon,
-  LoaderCircleIcon,
-  type LucideIcon,
-} from "@lucide/vue";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import { computed, inject, ref, watch } from "vue";
 
@@ -24,16 +14,15 @@ import {
 } from "../../../model/group/delegation-bubble-tabs";
 import { delegationWorkspaceAgentId } from "../../../model/message/message-artifacts";
 import { buildLatestAssistantByproducts } from "../../../model/message/message-byproducts";
+import { replyModelFromMessages } from "../../../model/message/message-reply-model";
 import {
-  groupDelegationPhase,
   groupDelegationRuntimeKey,
-  groupWaitingTaskIdsKey,
   type GroupDelegationCard,
-  type GroupDelegationPhase,
 } from "../../../model/group/group-delegation";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { selectionToPlainText } from "../../../model/composer/copy-text";
 import DelegationProcessProducts from "../shared/thread/assistant-ui/byproducts/DelegationProcessProducts.vue";
+import ReplyModelMark from "../shared/thread/assistant-ui/ReplyModelMark.vue";
 import ChatBubble from "../shared/ChatBubble.vue";
 
 const props = defineProps<{ card: GroupDelegationCard }>();
@@ -65,8 +54,6 @@ function onBubbleCopy(event: ClipboardEvent): void {
   event.preventDefault();
 }
 
-// 群委派气泡：waiting 只看当前 HITL 是否还挂着这张卡的 taskId。
-const waitingIds = inject(groupWaitingTaskIdsKey, null);
 // 展开过程需要 runtime 票；正文按 taskId 旁路再取，不进群线程。
 const runtime = inject(groupDelegationRuntimeKey, null);
 const bubble = ref<{ surfaceEl: HTMLElement | null } | null>(null);
@@ -91,51 +78,8 @@ const workspaceAgentId = computed(() =>
   }),
 );
 
-const phase = computed<GroupDelegationPhase>(() =>
-  groupDelegationPhase(
-    props.card,
-    // 委派阶段：该 taskId 仍在群 HITL 等待列表里才标 waiting。
-    Boolean(props.card.taskId && waitingIds?.value.includes(props.card.taskId)),
-  ),
-);
-
-// 图标旁无文案，词条只进 aria-label / title。
-const phaseLabel = computed(() => {
-  const labels: Record<GroupDelegationPhase, string> = {
-    queued: t("groupTaskQueued"),
-    running: t("groupTaskRunning"),
-    waiting: t("groupTaskWaiting"),
-    pending_summary: t("groupTaskPendingSummary"),
-    completed: t("groupTaskCompleted"),
-    failed: t("groupTaskFailed"),
-    cancelled: t("groupTaskCancelled"),
-  };
-  return labels[phase.value];
-});
-
-const phaseIcon = computed(() => {
-  const icons: Record<GroupDelegationPhase, LucideIcon> = {
-    queued: ClockIcon,
-    running: LoaderCircleIcon,
-    waiting: HourglassIcon,
-    pending_summary: InboxIcon,
-    completed: CircleCheckIcon,
-    failed: CircleXIcon,
-    cancelled: BanIcon,
-  };
-  return icons[phase.value];
-});
-
-// 默认只出图标；点击展开阶段文案，再点收起。
-const phaseLabelOpen = ref(false);
-
-function togglePhaseLabel(): void {
-  phaseLabelOpen.value = !phaseLabelOpen.value;
-}
-
-watch(phase, () => {
-  phaseLabelOpen.value = false;
-});
+/** 子任务 history 里最近一条助手的本轮模型；与一对一同形标形。 */
+const replyModel = computed(() => replyModelFromMessages(messages.value));
 
 const canOpen = computed(
   // 缺 taskId 或 runtime 票时拉不到委派过程，过程 tab 不出现。
@@ -155,6 +99,11 @@ const outer = computed(() =>
       }),
     ),
   }),
+);
+
+/** 顶栏：有 tab，或已拿到模型标时也铺右对齐区。 */
+const showChromeBar = computed(
+  () => outer.value.showTabBar || Boolean(replyModel.value),
 );
 
 const activeTab = ref<DelegationOuterTabId | null>(null);
@@ -257,44 +206,21 @@ const taskError = computed(() =>
       </div>
     </template>
     <div class="flex min-w-0 flex-col">
-      <!-- 无 tab 时：阶段图标单独一行靠右（不进拖选） -->
-      <div
-        v-if="!activeTab"
-        class="flex justify-end px-3 py-3 select-none"
-        data-copy-ignore
-      >
-        <!-- 委派阶段：点图标展开文案 -->
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 rounded-md text-accent outline-none hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-accent/15 dark:hover:bg-white/5"
-          :aria-label="phaseLabel"
-          :aria-expanded="phaseLabelOpen"
-          @click="togglePhaseLabel"
-        >
-          <component
-            :is="phaseIcon"
-            class="size-3.5 shrink-0"
-            :class="phase === 'running' ? 'animate-spin motion-reduce:animate-none' : ''"
-            aria-hidden="true"
-          />
-          <span v-if="phaseLabelOpen" class="text-xs font-medium whitespace-nowrap">{{ phaseLabel }}</span>
-        </button>
-      </div>
       <TabsRoot
-        v-else
+        v-if="activeTab"
         :model-value="activeTab"
         class="flex w-full min-w-0 flex-col"
         @update:model-value="onActiveTabChange"
       >
-        <!-- 外层顶栏：左侧 tab，右侧委派阶段图标垂直居中 -->
-        <!-- 顶栏 chrome 不进拖选 -->
+        <!-- 顶栏：左侧 tab，右侧本轮模型标（与一对一同形；不进拖选） -->
         <div
-          class="flex min-w-0 gap-2 select-none"
+          v-if="showChromeBar"
+          class="flex min-w-0 items-end gap-2 select-none"
           data-copy-ignore
           :class="
             outer.showTabBar
-              ? 'items-stretch border-b border-rule/70 bg-paper/70 px-2 pt-1.5'
-              : 'items-center justify-end px-3 pt-3'
+              ? 'border-b border-rule/60 bg-paper px-2 pt-1.5'
+              : 'justify-end px-3 pt-3'
           "
         >
           <TabsList
@@ -307,36 +233,26 @@ const taskError = computed(() =>
               :key="tab.id"
               :value="tab.id"
               :data-testid="`delegation-tab-${tab.id}`"
-              class="relative -mb-px inline-flex min-h-8 max-w-[9rem] items-center gap-1 truncate rounded-t-lg border border-transparent px-3 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground data-[state=active]:border-rule/70 data-[state=active]:border-b-muted data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
+              class="relative -mb-px inline-flex min-h-8 max-w-[9rem] items-center gap-1 truncate rounded-t-lg border border-transparent px-3 text-xs font-medium text-muted-foreground transition duration-200 hover:text-foreground data-[state=active]:border-rule/70 data-[state=active]:border-b-bubble data-[state=active]:bg-bubble data-[state=active]:text-foreground data-[state=inactive]:hover:bg-black/5 dark:data-[state=inactive]:hover:bg-white/5"
             >
               <span class="truncate">{{ tab.label }}</span>
               <span
                 v-if="tab.badge"
-                class="inline-flex min-w-4 shrink-0 items-center justify-center rounded-md bg-accent/15 px-1 text-[10px] font-semibold tabular-nums leading-4 text-accent"
+                class="inline-flex min-w-4 shrink-0 items-center justify-center rounded-md bg-muted px-1 text-[10px] font-semibold tabular-nums leading-4 text-muted-foreground"
               >
                 {{ tab.badge }}
               </span>
             </TabsTrigger>
           </TabsList>
-          <!-- 委派阶段：顶栏最右，垂直居中；点图标展开文案 -->
-          <button
-            type="button"
-            class="inline-flex shrink-0 items-center gap-1 self-center rounded-md px-1 text-accent outline-none hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-accent/15 dark:hover:bg-white/5"
-            :aria-label="phaseLabel"
-            :aria-expanded="phaseLabelOpen"
-            @click="togglePhaseLabel"
-          >
-            <component
-              :is="phaseIcon"
-              class="size-3.5 shrink-0"
-              :class="phase === 'running' ? 'animate-spin motion-reduce:animate-none' : ''"
-              aria-hidden="true"
-            />
-            <span v-if="phaseLabelOpen" class="text-xs font-medium whitespace-nowrap">{{ phaseLabel }}</span>
-          </button>
+          <div v-else-if="replyModel" class="min-h-8 min-w-0 flex-1" aria-hidden="true" />
+          <ReplyModelMark
+            v-if="replyModel"
+            class="mb-1.5 ml-auto shrink-0 self-center"
+            :model="replyModel"
+          />
         </div>
 
-        <div :class="outer.showTabBar ? 'px-3 py-3' : 'px-3 pb-3 pt-1.5'">
+        <div class="px-3 py-3">
           <!-- 委派简述 -->
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'brief')"

@@ -42,6 +42,7 @@ export const GROUP_RECORD_VERSION = 3;
 export type GroupAssistantCustom = {
   agentUpSummary?: unknown;
   agentUpArtifacts?: unknown;
+  agentUpReplyModel?: unknown;
 };
 
 export type GroupLine = {

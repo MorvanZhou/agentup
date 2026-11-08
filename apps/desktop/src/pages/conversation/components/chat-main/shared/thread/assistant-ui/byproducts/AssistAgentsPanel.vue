@@ -13,11 +13,13 @@ import { showToast } from "../../../../../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../../../../../shared/model/ui/ui-locale";
 import { formatElapsedMs } from "../../../../../../model/message/elapsed";
 import type { AssistAgentRef } from "../../../../../../model/message/message-assistants";
+import type { AgentUpReplyModel } from "../../../../../../model/message/message-reply-model";
 import { injectThreadDelegation } from "../../../../../../model/thread/thread-delegation";
 import {
   injectThreadRoster,
   resolveRosterAgent,
 } from "../../../../../../model/thread/thread-roster";
+import ReplyModelMark from "../ReplyModelMark.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -99,12 +101,23 @@ function statusLabel(assist: AssistAgentRef): string {
 
 function statusTone(assist: AssistAgentRef): string {
   if (assist.status === "running" || assist.asyncDispatched) {
-    return "bg-accent/10 text-accent";
+    return "bg-muted text-foreground";
   }
   if (assist.status === "failed") {
     return "bg-danger-soft text-destructive";
   }
   return "bg-paper-deep text-muted-foreground";
+}
+
+/** 工具结果快照优先；进行中再回落 started 事件登记。 */
+function assistReplyModel(assist: AssistAgentRef): AgentUpReplyModel | null {
+  if (assist.replyModel) return assist.replyModel;
+  const fromTool = assist.toolCallId
+    ? delegation.value.resolveReplyModel(assist.toolCallId)
+    : undefined;
+  if (fromTool) return fromTool;
+  if (assist.taskId) return delegation.value.resolveReplyModel(assist.taskId) ?? null;
+  return null;
 }
 
 /** 同步协助中，或异步已派发（对方可能仍在执行）。 */
@@ -277,6 +290,11 @@ function openProcess(assist: AssistAgentRef): void {
             >
               {{ statusLabel(assist) }}
             </span>
+            <!-- 状态旁：专员本轮 provider / 模型（与气泡顶栏同形） -->
+            <ReplyModelMark
+              v-if="assistReplyModel(assist)"
+              :model="assistReplyModel(assist)!"
+            />
             <span
               v-if="elapsedByAgentId[assist.agentId]"
               class="shrink-0 text-xs tabular-nums text-muted-foreground"
@@ -350,7 +368,7 @@ function openProcess(assist: AssistAgentRef): void {
           <p class="mb-1 text-xs font-medium tracking-wider text-primary">
             {{ t("assistYourTask") }}
           </p>
-          <p class="mb-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+          <p class="chat-message-text mb-0 whitespace-pre-wrap break-words text-foreground">
             {{ assist.brief }}
           </p>
         </section>
@@ -392,7 +410,7 @@ function openProcess(assist: AssistAgentRef): void {
           </div>
           <p
             v-else-if="assist.reply"
-            class="mb-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
+            class="chat-message-text mb-0 whitespace-pre-wrap break-words text-foreground"
           >
             {{ assist.reply }}
           </p>

@@ -69,7 +69,7 @@ async function onOfficial(id: OfficialAvatarId): Promise<void> {
     <div class="flex items-center gap-3">
       <button
         type="button"
-        class="shrink-0 rounded-full border border-rule bg-paper p-0.5 transition hover:border-accent disabled:opacity-50"
+        class="shrink-0 rounded-full border border-rule bg-paper p-0.5 transition hover:border-foreground/20 disabled:opacity-50"
         :disabled="locked()"
         @click="input?.click()"
       >
@@ -85,7 +85,7 @@ async function onOfficial(id: OfficialAvatarId): Promise<void> {
         />
         <button
           type="button"
-          class="inline-flex min-h-8 items-center rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition hover:bg-accent/10 disabled:opacity-50"
+          class="inline-flex min-h-8 items-center rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition hover:bg-muted disabled:opacity-50"
           :disabled="locked()"
           @click="input?.click()"
         >

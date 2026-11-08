@@ -18,7 +18,8 @@ it("parks on idle and returns exit 124 without killing the child", async () => {
 
   const ops = createIdleAwareShellOperations({
     shell: "bash",
-    idleMs: 80,
+    // 并行套件下 spawn 可能 >80ms；太短会在 ready 前就 park，onData 被吞。
+    idleMs: 400,
     onIdlePark: ({ child, command, cwd, startedAt }) => {
       const hang = broker.park({
         userId: "u",

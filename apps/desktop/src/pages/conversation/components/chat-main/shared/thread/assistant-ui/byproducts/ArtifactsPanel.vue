@@ -90,7 +90,7 @@ function revealMarkdown(): void {
           :class="
             file.kind === 'deleted'
               ? 'cursor-default opacity-70'
-              : 'hover:border-accent/40 hover:bg-accent/5'
+              : 'hover:border-foreground/15 hover:bg-muted'
           "
           :disabled="file.kind === 'deleted' || loading"
           :title="`${kindLabel(file.kind)} · ${file.path}`"

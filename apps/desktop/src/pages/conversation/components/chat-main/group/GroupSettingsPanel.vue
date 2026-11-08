@@ -421,7 +421,7 @@ async function confirmDeleteGroup(): Promise<void> {
             @click="openAdd"
           >
             <span
-              class="grid size-8 place-items-center rounded-lg border border-dashed border-rule text-muted-foreground transition duration-150 hover:border-accent/50 hover:text-accent"
+              class="grid size-8 place-items-center rounded-lg border border-dashed border-rule text-muted-foreground transition duration-150 hover:border-foreground/40 hover:bg-muted hover:text-foreground"
             >
               <PlusIcon class="size-3.5" aria-hidden="true" />
             </span>
@@ -439,7 +439,7 @@ async function confirmDeleteGroup(): Promise<void> {
             @click="enterRemoveMode"
           >
             <span
-              class="grid size-8 place-items-center rounded-lg border border-dashed border-rule text-muted-foreground transition duration-150 hover:border-accent/50 hover:text-accent"
+              class="grid size-8 place-items-center rounded-lg border border-dashed border-rule text-muted-foreground transition duration-150 hover:border-foreground/40 hover:bg-muted hover:text-foreground"
             >
               <MinusIcon class="size-3.5" aria-hidden="true" />
             </span>
@@ -457,7 +457,7 @@ async function confirmDeleteGroup(): Promise<void> {
             @click="confirmRemove"
           >
             <span
-              class="grid size-8 place-items-center rounded-lg border border-dashed border-accent/50 text-accent transition duration-150 hover:border-accent hover:bg-accent/10"
+              class="grid size-8 place-items-center rounded-lg border border-dashed border-foreground/30 text-foreground transition duration-150 hover:border-foreground/50 hover:bg-muted"
             >
               <CheckIcon class="size-3.5" aria-hidden="true" />
             </span>
@@ -473,7 +473,7 @@ async function confirmDeleteGroup(): Promise<void> {
             @click="cancelRemove"
           >
             <span
-              class="grid size-8 place-items-center rounded-lg border border-dashed border-rule text-muted-foreground transition duration-150 hover:border-accent/50 hover:text-accent"
+              class="grid size-8 place-items-center rounded-lg border border-dashed border-rule text-muted-foreground transition duration-150 hover:border-foreground/40 hover:bg-muted hover:text-foreground"
             >
               <XIcon class="size-3.5" aria-hidden="true" />
             </span>
@@ -503,7 +503,7 @@ async function confirmDeleteGroup(): Promise<void> {
         <template #trigger>
           <button
             type="button"
-            class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm text-foreground outline-none transition duration-150 hover:border-accent/40 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-40"
+            class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm text-foreground outline-none transition duration-150 hover:border-foreground/15 hover:bg-muted/70 focus-visible:border-foreground/25 focus-visible:ring-2 focus-visible:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-40"
             :disabled="membersLocked || !defaultHolderMember"
             :aria-label="t('groupDefaultHolderField')"
           >
@@ -705,8 +705,8 @@ async function confirmDeleteGroup(): Promise<void> {
             class="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-left transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
             :class="
               addPicked.includes(agent.agentId)
-                ? 'border-accent bg-accent/10'
-                : 'border-rule bg-paper hover:border-accent/40'
+                ? 'border-foreground/20 bg-muted'
+                : 'border-rule bg-paper hover:bg-muted/70'
             "
             :aria-pressed="addPicked.includes(agent.agentId)"
             @click="toggleAddPick(agent.agentId)"
@@ -732,7 +732,7 @@ async function confirmDeleteGroup(): Promise<void> {
               class="grid size-5 shrink-0 place-items-center rounded-md border transition duration-150"
               :class="
                 addPicked.includes(agent.agentId)
-                  ? 'border-accent bg-accent text-white'
+                  ? 'border-foreground bg-foreground text-background'
                   : 'border-rule bg-background text-transparent'
               "
               aria-hidden="true"

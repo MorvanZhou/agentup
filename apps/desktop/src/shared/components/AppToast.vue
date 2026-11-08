@@ -60,13 +60,13 @@ onBeforeUnmount(() => {
     >
       <div
         v-if="open"
-        class="fixed top-4 right-4 z-[60] flex max-w-[min(28rem,calc(100vw-2rem))] items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-lg"
+        class="fixed top-4 right-4 z-[60] flex max-w-[min(28rem,calc(100vw-2rem))] items-center gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-lg"
         :class="panelClass"
         :role="isError ? 'alert' : 'status'"
         :aria-live="isError ? 'assertive' : 'polite'"
       >
-        <CheckCircle2Icon v-if="!isError" class="mt-0.5 size-4 shrink-0" :class="iconClass" />
-        <CircleAlertIcon v-else class="mt-0.5 size-4 shrink-0" :class="iconClass" />
+        <CheckCircle2Icon v-if="!isError" class="size-4 shrink-0" :class="iconClass" />
+        <CircleAlertIcon v-else class="size-4 shrink-0" :class="iconClass" />
         <span class="min-w-0 flex-1 whitespace-pre-wrap break-words leading-snug text-foreground">{{ message }}</span>
         <button
           type="button"

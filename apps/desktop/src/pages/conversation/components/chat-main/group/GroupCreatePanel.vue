@@ -166,8 +166,8 @@ function atCap(agentId: string): boolean {
                 class="group flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-40"
                 :class="
                   isPicked(agent.agentId)
-                    ? 'border-accent bg-accent/10'
-                    : 'border-rule bg-paper hover:border-accent/40 hover:bg-muted/60'
+                    ? 'border-foreground/20 bg-muted'
+                    : 'border-rule bg-paper hover:bg-muted/70'
                 "
                 :aria-pressed="isPicked(agent.agentId)"
                 :disabled="atCap(agent.agentId)"
@@ -194,7 +194,7 @@ function atCap(agentId: string): boolean {
                   class="grid size-5 shrink-0 place-items-center rounded-md border transition duration-150"
                   :class="
                     isPicked(agent.agentId)
-                      ? 'border-accent bg-accent text-white'
+                      ? 'border-foreground bg-foreground text-background'
                       : 'border-rule bg-background text-transparent'
                   "
                   aria-hidden="true"
@@ -222,7 +222,7 @@ function atCap(agentId: string): boolean {
             <template #trigger>
               <button
                 type="button"
-                class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm text-foreground outline-none transition duration-150 hover:border-accent/40 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/15"
+                class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm text-foreground outline-none transition duration-150 hover:border-foreground/15 hover:bg-muted/70 focus-visible:border-foreground/25 focus-visible:ring-2 focus-visible:ring-accent/15"
                 :aria-label="t('groupDefaultHolderField')"
               >
                 <template v-if="defaultHolderAgent">

@@ -13,11 +13,13 @@ export type {
   TeamMember,
   TeamRecruitResult,
   TeamUpsertInput,
+  ChatFontSize,
   ThemeMode,
   UiLocale,
   UserPreferences,
 } from "./types.js";
 export {
+  desktopHandoff,
   fetchProfile,
   forgotPassword,
   login,

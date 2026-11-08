@@ -56,6 +56,8 @@ export function createExternalTranslator(): ExternalTranslator {
   const trail: ExternalTrailItem[] = [];
   /** 已发过 tool_execution_start 的 id：assistant 整包与 stream 事件会重复描述同一个工具。 */
   const announced = new Set<string>();
+  /** 已切开旁白段的工具 id（含不进时间线的 ToolSearch），避免同 id 反复 reset。 */
+  const segmentBreaks = new Set<string>();
   /** 参数还在流里的工具（content_block_start → delta → stop）。 */
   const building = new Map<
     number,
@@ -65,6 +67,18 @@ export function createExternalTranslator(): ExternalTranslator {
   const completed = new Set<string>();
   let sessionId: string | undefined;
   let text = "";
+  /**
+   * 自上次工具边界以来、已由 stream 或整包写入的「本段」旁白。
+   * CodeBuddy / Claude：工具后 assistant 整包常只带本段（非全量累计），
+   * 仅靠 piece === text / startsWith 去重会漏掉，导致同一句 message_update 双发。
+   */
+  let segment = "";
+
+  const breakSegmentForTool = (id: string) => {
+    if (!id || segmentBreaks.has(id)) return;
+    segmentBreaks.add(id);
+    segment = "";
+  };
 
   const flush = (index: number): AgentSessionEvent[] => {
     const tool = building.get(index);
@@ -86,6 +100,8 @@ export function createExternalTranslator(): ExternalTranslator {
 
   const startTool = (id: string, name: string, args: Record<string, unknown>): AgentSessionEvent[] => {
     if (!id) return [];
+    // 工具切开旁白段（含跳过的 ToolSearch 壳）：其后 text 按「本段」计
+    breakSegmentForTool(id);
     // 厂商壳：ToolSearch 不进时间线；DeferExecute 有底层名则展开，否则跳过空壳。
     if (name === "ToolSearch") {
       if (!announced.has(id)) {
@@ -206,6 +222,17 @@ export function createExternalTranslator(): ExternalTranslator {
       if (delta.type === "text_delta") {
         const piece = text_(delta.text);
         if (!piece) return [];
+        // 整包已先写入本段：stream 再推相同整块
+        if (segment.length > 0 && piece === segment && text.endsWith(segment)) {
+          return [];
+        }
+        const next = `${segment}${piece}`;
+        // 累计正文已包含 next（逐块回放进已有后缀）
+        if (text.endsWith(next)) {
+          segment = next;
+          return [];
+        }
+        segment = next;
         text += piece;
         appendTextTrail(piece);
         return [textUpdate(piece)];
@@ -243,17 +270,31 @@ export function createExternalTranslator(): ExternalTranslator {
       if (!piece) continue;
       // 整包等于已累计正文：stream 回放，跳过
       if (piece === text) continue;
+      // 整包等于本段 stream（工具后常见：assistant 只带本段，非全量）
+      if (segment.length > 0 && piece === segment) continue;
       // 整包是 stream 前缀的超集：只推增量
       if (text.length > 0 && piece.startsWith(text)) {
         const delta = piece.slice(text.length);
         if (!delta) continue;
         text = piece;
+        segment = piece;
+        appendTextTrail(delta);
+        events.push(textUpdate(delta));
+        continue;
+      }
+      // 本段 stream 是整包前缀：只推差额
+      if (segment.length > 0 && piece.startsWith(segment)) {
+        const delta = piece.slice(segment.length);
+        if (!delta) continue;
+        segment = piece;
+        text += delta;
         appendTextTrail(delta);
         events.push(textUpdate(delta));
         continue;
       }
       // 工具之间的新旁白（或首段无 stream 时的整包）
       text = text.length === 0 ? piece : `${text}${piece}`;
+      segment = piece;
       appendTextTrail(piece);
       events.push(textUpdate(piece));
     }

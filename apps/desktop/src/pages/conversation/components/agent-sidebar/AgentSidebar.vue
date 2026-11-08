@@ -32,7 +32,6 @@ const { unread } = useDesktop();
 
 const emit = defineEmits<{
   select: [agent: AgentCard];
-  start: [agent: AgentCard];
   selectGroup: [groupId: string];
   createGroup: [];
 }>();
@@ -117,7 +116,7 @@ function goLocalCreate(): void {
               v-if="sections.groups.length > 0"
               type="button"
               class="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-rule bg-paper px-2 text-xs font-semibold text-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15"
-              :class="{ 'border-accent/40 bg-accent/10 text-accent': creatingGroup }"
+              :class="{ 'border-foreground/20 bg-muted text-foreground': creatingGroup }"
               :aria-label="t('groupNew')"
               :aria-pressed="creatingGroup"
               @click="emit('createGroup')"
@@ -135,7 +134,7 @@ function goLocalCreate(): void {
             <button
               type="button"
               class="mt-1 inline-flex min-h-8 w-full max-w-44 cursor-pointer items-center justify-center rounded-lg border border-rule bg-paper px-3 text-sm font-semibold text-foreground transition duration-200 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15"
-              :class="{ 'border-accent/40 bg-accent/10 text-accent': creatingGroup }"
+              :class="{ 'border-foreground/20 bg-muted text-foreground': creatingGroup }"
               :aria-pressed="creatingGroup"
               @click="emit('createGroup')"
             >
@@ -163,7 +162,6 @@ function goLocalCreate(): void {
             :key="row.agent.agentId"
             :row="groupSurface ? { ...row, selected: false } : row"
             @select="emit('select', row.agent)"
-            @start="emit('start', row.agent)"
           />
         </section>
 

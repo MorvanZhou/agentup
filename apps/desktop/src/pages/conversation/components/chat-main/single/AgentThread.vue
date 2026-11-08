@@ -24,6 +24,7 @@ import {
   lastMessagePreview,
   type AgentUpApprovalData,
   type AgentUpAskUserData,
+  type AgentUpDelegationStartedData,
   type AgentUpShellHangData,
   type ApprovalScope,
   type AskUserAnswer,
@@ -154,6 +155,8 @@ provide(composerAttachKey, shallowRef<ComposerAttachApi | null>(null));
 
 /** toolCallId → taskId（transient started）；过程弹窗旁路打开。 */
 const taskIdByToolCall = ref(new Map<string, string>());
+/** toolCallId / taskId → 派出时模型快照（协助面板状态旁标形）。 */
+const replyModelByKey = ref(new Map<string, NonNullable<AgentUpDelegationStartedData["replyModel"]>>());
 const processOpen = ref(false);
 const processTarget = ref<DelegationProcessTarget | null>(null);
 const delegationApi = computed<ThreadDelegationApi>(() => ({
@@ -163,9 +166,18 @@ const delegationApi = computed<ThreadDelegationApi>(() => ({
       next.set(data.toolCallId, data.taskId);
       taskIdByToolCall.value = next;
     }
+    if (data.replyModel) {
+      const models = new Map(replyModelByKey.value);
+      models.set(data.taskId, data.replyModel);
+      if (data.toolCallId) models.set(data.toolCallId, data.replyModel);
+      replyModelByKey.value = models;
+    }
   },
   resolveTaskId(toolCallId) {
     return taskIdByToolCall.value.get(toolCallId);
+  },
+  resolveReplyModel(toolCallIdOrTaskId) {
+    return replyModelByKey.value.get(toolCallIdOrTaskId);
   },
   openProcess(target) {
     processTarget.value = target;
@@ -542,7 +554,7 @@ const config = AuiConfig({
         <button
           v-if="rightPaneOpen && agentId && token && userId"
           type="button"
-          class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-accent/30 focus-visible:bg-accent/40 min-[730px]:block"
+          class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-muted focus-visible:bg-muted/80 min-[730px]:block"
           aria-label="调整对话区宽度"
           @pointerdown="onThreadResize"
         />

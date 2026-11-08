@@ -641,7 +641,7 @@ function onToolbarPickFiles(files: File[]): void {
       </p>
 
       <ComposerPrimitiveAttachmentDropzone
-        class="data-[dragging=true]:border-accent/40 data-[dragging=true]:bg-primary/5 relative flex w-full flex-col bg-background px-2 py-1.5 transition duration-200 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15"
+        class="data-[dragging=true]:border-accent/40 data-[dragging=true]:bg-primary/5 relative flex w-full flex-col bg-transparent px-2 py-1.5 transition duration-200 focus-within:ring-2 focus-within:ring-accent/15"
         @drop.capture="onAttachmentDropCapture"
       >
         <SkillPicker

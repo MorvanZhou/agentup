@@ -1,4 +1,5 @@
 import type { DelegationModelPin } from "../model/assignment.js";
+import type { AgentUpReplyModel } from "../history/reply-model.js";
 
 /** 本机跨 Agent 委托任务状态。 */
 
@@ -50,6 +51,8 @@ export type DelegationTask = {
    * 旧工单没有这份时，仍用设备最近使用。
    */
   modelPin?: DelegationModelPin;
+  /** 实际开跑（或派出时已能确定）的回复模型快照；供协助面板 / 工具结果。 */
+  replyModel?: AgentUpReplyModel;
 };
 
 /** 已招募（或本机离线回退）专家名片；检索用语料。 */

@@ -16,7 +16,8 @@ watch(rowEl, (el) => emit("row", el), { immediate: true });
 
 <template>
   <!-- 会话主列：顶栏和过程条通栏，消息与输入在左，单聊工作区走 side -->
-  <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper text-foreground">
+  <!-- 消息区 + Composer 同色 background；顶栏自带 bubble 白面 -->
+  <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
     <slot name="header" />
     <slot name="banner" />
     <slot name="process" />

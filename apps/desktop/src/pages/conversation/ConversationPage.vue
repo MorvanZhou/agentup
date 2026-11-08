@@ -60,7 +60,6 @@ const {
   selected,
   busyAgent,
   select,
-  start,
   recordTurnEnd,
   setRemark,
   dismiss,
@@ -587,13 +586,12 @@ const threadRoster = computed((): ThreadRoster => ({
         :creating-group="roomGroups.creating.value"
         :show-recruit-nudge="showRecruitNudge"
         @select="selectAgent"
-        @start="start"
         @select-group="roomGroups.selectGroup"
         @create-group="roomGroups.beginCreate"
       />
       <button
         type="button"
-        class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-accent/30 focus-visible:bg-accent/40 min-[730px]:block"
+        class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-muted focus-visible:bg-muted/80 min-[730px]:block"
         aria-label="调整会话列表宽度"
         @pointerdown="onSidebarResize"
       />

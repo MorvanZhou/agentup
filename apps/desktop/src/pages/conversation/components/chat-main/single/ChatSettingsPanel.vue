@@ -251,7 +251,7 @@ async function confirmClearHistoryAction(): Promise<void> {
         >
           <header class="mb-3 flex items-start gap-2.5">
             <span
-              class="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"
+              class="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
               aria-hidden="true"
             >
               <TerminalIcon class="size-3.5" />
@@ -286,7 +286,7 @@ async function confirmClearHistoryAction(): Promise<void> {
         >
           <header class="mb-3 flex items-start gap-2.5">
             <span
-              class="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"
+              class="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
               aria-hidden="true"
             >
               <PuzzleIcon class="size-3.5" />
@@ -358,7 +358,7 @@ async function confirmClearHistoryAction(): Promise<void> {
         >
           <header class="mb-3 flex items-start gap-2.5">
             <span
-              class="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"
+              class="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
               aria-hidden="true"
             >
               <UsersIcon class="size-3.5" />

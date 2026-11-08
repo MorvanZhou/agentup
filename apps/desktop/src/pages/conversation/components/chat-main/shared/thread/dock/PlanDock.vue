@@ -73,7 +73,7 @@ const detail = computed(() => {
   <!-- 当前计划：固定在输入区上方，不随消息滚动 -->
   <section
     v-if="visible && plan"
-    class="shrink-0 border-t border-border bg-paper"
+    class="shrink-0 border-t border-rule/80 bg-background"
     :aria-label="t('planCurrent')"
     :aria-busy="plan.updating || undefined"
   >

@@ -460,6 +460,8 @@ export class VisitChats {
               errorPolicy: "prompt",
               dirty: "prompt",
               onDirty,
+              model: slot.model,
+              userDataRoot: userDataRootFromVisit(visit),
               hitl: {
                 accept: acceptsHitl,
                 label: delegationLabel,
@@ -720,6 +722,8 @@ export class VisitChats {
           outcome,
           dirty: "wake",
           onDirty,
+          model: slot.model,
+          userDataRoot: userDataRootFromVisit(slot.visit),
           hitl: {
             accept: acceptsHitl,
             label: delegationLabel,
@@ -838,6 +842,8 @@ export class VisitChats {
           ...(this.askUser ? { askUser: this.askUser } : {}),
         },
         ...(input.delegationStarted ? { delegationStarted: input.delegationStarted } : {}),
+        model: input.slot.model,
+        userDataRoot: userDataRootFromVisit(input.slot.visit),
         ...compact,
       });
       return true;
@@ -907,6 +913,8 @@ export class VisitChats {
           errorPolicy: "wake",
           dirty: "wake",
           onDirty,
+          model: slot.model,
+          userDataRoot: userDataRootFromVisit(visit),
           hitl: {
             accept: (request) =>
               request.userId === visit.userId && isVisitOwnHitl(request, visit.agentId),

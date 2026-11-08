@@ -138,16 +138,18 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
   }
 
   // 项目目录挂载：文件工具越界时由 runtime 注入 project_mount。
+  // 摘要展示的是将挂载的根（mount_path），不是工具入参 path，避免被理解成「访问这个路径」。
   if (args.project_mount === true) {
     const mountPath =
       typeof args.mount_path === "string" && args.mount_path.trim()
         ? args.mount_path.trim()
         : "";
+    const mountTarget = mountPath || target || t("approvalProjectNoTarget");
     return {
       kind: "project",
       title: t("approvalProjectTitle"),
       description: t("approvalProjectDesc"),
-      target: mountPath || target || t("approvalProjectNoTarget"),
+      target: tf("approvalProjectMountTarget", { path: mountTarget }),
       command: false,
       scopes: commandScopes(),
     };

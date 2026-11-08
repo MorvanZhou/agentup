@@ -26,12 +26,19 @@ import { t } from "../../model/ui/ui-locale";
 
 import { DesktopApiError } from "./error";
 
-export function agentListQuery(options?: { userId?: string; q?: string; recruited?: boolean }): string {
+export function agentListQuery(options?: {
+  userId?: string;
+  q?: string;
+  recruited?: boolean;
+  /** 只扫本机已投影招募，不打控制面（冷启动侧栏本地优先）。 */
+  projected?: boolean;
+}): string {
   const params = new URLSearchParams();
   if (options?.userId) params.set("user_id", options.userId);
   const q = options?.q?.trim();
   if (q) params.set("q", q.slice(0, 64));
   if (options?.recruited === true) params.set("recruited", "true");
+  if (options?.projected === true) params.set("projected", "true");
   const encoded = params.toString();
   return encoded ? `?${encoded}` : "";
 }
@@ -513,7 +520,16 @@ export function readPreferences(payload: Record<string, unknown>): UserPreferenc
     throw new DesktopApiError("偏好响应无效");
   }
   const uiLocale = payload.ui_locale === "en" ? "en" : "zh";
-  return { themeMode: mode, skipEditResendConfirm: payload.skip_edit_resend_confirm, uiLocale };
+  const chatFontSize =
+    payload.chat_font_size === "sm" || payload.chat_font_size === "lg"
+      ? payload.chat_font_size
+      : "md";
+  return {
+    themeMode: mode,
+    skipEditResendConfirm: payload.skip_edit_resend_confirm,
+    uiLocale,
+    chatFontSize,
+  };
 }
 
 export function readUserSkill(item: unknown): UserSkill {

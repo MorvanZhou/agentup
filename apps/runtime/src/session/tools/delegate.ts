@@ -763,6 +763,7 @@ function formatDelegateResult(
   task: DelegationTask,
   text?: string,
 ): { content: [{ type: "text"; text: string }]; details: DelegateDetails } {
+  const modelLine = formatReplyModelLine(task);
   if (task.status === "running" || (task.status !== "completed" && task.status !== "failed" && !task.wait)) {
     return {
       content: [
@@ -772,6 +773,7 @@ function formatDelegateResult(
             `Delegation started (async).\n` +
             `task_id: ${task.id}\n` +
             `agent: ${task.toAgentName} (${task.toAgentId})\n` +
+            modelLine +
             `Use check_delegation with this task_id later, or wait for a session notification when it finishes.`,
         },
       ],
@@ -787,6 +789,7 @@ function formatDelegateResult(
             `Delegation failed.\n` +
             `task_id: ${task.id}\n` +
             `agent: ${task.toAgentName} (${task.toAgentId})\n` +
+            modelLine +
             `error: ${task.error ?? "unknown"}\n` +
             (text || task.resultSummary
               ? `partial:\n${text || task.resultSummary}`
@@ -804,11 +807,22 @@ function formatDelegateResult(
           `Delegation completed.\n` +
           `task_id: ${task.id}\n` +
           `agent: ${task.toAgentName} (${task.toAgentId})\n` +
+          modelLine +
           `result:\n${text || task.resultSummary || ""}`,
       },
     ],
     details: { task },
   };
+}
+
+/** 协助面板从工具结果解析本轮模型；无快照时不写。 */
+function formatReplyModelLine(task: DelegationTask): string {
+  if (!task.replyModel) return "";
+  try {
+    return `reply_model: ${JSON.stringify(task.replyModel)}\n`;
+  } catch {
+    return "";
+  }
 }
 
 function formatFanoutCheckSummary(tasks: DelegationTask[], missing: string[]): string {

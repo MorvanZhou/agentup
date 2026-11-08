@@ -23,6 +23,7 @@ export async function putPreferences(
     body.skip_edit_resend_confirm = update.skipEditResendConfirm;
   }
   if (update.uiLocale !== undefined) body.ui_locale = update.uiLocale;
+  if (update.chatFontSize !== undefined) body.chat_font_size = update.chatFontSize;
   const payload = await requestJson(
     fetchImpl,
     backendUrl,

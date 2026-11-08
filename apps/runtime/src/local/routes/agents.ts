@@ -69,6 +69,42 @@ function visitKind(agentId: string): Visit["kind"] {
   return isLocalAgentId(agentId) ? "local" : "recruited";
 }
 
+/** 本机已投影招募卡片（不打控制面）；供 projected=true 与离线回落共用。 */
+function diskProjectedAgentCards(
+  userDataRoot: string,
+  userId: string,
+  q?: string,
+): AgentCard[] {
+  const needle = q?.trim().toLowerCase() ?? "";
+  return listDiskSyncedAgents(userDataRoot, userId)
+    .filter((agent) => {
+      // 磁盘投影均为已招募；未带 recruited=true 时也只回这些，市场浏览离线为空属预期
+      if (!needle) return true;
+      return `${agent.name}\n${agent.role}\n${agent.background}`.toLowerCase().includes(needle);
+    })
+    .map(
+      (agent): AgentCard => ({
+        agentId: agent.agentId,
+        name: agent.name,
+        role: agent.role,
+        background: agent.background,
+        rules: "",
+        skills: [],
+        mcpMd5: "",
+        settingsMd5: "",
+        hooksMd5: "",
+        latestVersion: agent.packageVersion,
+        latestDigest: agent.packageDigest,
+        recruited: true,
+        hasAvatar: false,
+        remark: agent.remark,
+        recruitCount: 0,
+        createdAt: "",
+        updatedAt: "",
+      }),
+    );
+}
+
 /**
  * 解析对话用 visit：本机私有不经控制面；市场 Agent 优先 sync，
  * 控制面不可达时回落本机已投影目录（本地 App 离线可聊）。
@@ -111,43 +147,24 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     const q = c.req.query("q") ?? undefined;
     const recruited = c.req.query("recruited") === "true" ? true : undefined;
     const userId = c.req.query("user_id") ?? "";
+    const projectedOnly = c.req.query("projected") === "true";
     const token = bearer(c);
     let agents: AgentCard[];
     let fromDisk = false;
-    try {
-      agents = await listAgents(config.backendUrl, token, { q, recruited });
-    } catch (error) {
-      // 控制面不可达：用本机已投影的招募 Agent，避免侧栏被桌面 refresh 清空
-      if (!userId) throw error;
+    if (projectedOnly) {
+      // 冷启动侧栏：只扫本机已投影，不打控制面
+      if (!userId) return json(c, 200, { agents: [] });
       fromDisk = true;
-      const needle = q?.trim().toLowerCase() ?? "";
-      agents = listDiskSyncedAgents(config.userDataRoot, userId)
-        .filter((agent) => {
-          // 磁盘投影均为已招募；未带 recruited=true 时也只回这些，市场浏览离线为空属预期
-          if (!needle) return true;
-          return `${agent.name}\n${agent.role}\n${agent.background}`.toLowerCase().includes(needle);
-        })
-        .map(
-          (agent): AgentCard => ({
-            agentId: agent.agentId,
-            name: agent.name,
-            role: agent.role,
-            background: agent.background,
-            rules: "",
-            skills: [],
-            mcpMd5: "",
-            settingsMd5: "",
-            hooksMd5: "",
-            latestVersion: agent.packageVersion,
-            latestDigest: agent.packageDigest,
-            recruited: true,
-            hasAvatar: false,
-            remark: agent.remark,
-            recruitCount: 0,
-            createdAt: "",
-            updatedAt: "",
-          }),
-        );
+      agents = diskProjectedAgentCards(config.userDataRoot, userId, q);
+    } else {
+      try {
+        agents = await listAgents(config.backendUrl, token, { q, recruited });
+      } catch (error) {
+        // 控制面不可达：用本机已投影的招募 Agent，避免侧栏被桌面 refresh 清空
+        if (!userId) throw error;
+        fromDisk = true;
+        agents = diskProjectedAgentCards(config.userDataRoot, userId, q);
+      }
     }
     const localVersions = userId ? readLocalPackageVersions(config.userDataRoot, userId) : {};
     const withAvatars = userId

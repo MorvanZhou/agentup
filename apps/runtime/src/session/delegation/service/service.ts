@@ -23,6 +23,7 @@ import {
   readVisitModelMode,
   type DelegationModelPin,
 } from "../../model/assignment.js";
+import { replyModelFromRef, type AgentUpReplyModel } from "../../history/reply-model.js";
 import { peekVisitModelRef } from "../../model/session-model.js";
 import { DelegationStore } from "../store.js";
 import {
@@ -565,6 +566,7 @@ export class DelegationService {
     const visits: Visit[] = [];
     for (const slot of toCreate) {
       const item = slot.item;
+      const replyModel = this.snapshotReplyModel(modelPin, input.userId, item.toAgentId);
       const task = this.store.create({
         userId: input.userId,
         fromAgentId: input.fromAgentId,
@@ -574,6 +576,7 @@ export class DelegationService {
         wait,
         groupId,
         modelPin,
+        ...(replyModel ? { replyModel } : {}),
       });
       this.store.update(task.id, { status: "running" });
       this.owned.add(task.id);
@@ -586,6 +589,7 @@ export class DelegationService {
         brief: task.brief,
         toolCallId: input.toolCallId,
         wait,
+        ...(replyModel ? { replyModel } : {}),
       });
       // 异步也要先在令牌仍绑定时装好 visit，避免 turn 结束后 sync 失败。
       // 子会话没装上时不要记进群，否则执掌者会空等一张永远不会交回的单。
@@ -637,6 +641,26 @@ export class DelegationService {
     const mode = readVisitModelMode(agentSessionDir(this.options.userDataRoot, userId, fromAgentId));
     if (mode === "perAgent" || !speaker) return { mode: "perAgent" };
     return { mode: "unified", templateId: speaker.templateId, modelId: speaker.modelId };
+  }
+
+  /** 派出时尽量快照模型；统一用 pin，单配先读专员一对一 sidecar。 */
+  private snapshotReplyModel(
+    pin: DelegationModelPin,
+    userId: string,
+    toAgentId: string,
+  ): AgentUpReplyModel | undefined {
+    if (pin.mode === "unified") {
+      return replyModelFromRef(
+        { templateId: pin.templateId, modelId: pin.modelId },
+        this.options.userDataRoot,
+      );
+    }
+    const specialist = peekVisitModelRef(
+      this.options.userDataRoot,
+      agentSessionDir(this.options.userDataRoot, userId, toAgentId),
+    );
+    if (!specialist) return undefined;
+    return replyModelFromRef(specialist, this.options.userDataRoot);
   }
 
   private async executeTask(taskId: string, visit: Visit, signal?: AbortSignal): Promise<void> {

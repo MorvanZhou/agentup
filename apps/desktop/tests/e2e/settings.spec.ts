@@ -32,14 +32,9 @@ test("编辑私人助理资料并明确资源作用域", async ({ page }) => {
   await messagesNav(page).click();
   await expect(page.getByText("小舟", { exact: true }).first()).toBeVisible();
 
+  // 私人助理配置入口只在会话顶栏；侧栏下拉已取消
   await page.getByRole("button", { name: "会话菜单" }).click();
   await page.getByRole("menuitem", { name: "Agent 配置" }).click();
-  await expect(page).toHaveURL(/\/agents\/assistant/);
-  await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
-
-  await messagesNav(page).click();
-  await page.getByRole("button", { name: /^更多操作：小舟/ }).click();
-  await page.getByRole("menuitem", { name: "助理设置" }).click();
   await expect(page).toHaveURL(/\/agents\/assistant/);
   await expect(page.getByRole("heading", { name: "我的助理", exact: true })).toBeVisible();
 });
@@ -73,10 +68,10 @@ test("切换账号外观偏好并应用到 document", async ({ page }) => {
   );
   await openUserMenu(page);
   await page.getByRole("menuitem", { name: "设置" }).click();
-  await page.getByRole("button", { name: "外观" }).click();
+  await page.getByRole("button", { name: "通用" }).click();
   await loaded;
 
-  await expect(page.getByRole("heading", { name: "外观" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "通用" })).toBeVisible();
   const menuBarSwitch = page.getByRole("switch", { name: "菜单栏图标" });
   await expect(menuBarSwitch).toBeVisible();
   await expect(menuBarSwitch).toHaveAttribute("aria-checked", "true");

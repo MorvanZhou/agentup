@@ -312,7 +312,7 @@ async function submit(): Promise<void> {
             <div class="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+                class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-muted"
                 :disabled="saving"
                 @click="communityOpen = true"
               >
@@ -323,7 +323,7 @@ async function submit(): Promise<void> {
                 <template #trigger>
                   <button
                     type="button"
-                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-muted"
                     :disabled="saving"
                   >
                     <UploadIcon class="size-3.5" aria-hidden="true" />
@@ -343,7 +343,7 @@ async function submit(): Promise<void> {
               <span class="min-w-0 truncate text-foreground" :title="skill.name">{{ skill.name }}</span>
               <button
                 type="button"
-                class="inline-flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-accent/10 hover:text-accent"
+                class="inline-flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
                 :aria-label="t('agentsLocalSkillsRemove')"
                 :disabled="saving"
                 @click="removeSkill(skill.name)"

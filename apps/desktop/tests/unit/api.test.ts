@@ -104,11 +104,15 @@ it("recruits through the local runtime and then syncs the visit", async () => {
         ? (JSON.parse(String(init.body)) as {
             theme_mode?: string;
             skip_edit_resend_confirm?: boolean;
+            ui_locale?: string;
+            chat_font_size?: string;
           })
         : undefined;
       return json({
         theme_mode: body?.theme_mode ?? "system",
         skip_edit_resend_confirm: body?.skip_edit_resend_confirm ?? false,
+        ui_locale: body?.ui_locale ?? "zh",
+        chat_font_size: body?.chat_font_size ?? "md",
       });
     }
     if (path.endsWith("/agents/inspect")) {
@@ -202,11 +206,13 @@ it("recruits through the local runtime and then syncs the visit", async () => {
     themeMode: "system",
     skipEditResendConfirm: false,
     uiLocale: "zh",
+    chatFontSize: "md",
   });
   await expect(api.savePreferences(session.token, { themeMode: "dark" })).resolves.toEqual({
     themeMode: "dark",
     skipEditResendConfirm: false,
     uiLocale: "zh",
+    chatFontSize: "md",
   });
   await expect(
     api.savePreferences(session.token, { skipEditResendConfirm: true }),
@@ -214,6 +220,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
     themeMode: "system",
     skipEditResendConfirm: true,
     uiLocale: "zh",
+    chatFontSize: "md",
   });
   expect(fetchImpl.mock.calls.at(-1)?.[1]).toMatchObject({ method: "PUT" });
   await expect(api.updateProfile(session.token, "小舟")).resolves.toEqual({

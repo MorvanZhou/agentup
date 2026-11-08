@@ -11,6 +11,11 @@ import {
   type AgentUpArtifactsData,
 } from "./artifacts.js";
 import {
+  AGENTUP_REPLY_MODEL_CUSTOM_TYPE,
+  parseReplyModelEntryData,
+  type AgentUpReplyModel,
+} from "./reply-model.js";
+import {
   AGENTUP_SUMMARY_CUSTOM_TYPE,
   parseSummaryEntryData,
   type AgentUpSummaryRef,
@@ -60,6 +65,8 @@ export class PiUIMessageProjector {
   private readonly textPartIds: string[] = [];
   /** 已向流写出过 agentUpSummary，避免 entry 与 finish 重复。 */
   private summaryEmitted = false;
+  /** 已向流写出过 agentUpReplyModel（start 或 custom entry）。 */
+  private replyModelEmitted = false;
   private readonly toolNames = new Map<string, string>();
   /** 已发出 tool-input-start（参数仍在流式生成）。 */
   private readonly startedTools = new Set<string>();
@@ -67,10 +74,20 @@ export class PiUIMessageProjector {
   private readonly announcedTools = new Set<string>();
   /** OpenAI 等场景：id 尚未到齐时，按 contentIndex 暂存参数 delta。 */
   private readonly pendingDeltas = new Map<number, string>();
+  /** 本轮已知的回复模型；start 时写入 metadata，不必等 settled entry。 */
+  private readonly replyModel: AgentUpReplyModel | undefined;
+
+  constructor(options?: { replyModel?: AgentUpReplyModel | null }) {
+    this.replyModel = options?.replyModel ? { ...options.replyModel } : undefined;
+  }
 
   project(event: AgentSessionEvent): UIMessageChunk[] {
     if (event.type === "entry_appended") {
-      return [...this.summaryFromEntry(event.entry), ...this.artifactsFromEntry(event.entry)];
+      return [
+        ...this.summaryFromEntry(event.entry),
+        ...this.artifactsFromEntry(event.entry),
+        ...this.replyModelFromEntry(event.entry),
+      ];
     }
     if (event.type === "message_start" && event.message.role === "assistant") {
       return this.ensureMessage();
@@ -144,7 +161,7 @@ export class PiUIMessageProjector {
   }
 
   /**
-   * 委托子任务已启动：仅 transient 元数据（taskId 等），过程本身走旁路 stream，不进父消息 parts。
+   * 委托子任务已启动：仅 transient 元数据（taskId / 模型等），过程本身走旁路 stream，不进父消息 parts。
    */
   delegationStarted(data: {
     taskId: string;
@@ -153,6 +170,7 @@ export class PiUIMessageProjector {
     toAgentName: string;
     brief: string;
     wait: boolean;
+    replyModel?: AgentUpReplyModel;
   }): UIMessageChunk[] {
     return [
       {
@@ -194,11 +212,18 @@ export class PiUIMessageProjector {
     if (this.started) return [];
     this.started = true;
     this.messageId = `assistant-${randomUUID()}`;
+    const custom: Record<string, unknown> = {
+      agentUpCreatedAt: new Date().toISOString(),
+    };
+    if (this.replyModel) {
+      custom.agentUpReplyModel = this.replyModel;
+      this.replyModelEmitted = true;
+    }
     return [
       {
         type: "start",
         messageId: this.messageId,
-        messageMetadata: { custom: { agentUpCreatedAt: new Date().toISOString() } },
+        messageMetadata: { custom },
       },
       { type: "start-step" },
     ];
@@ -249,6 +274,19 @@ export class PiUIMessageProjector {
     const parsed = parseArtifactsEntryData(entry.data);
     if (!parsed || !this.started) return [];
     return this.emitArtifacts(parsed);
+  }
+
+  private replyModelFromEntry(entry: SessionEntry): UIMessageChunk[] {
+    if (entry.type !== "custom" || entry.customType !== AGENTUP_REPLY_MODEL_CUSTOM_TYPE) return [];
+    const parsed = parseReplyModelEntryData(entry.data);
+    if (!parsed || !this.started || this.replyModelEmitted) return [];
+    this.replyModelEmitted = true;
+    return [
+      {
+        type: "message-metadata",
+        messageMetadata: { custom: { agentUpReplyModel: parsed } },
+      },
+    ];
   }
 
   private emitArtifacts(artifacts: AgentUpArtifactsData): UIMessageChunk[] {

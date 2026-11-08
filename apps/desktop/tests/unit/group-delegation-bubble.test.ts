@@ -81,12 +81,8 @@ it("hides the card handoff summary and keeps its brief as the only unsigned tab"
   );
   expect(host.textContent).toContain("设计师");
   expect(host.textContent).toContain("视觉");
-  const phase = host.querySelector<HTMLButtonElement>('button[aria-expanded]');
-  expect(phase?.getAttribute("aria-label")).toBe("完成待汇总");
-  expect(host.textContent).not.toContain("完成待汇总");
-  phase?.click();
-  await nextTick();
-  expect(host.textContent).toContain("完成待汇总");
+  // 右上角阶段图标已换成模型标；未拉 history 时不显示模型标。
+  expect(host.querySelector('button[aria-expanded]')).toBeNull();
   expect(host.textContent).not.toContain("登录页已完成");
   expect(host.textContent).toContain("做登录页");
   expect(tab(host, "process")).toBeNull();
@@ -246,9 +242,8 @@ it("renders a sparse in-flight card without process tabs", () => {
     activity: "queued",
     handoff: "pending",
   });
-  expect(host.querySelector<HTMLButtonElement>('button[aria-expanded]')?.getAttribute("aria-label")).toBe(
-    "排队中",
-  );
+  // 无 runtime / history 时右上角不再占阶段图标
+  expect(host.querySelector('button[aria-expanded]')).toBeNull();
   expect(tab(host, "process")).toBeNull();
   expect(tab(host, "brief")).toBeNull();
 });

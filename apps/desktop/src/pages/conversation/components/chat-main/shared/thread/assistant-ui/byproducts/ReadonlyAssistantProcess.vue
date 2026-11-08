@@ -106,7 +106,7 @@ const AssistantScope = defineComponent({
   <!-- 旁路只读：隔离 AuiProvider + 主 Agent 同一套过程 parts UI -->
   <AuiProvider :key="providerKey" :config="config" :extends="null">
     <div
-      class="min-w-0 rounded-lg bg-muted px-3 py-3 text-sm leading-relaxed text-foreground"
+      class="chat-message-text min-w-0 rounded-lg bg-bubble px-3 py-3 text-foreground shadow-sm"
       data-testid="delegation-process-body"
     >
       <AssistantScope />

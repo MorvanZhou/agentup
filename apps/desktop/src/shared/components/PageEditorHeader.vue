@@ -15,7 +15,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <!-- 编辑页顶栏：返回 · 标题 · 右侧操作（与团队发布页统一） -->
+  <!-- 编辑页顶栏：同 PageChromeHeader 形制，左侧加返回 -->
   <header
     class="app-drag flex h-12 shrink-0 items-center justify-between gap-3 border-b border-rule bg-paper-deep px-4"
   >

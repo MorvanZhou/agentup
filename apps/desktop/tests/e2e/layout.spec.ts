@@ -26,13 +26,13 @@ test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) 
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("link", { name: "设置" }).click();
-  // 轨栏设置入口默认进 AI 服务配置（不再落外观）
+  // 轨栏设置入口默认进 AI 服务配置（不再落通用）
   await expect(page).toHaveURL(/\/settings\?section=provider/);
   await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
   // 窄窗下侧栏切分区仍不横溢
-  await page.getByRole("button", { name: "外观" }).click();
-  await expect(page.getByRole("heading", { name: "外观" })).toBeVisible();
+  await page.getByRole("button", { name: "通用" }).click();
+  await expect(page.getByRole("heading", { name: "通用" })).toBeVisible();
   await page.getByRole("button", { name: "AI 服务配置" }).click();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
   // 默认落到本地 Agent App：级联两列 + SDK 主钮（API 表单的保存/更新要先切接入方式）
@@ -50,7 +50,7 @@ test("730 宽窗口保留左侧栏并且主区域完整可用", async ({ page })
 
   const main = await page.locator("main").boundingBox();
   expect(main?.x).toBeGreaterThanOrEqual(180);
-  await expect(page.getByRole("button", { name: /更多操作：呼吸科医生/ })).toBeInViewport();
+  await expect(page.getByRole("button", { name: /^呼吸科医生/ })).toBeInViewport();
   await expect(page.getByRole("textbox", { name: /^发送消息/ })).toBeInViewport();
   await expectNoHorizontalOverflow(page);
 });

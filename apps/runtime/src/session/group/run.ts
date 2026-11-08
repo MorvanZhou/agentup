@@ -134,6 +134,8 @@ export function createHolderTurnDriver(deps: {
             signal: input.signal,
             write: input.onChunk,
             errorPolicy: "propagate",
+            model,
+            userDataRoot: userDataRootFromVisit(visit),
             hitl: {
               accept: (request) => request.userId === input.userId && request.groupId === input.groupId,
               approvals: deps.approvals,
@@ -167,6 +169,8 @@ export function createHolderTurnDriver(deps: {
               signal: turnSignal,
               write: input.onChunk,
               errorPolicy: "propagate",
+              model,
+              userDataRoot: userDataRootFromVisit(visit),
               hitl: {
                 accept: (request) =>
                   request.userId === input.userId && request.groupId === input.groupId,

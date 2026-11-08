@@ -112,6 +112,26 @@ export async function oauthExchange(
   return credential(payload);
 }
 
+/** Desktop→Web 改密页：用本机会话签发一次性 bridge 码（与 handoff/exchange 同源）。 */
+export async function desktopHandoff(
+  backendUrl: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const payload = await requestJson(
+    fetchImpl,
+    backendUrl,
+    "POST",
+    "/v1/auth/desktop/handoff",
+    undefined,
+    token,
+  );
+  if (typeof payload.code !== "string" || !payload.code.trim()) {
+    throw new BackendClientError("handoff 响应无效", 502);
+  }
+  return payload.code.trim();
+}
+
 export async function turnstilePublic(
   backendUrl: string,
   fetchImpl: typeof fetch = fetch,

@@ -9,12 +9,25 @@ import { expect, it } from "vitest";
 import { startLocalServer } from "../src/local/server.js";
 
 it("proxies account preferences through the loopback API", async () => {
-  const store = new Map<string, { theme_mode: string; skip_edit_resend_confirm: boolean }>();
+  const store = new Map<
+    string,
+    {
+      theme_mode: string;
+      skip_edit_resend_confirm: boolean;
+      ui_locale: string;
+      chat_font_size: string;
+    }
+  >();
   const backend = await listen((req, res) => {
     const token = req.headers.authorization?.slice("Bearer ".length);
     if (!token) return json(res, 401, { error: "未登录" });
     if (req.url === "/v1/me/preferences" && req.method === "GET") {
-      const prefs = store.get(token) ?? { theme_mode: "system", skip_edit_resend_confirm: false };
+      const prefs = store.get(token) ?? {
+        theme_mode: "system",
+        skip_edit_resend_confirm: false,
+        ui_locale: "zh",
+        chat_font_size: "md",
+      };
       return json(res, 200, prefs);
     }
     if (req.url === "/v1/me/preferences" && req.method === "PUT") {
@@ -22,15 +35,21 @@ it("proxies account preferences through the loopback API", async () => {
         const body = JSON.parse(raw) as {
           theme_mode?: string;
           skip_edit_resend_confirm?: boolean;
+          ui_locale?: string;
+          chat_font_size?: string;
         };
         const current = store.get(token) ?? {
           theme_mode: "system",
           skip_edit_resend_confirm: false,
+          ui_locale: "zh",
+          chat_font_size: "md",
         };
         const next = {
           theme_mode: body.theme_mode ?? current.theme_mode,
           skip_edit_resend_confirm:
             body.skip_edit_resend_confirm ?? current.skip_edit_resend_confirm,
+          ui_locale: body.ui_locale ?? current.ui_locale,
+          chat_font_size: body.chat_font_size ?? current.chat_font_size,
         };
         store.set(token, next);
         json(res, 200, next);
@@ -55,6 +74,7 @@ it("proxies account preferences through the loopback API", async () => {
       theme_mode: "system",
       skip_edit_resend_confirm: false,
       ui_locale: "zh",
+      chat_font_size: "md",
     });
 
     const saved = await fetch(`${local.url}/preferences`, {
@@ -67,10 +87,13 @@ it("proxies account preferences through the loopback API", async () => {
       theme_mode: "dark",
       skip_edit_resend_confirm: false,
       ui_locale: "zh",
+      chat_font_size: "md",
     });
     expect(store.get("alice")).toEqual({
       theme_mode: "dark",
       skip_edit_resend_confirm: false,
+      ui_locale: "zh",
+      chat_font_size: "md",
     });
 
     const skipped = await fetch(`${local.url}/preferences`, {
@@ -83,6 +106,20 @@ it("proxies account preferences through the loopback API", async () => {
       theme_mode: "dark",
       skip_edit_resend_confirm: true,
       ui_locale: "zh",
+      chat_font_size: "md",
+    });
+
+    const font = await fetch(`${local.url}/preferences`, {
+      method: "PUT",
+      headers: { authorization: "Bearer alice", "content-type": "application/json" },
+      body: JSON.stringify({ chat_font_size: "lg" }),
+    });
+    expect(font.status).toBe(200);
+    expect(await font.json()).toEqual({
+      theme_mode: "dark",
+      skip_edit_resend_confirm: true,
+      ui_locale: "zh",
+      chat_font_size: "lg",
     });
 
     const other = await fetch(`${local.url}/preferences`, {
@@ -92,6 +129,7 @@ it("proxies account preferences through the loopback API", async () => {
       theme_mode: "system",
       skip_edit_resend_confirm: false,
       ui_locale: "zh",
+      chat_font_size: "md",
     });
 
     const bad = await fetch(`${local.url}/preferences`, {
@@ -100,6 +138,13 @@ it("proxies account preferences through the loopback API", async () => {
       body: JSON.stringify({ theme_mode: "neon" }),
     });
     expect(bad.status).toBe(400);
+
+    const badFont = await fetch(`${local.url}/preferences`, {
+      method: "PUT",
+      headers: { authorization: "Bearer alice", "content-type": "application/json" },
+      body: JSON.stringify({ chat_font_size: "xl" }),
+    });
+    expect(badFont.status).toBe(400);
   } finally {
     await local.close();
     await backend.close();

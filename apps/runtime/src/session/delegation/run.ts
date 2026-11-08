@@ -13,6 +13,7 @@ import { ApprovalBroker } from "../hitl/approval/index.js";
 import type { ShellHangBroker } from "../hitl/shell-hang/index.js";
 import { PiUIMessageProjector } from "../history/frames.js";
 import { projectHistoryFromManager } from "../history/history.js";
+import { replyModelFromConfig } from "../history/reply-model.js";
 import { compactTurnOptions, maybeCompactApiSession } from "../model/agent-sdk.js";
 import { resolveEmptyAssistantError } from "../output-length.js";
 import { AskUserBroker, type StagedArtifact } from "../tools/index.js";
@@ -102,7 +103,9 @@ export async function runDelegatedPrompt(
   const session = opened.result.session;
   const sessionManager = opened.sessionManager;
 
-  const projector = new PiUIMessageProjector();
+  const projector = new PiUIMessageProjector({
+    replyModel: replyModelFromConfig(model, userDataRootFromVisit(visit)),
+  });
   const texts: string[] = [];
   const progress = options.progress;
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -175,6 +178,8 @@ export async function runDelegatedPrompt(
           signal: turnSignal,
           write: (chunks) => progress?.write(options.taskId, chunks),
           errorPolicy: "propagate",
+          model,
+          userDataRoot: userDataRootFromVisit(visit),
           hitl: {
             accept: (request) =>
               request.userId === visit.userId &&

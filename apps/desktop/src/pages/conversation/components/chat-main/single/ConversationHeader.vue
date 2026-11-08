@@ -4,6 +4,7 @@ import {
   EllipsisVerticalIcon,
   FolderIcon,
   MessageSquarePlusIcon,
+  RefreshCwIcon,
   Settings2Icon,
   SettingsIcon,
   UserMinusIcon,
@@ -39,7 +40,7 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
-const { session } = useDesktop();
+const { session, conversations, start } = useDesktop();
 const extras = injectThreadExtras();
 const actions = injectThreadActions();
 const agentId = injectThreadAgentId();
@@ -63,6 +64,17 @@ const confirmOpen = ref(false);
 const skipConfirm = ref(false);
 const confirmDismiss = ref(false);
 
+/** 当前线程对应名片；顶栏更新入口不再走侧栏。 */
+const currentAgent = computed(() =>
+  agentId ? conversations.value.find((item) => item.agentId === agentId) : undefined,
+);
+/** 市场包有新版本时顶栏菜单带红点；私人助理无此入口。 */
+const hasUpdate = computed(() => {
+  const agent = currentAgent.value;
+  if (!agent || agent.kind === "personal") return false;
+  return agent.latestVersion > agent.localVersion;
+});
+
 /** 仅私人助理 / 本机 Local 可进 Agent 配置；招募来的（含自有再招募）置灰。 */
 const agentSettingsLocked = computed(() => {
   const kind = extras.value.kind;
@@ -80,32 +92,44 @@ const clearDisabled = computed(
     isRunning.value,
 );
 
-const menuItems = computed<AppDropdownItem[]>(() => [
-  {
-    id: "chat-settings",
-    label: t("threadChatSettings"),
-    icon: Settings2Icon,
-    disabled: !name.value,
-  },
-  {
-    id: "agent-settings",
-    label: t("threadAgentSettings"),
-    icon: SettingsIcon,
-    disabled: !name.value || agentSettingsLocked.value,
-    hint: agentSettingsLocked.value ? t("threadAgentSettingsLocked") : undefined,
-  },
-  ...(!extras.value.personal
-    ? [
-        {
-          id: "dismiss",
-          label: extras.value.busy ? t("threadDismissing") : t("threadDismiss"),
-          icon: UserMinusIcon,
-          disabled: !name.value || extras.value.busy,
-          danger: true,
-        } satisfies AppDropdownItem,
-      ]
-    : []),
-]);
+const menuItems = computed<AppDropdownItem[]>(() => {
+  const items: AppDropdownItem[] = [
+    {
+      id: "chat-settings",
+      label: t("threadChatSettings"),
+      icon: Settings2Icon,
+      disabled: !name.value,
+    },
+    {
+      id: "agent-settings",
+      label: t("threadAgentSettings"),
+      icon: SettingsIcon,
+      disabled: !name.value || agentSettingsLocked.value,
+      hint: agentSettingsLocked.value ? t("threadAgentSettingsLocked") : undefined,
+    },
+  ];
+  if (!extras.value.personal) {
+    items.push({
+      id: "update",
+      label: extras.value.busy ? t("sidePreparing") : t("sideUpdate"),
+      icon: RefreshCwIcon,
+      disabled: !name.value || extras.value.busy || !hasUpdate.value,
+      dot: hasUpdate.value && !extras.value.busy,
+    });
+    items.push({
+      id: "dismiss",
+      label: extras.value.busy ? t("threadDismissing") : t("threadDismiss"),
+      icon: UserMinusIcon,
+      disabled: !name.value || extras.value.busy,
+      danger: true,
+    });
+  }
+  return items;
+});
+
+const menuAriaLabel = computed(() =>
+  hasUpdate.value ? t("threadMenuUpdate") : t("threadMenu"),
+);
 
 function onSelect(id: string): void {
   if (id === "chat-settings") {
@@ -114,6 +138,11 @@ function onSelect(id: string): void {
   }
   if (id === "agent-settings") {
     openAgentSettings();
+    return;
+  }
+  if (id === "update") {
+    const agent = currentAgent.value;
+    if (agent) void start(agent);
     return;
   }
   if (id === "dismiss") confirmDismiss.value = true;
@@ -185,7 +214,7 @@ async function confirmDismissAction(): Promise<void> {
       <button
         v-if="name && actions"
         type="button"
-        class="app-no-drag inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border-0 bg-transparent px-3 text-sm font-medium text-foreground outline-none transition duration-200 hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-accent/40"
+        class="app-no-drag inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border-0 bg-transparent px-3 text-sm font-medium text-foreground outline-none transition duration-200 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-accent/40"
         :disabled="clearDisabled"
         @click="openClearConfirm"
       >
@@ -195,8 +224,8 @@ async function confirmDismissAction(): Promise<void> {
       <button
         v-if="name && actions"
         type="button"
-        class="app-no-drag grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent outline-none transition duration-200 hover:bg-paper hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
-        :class="workspaceOpen ? 'bg-paper text-foreground' : 'text-muted-foreground'"
+        class="app-no-drag grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent outline-none transition duration-200 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
+        :class="workspaceOpen ? 'bg-muted text-foreground' : 'text-muted-foreground'"
         :aria-label="t('threadWorkspace')"
         :aria-pressed="Boolean(workspaceOpen)"
         @click="emit('toggle-workspace')"
@@ -207,10 +236,16 @@ async function confirmDismissAction(): Promise<void> {
         <template #trigger>
           <button
             type="button"
-            class="app-no-drag grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-muted-foreground outline-none transition duration-200 hover:bg-paper hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
-            :aria-label="t('threadMenu')"
+            class="app-no-drag relative grid size-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-muted-foreground outline-none transition duration-200 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
+            :aria-label="menuAriaLabel"
           >
             <EllipsisVerticalIcon class="size-4" />
+            <!-- 有包更新时顶栏 actions 红点，入口已从侧栏迁来 -->
+            <span
+              v-if="hasUpdate && !extras.busy"
+              class="absolute top-1 right-1 size-1.5 rounded-full bg-destructive"
+              aria-hidden="true"
+            />
           </button>
         </template>
       </AppDropdownMenu>

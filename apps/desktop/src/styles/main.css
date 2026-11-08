@@ -4,37 +4,63 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  色板对齐品牌 logo（暗底 / 奶油体 / 橙手）：
-  导航轨 ink · 列表/侧栏 paper · 会话主区 background · 品牌橙 accent / 己方气泡 primary
+  聊天消息字号（html[data-chat-font]）：默认 md = 1rem（对齐原 Markdown 正文）。
+  气泡 .chat-message-text + MarkdownBody .aui-md 共用变量；Composer 不跟。
+*/
+:root,
+html[data-chat-font="md"] {
+  --chat-message-fs: 1rem;
+  --chat-message-lh: 1.75;
+}
+html[data-chat-font="sm"] {
+  --chat-message-fs: 0.875rem;
+  --chat-message-lh: 1.5;
+}
+html[data-chat-font="lg"] {
+  --chat-message-fs: 1.125rem;
+  --chat-message-lh: 1.75;
+}
+.chat-message-text {
+  font-size: var(--chat-message-fs);
+  line-height: var(--chat-message-lh);
+}
+
+/*
+  亮色对齐微信层级（冷灰，禁发黄奶油）：
+  轨 ink · 会话列表 paper(#f7f7f7) · 聊天区+composer background(#ededed) ·
+  对方气泡/会话顶栏 bubble(#fff) · 选中 muted(#dedede) · 己方气泡 primary（品牌浅橙，非微信绿）。
 */
 @theme {
   --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --font-display: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
-  /* light：近白导航轨 · 奶油纸面（轨面略浅于纯白，避免刺眼） */
-  --color-ink: #f5f5f5;
-  --color-shell-foreground: #1a1a1a;
-  --color-shell-muted: #8a8a8a;
-  /* 列表 / 侧栏（奶油白，呼应 logo 体色） */
-  --color-paper: #fffdf9;
-  --color-paper-deep: #efe6da;
-  --color-rule: #e6ddd0;
+  /* light：微信式冷灰分层 */
+  --color-ink: #e8e8e8;
+  --color-shell-foreground: #191919;
+  --color-shell-muted: #888888;
+  /* 会话列表（微信约 #f7f7f7） */
+  --color-paper: #f7f7f7;
+  --color-paper-deep: #eeeeee;
+  --color-rule: #e5e5e5;
+  /* 对方气泡 / 会话顶栏白面（与列表 paper 分离） */
+  --color-bubble: #ffffff;
   /* 品牌橙（logo 挥手） */
   --color-accent: #ff7a1a;
   --color-accent-deep: #e8680f;
   --color-rust: #e24b4b;
 
-  /* 会话主区奶油底；己方气泡浅橙 */
-  --color-background: #f7f2ea;
-  --color-foreground: #1a1a1a;
+  /* 聊天区 + Composer（微信约 #ededed） */
+  --color-background: #ededed;
+  --color-foreground: #191919;
   --color-primary: #ffc48a;
-  --color-primary-foreground: #1a1a1a;
+  --color-primary-foreground: #191919;
   /* 浅橙气泡上的深字；暗色实心橙气泡见 .dark */
-  --color-on-primary: #1a1a1a;
-  --color-muted: #efe6da;
-  --color-muted-foreground: #8a8278;
-  --color-border: #e6ddd0;
+  --color-on-primary: #191919;
+  /* 列表选中（微信约 #dedede，明显深于 paper） */
+  --color-muted: #dedede;
+  --color-muted-foreground: #888888;
+  --color-border: #e0e0e0;
   --color-destructive: #e24b4b;
   --color-ring: #ff7a1a;
 
@@ -110,25 +136,26 @@
 }
 
 .dark {
-  /* 导航轨近黑略浅 · 炭灰列表 · 更深主区 */
+  /* 轨最深 · 列表略深 · 消息/Composer 炭灰略提亮 · bubble 再抬一层 */
   --color-ink: #141414;
   --color-shell-foreground: #f7f2ea;
   --color-shell-muted: #9a9a9a;
   --color-paper: #1a1a1a;
-  --color-paper-deep: #242424;
-  --color-rule: #2e2e2e;
+  --color-paper-deep: #262626;
+  --color-rule: #333333;
+  --color-bubble: #2a2a2a;
   --color-accent: #ff7a1a;
   --color-accent-deep: #ff8f3d;
   --color-rust: #e24b4b;
 
-  --color-background: #121212;
+  --color-background: #1c1c1c;
   --color-foreground: #f7f2ea;
   --color-primary: #ff7a1a;
   --color-primary-foreground: #ffffff;
   --color-on-primary: #ffffff;
-  --color-muted: #242424;
+  --color-muted: #2e2e2e;
   --color-muted-foreground: #9a938a;
-  --color-border: #2e2e2e;
+  --color-border: #333333;
   --color-destructive: #e24b4b;
   --color-ring: #ff7a1a;
 
@@ -154,6 +181,31 @@
 
   * {
     box-sizing: border-box;
+    /* 微信风细条：无轨道底色/边框；Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-muted-foreground) 40%, transparent) transparent;
+  }
+
+  /* Chromium / Electron：细拇指、透明轨道 */
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+    border: none;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--color-muted-foreground) 40%, transparent);
+    border: none;
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--color-muted-foreground) 65%, transparent);
   }
 
   html,

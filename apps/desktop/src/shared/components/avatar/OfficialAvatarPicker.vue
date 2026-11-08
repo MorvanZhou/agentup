@@ -49,7 +49,7 @@ watch(
     <div class="flex items-start gap-1">
       <button
         type="button"
-        class="mt-3.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-rule bg-paper text-foreground outline-none transition duration-200 hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
+        class="mt-3.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-rule bg-paper text-foreground outline-none transition duration-200 hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
         :aria-label="t('officialAvatarsPrev')"
         :disabled="disabled"
         @click="shift(-1)"
@@ -67,7 +67,7 @@ watch(
           :disabled="disabled"
           @click="emit('select', avatar.id)"
         >
-          <span class="rounded-lg p-0.5" :class="selectedId === avatar.id ? 'bg-accent' : 'bg-transparent'">
+          <span class="rounded-lg p-0.5" :class="selectedId === avatar.id ? 'bg-muted ring-1 ring-foreground/20' : 'bg-transparent'">
             <img :src="avatar.url" alt="" class="size-12 rounded-md object-cover" draggable="false" />
           </span>
           <span class="w-full truncate text-center text-[11px] leading-none text-muted-foreground">
@@ -77,7 +77,7 @@ watch(
       </div>
       <button
         type="button"
-        class="mt-3.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-rule bg-paper text-foreground outline-none transition duration-200 hover:bg-accent/10 focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
+        class="mt-3.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-rule bg-paper text-foreground outline-none transition duration-200 hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50"
         :aria-label="t('officialAvatarsNext')"
         :disabled="disabled"
         @click="shift(1)"

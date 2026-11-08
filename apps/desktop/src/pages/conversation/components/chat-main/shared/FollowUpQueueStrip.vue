@@ -105,7 +105,7 @@ watch(
   <!-- 已排队消息：回合进行中用户新发的消息，本轮结束后合并发送 -->
   <section
     v-if="items.length > 0"
-    class="border-t border-rule bg-paper px-3 py-2"
+    class="border-t border-rule/80 bg-background px-3 py-2"
     role="status"
     :aria-label="withCount('followUpQueued', items.length)"
   >

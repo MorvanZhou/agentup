@@ -511,6 +511,7 @@ function assistantPayloadFromMessage(message: UIMessage | undefined): GroupAssis
   const assistantCustom: NonNullable<GroupAssistantPayload["assistantCustom"]> = {};
   if ("agentUpSummary" in custom) assistantCustom.agentUpSummary = custom.agentUpSummary;
   if ("agentUpArtifacts" in custom) assistantCustom.agentUpArtifacts = custom.agentUpArtifacts;
+  if ("agentUpReplyModel" in custom) assistantCustom.agentUpReplyModel = custom.agentUpReplyModel;
   if (Object.keys(assistantCustom).length > 0) payload.assistantCustom = assistantCustom;
   return payload;
 }

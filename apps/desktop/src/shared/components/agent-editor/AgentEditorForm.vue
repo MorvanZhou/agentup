@@ -494,7 +494,7 @@ function submit(): void {
           <div class="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+              class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-muted"
               :disabled="busy"
               @click="communityOpen = true"
             >
@@ -505,7 +505,7 @@ function submit(): void {
               <template #trigger>
                 <button
                   type="button"
-                  class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-accent/10"
+                  class="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-rule bg-paper px-2.5 text-xs font-medium text-foreground transition duration-200 hover:bg-muted"
                   :disabled="busy"
                 >
                   <UploadIcon class="size-3.5" aria-hidden="true" />
@@ -542,7 +542,7 @@ function submit(): void {
               <button
                 v-if="canDownloadSkill"
                 type="button"
-                class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-accent/10 hover:text-accent"
+                class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
                 :aria-label="t('agentsLocalSkillsDownload')"
                 :disabled="busy || downloadingSkill === skillName"
                 @click="downloadInstalledSkill(skillName)"
@@ -551,7 +551,7 @@ function submit(): void {
               </button>
               <button
                 type="button"
-                class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-accent/10 hover:text-accent"
+                class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
                 :aria-label="t('agentsLocalSkillsRemove')"
                 :disabled="busy"
                 @click="removeInstalledSkill(skillName)"
@@ -570,7 +570,7 @@ function submit(): void {
             }}</span>
             <button
               type="button"
-              class="inline-flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-accent/10 hover:text-accent"
+              class="inline-flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
               :aria-label="t('agentsLocalSkillsRemove')"
               :disabled="busy"
               @click="removePendingSkill(pending.path)"
@@ -586,7 +586,7 @@ function submit(): void {
         <span class="text-sm font-medium text-foreground">{{ t("agentsLocalMcp") }}</span>
         <button
           type="button"
-          class="inline-flex min-h-8 w-fit items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-accent/10 disabled:opacity-50"
+          class="inline-flex min-h-8 w-fit items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
           :disabled="busy || mcpLoading"
           @click="loadMcp"
         >
@@ -613,7 +613,7 @@ function submit(): void {
     >
       <button
         type="button"
-        class="inline-flex min-h-8 items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-accent/10"
+        class="inline-flex min-h-8 items-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted"
         :disabled="busy"
         @click="$emit('cancel')"
       >

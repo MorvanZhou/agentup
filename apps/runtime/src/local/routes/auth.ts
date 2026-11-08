@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 
 import {
+  desktopHandoff,
   fetchProfile,
   forgotPassword,
   login,
@@ -129,6 +130,12 @@ export function registerAuthRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
         { refresh: true },
       ),
     );
+  });
+
+  /** Desktop 打开 Web 改密页前签发 bridge 码。 */
+  app.post("/auth/desktop/handoff", async (c) => {
+    const code = await desktopHandoff(config.backendUrl, bearer(c));
+    return json(c, 200, { code });
   });
 
   app.get("/auth/turnstile", async (c) => {

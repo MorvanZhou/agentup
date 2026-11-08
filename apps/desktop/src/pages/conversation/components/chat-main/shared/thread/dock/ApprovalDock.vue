@@ -70,7 +70,7 @@ function decide(allow: boolean, scope: ApprovalScope = "once"): void {
   <!-- 审批底栏：不允许 + 允许；命令的更长范围收进允许旁下拉 -->
   <section
     v-if="approval && summary"
-    class="shrink-0 border-t border-border bg-paper animate-rise motion-reduce:animate-none"
+    class="shrink-0 border-t border-rule/80 bg-background animate-rise motion-reduce:animate-none"
     role="region"
     :aria-labelledby="`approval-title-${approval.id}`"
   >
@@ -84,7 +84,7 @@ function decide(allow: boolean, scope: ApprovalScope = "once"): void {
         />
         <span
           v-else
-          class="grid size-7 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"
+          class="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
           aria-hidden="true"
         >
           <component :is="kindIcon" class="size-3.5" />

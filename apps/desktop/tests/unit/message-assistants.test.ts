@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   extractAssistAgents,
+  parseDelegationReplyModel,
   parseDelegationResultText,
 } from "../../src/pages/conversation/model/message/message-assistants";
 
@@ -244,5 +245,34 @@ describe("extractAssistAgents", () => {
       startedAt: 1_000,
       completedAt: 4_500,
     });
+  });
+
+  it("从 reply_model 行抽出专员本轮模型", () => {
+    const replyModel = {
+      templateId: "anthropic",
+      modelId: "claude-sonnet-4",
+      vendorId: "anthropic",
+      modelLabel: "Claude Sonnet 4",
+    };
+    const assists = extractAssistAgents([
+      {
+        type: "tool-call",
+        toolName: "delegate_to_agent",
+        toolCallId: "d1",
+        args: { agent_id: "remy", brief: "写 PRD" },
+        result:
+          `Delegation completed.\n` +
+          `task_id: task-1\n` +
+          `agent: Remy (remy)\n` +
+          `reply_model: ${JSON.stringify(replyModel)}\n` +
+          `result:\nok`,
+      },
+    ]);
+    expect(assists[0]?.replyModel).toEqual(replyModel);
+    expect(
+      parseDelegationReplyModel(
+        `reply_model: ${JSON.stringify(replyModel)}\nresult:\nok`,
+      ),
+    ).toEqual(replyModel);
   });
 });

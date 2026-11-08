@@ -1,5 +1,7 @@
 import type { UIMessageChunk } from "ai";
 
+import type { AgentUpReplyModel } from "../history/reply-model.js";
+
 export type DelegationStartedEvent = {
   taskId: string;
   userId: string;
@@ -9,6 +11,8 @@ export type DelegationStartedEvent = {
   brief: string;
   toolCallId?: string;
   wait: boolean;
+  /** 派出时已知的回复模型；协助面板右上角标形。 */
+  replyModel?: AgentUpReplyModel;
 };
 
 type ChunkListener = (chunk: UIMessageChunk) => void;

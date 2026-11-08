@@ -286,17 +286,20 @@ export interface ProviderSettings {
 
 export type ThemeMode = "system" | "light" | "dark";
 export type UiLocale = "zh" | "en";
+export type ChatFontSize = "sm" | "md" | "lg";
 
 export interface UserPreferences {
   themeMode: ThemeMode;
   skipEditResendConfirm: boolean;
   uiLocale: UiLocale;
+  chatFontSize: ChatFontSize;
 }
 
 export type PreferencesUpdate = {
   themeMode?: ThemeMode;
   skipEditResendConfirm?: boolean;
   uiLocale?: UiLocale;
+  chatFontSize?: ChatFontSize;
 };
 
 /** 社区 Skill 检索结果（SkillHub / ClawHub）。 */

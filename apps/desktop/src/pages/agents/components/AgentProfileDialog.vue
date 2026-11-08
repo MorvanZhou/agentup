@@ -99,7 +99,7 @@ function runPrimary(): void {
     :description="roleLine || undefined"
     align="center"
     title-class="m-0 break-words text-lg font-semibold leading-snug tracking-tight"
-    description-class="m-0 mt-1 break-words text-sm font-semibold leading-snug text-accent"
+    description-class="m-0 mt-1 break-words text-sm font-semibold leading-snug text-muted-foreground"
     @update:open="onDialogOpenChange"
   >
     <template #leading>

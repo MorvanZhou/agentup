@@ -685,6 +685,7 @@ export async function installRuntime(
   let themeMode = "system";
   let skipEditResendConfirm = false;
   let uiLocale = "zh";
+  let chatFontSize = "md";
   /** 群聊列表 mock：e2e 群聊（附件预览等）场景的最小房间数据。 */
   const groupRooms: Array<Record<string, unknown>> = (options?.groups ?? []).map((room) => {
     const members = Array.isArray(room.members) ? room.members : [];
@@ -1247,6 +1248,7 @@ export async function installRuntime(
         theme_mode: themeMode,
         skip_edit_resend_confirm: skipEditResendConfirm,
         ui_locale: uiLocale,
+        chat_font_size: chatFontSize,
       });
     }
     if (request.method() === "PUT" && path === "/preferences") {
@@ -1254,6 +1256,7 @@ export async function installRuntime(
         theme_mode?: string;
         skip_edit_resend_confirm?: boolean;
         ui_locale?: string;
+        chat_font_size?: string;
       };
       if (body.theme_mode !== undefined) {
         if (body.theme_mode !== "system" && body.theme_mode !== "light" && body.theme_mode !== "dark") {
@@ -1273,10 +1276,17 @@ export async function installRuntime(
         }
         uiLocale = body.ui_locale;
       }
+      if (body.chat_font_size !== undefined) {
+        if (body.chat_font_size !== "sm" && body.chat_font_size !== "md" && body.chat_font_size !== "lg") {
+          return json(route, 400, { error: "chat_font_size 无效" });
+        }
+        chatFontSize = body.chat_font_size;
+      }
       if (
         body.theme_mode === undefined &&
         body.skip_edit_resend_confirm === undefined &&
-        body.ui_locale === undefined
+        body.ui_locale === undefined &&
+        body.chat_font_size === undefined
       ) {
         return json(route, 400, { error: "至少提供一项偏好" });
       }
@@ -1284,6 +1294,7 @@ export async function installRuntime(
         theme_mode: themeMode,
         skip_edit_resend_confirm: skipEditResendConfirm,
         ui_locale: uiLocale,
+        chat_font_size: chatFontSize,
       });
     }
     if (request.method() === "GET" && path === "/state") {
@@ -1618,6 +1629,9 @@ export async function installRuntime(
         has_avatar: Boolean(accountAvatarUrl),
         avatar_url: accountAvatarUrl,
       });
+    }
+    if (request.method() === "POST" && path === "/auth/desktop/handoff") {
+      return json(route, 200, { code: "desktop-bridge-mock" });
     }
     if (request.method() === "GET" && path === "/auth/turnstile") {
       return json(route, 200, { site_key: "", required: false });

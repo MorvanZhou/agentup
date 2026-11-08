@@ -93,6 +93,15 @@ export async function oauthExchange(http: RuntimeHttp, code: string): Promise<Se
   return session(http, "/auth/oauth/exchange", { code });
 }
 
+/** 打开 Web 改密页前：用本机会话换一次性 bridge 码。 */
+export async function desktopHandoff(http: RuntimeHttp, token: string): Promise<string> {
+  const payload = await http.request("/auth/desktop/handoff", token, {}, "POST");
+  if (typeof payload.code !== "string" || !payload.code.trim()) {
+    throw new DesktopApiError("handoff 响应无效");
+  }
+  return payload.code.trim();
+}
+
 export async function turnstileInfo(http: RuntimeHttp): Promise<TurnstileInfo> {
   const payload = await http.request("/auth/turnstile", undefined, undefined, "GET");
   return {

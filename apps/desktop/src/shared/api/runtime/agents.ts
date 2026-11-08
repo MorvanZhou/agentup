@@ -12,7 +12,7 @@ import { agentListQuery, readAgent } from "./readers";
 export async function agents(
   http: RuntimeHttp,
   token: string,
-  options?: { userId?: string; q?: string; recruited?: boolean },
+  options?: { userId?: string; q?: string; recruited?: boolean; projected?: boolean },
 ): Promise<AgentCard[]> {
   const payload = await http.request(`/agents${agentListQuery(options)}`, token);
   if (!Array.isArray(payload.agents)) throw new DesktopApiError("Agent 列表无效");

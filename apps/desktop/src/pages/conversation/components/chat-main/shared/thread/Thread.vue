@@ -355,7 +355,7 @@ async function scrollToPreviousUserMessage(): Promise<void> {
 
 <template>
   <ThreadPrimitiveViewport
-    class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-scroll scroll-smooth bg-paper"
+    class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-scroll scroll-smooth bg-background"
     :auto-scroll="followLatest"
     :scroll-to-bottom-on-initialize="revealOnMount === 0"
   >

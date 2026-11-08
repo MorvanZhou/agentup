@@ -1,17 +1,24 @@
 import { computed, onMounted, ref } from "vue";
 
 import { useDesktop } from "../../../app/desktop";
+import {
+  applyChatFontSize,
+  readChatFontMirror,
+  writeChatFontMirror,
+} from "../../../app/theme/chat-font";
 import { applyTheme, readThemeMirror, writeThemeMirror } from "../../../app/theme/theme";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
-import type { ThemeMode, UiLocale } from "../../../shared/model/runtime/runtime";
+import type { ChatFontSize, ThemeMode, UiLocale } from "../../../shared/model/runtime/runtime";
 import { isGuestSession } from "../../../shared/model/session/session";
 import { showToast } from "../../../shared/model/ui/toast";
 import { applyUiLocale, t } from "../../../shared/model/ui/ui-locale";
 
-export function useAppearanceSettings(api = new DesktopApi()) {
+export function useGeneralSettings(api = new DesktopApi()) {
   const {
     session,
     themeMode,
+    chatFontSize,
+    setChatFontSize,
     uiLocale,
     setUiLocale,
     skipEditResendConfirm,
@@ -22,9 +29,14 @@ export function useAppearanceSettings(api = new DesktopApi()) {
   const busy = ref(false);
   const guest = computed(() => !session.value || isGuestSession(session.value));
   const options = computed(() => [
-    { id: "system" as const, label: t("themeSystem"), hint: t("themeSystemHint") },
-    { id: "light" as const, label: t("themeLight"), hint: t("themeLightHint") },
-    { id: "dark" as const, label: t("themeDark"), hint: t("themeDarkHint") },
+    { id: "system" as const, label: t("themeSystem") },
+    { id: "light" as const, label: t("themeLight") },
+    { id: "dark" as const, label: t("themeDark") },
+  ]);
+  const fontOptions = computed(() => [
+    { id: "sm" as const, label: t("chatFontSm") },
+    { id: "md" as const, label: t("chatFontMd") },
+    { id: "lg" as const, label: t("chatFontLg") },
   ]);
 
   onMounted(() => void load());
@@ -39,13 +51,21 @@ export function useAppearanceSettings(api = new DesktopApi()) {
           themeMode.value = mirrored;
           applyTheme(mirrored);
         }
+        const fontMirrored = readChatFontMirror(session.value.userId);
+        if (fontMirrored) {
+          chatFontSize.value = fontMirrored;
+          applyChatFontSize(fontMirrored);
+        }
         return;
       }
       const prefs = await api.preferences(session.value.token);
       themeMode.value = prefs.themeMode;
+      chatFontSize.value = prefs.chatFontSize;
       skipEditResendConfirm.value = prefs.skipEditResendConfirm;
       applyTheme(prefs.themeMode);
       writeThemeMirror(session.value.userId, prefs.themeMode);
+      applyChatFontSize(prefs.chatFontSize);
+      writeChatFontMirror(session.value.userId, prefs.chatFontSize);
       await applyUiLocale(prefs.uiLocale);
     } catch (caught) {
       showToast(messageOf(caught), "error");
@@ -68,9 +88,12 @@ export function useAppearanceSettings(api = new DesktopApi()) {
     try {
       const prefs = await api.savePreferences(session.value.token, { themeMode: mode });
       themeMode.value = prefs.themeMode;
+      chatFontSize.value = prefs.chatFontSize;
       skipEditResendConfirm.value = prefs.skipEditResendConfirm;
       applyTheme(prefs.themeMode);
       writeThemeMirror(session.value.userId, prefs.themeMode);
+      applyChatFontSize(prefs.chatFontSize);
+      writeChatFontMirror(session.value.userId, prefs.chatFontSize);
       await applyUiLocale(prefs.uiLocale);
       showToast(t("themeSavedAccount"), "success");
     } catch (caught) {
@@ -90,6 +113,18 @@ export function useAppearanceSettings(api = new DesktopApi()) {
     showToast(guest.value ? t("localeSavedLocal") : t("localeSavedAccount"), "success");
   }
 
+  async function selectFont(next: ChatFontSize): Promise<void> {
+    if (busy.value || chatFontSize.value === next) return;
+    busy.value = true;
+    try {
+      const saved = await setChatFontSize(next);
+      if (!saved) return;
+      showToast(guest.value ? t("chatFontSavedLocal") : t("chatFontSavedAccount"), "success");
+    } finally {
+      busy.value = false;
+    }
+  }
+
   function toggleMenuBar(visible: boolean): void {
     if (busy.value || menuBarVisible.value === visible) return;
     setMenuBarVisible(visible);
@@ -98,7 +133,9 @@ export function useAppearanceSettings(api = new DesktopApi()) {
 
   return {
     options,
+    fontOptions,
     themeMode,
+    chatFontSize,
     uiLocale,
     guest,
     busy,
@@ -106,6 +143,7 @@ export function useAppearanceSettings(api = new DesktopApi()) {
     menuBarVisible,
     select,
     selectLocale,
+    selectFont,
     toggleMenuBar,
   };
 }

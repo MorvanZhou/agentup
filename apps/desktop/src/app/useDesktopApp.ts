@@ -18,6 +18,7 @@ import { PERSONAL_ASSISTANT_DEFAULT_AVATAR } from "../shared/model/avatar/person
 import {
   PERSONAL_ASSISTANT_ID,
   type AgentCard,
+  type ChatFontSize,
   type PersonalAssistantProfile,
   type Session,
   type ThemeMode,
@@ -39,6 +40,7 @@ import {
 } from "../shared/model/ui/ui-locale";
 import { showToast } from "../shared/model/ui/toast";
 import { bindAuthGate, runWithAccount } from "./auth/auth-gate";
+import { loadAgentsLocalFirst } from "./desktop-refresh";
 import {
   desktopPulseIntervalMs,
   desktopPulseIsActive,
@@ -59,6 +61,12 @@ import {
   writeMenuBarVisible,
 } from "./native/menu-bar-pref";
 import { clearSession, readSession, saveSession } from "./session/session-store";
+import {
+  applyChatFontSize,
+  clearChatFontMirror,
+  readChatFontMirror,
+  writeChatFontMirror,
+} from "./theme/chat-font";
 import { applyTheme, clearThemeMirror, readThemeMirror, writeThemeMirror } from "./theme/theme";
 
 const emptyAttention = (): AttentionSnapshot => ({
@@ -87,6 +95,7 @@ export function useDesktopApp(api = new DesktopApi()) {
   const previews = ref<Record<string, string>>({});
   const lastActiveAt = ref<Record<string, number>>({});
   const themeMode = ref<ThemeMode>("system");
+  const chatFontSize = ref<ChatFontSize>("md");
   const skipEditResendConfirm = ref(false);
   const menuBarVisible = ref(readMenuBarVisible());
   const menuBarAvailable = computed(() => isMenuBarPrefAvailable());
@@ -111,6 +120,8 @@ export function useDesktopApp(api = new DesktopApi()) {
   const bannerSurface = ref<BannerSurface | null>(null);
   /** 点击系统横幅后要打开的会话；会话页消费后清空。 */
   const pendingNotice = ref<BannerSurface | null>(null);
+  /** 递增以丢弃过期的多阶段 refresh 提交（登出 / 连续 refresh）。 */
+  let refreshEpoch = 0;
 
   /** 侧栏会话：私人助理 + 本机私有 + 已招募；不依赖控制面是否在线。 */
   const conversations = computed(() => [
@@ -428,32 +439,45 @@ export function useDesktopApp(api = new DesktopApi()) {
     return true;
   }
 
-  /** 打开系统浏览器中的 Web 登录页，经 loopback 换票（邮箱 / OAuth / Turnstile 均在 Web）。 */
-  async function loginWithBrowser(): Promise<boolean> {
+  /** Web 鉴权页相对路径（不含语言前缀；统一挂在 /auth）。 */
+  type BrowserAuthPath = "auth/login" | "auth/forgot-password" | "auth/change-password";
+
+  /** 打开系统浏览器中的 Web 鉴权页，经 loopback 换票（邮箱 / OAuth / Turnstile 均在 Web）。 */
+  async function loginWithBrowser(options: {
+    path?: BrowserAuthPath;
+    /** 已登录改密：一次性 bridge，供 Web 换临时会话；勿信 URL 邮箱。 */
+    bridgeCode?: string;
+  } = {}): Promise<boolean> {
     const bridge = window.agentUp;
     if (!bridge?.oauthLoopbackStart || !bridge.openExternal || !bridge.oauthLoopbackWait) {
       showToast(t("loginDesktopOnly"), "error");
       return false;
     }
+    const path = options.path ?? "auth/login";
     const flight = ++browserLoginFlight;
     busy.value = true;
     try {
-      // 注册回跳可能已到达（等待被取消 / 页面刷新），先领暂存码，不必再开浏览器
-      const pending = (await bridge.oauthLoopbackTakePending?.()) ?? null;
-      if (pending?.code) {
-        if (flight !== browserLoginFlight) return false;
-        return await exchangeBrowserCode(pending.code);
+      // 登录/找回可复用暂存回跳；改密必须带新 bridge，勿吞掉旧码
+      if (path !== "auth/change-password") {
+        const pending = (await bridge.oauthLoopbackTakePending?.()) ?? null;
+        if (pending?.code) {
+          if (flight !== browserLoginFlight) return false;
+          return await exchangeBrowserCode(pending.code);
+        }
       }
 
       const uiLocale = readUiLocale();
       const { loopbackUri } = await bridge.oauthLoopbackStart(uiLocale);
       if (flight !== browserLoginFlight) return false;
       const webRoot = (await bridge.webUrl?.()) || "http://127.0.0.1:3000";
-      /** Web：/ = en，/zh/ = zh；登录页同前缀 */
-      const loginPath = uiLocale === "zh" ? "/zh/login" : "/login";
-      const url = new URL(`${webRoot.replace(/\/$/, "")}${loginPath}`);
+      /** Web：/ = en，/zh/ = zh；鉴权页同前缀 */
+      const prefixed = uiLocale === "zh" ? `/zh/${path}` : `/${path}`;
+      const url = new URL(`${webRoot.replace(/\/$/, "")}${prefixed}`);
       url.searchParams.set("client", "desktop");
       url.searchParams.set("loopback_uri", loopbackUri);
+      if (options.bridgeCode) {
+        url.searchParams.set("bridge", options.bridgeCode);
+      }
       browserLoginUrl = url.toString();
       browserLoginActive.value = true;
       await bridge.openExternal(browserLoginUrl);
@@ -493,60 +517,90 @@ export function useDesktopApp(api = new DesktopApi()) {
       return;
     }
     if (busy.value) return;
-    void loginWithBrowser();
+    void loginWithBrowser({ path: "auth/login" });
+  }
+
+  /** 游客账号设置：打开 Web 忘记密码页。 */
+  function beginForgotPassword(): void {
+    if (browserLoginActive.value) {
+      void reopenBrowserLogin();
+      return;
+    }
+    if (busy.value) return;
+    void loginWithBrowser({ path: "auth/forgot-password" });
+  }
+
+  /** 已登录账号设置：签发 bridge 后打开 Web 改密页（邮箱以会话为准）。 */
+  function beginChangePassword(): void {
+    if (browserLoginActive.value) {
+      void reopenBrowserLogin();
+      return;
+    }
+    if (busy.value) return;
+    const current = session.value;
+    if (!current || !isAccountSession(current)) return;
+    void (async () => {
+      try {
+        const bridgeCode = await api.desktopHandoff(current.token);
+        await loginWithBrowser({ path: "auth/change-password", bridgeCode });
+      } catch (caught) {
+        showToast(messageOf(caught), "error");
+      }
+    })();
   }
 
   async function refresh(): Promise<void> {
     if (!session.value) return;
+    const epoch = ++refreshEpoch;
     const guest = isGuestSession(session.value);
-    // 账号：先顶掉 vault 里过期的 COS 签名，再续签刷新本机头像缓存
-    if (!guest && isAccountSession(session.value)) {
-      await hydrateAccountAvatar(session.value);
-    }
-    if (!session.value) return;
     const { token, userId } = session.value;
+    const accountForAvatar = !guest && isAccountSession(session.value) ? session.value : null;
+    const stale = () => epoch !== refreshEpoch || !session.value;
 
-    try {
-      personalAssistant.value = await api.personalAssistantProfile(token, userId, readUiLocale());
-    } catch {
-      personalAssistant.value = null;
-    }
+    // 本机优先：先提交本机+磁盘投影到侧栏；账号头像续签与远端对齐并行、不挡首屏
+    await loadAgentsLocalFirst({
+      hydrateAccountAvatar: accountForAvatar
+        ? () => hydrateAccountAvatar(accountForAvatar)
+        : undefined,
+      loadPersonalAssistant: () => api.personalAssistantProfile(token, userId, readUiLocale()),
+      loadLocalAgents: () => api.localAgents(token, userId),
+      loadProjectedAgents: () => api.agents(token, { userId, projected: true }),
+      // 游客也会请求：控制面失败时 runtime 回落磁盘已投影
+      loadRemoteAgents: () => api.agents(token, { userId }),
+      isStale: stale,
+      readPreviousAgents: () => agents.value,
+      commitPersonalAssistant: (profile) => {
+        if (!stale()) personalAssistant.value = profile;
+      },
+      commitAgents: (next) => {
+        if (stale()) return;
+        agents.value = next;
+        synced.value = Object.fromEntries(
+          next
+            .filter((agent) => agent.localVersion > 0)
+            .map((agent) => [agent.agentId, String(agent.localVersion)]),
+        );
+        synced.value[PERSONAL_ASSISTANT_ID] = "1";
+      },
+    });
+    if (stale() || !session.value) return;
 
-    // 本机优先：侧栏 / 对话不依赖登录或控制面；各路失败互不影响
-    let local: AgentCard[] = [];
-    try {
-      local = await api.localAgents(token, userId);
-    } catch {
-      local = [];
-    }
-    let remote: AgentCard[] = [];
-    try {
-      // 游客也会请求：控制面失败时 runtime 回落磁盘已投影，仍可列出本机会话
-      remote = await api.agents(token, { userId });
-    } catch {
-      remote = [];
-    }
-    const seen = new Set(local.map((agent) => agent.agentId));
-    agents.value = [...local, ...remote.filter((agent) => !seen.has(agent.agentId))];
-
-    synced.value = Object.fromEntries(
-      agents.value
-        .filter((agent) => agent.localVersion > 0)
-        .map((agent) => [agent.agentId, String(agent.localVersion)]),
-    );
-    synced.value[PERSONAL_ASSISTANT_ID] = "1";
     try {
       const state = await api.state(token, userId);
+      if (stale()) return;
       unread.value = state.unread;
       previews.value = state.previews;
       lastActiveAt.value = state.lastActiveAt;
     } catch {
+      if (stale()) return;
       unread.value = {};
       previews.value = {};
       lastActiveAt.value = {};
     }
     await pullAttention();
+    if (stale() || !session.value) return;
     await syncPreferences(token, userId, guest);
+    if (stale()) return;
     if (!conversations.value.some((agent) => agent.agentId === selectedId.value)) {
       selectedId.value = conversations.value[0]?.agentId ?? "";
     }
@@ -561,14 +615,22 @@ export function useDesktopApp(api = new DesktopApi()) {
         themeMode.value = mirrored;
         applyTheme(mirrored);
       }
+      const fontMirrored = readChatFontMirror(userId);
+      if (fontMirrored) {
+        chatFontSize.value = fontMirrored;
+        applyChatFontSize(fontMirrored);
+      }
       return;
     }
     try {
       const prefs = await api.preferences(token);
       themeMode.value = prefs.themeMode;
+      chatFontSize.value = prefs.chatFontSize;
       skipEditResendConfirm.value = prefs.skipEditResendConfirm;
       applyTheme(prefs.themeMode);
       writeThemeMirror(userId, prefs.themeMode);
+      applyChatFontSize(prefs.chatFontSize);
+      writeChatFontMirror(userId, prefs.chatFontSize);
       await applyUiLocale(prefs.uiLocale);
     } catch {
       /* 保持当前偏好；下次 refresh 再对齐 */
@@ -594,9 +656,12 @@ export function useDesktopApp(api = new DesktopApi()) {
     try {
       const prefs = await api.savePreferences(current.token, { uiLocale: next });
       themeMode.value = prefs.themeMode;
+      chatFontSize.value = prefs.chatFontSize;
       skipEditResendConfirm.value = prefs.skipEditResendConfirm;
       applyTheme(prefs.themeMode);
       writeThemeMirror(current.userId, prefs.themeMode);
+      applyChatFontSize(prefs.chatFontSize);
+      writeChatFontMirror(current.userId, prefs.chatFontSize);
       await applyUiLocale(prefs.uiLocale);
       void refresh();
       return true;
@@ -618,11 +683,42 @@ export function useDesktopApp(api = new DesktopApi()) {
       });
       skipEditResendConfirm.value = prefs.skipEditResendConfirm;
       themeMode.value = prefs.themeMode;
+      chatFontSize.value = prefs.chatFontSize;
+      applyChatFontSize(prefs.chatFontSize);
+      writeChatFontMirror(session.value.userId, prefs.chatFontSize);
       await applyUiLocale(prefs.uiLocale);
     } catch (caught) {
       skipEditResendConfirm.value = previous;
       showToast(messageOf(caught), "error");
       throw caught;
+    }
+  }
+
+  /** 游客写本机镜像；正式账号写偏好。 */
+  async function setChatFontSize(next: ChatFontSize): Promise<boolean> {
+    if (!session.value || chatFontSize.value === next) return true;
+    const previous = chatFontSize.value;
+    chatFontSize.value = next;
+    applyChatFontSize(next);
+    writeChatFontMirror(session.value.userId, next);
+    if (isGuestSession(session.value)) return true;
+    try {
+      const prefs = await api.savePreferences(session.value.token, { chatFontSize: next });
+      chatFontSize.value = prefs.chatFontSize;
+      themeMode.value = prefs.themeMode;
+      skipEditResendConfirm.value = prefs.skipEditResendConfirm;
+      applyChatFontSize(prefs.chatFontSize);
+      writeChatFontMirror(session.value.userId, prefs.chatFontSize);
+      applyTheme(prefs.themeMode);
+      writeThemeMirror(session.value.userId, prefs.themeMode);
+      await applyUiLocale(prefs.uiLocale);
+      return true;
+    } catch (caught) {
+      chatFontSize.value = previous;
+      applyChatFontSize(previous);
+      writeChatFontMirror(session.value.userId, previous);
+      showToast(messageOf(caught), "error");
+      return false;
     }
   }
 
@@ -852,6 +948,7 @@ export function useDesktopApp(api = new DesktopApi()) {
 
   /**
    * 冷启动 / refresh：本机缓存优先展示，再向控制面续签并更新缓存。
+   * 由 loadAgentsLocalFirst 并行触发，不阻塞侧栏本地提交。
    * 避免 session.enc 里过期的 q-sign URL 一打开就 403。
    */
   async function hydrateAccountAvatar(current: Session): Promise<void> {
@@ -914,9 +1011,12 @@ export function useDesktopApp(api = new DesktopApi()) {
     pulseActive = false;
     stopPulsePoll();
     themeMode.value = "system";
+    chatFontSize.value = "md";
     skipEditResendConfirm.value = false;
     clearThemeMirror();
+    clearChatFontMirror();
     applyTheme("system");
+    applyChatFontSize("md");
     try {
       await applyUiLocale(readDeviceLocale());
     } catch {
@@ -954,6 +1054,8 @@ export function useDesktopApp(api = new DesktopApi()) {
     blockedCount,
     conversationAttentionCount,
     themeMode,
+    chatFontSize,
+    setChatFontSize,
     uiLocale,
     setUiLocale,
     skipEditResendConfirm,
@@ -973,6 +1075,8 @@ export function useDesktopApp(api = new DesktopApi()) {
     confirmPasswordReset,
     loginWithBrowser,
     beginBrowserLogin,
+    beginForgotPassword,
+    beginChangePassword,
     reopenBrowserLogin,
     cancelBrowserLogin,
     loginWithOAuth,

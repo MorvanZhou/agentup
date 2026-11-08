@@ -5,6 +5,7 @@ import { RouterLink } from "vue-router";
 
 import { useDesktop } from "../../app/desktop";
 import { DesktopApi, DesktopApiError } from "../../shared/api/runtime";
+import PageChromeHeader from "../../shared/components/PageChromeHeader.vue";
 import { SEARCH_QUERY_MAX } from "../../shared/model/input-limits";
 import { showToast } from "../../shared/model/ui/toast";
 import { t } from "../../shared/model/ui/ui-locale";
@@ -48,13 +49,8 @@ async function remove(teamId: string): Promise<void> {
     </aside>
 
     <main class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-      <header
-        class="app-drag flex h-12 shrink-0 items-center justify-between gap-3 border-b border-rule bg-paper-deep px-4"
-      >
-        <h1 class="m-0 min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
-          {{ t("teamsOwnedTitle") }}
-        </h1>
-        <div class="app-no-drag flex min-w-0 shrink items-center gap-2">
+      <PageChromeHeader :title="t('teamsOwnedTitle')">
+        <template #actions>
           <label class="relative min-w-0 max-w-56 flex-1">
             <span class="sr-only">{{ t("agentsSearch") }}</span>
             <SearchIcon
@@ -69,8 +65,8 @@ async function remove(teamId: string): Promise<void> {
               class="min-h-8 w-full rounded-lg border border-rule bg-paper py-1.5 pr-2.5 pl-8 text-sm outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-2 focus:ring-accent/15"
             />
           </label>
-        </div>
-      </header>
+        </template>
+      </PageChromeHeader>
 
       <div class="min-h-0 flex-1 overflow-auto">
         <div class="mx-auto w-full max-w-7xl px-4 py-4 sm:px-5 sm:py-5">

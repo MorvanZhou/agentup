@@ -1,5 +1,4 @@
 import { ref, type Ref } from "vue";
-import { useRouter } from "vue-router";
 
 import { runWithAccount } from "../../../app/auth/auth-gate";
 import { DesktopApi, DesktopApiError } from "../../../shared/api/runtime";
@@ -13,7 +12,6 @@ export function useTeamMarket(
   refresh: () => Promise<void>,
   api = new DesktopApi(),
 ) {
-  const router = useRouter();
   const busyTeamId = ref("");
 
   async function recruit(teamId: string): Promise<void> {
@@ -23,10 +21,10 @@ export function useTeamMarket(
       if (!current || isGuestSession(current) || busyTeamId.value) return;
       busyTeamId.value = teamId;
       try {
-        const result = await api.recruitTeam(current.token, current.userId, teamId);
+        // 加群成功只 toast，不跳聊天，方便用户留在市场继续加其他群
+        await api.recruitTeam(current.token, current.userId, teamId);
         await refresh();
         showToast(t("teamsRecruitOpened"), "success");
-        await router.push({ name: "conversation", query: { group: result.group.id } });
       } catch (caught) {
         showToast(caught instanceof DesktopApiError ? caught.message : t("teamsRecruitFailed"), "error");
       } finally {

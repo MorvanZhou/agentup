@@ -63,17 +63,20 @@ export interface Recruit {
 
 export type ThemeMode = "system" | "light" | "dark";
 export type UiLocale = "zh" | "en";
+export type ChatFontSize = "sm" | "md" | "lg";
 
 export interface UserPreferences {
   themeMode: ThemeMode;
   skipEditResendConfirm: boolean;
   uiLocale: UiLocale;
+  chatFontSize: ChatFontSize;
 }
 
 export type PreferencesUpdate = {
   themeMode?: ThemeMode;
   skipEditResendConfirm?: boolean;
   uiLocale?: UiLocale;
+  chatFontSize?: ChatFontSize;
 };
 
 export interface TeamMember {

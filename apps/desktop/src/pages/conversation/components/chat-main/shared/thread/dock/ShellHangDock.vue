@@ -48,7 +48,7 @@ const detailsText = computed(() => {
   <!-- agent 未决时的人审兜底：终止 / 再等 / 转后台 -->
   <section
     v-if="hang"
-    class="shrink-0 border-t border-border bg-paper animate-rise motion-reduce:animate-none"
+    class="shrink-0 border-t border-rule/80 bg-background animate-rise motion-reduce:animate-none"
     role="region"
     :aria-labelledby="`shell-hang-title-${hang.id}`"
   >
@@ -57,7 +57,7 @@ const detailsText = computed(() => {
         <HitlAgentFace v-if="hang.askedByName" :name="hang.askedByName" :agent-id="hang.askedByAgentId" />
         <span
           v-else
-          class="grid size-7 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"
+          class="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
           aria-hidden="true"
         >
           <TimerIcon class="size-3.5" />

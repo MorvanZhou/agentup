@@ -8,6 +8,56 @@ import { expect, it } from "vitest";
 
 import { startLocalServer } from "../src/local/server.js";
 
+it("GET /agents?projected=true returns disk recruits without calling backend", async () => {
+  let backendHits = 0;
+  const backend = await listen((_req, res) => {
+    backendHits += 1;
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ agents: [] }));
+  });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-agents-projected-"));
+  const agentRoot = path.join(root, "users", "guest", "agents", "Weaty01");
+  fs.mkdirSync(path.join(agentRoot, "cwd", ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(agentRoot, "instance.json"),
+    JSON.stringify({
+      agent_id: "Weaty01",
+      package_version: 2,
+      package_digest: "digest-p",
+      name: "投影天气",
+      role: "气象员",
+      background: "本地投影",
+    }),
+  );
+
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot: root,
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const response = await fetch(`${local.url}/agents?user_id=guest&projected=true`, {
+      headers: { authorization: "Bearer guest" },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { agents: Array<Record<string, unknown>> };
+    expect(body.agents).toHaveLength(1);
+    expect(body.agents[0]).toMatchObject({
+      agent_id: "Weaty01",
+      name: "投影天气",
+      recruited: true,
+      local_version: 2,
+    });
+    expect(backendHits).toBe(0);
+  } finally {
+    await local.close();
+    backend.server.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 it("GET /agents falls back to disk-synced recruits when backend is down", async () => {
   const backend = await listen((_req, res) => {
     res.statusCode = 503;

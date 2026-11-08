@@ -39,6 +39,7 @@ function mountPanel(
       ref<ThreadDelegationApi>({
         registerStarted: () => undefined,
         resolveTaskId: () => undefined,
+        resolveReplyModel: () => undefined,
         openProcess,
       }),
     ],

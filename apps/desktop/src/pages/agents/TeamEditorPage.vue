@@ -327,7 +327,7 @@ onUnmounted(() => {
                       <div class="min-w-0 flex-1">
                         <p class="m-0 truncate text-sm font-medium text-foreground">{{ agent.name }}</p>
                         <p class="m-0 truncate text-xs text-muted-foreground">
-                          <span v-if="agent.role" class="font-semibold text-accent">{{ agent.role }}</span>
+                          <span v-if="agent.role" class="font-semibold text-muted-foreground">{{ agent.role }}</span>
                           <span v-if="agent.role" class="text-muted-foreground"> · </span>
                           <span class="font-mono">{{ agent.agentId }}</span>
                           <span v-if="!agentQuery.trim()">
@@ -371,7 +371,7 @@ onUnmounted(() => {
                 <div class="min-w-0 flex-1">
                   <p class="m-0 truncate text-sm font-medium text-foreground">{{ member.name }}</p>
                   <p class="m-0 truncate text-xs text-muted-foreground">
-                    <span v-if="member.role" class="font-semibold text-accent">{{ member.role }}</span>
+                    <span v-if="member.role" class="font-semibold text-muted-foreground">{{ member.role }}</span>
                     <span v-if="member.role" class="text-muted-foreground"> · </span>
                     <span class="font-mono text-[11px]">{{ member.agentId }}</span>
                   </p>
@@ -381,7 +381,7 @@ onUnmounted(() => {
                   class="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold outline-none transition"
                   :class="
                     defaultHolderId === member.agentId
-                      ? 'bg-accent text-white'
+                      ? 'bg-muted text-foreground ring-1 ring-foreground/15'
                       : 'text-muted-foreground hover:bg-muted'
                   "
                   @click="setDefault(member.agentId)"

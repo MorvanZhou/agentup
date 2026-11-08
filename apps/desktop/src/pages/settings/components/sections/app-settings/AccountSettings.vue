@@ -9,6 +9,8 @@ import { isAccountSession, isGuestSession, sessionDisplayNickname } from "../../
 import { showToast } from "../../../../../shared/model/ui/toast";
 import { t } from "../../../../../shared/model/ui/ui-locale";
 import { useAccountSettings } from "../../../composables/useAccountSettings";
+import SettingsBlock from "../../SettingsBlock.vue";
+import SettingsSectionShell from "../../SettingsSectionShell.vue";
 
 const { session, nickname, busy, avatarBusy, commitNickname, chooseAvatar } = useAccountSettings();
 /** 正式账号表单只用收窄后的 session；模板 v-else-if 收不窄可空 ref。 */
@@ -17,7 +19,7 @@ const account = computed(() => {
   if (!current || !isAccountSession(current)) return null;
   return current;
 });
-const { logout, beginBrowserLogin } = useDesktop();
+const { logout, beginBrowserLogin, beginForgotPassword, beginChangePassword } = useDesktop();
 const avatarInput = ref<HTMLInputElement>();
 const signingOut = ref(false);
 
@@ -42,26 +44,17 @@ function onAvatar(event: Event): void {
 </script>
 
 <template>
-  <main class="min-h-0 min-w-0 overflow-auto bg-background">
-    <div class="mx-auto w-full max-w-3xl px-4 py-4 sm:px-5 sm:py-6">
-      <!-- 页头 -->
-      <header class="mb-6">
-        <p class="m-0 text-xs font-medium tracking-wider text-accent">{{ t("accountKicker") }}</p>
-        <h1 class="mb-0 mt-2 text-lg font-semibold tracking-tight text-foreground">{{ t("accountTitle") }}</h1>
-        <p class="mb-0 mt-1.5 max-w-xl text-sm leading-snug text-muted-foreground">
-          <template v-if="isGuestSession(session)">
-            {{ t("accountGuestLead") }}
-          </template>
-          <template v-else>{{ t("accountLead") }}</template>
-        </p>
-      </header>
+  <SettingsSectionShell :title="t('accountTitle')">
+    <template #lead>
+      <template v-if="isGuestSession(session)">
+        {{ t("accountGuestLead") }}
+      </template>
+      <template v-else>{{ t("accountLead") }}</template>
+    </template>
 
-      <!-- 游客引导 -->
-      <section
-        v-if="isGuestSession(session)"
-        class="grid max-w-md gap-3 rounded-xl border border-rule bg-paper p-4"
-        :aria-label="t('accountLoginGuide')"
-      >
+    <!-- 游客引导：单层引导块，不再套外卡 -->
+    <SettingsBlock v-if="isGuestSession(session)" :aria-label="t('accountLoginGuide')">
+      <div class="grid max-w-md gap-3">
         <div class="flex items-center gap-3">
           <UserAvatar :name="sessionDisplayNickname(session)" size="lg" />
           <p class="m-0 text-sm text-foreground">{{ t("accountGuestBody") }}</p>
@@ -73,10 +66,27 @@ function onAvatar(event: Event): void {
         >
           {{ t("menuLogin") }}
         </button>
-      </section>
+        <!-- 忘记密码：打开 Web 独立页（Turnstile 在浏览器） -->
+        <div class="grid justify-items-start gap-1">
+          <button
+            type="button"
+            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted"
+            @click="beginForgotPassword"
+          >
+            {{ t("accountForgotPassword") }}
+          </button>
+          <p class="m-0 text-xs leading-snug text-muted-foreground">{{ t("accountForgotPasswordHint") }}</p>
+        </div>
+      </div>
+    </SettingsBlock>
 
-      <!-- 表单 -->
-      <section v-else-if="account" class="grid max-w-md gap-5" :aria-label="t('accountProfile')">
+    <!-- 资料表单 -->
+    <SettingsBlock
+      v-else-if="account"
+      :title="t('accountProfile')"
+      :aria-label="t('accountProfile')"
+    >
+      <div class="grid max-w-md gap-5">
         <div class="flex items-start gap-4">
           <div class="flex shrink-0 flex-col items-center gap-1.5">
             <button
@@ -140,10 +150,23 @@ function onAvatar(event: Event): void {
           </span>
         </label>
 
+        <!-- 修改密码：Web + bridge 会话，不信客户端邮箱 -->
         <div class="grid justify-items-start gap-1.5 border-t border-rule pt-5">
           <button
             type="button"
-            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-rule px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
+            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+            :disabled="busy || avatarBusy || signingOut"
+            @click="beginChangePassword"
+          >
+            {{ t("accountChangePassword") }}
+          </button>
+          <p class="m-0 text-xs leading-snug text-muted-foreground">{{ t("accountChangePasswordHint") }}</p>
+        </div>
+
+        <div class="grid justify-items-start gap-1.5 border-t border-rule pt-5">
+          <button
+            type="button"
+            class="inline-flex min-h-8 items-center justify-center rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
             :disabled="busy || avatarBusy || signingOut"
             @click="signOut"
           >
@@ -151,7 +174,7 @@ function onAvatar(event: Event): void {
           </button>
           <p class="m-0 text-xs leading-snug text-muted-foreground">{{ t("accountLogoutHint") }}</p>
         </div>
-      </section>
-    </div>
-  </main>
+      </div>
+    </SettingsBlock>
+  </SettingsSectionShell>
 </template>

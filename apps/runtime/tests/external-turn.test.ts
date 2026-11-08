@@ -317,6 +317,12 @@ describe("回写会话", () => {
         userText: "查下天气",
         text: "晴",
         toolDigest: ['mcp__agentup__delegate_to_agent({"agent_id":"w"})'],
+        replyModel: {
+          templateId: "cursor",
+          modelId: "gpt-5",
+          vendorId: "cursor",
+          modelLabel: "GPT-5",
+        },
         trail: [
           {
             kind: "tool",
@@ -338,6 +344,8 @@ describe("回写会话", () => {
     });
     expect(appended[1]).toMatchObject({
       role: "assistant",
+      provider: "cursor",
+      model: "gpt-5",
       content: [
         {
           type: "toolCall",
@@ -349,10 +357,23 @@ describe("回写会话", () => {
     expect(appended[2]).toMatchObject({ role: "toolResult", toolCallId: "d1" });
     expect(appended[3]).toMatchObject({
       role: "assistant",
+      provider: "cursor",
+      model: "gpt-5",
       content: [{ type: "text", text: "晴" }],
     });
     expect(JSON.stringify(appended[3])).not.toContain("本轮用过的工具");
-    expect(customs).toEqual([{ type: "agentup-summary", data: { textPartIndex: 0 } }]);
+    expect(customs).toEqual([
+      {
+        type: "agentup-reply-model",
+        data: {
+          templateId: "cursor",
+          modelId: "gpt-5",
+          vendorId: "cursor",
+          modelLabel: "GPT-5",
+        },
+      },
+      { type: "agentup-summary", data: { textPartIndex: 0 } },
+    ]);
     expect(hidden).toEqual([
       {
         type: "agentup.external_tool_digest",

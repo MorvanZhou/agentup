@@ -120,7 +120,7 @@ test("账号菜单点登录直接打开 Web 登录页，留在当前页", async 
     .poll(async () =>
       page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
     )
-    .toMatch(/\/zh\/login\?/);
+    .toMatch(/\/zh\/auth\/login\?/);
   await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
 });
 
@@ -144,8 +144,60 @@ test("账号设置点登录直接打开 Web 登录页，留在账号页", async 
     .poll(async () =>
       page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
     )
-    .toMatch(/\/zh\/login\?/);
+    .toMatch(/\/zh\/auth\/login\?/);
   await expect(page.getByLabel("邮箱")).toBeVisible();
+});
+
+test("游客账号设置点忘记密码打开 Web 找回页", async ({ page }) => {
+  await mockAgentUp(page);
+  await page.addInitScript(() => {
+    const bridge = window.agentUp;
+    if (!bridge) return;
+    const opened: string[] = [];
+    (window as Window & { openedExternals?: string[] }).openedExternals = opened;
+    bridge.openExternal = async (url: string) => {
+      opened.push(url);
+    };
+  });
+  await installRuntime(page);
+  await page.goto("/settings?section=account");
+  await expect(page.getByRole("heading", { name: "账号设置" })).toBeVisible();
+  await page.getByRole("button", { name: "忘记密码" }).click();
+  await expect(page).toHaveURL(/\/settings\?section=account/);
+  await expect
+    .poll(async () =>
+      page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
+    )
+    .toMatch(/\/zh\/auth\/forgot-password\?/);
+});
+
+test("已登录账号设置点修改密码打开 Web 改密页并带 bridge", async ({ page }) => {
+  await mockAgentUp(page);
+  // 须在首屏前挂好：page.goto 会丢掉 evaluate 补丁
+  await page.addInitScript(() => {
+    const bridge = window.agentUp;
+    if (!bridge) return;
+    const opened: string[] = [];
+    (window as Window & { openedExternals?: string[] }).openedExternals = opened;
+    bridge.openExternal = async (url: string) => {
+      opened.push(url);
+    };
+  });
+  await installRuntime(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "账号：游客" }).click();
+  await page.getByRole("menuitem", { name: "登录 / 注册" }).click();
+  await expect(page.getByRole("button", { name: "账号：patient-a" })).toBeVisible();
+  // SPA 进设置，避免整页刷新冲掉 openExternal
+  await page.getByRole("button", { name: /^账号：/ }).click();
+  await page.getByRole("menuitem", { name: "设置" }).click();
+  await expect(page.getByRole("heading", { name: "账号设置" })).toBeVisible();
+  await page.getByRole("button", { name: "修改密码" }).click();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.find((u) => u.includes("change-password")) ?? ""),
+    )
+    .toMatch(/\/zh\/auth\/change-password\?.*bridge=/);
 });
 
 test("从菜单打开 Web 登录后可重新打开或取消等待", async ({ page }) => {
@@ -178,7 +230,7 @@ test("从菜单打开 Web 登录后可重新打开或取消等待", async ({ pag
     .poll(async () =>
       page.evaluate(() => (window as Window & { openedExternals?: string[] }).openedExternals?.[0] ?? ""),
     )
-    .toMatch(/\/zh\/login\?/);
+    .toMatch(/\/zh\/auth\/login\?/);
   await dialog.getByRole("button", { name: "重新打开浏览器" }).click();
   await expect
     .poll(async () =>

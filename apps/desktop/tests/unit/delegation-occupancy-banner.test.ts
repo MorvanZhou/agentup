@@ -45,6 +45,7 @@ function mountBanner(
         ref<ThreadDelegationApi>({
           registerStarted: () => undefined,
           resolveTaskId: () => undefined,
+          resolveReplyModel: () => undefined,
           openProcess,
         }),
       ],

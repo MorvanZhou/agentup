@@ -1,6 +1,12 @@
 import type { Hono } from "hono";
 
-import { getPreferences, putPreferences, type ThemeMode, type UiLocale } from "../../control/client.js";
+import {
+  getPreferences,
+  putPreferences,
+  type ChatFontSize,
+  type ThemeMode,
+  type UiLocale,
+} from "../../control/client.js";
 import { bearer, json, LocalError, readJson, text, type LocalAppDeps, type LocalAppEnv } from "../http.js";
 
 export function registerPreferencesRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
@@ -12,12 +18,18 @@ export function registerPreferencesRoutes(app: Hono<LocalAppEnv>, deps: LocalApp
       theme_mode: prefs.themeMode,
       skip_edit_resend_confirm: prefs.skipEditResendConfirm,
       ui_locale: prefs.uiLocale,
+      chat_font_size: prefs.chatFontSize,
     });
   });
 
   app.put("/preferences", async (c) => {
     const body = await readJson(c);
-    const update: { themeMode?: ThemeMode; skipEditResendConfirm?: boolean; uiLocale?: UiLocale } = {};
+    const update: {
+      themeMode?: ThemeMode;
+      skipEditResendConfirm?: boolean;
+      uiLocale?: UiLocale;
+      chatFontSize?: ChatFontSize;
+    } = {};
     if ("theme_mode" in body) {
       const themeMode = text(body, "theme_mode");
       if (themeMode !== "system" && themeMode !== "light" && themeMode !== "dark") {
@@ -38,10 +50,18 @@ export function registerPreferencesRoutes(app: Hono<LocalAppEnv>, deps: LocalApp
       }
       update.uiLocale = uiLocale;
     }
+    if ("chat_font_size" in body) {
+      const chatFontSize = text(body, "chat_font_size");
+      if (chatFontSize !== "sm" && chatFontSize !== "md" && chatFontSize !== "lg") {
+        throw new LocalError("chat_font_size 无效", 400);
+      }
+      update.chatFontSize = chatFontSize;
+    }
     if (
       update.themeMode === undefined &&
       update.skipEditResendConfirm === undefined &&
-      update.uiLocale === undefined
+      update.uiLocale === undefined &&
+      update.chatFontSize === undefined
     ) {
       throw new LocalError("至少提供一项偏好", 400);
     }
@@ -50,6 +70,7 @@ export function registerPreferencesRoutes(app: Hono<LocalAppEnv>, deps: LocalApp
       theme_mode: prefs.themeMode,
       skip_edit_resend_confirm: prefs.skipEditResendConfirm,
       ui_locale: prefs.uiLocale,
+      chat_font_size: prefs.chatFontSize,
     });
   });
 }

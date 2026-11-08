@@ -179,8 +179,8 @@ describe("summarizeApproval", () => {
       },
     });
     expect(summary.kind).toBe("project");
-    expect(summary.title).toBe("要访问工作目录外的文件夹");
-    expect(summary.target).toBe("/Users/me/code/app");
+    expect(summary.title).toBe("要挂载工作区外的项目目录");
+    expect(summary.target).toBe("挂载：/Users/me/code/app");
     expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
 });

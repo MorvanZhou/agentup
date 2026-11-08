@@ -27,6 +27,7 @@ export type GroupUiCustom = {
   delegation?: GroupDelegationCard;
   agentUpSummary?: unknown;
   agentUpArtifacts?: unknown;
+  agentUpReplyModel?: unknown;
 };
 
 function authorOf(
@@ -70,6 +71,9 @@ function agentMessage(
       : {}),
     ...(line.assistantCustom?.agentUpArtifacts !== undefined
       ? { agentUpArtifacts: line.assistantCustom.agentUpArtifacts }
+      : {}),
+    ...(line.assistantCustom?.agentUpReplyModel !== undefined
+      ? { agentUpReplyModel: line.assistantCustom.agentUpReplyModel }
       : {}),
   };
   if (Array.isArray(line.parts) && line.parts.length > 0) {

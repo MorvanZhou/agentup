@@ -85,6 +85,10 @@ export class DesktopApi {
     return authApi.oauthExchange(this.http, code);
   }
 
+  desktopHandoff(token: string): Promise<string> {
+    return authApi.desktopHandoff(this.http, token);
+  }
+
   turnstileInfo(): Promise<authApi.TurnstileInfo> {
     return authApi.turnstileInfo(this.http);
   }
@@ -128,7 +132,7 @@ export class DesktopApi {
 
   agents(
     token: string,
-    options?: { userId?: string; q?: string; recruited?: boolean },
+    options?: { userId?: string; q?: string; recruited?: boolean; projected?: boolean },
   ): Promise<AgentCard[]> {
     return agentsApi.agents(this.http, token, options);
   }

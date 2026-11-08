@@ -122,5 +122,14 @@ export function preferences(payload: Record<string, unknown>): UserPreferences {
     throw new BackendClientError("偏好响应无效", 200);
   }
   const uiLocale = payload.ui_locale === "en" ? "en" : "zh";
-  return { themeMode: mode, skipEditResendConfirm: payload.skip_edit_resend_confirm, uiLocale };
+  const chatFontSize =
+    payload.chat_font_size === "sm" || payload.chat_font_size === "lg"
+      ? payload.chat_font_size
+      : "md";
+  return {
+    themeMode: mode,
+    skipEditResendConfirm: payload.skip_edit_resend_confirm,
+    uiLocale,
+    chatFontSize,
+  };
 }

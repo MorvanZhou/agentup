@@ -265,8 +265,8 @@ it("passes the explicit session plan to the Pi SDK", async () => {
   expect(options.model).toMatchObject({ api: "openai-completions", baseUrl: model.baseUrl, provider: "ollama" });
   expect(options.modelRuntime.getModel("ollama", "qwen")).toMatchObject({ id: "qwen", apiKey: "ollama" });
   expect(options.settingsManager.options.projectTrusted).toBe(true);
-  // fs-guard / web / local-time / ask_user / todo / summary / artifacts / output-length / stream-guard / checkpoint / approval / sampling（无 MCP / 委托 / 后台时）
-  expect(options.resourceLoader.options.extensionFactories).toHaveLength(12);
+  // fs-guard / web / local-time / ask_user / todo / reply-model / summary / artifacts / output-length / stream-guard / checkpoint / approval / sampling（无 MCP / 委托 / 后台时）
+  expect(options.resourceLoader.options.extensionFactories).toHaveLength(13);
   expect(options.resourceLoader.options.disabledBuiltinExtensions).toEqual(["mcp"]);
   expect(options.resourceLoader.options.noSkills).toBe(true);
   expect(options.resourceLoader.options.additionalSkillPaths).toEqual([]);
@@ -425,6 +425,6 @@ it("stamps the visit user onto hospital MCP, defaults exposure to deferred, and 
     resourceLoader: { options: { extensionFactories: unknown[] } };
   };
   expect(options.tools).toContain("tool_search");
-  // + tool_search + codemode + mcp（相对无 MCP 时多 3）
-  expect(options.resourceLoader.options.extensionFactories.length).toBeGreaterThanOrEqual(13);
+  // + tool_search + codemode + mcp（相对无 MCP 时的 13 再多 3）
+  expect(options.resourceLoader.options.extensionFactories.length).toBeGreaterThanOrEqual(16);
 });

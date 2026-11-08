@@ -1,5 +1,10 @@
 /** 从一条 assistant 消息里抽出「协助过的 Agent」展示信息。 */
 
+import {
+  readAgentUpReplyModel,
+  type AgentUpReplyModel,
+} from "./message-reply-model";
+
 export type AssistAgentStatus = "running" | "completed" | "failed";
 
 export type AssistAgentRef = {
@@ -21,6 +26,8 @@ export type AssistAgentRef = {
   startedAt?: number;
   /** 工具 part 墙钟终点（毫秒）；进行中通常缺省。 */
   completedAt?: number;
+  /** 专员本轮使用的 provider / 模型（工具结果 reply_model 行）。 */
+  replyModel?: AgentUpReplyModel;
 };
 
 type ToolLikePart = {
@@ -70,6 +77,7 @@ export function extractAssistAgents(parts: readonly unknown[]): AssistAgentRef[]
         ? "running"
         : "completed";
     const timing = readPartTiming(part);
+    const replyModel = parseDelegationReplyModel(resultText);
     const next: AssistAgentRef = {
       agentId,
       nameHint: parsed.agentName,
@@ -88,6 +96,7 @@ export function extractAssistAgents(parts: readonly unknown[]): AssistAgentRef[]
       ...(timing.completedAt !== undefined
         ? { completedAt: timing.completedAt }
         : {}),
+      ...(replyModel ? { replyModel } : {}),
     };
 
     const existing = indexById.get(agentId);
@@ -104,6 +113,7 @@ export function extractAssistAgents(parts: readonly unknown[]): AssistAgentRef[]
         taskId: next.taskId || prev.taskId,
         startedAt: next.startedAt ?? prev.startedAt,
         completedAt: next.completedAt ?? prev.completedAt,
+        replyModel: next.replyModel ?? prev.replyModel,
       };
     }
   }
@@ -254,6 +264,20 @@ export function parseDelegationTaskId(raw: string): string {
   if (!text) return "";
   const match = text.match(/(?:^|\n)task_id:\s*(\S+)/i);
   return match?.[1]?.trim() ?? "";
+}
+
+/** 从委托工具结果正文解析 reply_model JSON 行。 */
+export function parseDelegationReplyModel(raw: string): AgentUpReplyModel | undefined {
+  const text = raw?.trim() ?? "";
+  if (!text) return undefined;
+  const match = text.match(/(?:^|\n)reply_model:\s*(\{[\s\S]*?\})(?:\n|$)/i);
+  const json = match?.[1]?.trim();
+  if (!json) return undefined;
+  try {
+    return readAgentUpReplyModel({ custom: { agentUpReplyModel: JSON.parse(json) } }) ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function parseDelegationResultText(raw: string): {

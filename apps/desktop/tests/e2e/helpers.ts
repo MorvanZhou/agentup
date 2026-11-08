@@ -66,8 +66,10 @@ export async function expectComposerText(page: Page, text: string): Promise<void
   await expect(page.getByRole("textbox", { name: /^发送消息/ })).toHaveText(text);
 }
 
+/** 打开该会话顶栏菜单并点「更新」（包同步入口已从侧栏迁到 ChatHeader）。 */
 export async function syncAgent(page: Page, agentName: string): Promise<void> {
-  await page.getByRole("button", { name: new RegExp(`更多操作：${agentName}`) }).click();
+  await conversationItem(page, agentName).click();
+  await page.getByRole("button", { name: /会话菜单/ }).click();
   await page.getByRole("menuitem", { name: "更新" }).click();
 }
 

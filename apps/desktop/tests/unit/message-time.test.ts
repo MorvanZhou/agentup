@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   MESSAGE_TIME_GAP_MS,
   formatChatTimeLabel,
+  formatSidebarTimeLabel,
   messageCreatedAtMs,
   timeLabelsForVisibleIds,
   timeSeparatorLabel,
@@ -41,6 +42,18 @@ it("formats chat time like WeChat", () => {
   expect(formatChatTimeLabel(atLocal(2026, 9, 11, 21, 5), now)).toBe("昨天 21:05");
   expect(formatChatTimeLabel(atLocal(2026, 8, 1, 9, 0), now)).toBe("9月1日 09:00");
   expect(formatChatTimeLabel(atLocal(2025, 11, 31, 23, 59), now)).toBe("2025年12月31日 23:59");
+});
+
+it("formats sidebar time like WeChat chat list", () => {
+  // 昨天/月日走全局 i18n（测环境默认 zh）；locale 只影响近一周的星期名
+  expect(formatSidebarTimeLabel(0, "zh", now)).toBe("");
+  expect(formatSidebarTimeLabel(atLocal(2026, 9, 12, 14, 5), "zh", now)).toBe("14:05");
+  expect(formatSidebarTimeLabel(atLocal(2026, 9, 11, 21, 5), "zh", now)).toBe("昨天");
+  // now 为 2026-10-12；10/8 周四落在近一周内
+  expect(formatSidebarTimeLabel(atLocal(2026, 9, 8, 10, 0), "zh", now)).toBe("星期四");
+  expect(formatSidebarTimeLabel(atLocal(2026, 9, 8, 10, 0), "en", now)).toBe("Thursday");
+  expect(formatSidebarTimeLabel(atLocal(2026, 8, 1, 9, 0), "zh", now)).toBe("9月1日");
+  expect(formatSidebarTimeLabel(atLocal(2025, 11, 31, 23, 59), "zh", now)).toBe("2025年12月31日");
 });
 
 it("shows separator for first message and after gap", () => {

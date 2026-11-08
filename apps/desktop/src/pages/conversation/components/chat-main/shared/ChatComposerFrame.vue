@@ -19,11 +19,12 @@ function onResize(event: PointerEvent): void {
 </script>
 
 <template>
-  <div ref="rootEl" class="relative shrink-0 border-t border-border bg-paper">
+  <!-- 对齐微信：输入区与聊天区同色，仅顶部分割线区分 -->
+  <div ref="rootEl" class="relative shrink-0 border-t border-rule/80 bg-background">
     <button
       v-if="resizable"
       type="button"
-      class="app-no-drag absolute inset-x-0 top-0 z-10 h-1.5 -translate-y-1/2 cursor-row-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-accent/30 focus-visible:bg-accent/40"
+      class="app-no-drag absolute inset-x-0 top-0 z-10 h-1.5 -translate-y-1/2 cursor-row-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-muted focus-visible:bg-muted/80"
       :aria-label="t('composerResize')"
       @pointerdown="onResize"
     />

@@ -259,6 +259,96 @@ it("assistant 整包：跳过 stream 回放，仍放出工具之间的新旁白"
   expect(translator.text).toContain("接下来委托 Weaty。");
 });
 
+it("工具后：stream 本段再 assistant 同段，不重复推（CodeBuddy 协作旁白）", () => {
+  const translator = createExternalTranslator();
+  translator.push({
+    type: "stream_event",
+    event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "先搜专家" } },
+  });
+  translator.push({
+    type: "assistant",
+    message: { role: "assistant", content: [{ type: "text", text: "先搜专家" }] },
+  });
+  translator.push({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "t-search", name: "Bash", input: { command: "ls" } }],
+    },
+  });
+  translator.push({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "t-search", content: "ok" }],
+    },
+  });
+
+  // 工具后 stream 只推「本段」；随后 assistant 整包也只有本段（不是全量累计）
+  expect(
+    deltas(
+      translator.push({
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "接下来委托 Weaty。" },
+        },
+      }),
+      "text_delta",
+    ),
+  ).toEqual(["接下来委托 Weaty。"]);
+
+  expect(
+    deltas(
+      translator.push({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "接下来委托 Weaty。" }],
+        },
+      }),
+      "text_delta",
+    ),
+  ).toEqual([]);
+
+  expect(translator.text).toBe("先搜专家接下来委托 Weaty。");
+  const textTrail = translator.trail.filter((item) => item.kind === "text").map((item) => item.text);
+  expect(textTrail.join("")).toBe("先搜专家接下来委托 Weaty。");
+});
+
+it("assistant 整包先到后 stream 同段回放，不重复推", () => {
+  const translator = createExternalTranslator();
+  expect(
+    deltas(
+      translator.push({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "已确认交给气象员 Weaty。" }],
+        },
+      }),
+      "text_delta",
+    ),
+  ).toEqual(["已确认交给气象员 Weaty。"]);
+
+  expect(
+    deltas(
+      translator.push({
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "已确认交给气象员 Weaty。" },
+        },
+      }),
+      "text_delta",
+    ),
+  ).toEqual([]);
+
+  expect(translator.text).toBe("已确认交给气象员 Weaty。");
+});
+
 it("completeTool 写入结果后，finishOpenTools 不再覆盖", () => {
   const translator = createExternalTranslator();
   translator.push({

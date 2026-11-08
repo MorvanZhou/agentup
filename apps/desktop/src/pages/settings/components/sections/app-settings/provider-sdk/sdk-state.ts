@@ -38,7 +38,7 @@ export function statePillClass(state: string): string {
   if (sdkReady(state)) return "border-transparent bg-success-soft text-success-foreground";
   if (state === "install_failed" || state === "error")
     return "border-destructive/30 bg-danger-soft text-destructive";
-  if (busyState(state)) return "border-accent/30 bg-accent/10 text-accent";
+  if (busyState(state)) return "border-rule bg-muted text-foreground";
   return "border-rule bg-background text-muted-foreground";
 }
 

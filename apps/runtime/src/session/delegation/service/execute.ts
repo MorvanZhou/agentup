@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { ModelConfig } from "../../../config/load.js";
 import type { Visit } from "../../../package/sync.js";
+import { replyModelFromConfig } from "../../history/reply-model.js";
 import type { ApprovalBroker } from "../../hitl/approval/index.js";
 import type { ShellHangBroker } from "../../hitl/shell-hang/index.js";
 import type { AskUserBroker } from "../../tools/ask-user.js";
@@ -63,9 +64,14 @@ export async function executeDelegationTask(
       // 排队期间 brief 可能被二次 delegate 改过；开跑前再读一次
       const latestBrief = ctx.store.get(task.id)?.brief ?? task.brief;
       const latestTask = ctx.store.get(task.id) ?? task;
+      const model = ctx.getModel(latestTask, visit);
+      // 以开跑时的真实模型覆盖派出快照（单配排队期间可能换模）
+      ctx.store.update(task.id, {
+        replyModel: replyModelFromConfig(model, ctx.userDataRoot),
+      });
       const outcome = await runDelegatedPrompt(
         visit,
-        ctx.getModel(latestTask, visit),
+        model,
         latestBrief,
         ctx.approvals,
         ctx.askUser,

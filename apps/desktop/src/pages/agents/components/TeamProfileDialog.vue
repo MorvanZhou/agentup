@@ -104,7 +104,7 @@ function runRecruit(): void {
     size="xl"
     align="center"
     title-class="m-0 text-lg font-semibold leading-snug tracking-tight"
-    description-class="m-0 mt-1 break-words text-sm font-semibold leading-snug text-accent"
+    description-class="m-0 mt-1 break-words text-sm font-semibold leading-snug text-muted-foreground"
     @update:open="emit('update:open', $event)"
   >
     <template #leading>

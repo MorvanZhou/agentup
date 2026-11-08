@@ -1,6 +1,7 @@
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { UIMessageChunk } from "ai";
 
+import type { ModelConfig } from "../../config/load.js";
 import type { UiLocale } from "../../i18n/locale.js";
 import type { DelegationStartedEvent } from "../delegation/progress.js";
 import {
@@ -9,6 +10,11 @@ import {
   type ExternalTrailItem,
 } from "../external/events.js";
 import { PiUIMessageProjector } from "../history/frames.js";
+import {
+  AGENTUP_REPLY_MODEL_CUSTOM_TYPE,
+  replyModelFromConfig,
+  type AgentUpReplyModel,
+} from "../history/reply-model.js";
 import { AGENTUP_SUMMARY_CUSTOM_TYPE } from "../history/summary.js";
 import type { ApprovalRequest } from "../hitl/approval/types.js";
 import {
@@ -78,6 +84,8 @@ export type ExternalTurnInput = {
     trail: ExternalTrailItem[];
     aborted: boolean;
   }) => void;
+  /** 本轮回复模型；写入流式 start metadata。 */
+  replyModel?: AgentUpReplyModel;
 };
 
 export type ExternalTurnResult = {
@@ -88,7 +96,9 @@ export type ExternalTurnResult = {
 };
 
 export async function runExternalTurn(input: ExternalTurnInput): Promise<ExternalTurnResult> {
-  const projector = new PiUIMessageProjector();
+  const projector = new PiUIMessageProjector({
+    replyModel: input.replyModel,
+  });
   const translator = createExternalTranslator();
   let visibleText = "";
   let result: WorkerResult | null = null;
@@ -118,6 +128,7 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
         toAgentName: event.toAgentName,
         brief: event.brief,
         wait: event.wait,
+        ...(event.replyModel ? { replyModel: event.replyModel } : {}),
       }),
     );
   });
@@ -321,8 +332,15 @@ export async function runExternalSessionTurn(input: {
   compactBudgetChars?: number;
   /** flatten 硬裁上限（按会话模型窗） */
   promptMaxChars?: number;
+  /** SDK 不走 Pi extension，收尾自行写入 reply-model custom entry。 */
+  model?: ModelConfig;
+  /** 解析模型展示名用的本机数据根。 */
+  userDataRoot?: string;
 }): Promise<ExternalTurnResult | null> {
   if (!input.session.externalQuery) return null;
+  const replyModel = input.model
+    ? replyModelFromConfig(input.model, input.userDataRoot ?? "")
+    : undefined;
   const writeBack = ({
     text,
     toolDigest,
@@ -340,6 +358,7 @@ export async function runExternalSessionTurn(input: {
       text,
       toolDigest,
       trail,
+      ...(replyModel ? { replyModel } : {}),
     });
   };
 
@@ -385,6 +404,7 @@ export async function runExternalSessionTurn(input: {
       hitl: input.hitl,
       delegationStarted: input.delegationStarted,
       writeBack,
+      ...(replyModel ? { replyModel } : {}),
     });
   }
   const abortExternal = () => {
@@ -407,6 +427,7 @@ export async function runExternalSessionTurn(input: {
       hitl: input.hitl,
       delegationStarted: input.delegationStarted,
       writeBack,
+      ...(replyModel ? { replyModel } : {}),
     });
   } finally {
     input.signal?.removeEventListener("abort", abortExternal);
@@ -495,6 +516,7 @@ export function appendExternalTurnToSession(
     text: string;
     toolDigest: string[];
     trail?: ExternalTrailItem[];
+    replyModel?: AgentUpReplyModel;
   },
 ): void {
   const manager = session?.sessionManager;
@@ -517,7 +539,9 @@ export function appendExternalTurnToSession(
     if (item.kind === "text") {
       const body = item.text.trim();
       if (!body) continue;
-      manager.appendMessage(externalAssistantMessage([{ type: "text", text: body }], now));
+      manager.appendMessage(
+        externalAssistantMessage([{ type: "text", text: body }], now, "stop", input.replyModel),
+      );
       lastTextOrdinal = textPartIndex;
       textPartIndex += 1;
       wroteAnything = true;
@@ -528,6 +552,7 @@ export function appendExternalTurnToSession(
         [{ type: "toolCall", id: item.id, name: item.name, arguments: item.args }],
         now,
         "toolUse",
+        input.replyModel,
       ),
     );
     wroteAnything = true;
@@ -545,11 +570,20 @@ export function appendExternalTurnToSession(
 
   if (!wroteAnything) return;
 
-  if (lastTextOrdinal !== undefined && typeof manager.appendCustomEntry === "function") {
-    try {
-      manager.appendCustomEntry(AGENTUP_SUMMARY_CUSTOM_TYPE, { textPartIndex: lastTextOrdinal });
-    } catch {
-      // summary 写失败不影响正文
+  if (typeof manager.appendCustomEntry === "function") {
+    if (input.replyModel) {
+      try {
+        manager.appendCustomEntry(AGENTUP_REPLY_MODEL_CUSTOM_TYPE, input.replyModel);
+      } catch {
+        // reply-model 写失败不影响正文
+      }
+    }
+    if (lastTextOrdinal !== undefined) {
+      try {
+        manager.appendCustomEntry(AGENTUP_SUMMARY_CUSTOM_TYPE, { textPartIndex: lastTextOrdinal });
+      } catch {
+        // summary 写失败不影响正文
+      }
     }
   }
 
@@ -595,13 +629,15 @@ function externalAssistantMessage(
   content: unknown[],
   timestamp: number,
   stopReason: "stop" | "toolUse" = "stop",
+  replyModel?: AgentUpReplyModel,
 ): Record<string, unknown> {
+  // 与 Pi AssistantMessage 同形：有 replyModel 时写真实 template/model，避免 agentup/external-agent 占位。
   return {
     role: "assistant",
     content,
     api: "agentup-agent-sdk",
-    provider: "agentup",
-    model: "external-agent",
+    provider: replyModel?.templateId || "agentup",
+    model: replyModel?.modelId || "external-agent",
     usage: {
       input: 0,
       output: 0,

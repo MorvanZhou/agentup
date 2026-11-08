@@ -66,6 +66,13 @@ export type AgentUpDelegationStartedData = {
   toAgentName: string;
   brief: string;
   wait: boolean;
+  /** 派出时已知的回复模型；协助面板状态旁标形。 */
+  replyModel?: {
+    templateId: string;
+    modelId: string;
+    vendorId: string;
+    modelLabel: string;
+  };
 };
 
 /** 当前会话模型服务不可用（transient；桌面 toast）。 */
@@ -388,14 +395,27 @@ export function isAgentUpDelegationStarted(
 ): data is AgentUpDelegationStartedData {
   if (typeof data !== "object" || data === null) return false;
   const record = data as Record<string, unknown>;
+  if (
+    !(
+      typeof record.taskId === "string" &&
+      record.taskId.trim().length > 0 &&
+      typeof record.toAgentId === "string" &&
+      typeof record.toAgentName === "string" &&
+      typeof record.brief === "string" &&
+      typeof record.wait === "boolean" &&
+      (record.toolCallId === undefined || typeof record.toolCallId === "string")
+    )
+  ) {
+    return false;
+  }
+  if (record.replyModel === undefined) return true;
+  if (!record.replyModel || typeof record.replyModel !== "object") return false;
+  const model = record.replyModel as Record<string, unknown>;
   return (
-    typeof record.taskId === "string" &&
-    record.taskId.trim().length > 0 &&
-    typeof record.toAgentId === "string" &&
-    typeof record.toAgentName === "string" &&
-    typeof record.brief === "string" &&
-    typeof record.wait === "boolean" &&
-    (record.toolCallId === undefined || typeof record.toolCallId === "string")
+    typeof model.templateId === "string" &&
+    typeof model.modelId === "string" &&
+    typeof model.vendorId === "string" &&
+    typeof model.modelLabel === "string"
   );
 }
 

@@ -208,7 +208,7 @@ function stepHint(index: number): string {
   <!-- 提问底栏：与审批条同级，扁平占位，不挡消息流的浮层感 -->
   <section
     v-if="askUser && current"
-    class="shrink-0 border-t border-border bg-paper animate-rise motion-reduce:animate-none"
+    class="shrink-0 border-t border-rule/80 bg-background animate-rise motion-reduce:animate-none"
     role="region"
     :aria-label="t('askNeedAnswer')"
   >
@@ -223,7 +223,7 @@ function stepHint(index: number): string {
         />
         <span
           v-else
-          class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"
+          class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
           aria-hidden="true"
         >
           <MessageCircleQuestionIcon class="size-3.5" />
@@ -294,9 +294,9 @@ function stepHint(index: number): string {
                       :class="[
                         'grid size-4 shrink-0 place-items-center rounded-full text-[10px] font-semibold tabular-nums',
                         stepState(index) === 'current'
-                          ? 'bg-accent text-white'
+                          ? 'bg-foreground text-background'
                           : stepState(index) === 'done'
-                            ? 'bg-accent/15 text-accent'
+                            ? 'bg-muted text-foreground'
                             : 'bg-paper-deep text-muted-foreground',
                       ]"
                       aria-hidden="true"
@@ -369,7 +369,7 @@ function stepHint(index: number): string {
           :class="[
             'flex min-h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30',
             selected.includes(option.title)
-              ? 'bg-accent/10 text-foreground'
+              ? 'bg-muted text-foreground'
               : 'text-foreground hover:bg-paper-deep',
           ]"
           @click="toggleOption(option.title)"
@@ -379,7 +379,7 @@ function stepHint(index: number): string {
               'grid size-4 shrink-0 place-items-center border',
               isMultiple ? 'rounded-[3px]' : 'rounded-full',
               selected.includes(option.title)
-                ? 'border-accent bg-accent text-white'
+                ? 'border-foreground bg-foreground text-background'
                 : 'border-rule',
             ]"
             aria-hidden="true"
@@ -398,7 +398,7 @@ function stepHint(index: number): string {
           :class="[
             'flex min-h-8 w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-sm transition duration-200',
             freeformActive
-              ? 'border-accent/40 bg-accent/10'
+              ? 'border-foreground/20 bg-muted'
               : 'border-transparent hover:bg-paper-deep',
           ]"
         >
@@ -406,7 +406,7 @@ function stepHint(index: number): string {
             :class="[
               'grid size-4 shrink-0 place-items-center border',
               isMultiple ? 'rounded-[3px]' : 'rounded-full',
-              freeformActive ? 'border-accent bg-accent text-white' : 'border-rule',
+              freeformActive ? 'border-foreground bg-foreground text-background' : 'border-rule',
             ]"
             aria-hidden="true"
           >
