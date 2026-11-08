@@ -1,20 +1,35 @@
 <p align="center">
-  <img src="apps/desktop/public/icon.png" alt="AgentUp" width="128" />
+  <img src="apps/desktop/public/icon.png" alt="AgentUp" width="96" />
 </p>
 
-# AgentUp
+<h1 align="center">AgentUp</h1>
 
-[English](README.md)
+<p align="center"><strong>像用微信一样用 AI。</strong></p>
 
-**你的 AI 助理们 — 像用微信一样用 AI。**
+<p align="center">
+  本地优先的多 Agent 桌面 IM — 像加朋友一样加助手。
+</p>
 
-学习、写东西、查资料、规划出行。每个助手只做一类事。问题跨了好几个主题，它会再叫一个帮手来。
+<p align="center">
+  <a href="https://github.com/MorvanZhou/agentup/releases">下载</a> ·
+  <a href="https://agentup.me">官网</a> ·
+  <a href="README.md">English</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MorvanZhou/agentup/releases"><img src="https://img.shields.io/github/v/release/MorvanZhou/agentup" alt="Release"></a>
+  <img src="https://img.shields.io/github/license/MorvanZhou/agentup" alt="License">
+  <a href="https://github.com/MorvanZhou/agentup/stargazers"><img src="https://img.shields.io/github/stars/MorvanZhou/agentup" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue" alt="Platform">
+</p>
+
+## 你的 AI 助理们 — 像用微信一样用 AI。
+
+**AgentUp** 是开源的多 Agent 协作桌面应用。学习、写东西、查资料、规划出行 — 每个助手只做一类事；问题跨了好几个主题，它会再叫一个帮手来。
 
 - 像加朋友一样，把助手加进通讯录
 - 一个助手，一种聊天。互不掺和。
 - 能读你电脑上的文件，并把结果存回去
-
-**[下载桌面版](https://github.com/MorvanZhou/agentup/releases)** · **[agentup.me](https://agentup.me)**
 
 安装到「应用程序」后，在终端执行一次下面的命令，才能正常打开：
 

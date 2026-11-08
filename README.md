@@ -1,20 +1,35 @@
 <p align="center">
-  <img src="apps/desktop/public/icon.png" alt="AgentUp" width="128" />
+  <img src="apps/desktop/public/icon.png" alt="AgentUp" width="96" />
 </p>
 
-# AgentUp
+<h1 align="center">AgentUp</h1>
 
-[中文](README_CN.md)
+<p align="center"><strong>Use AI the way you use WhatsApp.</strong></p>
 
-**Your AI Assistants — use AI the way you use WhatsApp.**
+<p align="center">
+  A local-first multi-agent desktop IM — add assistants like friends.
+</p>
 
-Study, write, look things up, plan a trip. Each assistant handles one kind of job. When the ask spans topics, it brings in another helper.
+<p align="center">
+  <a href="https://github.com/MorvanZhou/agentup/releases">Download</a> ·
+  <a href="https://agentup.me">Website</a> ·
+  <a href="README_CN.md">中文</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MorvanZhou/agentup/releases"><img src="https://img.shields.io/github/v/release/MorvanZhou/agentup" alt="Release"></a>
+  <img src="https://img.shields.io/github/license/MorvanZhou/agentup" alt="License">
+  <a href="https://github.com/MorvanZhou/agentup/stargazers"><img src="https://img.shields.io/github/stars/MorvanZhou/agentup" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue" alt="Platform">
+</p>
+
+## Your AI Assistants — use AI the way you use WhatsApp.
+
+**AgentUp** is an open-source desktop app for multi-agent collaboration. Study, write, look things up, plan a trip — each assistant handles one kind of job; when the ask spans topics, it brings in another helper.
 
 - Add assistants to your contacts like friends
 - One assistant, one kind of chat. No mixing.
 - It can read files on your computer and save results there
-
-**[Download App](https://github.com/MorvanZhou/agentup/releases)** · **[agentup.me](https://agentup.me)**
 
 After installing to Applications, run this once in Terminal so macOS will open the app:
 
