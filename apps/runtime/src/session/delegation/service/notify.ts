@@ -1,6 +1,6 @@
 import { isLocalAgentId } from "../../../local/agents/local-agent.js";
 import { PERSONAL_ASSISTANT_ID } from "../../../local/assistant/personal-assistant.js";
-import { deliveryDirName } from "../../tools/deliver-artifacts.js";
+import { deliveryDirName, mapStagedToParentPaths } from "../../tools/deliver-artifacts.js";
 import type { AsyncWakeItem } from "../../wake/index.js";
 import type { DelegationStore } from "../store.js";
 import { DELEGATION_RESULT_CUSTOM_TYPE, type DelegationTask } from "../types.js";
@@ -38,12 +38,14 @@ export function notifyParent(
     : isLocalAgentId(task.fromAgentId)
       ? "local"
       : "recruited";
-  const artifactNote =
-    task.artifacts && task.artifacts.length > 0
-      ? `\n\n已确认投递 ${task.artifacts.length} 个产物到你的 ARTIFACT/${deliveryDirName(task.toAgentId, task.toAgentName)}/。`
-      : task.artifacts
-        ? "\n\n专家确认本次无产物需要投递。"
-        : "";
+  const delivered = resolveWakeDeliveredPaths(task);
+  const artifactNote = delivered
+    ? `\n\n已确认投递 ${delivered.length} 个产物到你的 ARTIFACT/${deliveryDirName(task.toAgentId, task.toAgentName)}/：\n` +
+      delivered.map((item) => `- ${item.path}`).join("\n") +
+      `\n它们会自动出现在你这轮回复下方的交付网格；若要增删展示，调用 present_artifacts。`
+    : task.artifacts
+      ? "\n\n专家确认本次无产物需要投递。"
+      : "";
   const body =
     task.status === "completed"
       ? `【委托完成】专家「${task.toAgentName}」（${task.toAgentId}）已完成子任务。\n\n` +
@@ -96,6 +98,26 @@ export function settleGroupIfNotified(
   if (!task.groupId || !isTerminalStatus(task.status)) return task;
   if (!task.notified || task.seen) return task;
   return store.update(task.id, { seen: true }) ?? task;
+}
+
+/** wake 文案用的父侧路径：已落盘优先，否则按 staging 预测。 */
+export function resolveWakeDeliveredPaths(
+  task: DelegationTask,
+): { path: string; size?: number }[] | undefined {
+  if (task.deliveredPaths && task.deliveredPaths.length > 0) return task.deliveredPaths;
+  if (!task.artifacts || task.artifacts.length === 0) return undefined;
+  if (task.groupId) {
+    return task.artifacts.filter((item) => item.path.startsWith("ARTIFACT/"));
+  }
+  try {
+    return mapStagedToParentPaths({
+      toAgentId: task.toAgentId,
+      toAgentName: task.toAgentName,
+      staged: task.artifacts,
+    });
+  } catch {
+    return task.artifacts;
+  }
 }
 
 /**

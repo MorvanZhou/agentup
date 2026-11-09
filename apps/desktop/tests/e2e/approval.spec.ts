@@ -45,12 +45,13 @@ test("危险工具调用需要用户按次允许", async ({ page }) => {
   await composer.fill("运行天气脚本");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toBeVisible();
-  await expect(page.getByRole("paragraph").filter({ hasText: "node weather.mjs" })).toBeVisible();
-  // 主按钮默认仅这一次；更长范围在下拉里。
+  // 命令同时出现在摘要按钮与详情 pre；按角色取摘要，避免 strict mode 双命中。
+  await expect(page.getByRole("button", { name: "Bash node weather.mjs" })).toBeVisible();
+  // 主按钮默认允许一次；更长范围在下拉里。
   const decision = page.waitForRequest((request) =>
     request.url().includes("/runtime/approvals/approval-respiratory-doctor"),
   );
-  await page.getByRole("button", { name: "允许", exact: true }).click();
+  await page.getByRole("button", { name: /允许一次/ }).click();
   expect((await decision).postDataJSON()).toEqual({ allow: true });
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toHaveCount(0);
 });
@@ -115,7 +116,7 @@ test("多个会话同时待审批时，确认面板只属于当前 thread", asyn
   const doctorDecision = page.waitForRequest((request) =>
     request.url().includes("/runtime/approvals/approval-respiratory-doctor"),
   );
-  await page.getByRole("button", { name: "允许", exact: true }).click();
+  await page.getByRole("button", { name: /允许一次/ }).click();
   await doctorDecision;
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toHaveCount(0);
 
@@ -124,7 +125,7 @@ test("多个会话同时待审批时，确认面板只属于当前 thread", asyn
   const weatherDecision = page.waitForRequest((request) =>
     request.url().includes("/runtime/approvals/approval-weather"),
   );
-  await page.getByRole("button", { name: "允许", exact: true }).click();
+  await page.getByRole("button", { name: /允许一次/ }).click();
   await weatherDecision;
   await expect(page.getByRole("heading", { name: "要在电脑上运行操作" })).toHaveCount(0);
 });

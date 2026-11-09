@@ -799,6 +799,14 @@ function formatDelegateResult(
       details: { task },
     };
   }
+  const delivered =
+    task.deliveredPaths && task.deliveredPaths.length > 0
+      ? task.deliveredPaths
+      : undefined;
+  const artifactLines = delivered
+    ? `\nDelivered ${delivered.length} artifact(s) (auto-attached under your reply; use present_artifacts to curate):\n` +
+      delivered.map((item) => `- ${item.path}`).join("\n")
+    : "";
   return {
     content: [
       {
@@ -808,7 +816,7 @@ function formatDelegateResult(
           `task_id: ${task.id}\n` +
           `agent: ${task.toAgentName} (${task.toAgentId})\n` +
           modelLine +
-          `result:\n${text || task.resultSummary || ""}`,
+          `result:\n${text || task.resultSummary || ""}${artifactLines}`,
       },
     ],
     details: { task },

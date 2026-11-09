@@ -169,6 +169,21 @@ it("additionalDirs 不含 cwd 自身，也不含不存在的目录", () => {
   expect(context.additionalDirs).toEqual([fs.realpathSync(real)]);
 });
 
+it("群 workspace 在目录列表里标明：相对 WORK/ARTIFACT 解析到共享根而非私人 cwd", () => {
+  const current = visit();
+  const cwd = path.join(current.root, "cwd");
+  const groupRoot = path.join(root, "group-workspace");
+  fs.mkdirSync(groupRoot, { recursive: true });
+  const context = buildExternalAgentContext({
+    visit: current,
+    cwd,
+    groupWorkspaceRoot: groupRoot,
+  });
+  expect(context.systemAppend).toContain("private Working directory");
+  expect(context.systemAppend).toMatch(/shared group workspace[\s\S]*WORK\/\.\.\. and ARTIFACT\/\.\.\./);
+  expect(context.systemAppend).toContain(fs.realpathSync(groupRoot).replace(/\\/g, "/"));
+});
+
 it(`AGENTS.md 超长按 ${MAX_AGENTS_MD_CHARS} 截断`, () => {
   const current = visit();
   writeAgentsMd("规".repeat(MAX_AGENTS_MD_CHARS + 500));

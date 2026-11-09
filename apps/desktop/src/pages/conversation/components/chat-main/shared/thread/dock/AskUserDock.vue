@@ -101,6 +101,12 @@ const progressLabel = computed(() =>
   }),
 );
 
+/** 首行标签：子代理时叠名，否则用进度。 */
+const headerLabel = computed(() => {
+  const name = props.askUser?.askedByName?.trim();
+  return name ? `${name} · ${progressLabel.value}` : progressLabel.value;
+});
+
 function isAnswered(item: AskUserItemAnswer | undefined): boolean {
   if (!item || item.kind === "skipped") return false;
   if (item.kind === "freeform") return item.text.trim().length > 0;
@@ -212,49 +218,34 @@ function stepHint(index: number): string {
     role="region"
     :aria-label="t('askNeedAnswer')"
   >
-    <div class="mx-auto w-full px-3 py-2.5">
-      <!-- 页头：图标 + 进度 + 切题 -->
-      <header class="mb-2 flex min-w-0 items-start gap-2">
+    <div class="mx-auto w-full px-3 py-3">
+      <!-- 首行：face/问号图标 + 标签 + 标题；右侧切题/关闭 -->
+      <header class="flex min-w-0 items-center gap-2">
         <HitlAgentFace
           v-if="askUser.askedByName"
-          class="mt-0.5"
           :name="askUser.askedByName"
           :agent-id="askUser.askedByAgentId"
         />
-        <span
+        <MessageCircleQuestionIcon
           v-else
-          class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
+          class="size-4 shrink-0 text-muted-foreground"
           aria-hidden="true"
+        />
+        <p class="mb-0 shrink-0 text-sm text-muted-foreground">{{ headerLabel }}</p>
+        <h2
+          :id="`ask-user-title-${askUser.id}`"
+          class="mb-0 min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+          :title="current.question"
         >
-          <MessageCircleQuestionIcon class="size-3.5" />
-        </span>
-        <div class="min-w-0 flex-1">
-          <p class="mb-0 text-xs font-medium tracking-wider text-accent">
-            {{ progressLabel }}
-          </p>
-          <p v-if="askUser.askedByName" class="mb-0 mt-0.5 text-xs text-foreground">
-            {{ tf("hitlRelayAsk", { name: askUser.askedByName }) }}
-          </p>
-          <p v-if="askUser.taskLabel" class="mb-0 mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-            {{ tf("hitlRelayTask", { label: askUser.taskLabel }) }}
-          </p>
-          <p v-if="(askUser.queueBehind ?? 0) > 0" class="mb-0 mt-0.5 text-xs text-muted-foreground">
-            {{ tf("hitlQueueBehind", { n: askUser.queueBehind ?? 0 }) }}
-          </p>
-          <h2
-            :id="`ask-user-title-${askUser.id}`"
-            class="mt-0.5 text-sm font-semibold tracking-tight text-foreground"
-          >
-            {{ current.question }}
-          </h2>
-          <p
-            v-if="current.context"
-            class="mb-0 mt-0.5 text-xs leading-snug text-muted-foreground"
-          >
-            {{ current.context }}
-          </p>
-        </div>
-        <div class="flex shrink-0 items-center pt-0.5">
+          {{ current.question }}
+        </h2>
+        <p
+          v-if="(askUser.queueBehind ?? 0) > 0"
+          class="mb-0 shrink-0 text-xs text-muted-foreground"
+        >
+          {{ tf("hitlQueueBehind", { n: askUser.queueBehind ?? 0 }) }}
+        </p>
+        <div class="flex shrink-0 items-center">
           <template v-if="showSteps">
             <!-- 固定宽度进度 + 跳转菜单，题数再多也不横向撑开 -->
             <DropdownMenuRoot v-model:open="jumpOpen">
@@ -352,10 +343,22 @@ function stepHint(index: number): string {
           </button>
         </div>
       </header>
+      <p
+        v-if="askUser.taskLabel"
+        class="mb-0 mt-1.5 line-clamp-2 text-xs text-muted-foreground"
+      >
+        {{ tf("hitlRelayTask", { label: askUser.taskLabel }) }}
+      </p>
+      <p
+        v-if="current.context"
+        class="mb-0 mt-1 text-xs leading-snug text-muted-foreground"
+      >
+        {{ current.context }}
+      </p>
 
       <!-- 选项：限制高度避免挡住大半对话 -->
       <div
-        class="flex max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain pr-0.5"
+        class="mt-2.5 flex max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain pr-0.5"
         role="listbox"
         :aria-label="isMultiple ? t('askOptionsMultiple') : t('askOptionsSingle')"
         :aria-multiselectable="isMultiple || undefined"

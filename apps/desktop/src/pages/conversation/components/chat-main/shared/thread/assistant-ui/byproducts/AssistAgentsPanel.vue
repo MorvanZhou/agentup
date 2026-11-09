@@ -11,6 +11,7 @@ import { agentProfileHostKey } from "../../../../../../../../shared/components/a
 import AgentAvatar from "../../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import { showToast } from "../../../../../../../../shared/model/ui/toast";
 import { t, tf } from "../../../../../../../../shared/model/ui/ui-locale";
+import { resolveAssistStartMs } from "../../../../../../model/message/assist-elapsed";
 import { formatElapsedMs } from "../../../../../../model/message/elapsed";
 import type { AssistAgentRef } from "../../../../../../model/message/message-assistants";
 import type { AgentUpReplyModel } from "../../../../../../model/message/message-reply-model";
@@ -42,8 +43,6 @@ const profileHost = inject(agentProfileHostKey, null);
 const expandedId = ref<string | null>(props.assists[0]?.agentId ?? null);
 /** 驱动进行中耗时刷新；无 running 时不跑定时器。 */
 const nowMs = ref(Date.now());
-/** part.timing 缺失时，按 toolCallId 本地兜底起点。 */
-const localStartedAt = new Map<string, number>();
 let elapsedTimer: ReturnType<typeof setInterval> | undefined;
 
 watch(
@@ -125,21 +124,10 @@ function isAssisting(assist: AssistAgentRef): boolean {
   return assist.status === "running" || Boolean(assist.asyncDispatched);
 }
 
-function assistStartMs(assist: AssistAgentRef): number | undefined {
-  if (typeof assist.startedAt === "number") return assist.startedAt;
-  if (assist.status !== "running") return undefined;
-  const key = assist.toolCallId || assist.agentId;
-  if (!key) return undefined;
-  const cached = localStartedAt.get(key);
-  if (cached !== undefined) return cached;
-  const start = Date.now();
-  localStartedAt.set(key, start);
-  return start;
-}
-
 /** 身份层耗时：进行中实时刷新；结束态仅在有墙钟 timing 时展示。 */
 function elapsedLabel(assist: AssistAgentRef): string | undefined {
-  const start = assistStartMs(assist);
+  // 模块级起点：Tabs unmountOnHide 重挂面板也不重起表。
+  const start = resolveAssistStartMs(assist, nowMs.value);
   if (start === undefined) return undefined;
   if (assist.status === "running") {
     return formatElapsedMs(nowMs.value - start);
@@ -261,7 +249,7 @@ function openProcess(assist: AssistAgentRef): void {
     <article
       v-for="assist in assists"
       :key="assist.agentId"
-      class="overflow-hidden rounded-xl border border-rule bg-background shadow-sm"
+      class="@container overflow-hidden rounded-xl border border-rule bg-background shadow-sm"
       role="listitem"
     >
       <!-- 身份层：协助方是谁 + 已执行多久；头像可开资料 -->
@@ -290,9 +278,10 @@ function openProcess(assist: AssistAgentRef): void {
             >
               {{ statusLabel(assist) }}
             </span>
-            <!-- 状态旁：专员本轮 provider / 模型（与气泡顶栏同形） -->
+            <!-- 协助卡行紧：模型名走浮层 tip，不跟状态行抢宽 -->
             <ReplyModelMark
               v-if="assistReplyModel(assist)"
+              reveal="tip"
               :model="assistReplyModel(assist)!"
             />
             <span
@@ -311,29 +300,30 @@ function openProcess(assist: AssistAgentRef): void {
               {{ elapsedByAgentId[assist.agentId] }}
             </span>
           </div>
-          <p class="mb-0 text-xs text-muted-foreground">{{ t("assistLabel") }}</p>
+          <p class="mb-0 truncate text-xs text-muted-foreground">{{ t("assistLabel") }}</p>
         </div>
-        <div class="flex shrink-0 items-center gap-1.5">
+        <!-- 窄卡只留 icon；够宽再露「详情 / 去对话」文案（aria/title 仍完整） -->
+        <div class="flex shrink-0 items-center gap-1">
           <button
             v-if="canOpenProcess(assist)"
             type="button"
-            class="inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            class="inline-flex size-7 cursor-pointer items-center justify-center gap-1 rounded-lg text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 @[20rem]:h-7 @[20rem]:w-auto @[20rem]:min-h-7 @[20rem]:px-2"
             :aria-label="tf('assistSeeProcessAria', { name: displayName(assist) })"
             :title="t('assistSeeProcessTitle')"
             @click="openProcess(assist)"
           >
-            {{ t("assistSeeProcess") }}
+            <span class="hidden @[20rem]:inline">{{ t("assistSeeProcess") }}</span>
             <ArrowRightIcon class="size-3.5 shrink-0" aria-hidden="true" />
           </button>
           <button
             type="button"
-            class="inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            class="inline-flex size-7 cursor-pointer items-center justify-center gap-1 rounded-lg text-xs font-medium text-foreground transition duration-200 hover:bg-paper-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 @[20rem]:h-7 @[20rem]:w-auto @[20rem]:min-h-7 @[20rem]:px-2"
             :aria-label="tf('assistGoChatAria', { name: displayName(assist) })"
             :title="t('assistGoChatTitle')"
             @click="goToAgent(assist)"
           >
-            {{ t("assistGoChat") }}
-            <ArrowUpRightIcon class="size-3.5" aria-hidden="true" />
+            <span class="hidden @[20rem]:inline">{{ t("assistGoChat") }}</span>
+            <ArrowUpRightIcon class="size-3.5 shrink-0" aria-hidden="true" />
           </button>
           <button
             type="button"

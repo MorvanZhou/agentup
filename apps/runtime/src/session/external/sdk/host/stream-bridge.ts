@@ -60,11 +60,18 @@ export function createAgentSdkStreamSimple(ctx: AgentSdkStreamContext): AgentSdk
     const onAbort = () => controller.abort();
     if (signal?.aborted) onAbort();
     else signal?.addEventListener("abort", onAbort, { once: true });
+    // 空闲超时：每条 SDK 消息续命，与 runExternalTurn 同语义
     const timeoutMs = ctx.turnTimeoutMs ?? AGENT_SDK_TURN_TIMEOUT_MS;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const guard = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+    let settleIdle: ((value: "timeout") => void) | undefined;
+    const idleGuard = new Promise<"timeout">((resolve) => {
+      settleIdle = resolve;
     });
+    const bumpIdle = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => settleIdle?.("timeout"), timeoutMs);
+    };
+    bumpIdle();
     let mcpClose: (() => Promise<void>) | undefined;
     try {
       const state = agentSdkStateOf(ctx.userDataRoot, ctx.templateId);
@@ -118,11 +125,12 @@ export function createAgentSdkStreamSimple(ctx: AgentSdkStreamContext): AgentSdk
       let result: WorkerResult | null = null;
       const iterate = (async () => {
         for await (const message of handle.messages) {
+          bumpIdle();
           result = normalize(message);
           if (result) break;
         }
       })();
-      const winner = await Promise.race([iterate.then(() => "done" as const), guard]);
+      const winner = await Promise.race([iterate.then(() => "done" as const), idleGuard]);
       if (winner === "timeout") {
         controller.abort();
         handle.abort();
@@ -130,7 +138,7 @@ export function createAgentSdkStreamSimple(ctx: AgentSdkStreamContext): AgentSdk
         finish(
           stream,
           partial,
-          failureResult("timeout", `${Math.round(timeoutMs / 60_000)} 分钟`),
+          failureResult("timeout", `${Math.round(timeoutMs / 60_000)} 分钟无产出`),
           model,
           ctx,
         );

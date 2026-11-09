@@ -48,6 +48,7 @@ html[data-chat-font="lg"] {
   /* 品牌橙（logo 挥手） */
   --color-accent: #ff7a1a;
   --color-accent-deep: #e8680f;
+  --color-accent-ink: #191919;
   --color-rust: #e24b4b;
 
   /* 聊天区 + Composer（微信约 #ededed） */
@@ -146,6 +147,7 @@ html[data-chat-font="lg"] {
   --color-bubble: #2a2a2a;
   --color-accent: #ff7a1a;
   --color-accent-deep: #ff8f3d;
+  --color-accent-ink: #ffffff;
   --color-rust: #e24b4b;
 
   --color-background: #1c1c1c;

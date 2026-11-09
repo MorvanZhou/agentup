@@ -1,6 +1,11 @@
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { Api, AssistantMessage } from "@earendil-works/pi-ai";
 
+import { sanitizeToolResultForContext } from "../history/sanitize-tool-result.js";
+import { TODO_TOOL } from "../tools/todo.js";
+import type { ExternalTodoProjector } from "./sdk/contract.js";
+import { emptyTodoBoard, type TodoBoard } from "./sdk/host/todo-board.js";
+
 /**
  * 外部 Agent（本地 Agent App / SDK）的消息 → Pi `AgentSessionEvent`。
  *
@@ -11,6 +16,8 @@ import type { Api, AssistantMessage } from "@earendil-works/pi-ai";
  * 1. 只合成**渲染用**事件（`message_update` / `tool_execution_*`），绝不合成 `toolcall_*`；
  *    后者在 Pi 的通道下会被当成"真的要去本地执行"，而外部 agent 的工具我们并没有。
  * 2. 消息形状按字段鸭子判断，不 import SDK 的类型定义（版本之间会变）。
+ *
+ * Todo：Host 只消费 `ExternalTodoProjector`；厂商工具名在 `adapters/<driverId>/todo.ts`。
  */
 
 /** 工具摘要单行上限：回写隐藏上下文时够认出"干过什么"就行。 */
@@ -49,15 +56,21 @@ export type ExternalTranslator = {
   readonly trail: ExternalTrailItem[];
 };
 
+export type ExternalTranslatorOptions = {
+  /** 本轮 driver 的 todo 投影；缺省不 rewrite 厂商 task/todo。 */
+  todoProjector?: ExternalTodoProjector;
+};
+
 /** 一条外部 agent 回合一个 translator：工具 id 去重等状态不能跨轮带。 */
-export function createExternalTranslator(): ExternalTranslator {
+export function createExternalTranslator(
+  options: ExternalTranslatorOptions = {},
+): ExternalTranslator {
+  const todoProjector = options.todoProjector;
   const tools: string[] = [];
   const toolDigest: string[] = [];
   const trail: ExternalTrailItem[] = [];
   /** 已发过 tool_execution_start 的 id：assistant 整包与 stream 事件会重复描述同一个工具。 */
   const announced = new Set<string>();
-  /** 已切开旁白段的工具 id（含不进时间线的 ToolSearch），避免同 id 反复 reset。 */
-  const segmentBreaks = new Set<string>();
   /** 参数还在流里的工具（content_block_start → delta → stop）。 */
   const building = new Map<
     number,
@@ -65,20 +78,21 @@ export function createExternalTranslator(): ExternalTranslator {
   >();
   const names = new Map<string, string>();
   const completed = new Set<string>();
+  /** 厂商 task/todo：启流记原名与参，收尾经 driver projector rewrite 成 Host todo。 */
+  const pendingTodo = new Map<string, { vendorName: string; args: Record<string, unknown> }>();
+  let todoBoard: TodoBoard = emptyTodoBoard();
   let sessionId: string | undefined;
   let text = "";
   /**
-   * 自上次工具边界以来、已由 stream 或整包写入的「本段」旁白。
-   * CodeBuddy / Claude：工具后 assistant 整包常只带本段（非全量累计），
-   * 仅靠 piece === text / startsWith 去重会漏掉，导致同一句 message_update 双发。
+   * 当前 assistant 世代内，按 content block index 已吸收的文本快照。
+   * CodeBuddy/Claude：`includePartialMessages` 下 stream_event 与 assistant 整包双通道；
+   * 同一 index 可能先增量、再累计快照、再整包回放。按块 reconcile，绝不在工具边界清空
+   *（旧 segment 清空会把同块 token 回放当成新旁白，截图那种 text+步骤成对重复）。
+   * 世代在 user/tool_result 时复位，下一则旁白仍从 index 0 正常推出。
    */
-  let segment = "";
-
-  const breakSegmentForTool = (id: string) => {
-    if (!id || segmentBreaks.has(id)) return;
-    segmentBreaks.add(id);
-    segment = "";
-  };
+  const blockText = new Map<number, string>();
+  /** 同块在已有快照上的 token 级回放进度（重建前缀）；对不上就当新增量。 */
+  const blockReplay = new Map<number, string>();
 
   const flush = (index: number): AgentSessionEvent[] => {
     const tool = building.get(index);
@@ -98,10 +112,92 @@ export function createExternalTranslator(): ExternalTranslator {
     trail.push({ kind: "text", text: piece });
   };
 
+  /**
+   * 吸收某一 content block 的文本：支持增量 delta、累计快照、同块 token 回放；
+   * 只返回尚未发出的尾部。
+   *
+   * 另：stream 常把 thinking 占 index=0、text 在 index=1；assistant 终包常去掉 thinking，
+   * text 落到 index=0。必须跨 index 按内容对齐，否则同一句会再开一个 text part。
+   */
+  const absorbBlockText = (index: number, piece: string): string | null => {
+    if (!piece) return null;
+
+    // 跨 index：已在其它块发过同一段 / 其超集 / 其前缀 → 对齐到本 index，不重复推
+    for (const [otherIndex, other] of blockText) {
+      if (otherIndex === index || !other) continue;
+      if (other === piece) {
+        blockText.set(index, piece);
+        blockReplay.delete(index);
+        return null;
+      }
+      if (piece.startsWith(other)) {
+        const delta = piece.slice(other.length);
+        blockText.set(otherIndex, piece);
+        blockText.set(index, piece);
+        blockReplay.delete(index);
+        if (!delta) return null;
+        text += delta;
+        appendTextTrail(delta);
+        return delta;
+      }
+      if (other.startsWith(piece)) {
+        blockText.set(index, other);
+        blockReplay.delete(index);
+        return null;
+      }
+    }
+
+    const prev = blockText.get(index) ?? "";
+    if (piece === prev) {
+      blockReplay.delete(index);
+      return null;
+    }
+    // 累计快照 / 整包超集：只推新增尾部（prev="" 时整段都是增量）
+    if (piece.startsWith(prev)) {
+      blockReplay.delete(index);
+      const delta = piece.slice(prev.length);
+      blockText.set(index, piece);
+      if (!delta) return null;
+      text += delta;
+      appendTextTrail(delta);
+      return delta;
+    }
+    // 更短前缀：整包回退，或 token 回放的起点——记入 replay 供后续 token 拼接对齐
+    if (prev.startsWith(piece)) {
+      if (piece.length > 0) blockReplay.set(index, piece);
+      else blockReplay.delete(index);
+      return null;
+    }
+    // 已有块上继续 token 回放：拼到 prev 前缀则吞掉
+    if (prev.length > 0) {
+      const rebuild = `${blockReplay.get(index) ?? ""}${piece}`;
+      if (prev.startsWith(rebuild)) {
+        if (rebuild === prev) blockReplay.delete(index);
+        else blockReplay.set(index, rebuild);
+        return null;
+      }
+      blockReplay.delete(index);
+    }
+    // 普通增量 delta
+    blockText.set(index, `${prev}${piece}`);
+    text += piece;
+    appendTextTrail(piece);
+    return piece;
+  };
+
+  const emitText = (index: number, piece: string): AgentSessionEvent[] => {
+    const delta = absorbBlockText(index, piece);
+    return delta ? [textUpdate(delta)] : [];
+  };
+
+  const beginNextGeneration = () => {
+    blockText.clear();
+    blockReplay.clear();
+    building.clear();
+  };
+
   const startTool = (id: string, name: string, args: Record<string, unknown>): AgentSessionEvent[] => {
     if (!id) return [];
-    // 工具切开旁白段（含跳过的 ToolSearch 壳）：其后 text 按「本段」计
-    breakSegmentForTool(id);
     // 厂商壳：ToolSearch 不进时间线；DeferExecute 有底层名则展开，否则跳过空壳。
     if (name === "ToolSearch") {
       if (!announced.has(id)) {
@@ -116,6 +212,14 @@ export function createExternalTranslator(): ExternalTranslator {
       }
       return [];
     }
+    // driver todoProjector 认领 → Host todo 名（落盘 / PlanDock）；原名与参留给 endTool。
+    let announcedName = projected.name;
+    let announcedArgs = projected.args;
+    if (todoProjector?.ownsTool(projected.name)) {
+      pendingTodo.set(id, { vendorName: projected.name, args: { ...projected.args } });
+      announcedName = TODO_TOOL;
+      announcedArgs = projected.args;
+    }
     // 已 announce：OpenCode 等可能先空壳后补参；只补 trail，避免协助卡丢 agent_id。
     if (announced.has(id)) {
       const item = trail.find(
@@ -125,30 +229,32 @@ export function createExternalTranslator(): ExternalTranslator {
       if (
         item &&
         Object.keys(item.args).length === 0 &&
-        Object.keys(projected.args).length > 0
+        Object.keys(announcedArgs).length > 0
       ) {
-        item.args = projected.args;
-        item.name = projected.name;
-        names.set(id, projected.name);
+        item.args = announcedArgs;
+        item.name = announcedName;
+        names.set(id, announcedName);
+        const pending = pendingTodo.get(id);
+        if (pending) pending.args = { ...announcedArgs };
       }
       return [];
     }
     announced.add(id);
-    names.set(id, projected.name);
-    toolDigest.push(truncate(`${projected.name}(${JSON.stringify(projected.args)})`, DIGEST_CHARS));
+    names.set(id, announcedName);
+    toolDigest.push(truncate(`${announcedName}(${JSON.stringify(announcedArgs)})`, DIGEST_CHARS));
     trail.push({
       kind: "tool",
       id,
-      name: projected.name,
-      args: projected.args,
+      name: announcedName,
+      args: announcedArgs,
       done: false,
     });
     return [
       {
         type: "tool_execution_start",
         toolCallId: id,
-        toolName: projected.name,
-        args: projected.args,
+        toolName: announcedName,
+        args: announcedArgs,
       },
     ];
   };
@@ -166,8 +272,27 @@ export function createExternalTranslator(): ExternalTranslator {
       (entry): entry is Extract<ExternalTrailItem, { kind: "tool" }> =>
         entry.kind === "tool" && entry.id === id,
     );
+    let finalResult = result;
+    let finalName = names.get(id) ?? "tool";
+    const pending = pendingTodo.get(id);
+    if (todoProjector && (pending || finalName === TODO_TOOL)) {
+      const vendorName = pending?.vendorName ?? TODO_TOOL;
+      const vendorArgs = pending?.args ?? item?.args ?? {};
+      const applied = todoProjector.apply(todoBoard, vendorName, vendorArgs, result);
+      todoBoard = applied.board;
+      finalResult = isError ? result : applied.resultText;
+      finalName = TODO_TOOL;
+      names.set(id, TODO_TOOL);
+      if (item) {
+        item.name = TODO_TOOL;
+        item.args = applied.hostArgs;
+      }
+      pendingTodo.delete(id);
+    }
+    // 媒体/超大载荷不进 trail：否则 writeBack 与 UI 过程卡都会拖着 base64
+    finalResult = sanitizeToolResultForContext(finalResult);
     if (item) {
-      item.result = result;
+      item.result = finalResult;
       item.isError = isError;
       item.done = true;
     }
@@ -175,8 +300,8 @@ export function createExternalTranslator(): ExternalTranslator {
       {
         type: "tool_execution_end",
         toolCallId: id,
-        toolName: names.get(id) ?? "tool",
-        result,
+        toolName: finalName,
+        result: finalResult,
         isError,
       },
     ];
@@ -220,22 +345,7 @@ export function createExternalTranslator(): ExternalTranslator {
       const delta = record(event.delta);
       if (!delta) return [];
       if (delta.type === "text_delta") {
-        const piece = text_(delta.text);
-        if (!piece) return [];
-        // 整包已先写入本段：stream 再推相同整块
-        if (segment.length > 0 && piece === segment && text.endsWith(segment)) {
-          return [];
-        }
-        const next = `${segment}${piece}`;
-        // 累计正文已包含 next（逐块回放进已有后缀）
-        if (text.endsWith(next)) {
-          segment = next;
-          return [];
-        }
-        segment = next;
-        text += piece;
-        appendTextTrail(piece);
-        return [textUpdate(piece)];
+        return emitText(index, text_(delta.text));
       }
       if (delta.type === "thinking_delta") {
         const piece = text_(delta.thinking);
@@ -252,52 +362,22 @@ export function createExternalTranslator(): ExternalTranslator {
     return [];
   };
 
-  /** 整包 assistant 消息：参数已齐全，直接发；跳过 stream 已推过的回放，保留工具间新旁白。 */
+  /** 整包 assistant 消息：按 content 下标与 stream 块对齐 reconcile；跳过已推回放。 */
   const fromAssistant = (raw: unknown): AgentSessionEvent[] => {
     const blocks = contentBlocks(raw);
     const events: AgentSessionEvent[] = [];
-    for (const block of blocks) {
+    blocks.forEach((block, index) => {
       const item = record(block);
-      if (!item) continue;
+      if (!item) return;
       if (item.type === "tool_use") {
         const id = text_(item.id);
-        if (!id) continue;
+        if (!id) return;
         events.push(...startTool(id, text_(item.name) || "tool", argsOf(item.input)));
-        continue;
+        return;
       }
-      if (item.type !== "text") continue;
-      const piece = text_(item.text);
-      if (!piece) continue;
-      // 整包等于已累计正文：stream 回放，跳过
-      if (piece === text) continue;
-      // 整包等于本段 stream（工具后常见：assistant 只带本段，非全量）
-      if (segment.length > 0 && piece === segment) continue;
-      // 整包是 stream 前缀的超集：只推增量
-      if (text.length > 0 && piece.startsWith(text)) {
-        const delta = piece.slice(text.length);
-        if (!delta) continue;
-        text = piece;
-        segment = piece;
-        appendTextTrail(delta);
-        events.push(textUpdate(delta));
-        continue;
-      }
-      // 本段 stream 是整包前缀：只推差额
-      if (segment.length > 0 && piece.startsWith(segment)) {
-        const delta = piece.slice(segment.length);
-        if (!delta) continue;
-        segment = piece;
-        text += delta;
-        appendTextTrail(delta);
-        events.push(textUpdate(delta));
-        continue;
-      }
-      // 工具之间的新旁白（或首段无 stream 时的整包）
-      text = text.length === 0 ? piece : `${text}${piece}`;
-      segment = piece;
-      appendTextTrail(piece);
-      events.push(textUpdate(piece));
-    }
+      if (item.type !== "text") return;
+      events.push(...emitText(index, text_(item.text)));
+    });
     return events;
   };
 
@@ -308,9 +388,11 @@ export function createExternalTranslator(): ExternalTranslator {
     const fallbackResult = row && "tool_use_result" in row ? row.tool_use_result : undefined;
     // content 在 message 里；也兼容直接传 message 对象的旧测例
     const blocks = contentBlocks(row?.message ?? raw);
+    let sawToolResult = false;
     for (const block of blocks) {
       const item = record(block);
       if (!item || item.type !== "tool_result") continue;
+      sawToolResult = true;
       const id = text_(item.tool_use_id);
       if (!id) continue;
       const content = item.content;
@@ -322,6 +404,8 @@ export function createExternalTranslator(): ExternalTranslator {
       const result = empty && fallbackResult !== undefined ? fallbackResult : (content ?? "");
       events.push(...endTool(id, result, item.is_error === true));
     }
+    // tool_result 结束本世代：下一段 stream/assistant 的 index 从 0 重计
+    if (sawToolResult) beginNextGeneration();
     return events;
   };
 

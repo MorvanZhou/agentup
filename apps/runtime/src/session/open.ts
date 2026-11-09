@@ -85,6 +85,15 @@ export async function openSession(
           ? [createBackgroundJobsExtension(backgroundJobs, visit.userId, visit.agentId, cwd, { groupId })]
           : []),
       ],
+      ...(delegation
+        ? {
+            listDeliverablesPending: () =>
+              delegation.listUnpresentedDeliverables(visit.userId, visit.agentId),
+            markDeliverablesPresented: (taskIds: readonly string[]) => {
+              delegation.markDeliverablesPresented(taskIds);
+            },
+          }
+        : {}),
       resolveDelegationLabel: delegation
         ? async (toAgentId) => {
             const agents = await delegation.listRecruited(visit.userId);

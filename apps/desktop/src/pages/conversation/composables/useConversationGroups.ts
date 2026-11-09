@@ -21,7 +21,13 @@ import { t, tf } from "../../../shared/model/ui/ui-locale";
 import { showToast } from "../../../shared/model/ui/toast";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "../model/group/group-limits";
 import {
+  GROUP_OPEN_RELOAD_MS,
+  groupOpenNeedsReloadPoll,
+} from "../model/conversation-poll";
+import {
   collectGroupUnreadBumps,
+  defaultSidebarGroupId,
+  groupAttentionFromSnapshot,
   groupIdleFinishes,
   groupSidebarPreview,
   groupUnreadKey,
@@ -45,6 +51,7 @@ export function useConversationGroups() {
     session,
     conversations,
     attention,
+    unread,
     pulseGroups,
     pullAttention,
     bumpUnread,
@@ -57,6 +64,9 @@ export function useConversationGroups() {
   /** 上一帧各群 phase；首见只记不 bump，避免冷启动刷未读。 */
   const knownPhases = ref<Record<string, GroupRoom["phase"]>>({});
   const selectedGroupId = ref<string | null>(null);
+  /** 冷启动只自动打开一次侧栏首位群；之后切单聊 / 关群不再抢回。 */
+  let defaultSurfaceApplied = false;
+  let defaultSurfaceUserId = "";
   const liveTurnId = ref("");
   const creating = ref(false);
   /** 删除进行中时，直播结束不要再把已删的群拉回来。 */
@@ -139,6 +149,28 @@ export function useConversationGroups() {
       flags[room.id] = room.linesHasMore === true;
     }
     earlier.value = flags;
+    maybeOpenDefaultGroup();
+  }
+
+  /** 重启 / 进会话页：群在侧栏最上，主区跟首位群；无群才回落单聊。 */
+  function maybeOpenDefaultGroup(): void {
+    const userId = session.value?.userId ?? "";
+    if (userId !== defaultSurfaceUserId) {
+      defaultSurfaceUserId = userId;
+      defaultSurfaceApplied = false;
+    }
+    if (defaultSurfaceApplied) return;
+    if (selectedGroupId.value || creating.value) {
+      defaultSurfaceApplied = true;
+      return;
+    }
+    if (groups.value.length === 0) return;
+    const groupId = defaultSidebarGroupId(groups.value, {
+      attention: groupAttentionFromSnapshot(attention.value),
+      unread: unread.value,
+    });
+    defaultSurfaceApplied = true;
+    if (groupId) selectGroup(groupId);
   }
 
   function clearHitl(): void {
@@ -287,6 +319,7 @@ export function useConversationGroups() {
   }
 
   function selectGroup(groupId: string): void {
+    defaultSurfaceApplied = true;
     creating.value = false;
     if (selectedGroupId.value !== groupId) {
       liveTurnId.value = "";
@@ -295,9 +328,12 @@ export function useConversationGroups() {
     selectedGroupId.value = groupId;
     void clearUnread(groupUnreadKey(groupId));
     syncHitlFromAttention(attention.value);
+    // 切进开房立刻对齐 liveTurnId：轮询已降到 pulse 同拍，不能再等下一拍才连流。
+    void reloadOpen();
   }
 
   function beginCreate(): void {
+    defaultSurfaceApplied = true;
     selectedGroupId.value = null;
     creating.value = true;
     picked.value = [];
@@ -307,6 +343,8 @@ export function useConversationGroups() {
   }
 
   function closeSurface(): void {
+    // 切单聊 / 横幅打开 Agent 也算选定主区，避免稍后群列表到达再抢回默认群。
+    defaultSurfaceApplied = true;
     selectedGroupId.value = null;
     creating.value = false;
     liveTurnId.value = "";
@@ -656,20 +694,15 @@ export function useConversationGroups() {
   );
 
   let refreshing = false;
+  // 仅 holderSpeaking 时低频兜底 liveTurnId；task/pending 交给下方 pulse 合并，避免 stream 时 1s 狂拉 getGroup。
   const pollTimer = setInterval(() => {
     const room = openRoom.value;
-    if (!room || refreshing) return;
-    const active =
-      room.holderSpeaking ||
-      room.taskIds.length > 0 ||
-      (room.pendingDelegations?.length ?? 0) > 0 ||
-      room.lines.some((line) => line.role === "delegation" && line.handoff === "pending");
-    if (!active) return;
+    if (!room || refreshing || !groupOpenNeedsReloadPoll(room)) return;
     refreshing = true;
     void reloadOpen().finally(() => {
       refreshing = false;
     });
-  }, 1000);
+  }, GROUP_OPEN_RELOAD_MS);
 
   /** 群列表 phase / 侧栏：吃桌面 pulse（无云 backfill）；显式 load 仍走 GET /groups。 */
   watch(
@@ -681,6 +714,14 @@ export function useConversationGroups() {
         return;
       }
       mergeListedRooms(rooms);
+      // pulse 把开房打成发言中但还没有 turn id：补一拍 getGroup，别干等安全轮询。
+      const open = openRoom.value;
+      if (open && groupOpenNeedsReloadPoll(open) && !liveTurnId.value && !refreshing) {
+        refreshing = true;
+        void reloadOpen().finally(() => {
+          refreshing = false;
+        });
+      }
     },
     { deep: true },
   );

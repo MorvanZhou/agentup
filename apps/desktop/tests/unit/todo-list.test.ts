@@ -27,6 +27,38 @@ it("reads checklist lines and an error lead from a todo result", () => {
   expect(parseTodoToolResult("No todos")).toEqual({ items: [] });
 });
 
+it("parses vendor TaskCreate success lines and TodoWrite JSON for old transcripts", () => {
+  expect(
+    parseTodoToolResult("Task #1 created successfully: 构建可运行 UI（index.html + styles.css + app.js）"),
+  ).toEqual({
+    items: [{ id: 1, text: "构建可运行 UI（index.html + styles.css + app.js）", done: false }],
+  });
+  expect(
+    parseTodoToolResult(
+      JSON.stringify({
+        todos: [
+          { id: "a", content: "读 brief", status: "completed" },
+          { id: "b", content: "写 UI", status: "pending" },
+        ],
+      }),
+    ).items.map((item) => ({ text: item.text, done: item.done })),
+  ).toEqual([
+    { text: "读 brief", done: true },
+    { text: "写 UI", done: false },
+  ]);
+});
+
+it("treats vendor TaskCreate tool parts as todo for PlanDock", () => {
+  const plan = planFromTodoParts([
+    {
+      type: "tool-call",
+      toolName: "TaskCreate",
+      result: "Task #1 created successfully: 构建可运行 UI",
+    },
+  ]);
+  expect(plan?.items).toEqual([{ id: 1, text: "构建可运行 UI", done: false }]);
+});
+
 it("keeps the plan from the current segment and drops it after a new conversation", () => {
   const reset = { role: "system", id: "context-reset-1" };
   const messages = [

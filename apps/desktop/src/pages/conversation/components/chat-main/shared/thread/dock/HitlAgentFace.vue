@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { BotIcon } from "@lucide/vue";
 import { computed, inject } from "vue";
 
 import { stubAgentCard } from "../../../../../../../shared/components/agent/agent-profile";
 import { agentProfileHostKey } from "../../../../../../../shared/components/agent/agent-profile-host";
-import AgentAvatar from "../../../../../../../shared/components/avatar/AgentAvatar.vue";
 import { tf } from "../../../../../../../shared/model/ui/ui-locale";
 import { injectThreadRoster, resolveRosterAgent } from "../../../../../model/thread/thread-roster";
 
@@ -14,12 +14,6 @@ const props = defineProps<{
 
 const roster = injectThreadRoster();
 const profileHost = inject(agentProfileHostKey, null);
-const avatarUrl = computed(() => {
-  const id = props.agentId?.trim();
-  const name = props.name?.trim();
-  if (!id || !name) return undefined;
-  return resolveRosterAgent(roster.value, id, name).avatarUrl;
-});
 const canOpenProfile = computed(() => Boolean(profileHost && props.agentId?.trim()));
 
 function openAgentProfile(): void {
@@ -42,15 +36,19 @@ function openAgentProfile(): void {
 </script>
 
 <template>
-  <!-- HITL 询问方头像：有 agentId 时可开资料 -->
+  <!-- HITL 询问方：无底纯图标；有 agentId 时可开资料 -->
   <button
     v-if="name && canOpenProfile"
     type="button"
-    class="shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0 outline-none transition duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent/40"
+    class="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-muted-foreground outline-none transition duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/40"
     :aria-label="tf('agentsViewProfile', { name })"
     @click="openAgentProfile"
   >
-    <AgentAvatar :name="name" :avatar-url="avatarUrl" size="sm" round />
+    <BotIcon class="size-4" aria-hidden="true" />
   </button>
-  <AgentAvatar v-else-if="name" :name="name" :avatar-url="avatarUrl" size="sm" round />
+  <BotIcon
+    v-else-if="name"
+    class="size-4 shrink-0 text-muted-foreground"
+    aria-hidden="true"
+  />
 </template>

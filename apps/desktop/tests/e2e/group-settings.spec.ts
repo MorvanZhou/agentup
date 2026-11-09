@@ -9,6 +9,28 @@ async function openGroupSettings(page: import("@playwright/test").Page, title: s
   await expect(page.getByRole("list", { name: "成员" })).toBeVisible();
 }
 
+test("有群时冷启动默认打开侧栏首位群，无需再点侧栏", async ({ page }) => {
+  await installRuntime(page, {
+    recruited: ["weather", "respiratory-doctor"],
+    localVersions: { weather: 1, "respiratory-doctor": 1 },
+    groups: [
+      {
+        id: "g-boot",
+        title: "启动小队",
+        updatedAt: 100,
+        members: [
+          { agentId: "weather", name: "Weaty" },
+          { agentId: "respiratory-doctor", name: "呼吸科医生" },
+        ],
+      },
+    ],
+  });
+  await signIn(page);
+  // 主区已是群表面（标题 + 群设置），不是默认一对一私人助理
+  await expect(page.getByRole("heading", { name: "启动小队", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: "群设置" })).toBeVisible();
+});
+
 test("群设置可改名、加人，并展示姓名与岗位", async ({ page }) => {
   await installRuntime(page, {
     recruited: ["weather", "respiratory-doctor", "coder"],

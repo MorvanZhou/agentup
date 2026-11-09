@@ -67,12 +67,26 @@ export {
   createDeliverArtifactsExtension,
   deliveryDirName,
   groupTaskDirName,
+  mapStagedToParentPaths,
   normalizeArtifactPaths,
   shouldForceArtifactConfirm,
   stageArtifactPaths,
   type DeliverArtifactsState,
   type StagedArtifact,
 } from "./deliver-artifacts.js";
+
+export {
+  AGENTUP_DELIVERABLES_CUSTOM_TYPE,
+  PRESENT_ARTIFACTS_TOOL,
+  applyPresentArtifactsAction,
+  createDeliverablesExtension,
+  enrichDeliverableSizes,
+  mergeDeliverableFiles,
+  parseDeliverablesEntryData,
+  type AgentUpDeliverable,
+  type AgentUpDeliverablesData,
+  type PresentArtifactsAction,
+} from "../history/deliverables.js";
 
 export {
   COMPLETE_GROUP_TASK_TOOL,

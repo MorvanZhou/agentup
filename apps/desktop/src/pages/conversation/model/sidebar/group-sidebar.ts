@@ -275,6 +275,26 @@ export function buildSidebarSections(
   };
 }
 
+/**
+ * 冷启动默认主区：与侧栏群区首位一致（注意力置顶 → 最近活动）。
+ * 无群时返回 null，由单聊默认（conversations[0]）承接。
+ */
+export function defaultSidebarGroupId(
+  groups: GroupRoom[],
+  options?: {
+    attention?: GroupSidebarAttention;
+    unread?: Record<string, number>;
+  },
+): string | null {
+  if (groups.length === 0) return null;
+  const sections = buildSidebarSections([], groups, "", {
+    selectedGroupId: null,
+    attention: options?.attention,
+    unread: options?.unread,
+  });
+  return sections.groups[0]?.room.id ?? null;
+}
+
 /** 越小越靠前；无注意力需求为 99。与单聊 attentionPinRank 同级。 */
 function groupAttentionPin(
   row: Pick<GroupSidebarRow, "awaitingApproval" | "awaitingAskUser" | "unread">,

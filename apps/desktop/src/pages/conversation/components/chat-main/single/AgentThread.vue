@@ -209,6 +209,8 @@ const wakeEnabled = computed(
   () => Boolean(props.active && props.busyTurn?.phase === "wake"),
 );
 const streamRunning = ref(false);
+/** 入队成功后递增，驱动 FollowUpQueueStrip 立刻刷新。 */
+const followUpRefreshTick = ref(0);
 /** followUp 队列被消费时先亮出来的用户那条（runtime 侧已拼成一条）。 */
 const wakeUserText = ref("");
 
@@ -314,6 +316,8 @@ const threadActions = computed<ThreadActions>(() => ({
   /** 本地 Agent App（SDK）接入：回合中的新消息进 runtime 的 followUp 队列（.cursor/skills/agentup-sdk-adapter/references/follow-up.md）。 */
   async enqueueFollowUp(text: string) {
     await runtimeApi.enqueueFollowUp(props.token, props.userId, props.agentId, text);
+    // 条轮询已降到 pulse 同拍：入队后立刻刷，避免队列 UI 空等 2.5s。
+    followUpRefreshTick.value += 1;
   },
   /**
    * 插话（API / Pi 原生接入）：先试 runtime 的 Pi 原生 steer。
@@ -537,6 +541,7 @@ const config = AuiConfig({
           :user-id="userId"
           :agent-id="agentId"
           :busy="streamRunning || Boolean(busyTurn)"
+          :refresh-tick="followUpRefreshTick"
         />
         <!-- 停止后的队列确认：继续发送 / 清空队列 -->
         <FollowUpResumeDialog

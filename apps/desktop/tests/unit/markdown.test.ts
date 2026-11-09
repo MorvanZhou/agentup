@@ -59,6 +59,16 @@ describe("renderMarkdown", () => {
     expect(html).toContain('data-local-path="src/a.md"');
   });
 
+  it("does not turn bare `file://` into a local-path chip", () => {
+    const html = renderMarkdown("无头 Chrome 以 `file://` 直接打开：**15/15**", {
+      linkLocalPaths: true,
+    });
+    expect(html).not.toContain("data-local-path");
+    expect(html).not.toContain("aui-md-path");
+    expect(html).toContain("<code>");
+    expect(html).toContain("file://");
+  });
+
   it("does not render raw HTML", () => {
     const html = renderMarkdown('<script>alert(1)</script>');
     expect(html).not.toContain("<script>");

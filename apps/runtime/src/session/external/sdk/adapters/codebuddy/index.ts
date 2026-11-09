@@ -1,4 +1,5 @@
 export { codebuddyDriver } from "./driver.js";
+export { codebuddyTodoProjector } from "./todo.js";
 export { codebuddyCompactOptionsOf, codebuddyOptionsOf } from "./options.js";
 export {
   loadCodebuddyModule,

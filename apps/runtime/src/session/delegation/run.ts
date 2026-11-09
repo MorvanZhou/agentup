@@ -17,6 +17,7 @@ import { replyModelFromConfig } from "../history/reply-model.js";
 import { compactTurnOptions, maybeCompactApiSession } from "../model/agent-sdk.js";
 import { resolveEmptyAssistantError } from "../output-length.js";
 import { AskUserBroker, type StagedArtifact } from "../tools/index.js";
+import { ensureGroupWorkspace } from "../group/workspace.js";
 import { groupTaskDirName } from "../tools/deliver-artifacts.js";
 import type { DelegationProgressHub } from "./progress.js";
 import { runExternalSessionTurn } from "../turn/external-turn.js";
@@ -156,8 +157,16 @@ export async function runDelegatedPrompt(
     );
     const toolSurface: DiscoverToolSurface =
       getProviderTemplate(model.templateId)?.kind === "agent-sdk" ? "external" : "pi";
+    const groupWorkspaceRoot = options.groupId
+      ? ensureGroupWorkspace(
+          userDataRootFromVisit(visit),
+          visit.userId,
+          options.groupId,
+        ).root
+      : undefined;
     const promptText = formatDelegationPrompt(brief, Boolean(options.groupId), options.taskId, options.toAgentName, {
       toolSurface,
+      ...(groupWorkspaceRoot ? { groupWorkspaceRoot } : {}),
     });
     // length 截断由 createOutputLengthExtension 在 agent_before_settle 内自动续写。
     // ARTIFACT 确认由 createDeliverArtifactsExtension 在 before_settle 强制续写。
@@ -259,24 +268,43 @@ export function formatDelegationPrompt(
   groupTask = false,
   taskId?: string,
   toAgentName?: string,
-  options?: { toolSurface?: DiscoverToolSurface },
+  options?: {
+    toolSurface?: DiscoverToolSurface;
+    /** 群共享工作区绝对根；有则写进 prompt，标明相对 WORK/ARTIFACT 的解析基准。 */
+    groupWorkspaceRoot?: string;
+  },
 ): string {
   const folder = groupTask ? groupTaskDirName(taskId?.trim() || "task", toAgentName) : "";
   const external = options?.toolSurface === "external";
   const completeGroup = external ? "mcp__agentup__complete_group_task" : "complete_group_task";
   const deliver = external ? "mcp__agentup__deliver_artifacts" : "deliver_artifacts";
   const askUser = external ? "AskUserQuestion" : "ask_user";
+  const sharedRoot = options?.groupWorkspaceRoot?.trim().replace(/\\/g, "/") ?? "";
+  const groupLocationLines = groupTask
+    ? sharedRoot
+      ? [
+          `Shared group workspace root (absolute): ${sharedRoot}`,
+          `Relative paths WORK/... and ARTIFACT/... in this task are relative to that shared group workspace root — not to your private Working directory.`,
+          `Put in-progress files in WORK/${folder}/ and finished files in ARTIFACT/${folder}/ under that shared root.`,
+          "Your private cwd is only for non-shared scratch. Do not resolve or write shared WORK/ARTIFACT under your private cwd.",
+          `When you finish, call ${completeGroup} with those relative paths (still relative to the shared root) and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`,
+          "Absolute paths under the shared group workspace root are allowed. Ignore absolute paths that point at a private cwd or outside the shared workspace.",
+        ]
+      : [
+          `Put in-progress files in the shared group WORK/${folder}/ and finished files in ARTIFACT/${folder}/.`,
+          "Those relative WORK/... and ARTIFACT/... paths are relative to the shared group workspace root (listed in your allowed directories) — not to your private Working directory.",
+          "Do not write shared files into your private cwd.",
+          `When you finish, call ${completeGroup} with those relative paths and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`,
+          "Absolute paths under the shared group workspace root are allowed. Ignore absolute paths that point at a private cwd or outside the shared workspace.",
+        ]
+    : [
+        "Put scratch files in WORK/ and finished files only in ARTIFACT/ under your own cwd.",
+        `When you finish, the protocol asks you to confirm attachments with ${deliver}. The platform copies those files to the caller. Do not copy them yourself.`,
+        "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
+      ];
   return [
     "You are handling a delegated subtask from the user's assistant. Complete only the task below, then return a clear, citable summary.",
-    groupTask
-      ? `Put in-progress files in the shared group WORK/${folder}/ and finished files in ARTIFACT/${folder}/. Do not write shared files into your private cwd.`
-      : "Put scratch files in WORK/ and finished files only in ARTIFACT/ under your own cwd.",
-    groupTask
-      ? `When you finish, call ${completeGroup} with those relative paths and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`
-      : `When you finish, the protocol asks you to confirm attachments with ${deliver}. The platform copies those files to the caller. Do not copy them yourself.`,
-    groupTask
-      ? `Only write shared files under WORK/${folder}/ and ARTIFACT/${folder}/. If the task names an absolute path, a private cwd, or another folder, ignore that location.`
-      : "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
+    ...groupLocationLines,
     `Do not chat with the user. If a critical fact is missing, ask with ${askUser}.`,
     "",
     "## Task",

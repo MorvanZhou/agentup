@@ -18,6 +18,7 @@ import {
 } from "./lifecycle.js";
 import { loadClaudeModule } from "./load.js";
 import { claudeCompactOptionsOf, claudeOptionsOf } from "./options.js";
+import { claudeCodeTodoProjector } from "./todo.js";
 
 const CAPABILITIES: ExternalDriverCapabilities = {
   driverId: "claude-code",
@@ -33,6 +34,7 @@ const CAPABILITIES: ExternalDriverCapabilities = {
  */
 export const claudeCodeDriver: ExternalDriver = {
   capabilities: CAPABILITIES,
+  todoProjector: claudeCodeTodoProjector,
 
   async login(input: ExternalLoginInput) {
     const result = await startClaudeLogin(input.userDataRoot, input.templateId);

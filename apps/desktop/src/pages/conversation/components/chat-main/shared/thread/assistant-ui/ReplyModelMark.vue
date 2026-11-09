@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import {
+  TooltipContent,
+  TooltipPortal,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
+} from "reka-ui";
 import { computed, onBeforeUnmount, ref } from "vue";
 
 import ProviderLogo from "../../../../../../../shared/components/ProviderLogo.vue";
@@ -8,9 +15,17 @@ import {
   type AgentUpReplyModel,
 } from "../../../../../model/message/message-reply-model";
 
-const props = defineProps<{
-  model: AgentUpReplyModel;
-}>();
+const props = withDefaults(
+  defineProps<{
+    model: AgentUpReplyModel;
+    /**
+     * expand：hover/点按在 icon 旁展开模型名（宽行）。
+     * tip：logo 固定宽度；模型名 Teleport 到浮层，不挤原行。
+     */
+    reveal?: "expand" | "tip";
+  }>(),
+  { reveal: "expand" },
+);
 
 /** hover 或点按后展开模型名；点按再切一次收起（触控友好）。 */
 const pinned = ref(false);
@@ -18,18 +33,21 @@ const hovering = ref(false);
 
 /** 只展示模型名，不展示 modelId。 */
 const label = computed(() => replyModelDisplayName(props.model));
-const expanded = computed(() => pinned.value || hovering.value);
+const tipOnly = computed(() => props.reveal === "tip");
+const expanded = computed(() => !tipOnly.value && (pinned.value || hovering.value));
 const aria = computed(() =>
   tf("msgReplyModel", { model: label.value || props.model.modelId }),
 );
 
 function onEnter() {
+  if (tipOnly.value) return;
   hovering.value = true;
 }
 function onLeave() {
   hovering.value = false;
 }
 function onClick() {
+  if (tipOnly.value) return;
   pinned.value = !pinned.value;
 }
 function onBlur() {
@@ -44,13 +62,41 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <!--
-    次要标形：默认只看 icon；hover/点按后在 icon 左侧展开模型名。
-    用 grid 0fr→1fr 收放，避免 max-width 动画时缺 nowrap 被压成竖排。
-  -->
+  <!-- tip：浮层说模型名，行内只留 logo，宽度恒定 -->
+  <TooltipProvider v-if="tipOnly" :delay-duration="200" :disable-closing-trigger="true">
+    <TooltipRoot>
+      <TooltipTrigger as-child>
+        <button
+          type="button"
+          class="group/reply-model inline-flex size-4 shrink-0 cursor-default items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground/70 focus-visible:ring-2 focus-visible:ring-accent/30"
+          :aria-label="aria"
+        >
+          <ProviderLogo
+            class="!text-muted-foreground opacity-55 transition-opacity group-hover/reply-model:opacity-85 group-hover/reply-model:!text-foreground/70"
+            size="sm"
+            :vendor-id="model.vendorId"
+            :label="label || model.modelId"
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipPortal>
+        <TooltipContent
+          side="top"
+          :side-offset="6"
+          :collision-padding="8"
+          class="app-no-drag z-[80] max-w-[16rem] rounded-md border border-rule bg-paper px-2 py-1 text-[11px] leading-snug text-foreground shadow-md"
+        >
+          {{ label || model.modelId }}
+        </TooltipContent>
+      </TooltipPortal>
+    </TooltipRoot>
+  </TooltipProvider>
+
+  <!-- expand：默认只看 icon；hover/点按后在 icon 左侧展开模型名 -->
   <button
+    v-else
     type="button"
-    class="group/reply-model inline-flex shrink-0 items-center justify-end gap-1 rounded-md border-0 bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground/70 focus-visible:ring-2 focus-visible:ring-accent/30"
+    class="group/reply-model inline-flex shrink-0 cursor-pointer items-center justify-end gap-1 rounded-md border-0 bg-transparent p-0 text-muted-foreground outline-none transition-colors hover:text-foreground/70 focus-visible:ring-2 focus-visible:ring-accent/30"
     :aria-label="aria"
     :aria-expanded="expanded"
     @mouseenter="onEnter"

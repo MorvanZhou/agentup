@@ -19,6 +19,7 @@ import {
   groupUnreadKey,
   groupUnreadLabel,
   buildSidebarSections,
+  defaultSidebarGroupId,
   shouldBumpGroupUnread,
   type GroupSidebarRow,
 } from "../../src/pages/conversation/model/sidebar/group-sidebar.js";
@@ -75,6 +76,29 @@ function room(partial: Partial<GroupRoom> & Pick<GroupRoom, "id">): GroupRoom {
 }
 
 describe("sidebar groups", () => {
+  it("cold-start default opens the first sidebar group (activity then unread pin)", () => {
+    expect(defaultSidebarGroupId([])).toBeNull();
+    const older = room({
+      id: "g-old",
+      title: "旧群",
+      updatedAt: 10,
+      lines: [{ id: "a", role: "user", authorId: "user", text: "早", at: 10 }],
+    });
+    const newer = room({
+      id: "g-new",
+      title: "新群",
+      updatedAt: 100,
+      lines: [{ id: "b", role: "user", authorId: "user", text: "近", at: 100 }],
+    });
+    expect(defaultSidebarGroupId([older, newer])).toBe("g-new");
+    // 未读置顶优先于单纯最近活动，与侧栏群区序一致
+    expect(
+      defaultSidebarGroupId([newer, older], {
+        unread: { [groupUnreadKey("g-old")]: 2 },
+      }),
+    ).toBe("g-old");
+  });
+
   it("sections groups above direct chats; personal stays first inside directs", () => {
     const rows = buildConversationRows({
       conversations: [

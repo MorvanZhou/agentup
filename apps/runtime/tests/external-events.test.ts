@@ -349,6 +349,236 @@ it("assistant 整包先到后 stream 同段回放，不重复推", () => {
   expect(translator.text).toBe("已确认交给气象员 Weaty。");
 });
 
+it("thinking 占 index 后，assistant 整包去掉 thinking 导致 text 下标错位，不重复推", () => {
+  const translator = createExternalTranslator();
+  const body =
+    "Let me extract the full sound catalog (ids/names/categories) from the manifest.";
+  const all: AgentSessionEvent[] = [];
+
+  // stream：index0=thinking，index1=text，index2=tool
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "need catalog ids" },
+      },
+    }),
+  );
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: body } },
+    }),
+  );
+  translator.push({
+    type: "stream_event",
+    event: {
+      type: "content_block_start",
+      index: 2,
+      content_block: {
+        type: "tool_use",
+        id: "toolu_read_manifest",
+        name: "Read",
+        input: { file_path: "ARTIFACT/sounds.json" },
+      },
+    },
+  });
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: { type: "content_block_stop", index: 2 },
+    }),
+  );
+
+  // assistant 终包常去掉 thinking：text 落到 index 0，tool 到 index 1
+  all.push(
+    ...translator.push({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: body },
+          {
+            type: "tool_use",
+            id: "toolu_read_manifest",
+            name: "Read",
+            input: { file_path: "ARTIFACT/sounds.json" },
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(deltas(all, "text_delta")).toEqual([body]);
+  expect(deltas(all, "thinking_delta")).toEqual(["need catalog ids"]);
+  expect(toolStarts(all)).toHaveLength(1);
+  expect(translator.text).toBe(body);
+  expect(translator.trail.filter((item) => item.kind === "text")).toHaveLength(1);
+});
+
+it("stream 累计快照 text_delta（每包是全文）只推增量，不叠字", () => {
+  const translator = createExternalTranslator();
+  const events = [
+    ...translator.push({
+      type: "stream_event",
+      event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Found" } },
+    }),
+    ...translator.push({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "Found the brief" },
+      },
+    }),
+    ...translator.push({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: {
+          type: "text_delta",
+          text: "Found the brief in ARTIFACT/. Let me read it and check prior work.",
+        },
+      },
+    }),
+  ];
+  expect(deltas(events, "text_delta")).toEqual([
+    "Found",
+    " the brief",
+    " in ARTIFACT/. Let me read it and check prior work.",
+  ]);
+  expect(translator.text).toBe(
+    "Found the brief in ARTIFACT/. Let me read it and check prior work.",
+  );
+});
+
+it("同一世代：stream 文本+工具后 assistant 整包回放，正文与工具都不重复（截图根因）", () => {
+  const translator = createExternalTranslator();
+  const body = "Found the brief in ARTIFACT/. Let me read it and check prior work.";
+  const all: AgentSessionEvent[] = [];
+
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: body } },
+    }),
+  );
+  translator.push({
+    type: "stream_event",
+    event: {
+      type: "content_block_start",
+      index: 1,
+      content_block: {
+        type: "tool_use",
+        id: "toolu_read_1",
+        name: "Read",
+        input: { file_path: "ARTIFACT/brief-incredibox-like-game.md" },
+      },
+    },
+  });
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: { type: "content_block_stop", index: 1 },
+    }),
+  );
+
+  // 工具切开后，SDK 仍可能按 token 回放同一 text block（旧 segment 清空会误当成新旁白）
+  for (const token of ["Found", " the brief", " in ARTIFACT/. Let me read it and check prior work."]) {
+    all.push(
+      ...translator.push({
+        type: "stream_event",
+        event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: token } },
+      }),
+    );
+  }
+
+  all.push(
+    ...translator.push({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: body },
+          {
+            type: "tool_use",
+            id: "toolu_read_1",
+            name: "Read",
+            input: { file_path: "ARTIFACT/brief-incredibox-like-game.md" },
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(deltas(all, "text_delta")).toEqual([body]);
+  expect(toolStarts(all)).toEqual([
+    {
+      id: "toolu_read_1",
+      name: "Read",
+      args: { file_path: "ARTIFACT/brief-incredibox-like-game.md" },
+    },
+  ]);
+  expect(translator.text).toBe(body);
+  expect(translator.trail.filter((item) => item.kind === "text")).toHaveLength(1);
+  expect(translator.trail.filter((item) => item.kind === "tool")).toHaveLength(1);
+});
+
+it("tool_result 后新世代旁白仍要推出（块状态按世代复位）", () => {
+  const translator = createExternalTranslator();
+  translator.push({
+    type: "stream_event",
+    event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "先搜专家" } },
+  });
+  translator.push({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "text", text: "先搜专家" },
+        { type: "tool_use", id: "t-search", name: "Bash", input: { command: "ls" } },
+      ],
+    },
+  });
+  translator.push({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "t-search", content: "ok" }],
+    },
+  });
+
+  expect(
+    deltas(
+      translator.push({
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "接下来委托 Weaty。" },
+        },
+      }),
+      "text_delta",
+    ),
+  ).toEqual(["接下来委托 Weaty。"]);
+  expect(
+    deltas(
+      translator.push({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "接下来委托 Weaty。" }],
+        },
+      }),
+      "text_delta",
+    ),
+  ).toEqual([]);
+  expect(translator.text).toBe("先搜专家接下来委托 Weaty。");
+});
+
 it("completeTool 写入结果后，finishOpenTools 不再覆盖", () => {
   const translator = createExternalTranslator();
   translator.push({

@@ -27,6 +27,7 @@ export type GroupUiCustom = {
   delegation?: GroupDelegationCard;
   agentUpSummary?: unknown;
   agentUpArtifacts?: unknown;
+  agentUpDeliverables?: unknown;
   agentUpReplyModel?: unknown;
 };
 
@@ -71,6 +72,9 @@ function agentMessage(
       : {}),
     ...(line.assistantCustom?.agentUpArtifacts !== undefined
       ? { agentUpArtifacts: line.assistantCustom.agentUpArtifacts }
+      : {}),
+    ...(line.assistantCustom?.agentUpDeliverables !== undefined
+      ? { agentUpDeliverables: line.assistantCustom.agentUpDeliverables }
       : {}),
     ...(line.assistantCustom?.agentUpReplyModel !== undefined
       ? { agentUpReplyModel: line.assistantCustom.agentUpReplyModel }

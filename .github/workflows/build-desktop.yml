@@ -3,7 +3,8 @@
 # - workflow_dispatch / tag：产物进 Actions Artifacts
 # - 仅 push tag（v*）：挂到 GitHub Release Assets，再把 Artifact 同步到 Cloudflare R2
 #   （desktop/mac|win/{version,latest}/… + latest.yml / latest-mac.yml），并 purge CDN
-# - Secrets：CLOUDFLARE_API_TOKEN（R2 写 + Zone Cache Purge）、CLOUDFLARE_ACCOUNT_ID、
+# - 上传后按 semver 只保留最近 2 个版本目录（latest/ 不动），删掉更旧的 versioned 包
+# - Secrets：CLOUDFLARE_API_TOKEN（R2 读/写/删 + Zone Cache Purge）、CLOUDFLARE_ACCOUNT_ID、
 #   CLOUDFLARE_ZONE_ID（downloads.agentup.me 所在 Zone）
 name: Build Desktop
 
@@ -333,6 +334,121 @@ jobs:
           put_abs "desktop/mac/latest/latest-mac.yml" "$MAC_YML"
 
           echo "✅ R2 ${VERSION} 已上传（含 latest.yml / latest-mac.yml）"
+
+          # 只保留最近 KEEP_VERSIONS 个 versioned 目录（如发 0.1.20 → 留 0.1.19+0.1.20；latest/ 永不删）
+          KEEP_VERSIONS=2
+
+          list_r2_page() {
+            # $1=prefix；$2=delimiter（可空）；stdout=整页 JSON
+            local prefix="$1"
+            local delimiter="${2-}"
+            local cursor="${3-}"
+            local -a curl_args=(
+              -sS -G
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${CF_R2_BUCKET}/objects"
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+              --data-urlencode "prefix=${prefix}"
+              --data-urlencode "per_page=1000"
+            )
+            if [ -n "$delimiter" ]; then
+              curl_args+=(--data-urlencode "delimiter=${delimiter}")
+            fi
+            if [ -n "$cursor" ]; then
+              curl_args+=(--data-urlencode "cursor=${cursor}")
+            fi
+            curl "${curl_args[@]}"
+          }
+
+          list_r2_delimited() {
+            # 列出 prefix 下 delimiter=/ 的 common prefixes（版本「目录」）
+            local prefix="$1"
+            local cursor="" page
+            while true; do
+              page="$(list_r2_page "$prefix" "/" "$cursor")"
+              if ! echo "$page" | jq -e '.success == true' >/dev/null; then
+                echo "R2 list(delimited) 失败 prefix=${prefix}: $page" >&2
+                exit 1
+              fi
+              echo "$page" | jq -r '.result_info.delimited // [] | .[]'
+              if [ "$(echo "$page" | jq -r '.result_info.is_truncated // false')" != "true" ]; then
+                break
+              fi
+              cursor="$(echo "$page" | jq -r '.result_info.cursor // empty')"
+              [ -n "$cursor" ] || break
+            done
+          }
+
+          list_r2_keys() {
+            # 列出 prefix 下全部 object key（用于按版本删包）
+            local prefix="$1"
+            local cursor="" page
+            while true; do
+              page="$(list_r2_page "$prefix" "" "$cursor")"
+              if ! echo "$page" | jq -e '.success == true' >/dev/null; then
+                echo "R2 list(keys) 失败 prefix=${prefix}: $page" >&2
+                exit 1
+              fi
+              echo "$page" | jq -r '.result[]?.key // empty'
+              if [ "$(echo "$page" | jq -r '.result_info.is_truncated // false')" != "true" ]; then
+                break
+              fi
+              cursor="$(echo "$page" | jq -r '.result_info.cursor // empty')"
+              [ -n "$cursor" ] || break
+            done
+          }
+
+          del() {
+            key="$1"
+            echo "→ del ${CF_R2_BUCKET}/${key}"
+            (
+              cd "$WRANGLER_TMP"
+              npx --yes wrangler@4 r2 object delete "${CF_R2_BUCKET}/${key}" --remote
+            )
+          }
+
+          prune_platform() {
+            # $1=mac|win：按 sort -V 升序，砍掉末尾 KEEP_VERSIONS 以外的旧目录
+            local platform="$1"
+            local base="desktop/${platform}/"
+            local versions old ver key
+            # 用 awk 过滤（避免 pipefail 下 grep 无匹配非 0）；空列表 = 只有 latest/ 或尚无版本
+            versions="$(
+              list_r2_delimited "$base" \
+                | sed -n "s|^${base}\\([^/]*\\)/\$|\\1|p" \
+                | awk '!/^latest$/ && /^[0-9A-Za-z._-]+$/' \
+                | sort -uV
+            )"
+            if [ -z "$versions" ]; then
+              echo "prune ${platform}: 无版本目录，跳过"
+              return 0
+            fi
+            echo "prune ${platform}: 现有 →"
+            echo "$versions" | sed 's/^/  /'
+            # GNU head -n -K：去掉末尾 K 行（保留最新 KEEP_VERSIONS）
+            old="$(echo "$versions" | head -n "-${KEEP_VERSIONS}" || true)"
+            if [ -z "$old" ]; then
+              echo "prune ${platform}: 已 ≤${KEEP_VERSIONS} 个版本，无需删除"
+              return 0
+            fi
+            echo "prune ${platform}: 将删除 →"
+            echo "$old" | sed 's/^/  /'
+            while IFS= read -r ver; do
+              [ -n "$ver" ] || continue
+              # 保险：绝不删本次刚上传的版本
+              if [ "$ver" = "$VERSION" ]; then
+                echo "prune ${platform}: 跳过当前版本 ${ver}"
+                continue
+              fi
+              while IFS= read -r key; do
+                [ -n "$key" ] || continue
+                del "$key"
+              done < <(list_r2_keys "${base}${ver}/")
+            done <<< "$old"
+          }
+
+          prune_platform mac
+          prune_platform win
+          echo "✅ R2 已裁剪：每平台仅保留最近 ${KEEP_VERSIONS} 个版本"
 
       # latest 同路径覆盖；刷边缘缓存，避免 downloads.agentup.me 仍吐旧包
       - name: Purge downloads CDN cache

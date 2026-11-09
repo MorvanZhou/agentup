@@ -7,6 +7,7 @@ export type GroupMember = { agentId: string; name: string };
 export type GroupAssistantCustom = {
   agentUpSummary?: unknown;
   agentUpArtifacts?: unknown;
+  agentUpDeliverables?: unknown;
   agentUpReplyModel?: unknown;
 };
 
@@ -484,6 +485,7 @@ function readAssistantCustom(value: unknown): GroupAssistantCustom | undefined {
   const custom: GroupAssistantCustom = {};
   if ("agentUpSummary" in raw) custom.agentUpSummary = raw.agentUpSummary;
   if ("agentUpArtifacts" in raw) custom.agentUpArtifacts = raw.agentUpArtifacts;
+  if ("agentUpDeliverables" in raw) custom.agentUpDeliverables = raw.agentUpDeliverables;
   if ("agentUpReplyModel" in raw) custom.agentUpReplyModel = raw.agentUpReplyModel;
   return Object.keys(custom).length > 0 ? custom : undefined;
 }

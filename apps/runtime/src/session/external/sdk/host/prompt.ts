@@ -1,5 +1,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 
+import { sanitizeToolResultText } from "../../../history/sanitize-tool-result.js";
+
 /**
  * 交付给外部 agent 的 prompt 上限回落值。
  * 主路径应按会话模型 `compactBudgetsFromContextWindow().hardTruncateChars` 传入 maxChars。
@@ -207,13 +209,16 @@ function messageToLine(message: Message): string | null {
 }
 
 function contentToText(content: unknown): string {
-  if (typeof content === "string") return content;
+  // 旧会话里可能已落盘 ViewImage data URL；重拼时仍须剥掉
+  if (typeof content === "string") return sanitizeToolResultText(content);
   if (!Array.isArray(content)) return "";
   return content
     .map((block) => {
       const row = block as { type?: string; text?: string };
-      if (row?.type === "text") return row.text ?? "";
-      if (row?.type === "image") return "[图片]";
+      if (row?.type === "text") return sanitizeToolResultText(row.text ?? "");
+      if (row?.type === "image" || row?.type === "image_url" || row?.type === "input_image") {
+        return "[图片]";
+      }
       return "";
     })
     .filter((item) => item.length > 0)

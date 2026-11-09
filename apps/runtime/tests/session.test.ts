@@ -187,6 +187,7 @@ it("makes builtin tools available for runtime approval", async () => {
     "cancel_delegation",
     "steer_delegation",
     "resolve_delegation_update",
+    "present_artifacts",
   ]);
   expect(options.noTools).toBeUndefined();
 });
@@ -260,13 +261,14 @@ it("passes the explicit session plan to the Pi SDK", async () => {
     "cancel_delegation",
     "steer_delegation",
     "resolve_delegation_update",
+    "present_artifacts",
   ]);
   expect(options.thinkingLevel).toBe("off");
   expect(options.model).toMatchObject({ api: "openai-completions", baseUrl: model.baseUrl, provider: "ollama" });
   expect(options.modelRuntime.getModel("ollama", "qwen")).toMatchObject({ id: "qwen", apiKey: "ollama" });
   expect(options.settingsManager.options.projectTrusted).toBe(true);
-  // fs-guard / web / local-time / ask_user / todo / reply-model / summary / artifacts / output-length / stream-guard / checkpoint / approval / sampling（无 MCP / 委托 / 后台时）
-  expect(options.resourceLoader.options.extensionFactories).toHaveLength(13);
+  // fs-guard / web / local-time / ask_user / todo / reply-model / summary / artifacts / deliverables / output-length / stream-guard / checkpoint / approval / sampling（无 MCP / 委托 / 后台时）
+  expect(options.resourceLoader.options.extensionFactories).toHaveLength(14);
   expect(options.resourceLoader.options.disabledBuiltinExtensions).toEqual(["mcp"]);
   expect(options.resourceLoader.options.noSkills).toBe(true);
   expect(options.resourceLoader.options.additionalSkillPaths).toEqual([]);

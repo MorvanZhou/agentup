@@ -5,6 +5,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { DesktopApi } from "../../../../../shared/api/runtime";
 import type { FollowUpItem } from "../../../../../shared/api/runtime/follow-ups";
 import { t } from "../../../../../shared/model/ui/ui-locale";
+import { FOLLOW_UP_POLL_MS } from "../../../model/conversation-poll";
 
 /**
  * followUp 队列：本地 Agent App（SDK）接入下，回合进行中用户新发的消息会进 runtime 队列，
@@ -17,6 +18,8 @@ const props = defineProps<{
   agentId: string;
   /** 回合是否在进行中；结束时再刷一次，确认队列已被消费。 */
   busy: boolean;
+  /** 入队成功后由宿主递增：立刻刷条，不必等下一拍轮询。 */
+  refreshTick?: number;
 }>();
 
 const api = new DesktopApi();
@@ -85,10 +88,10 @@ async function saveEdit(id: string): Promise<void> {
   await run(() => api.updateFollowUp(props.token, props.userId, props.agentId, id, text));
 }
 
-// 入队发生在 runtime 侧，客户端拿不到推送事件：回合中轮询是收敛成本最低的做法
+// 入队无推送：busy / 非空时与 pulse 同拍收敛；入队成功另靠 refreshTick 立刻刷。
 const timer = setInterval(() => {
   if (props.busy || items.value.length > 0) void refresh();
-}, 1_000);
+}, FOLLOW_UP_POLL_MS);
 
 onMounted(refresh);
 onBeforeUnmount(() => clearInterval(timer));
@@ -96,6 +99,13 @@ watch(
   () => [props.agentId, props.busy],
   () => {
     revision += 1;
+    void refresh();
+  },
+);
+watch(
+  () => props.refreshTick,
+  (tick, prev) => {
+    if (tick == null || tick === prev) return;
     void refresh();
   },
 );

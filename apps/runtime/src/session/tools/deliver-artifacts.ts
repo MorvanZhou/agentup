@@ -167,23 +167,19 @@ export function stripInboundDeliveryDirs(relUnderArtifact: string): string {
   return parts.join("/");
 }
 
-/** 把 staging 拷到父 cwd：`ARTIFACT/from-<name>-<id>/…`。空 staging 不写盘。 */
-export function copyStagedArtifactsToParent(input: {
-  sourceCwd: string;
-  parentCwd: string;
+/**
+ * 父侧展示路径（不写盘）：与 copy 同一套 from- 目录 / 展平 / 重名规则。
+ * async wake 时尚末 materialize 时也可用这份路径写提示。
+ */
+export function mapStagedToParentPaths(input: {
   toAgentId: string;
   toAgentName?: string;
   staged: readonly StagedArtifact[];
-}): string[] {
+}): { path: string; size?: number }[] {
   if (input.staged.length === 0) return [];
   const folder = deliveryDirName(input.toAgentId, input.toAgentName);
-  const delivered: string[] = [];
+  const delivered: { path: string; size?: number }[] = [];
   const used = new Set<string>();
-  const sourceRoot = path.resolve(input.sourceCwd);
-  const parentRoot = path.resolve(input.parentCwd);
-  const parentArtifact = path.join(parentRoot, ARTIFACT_DIR);
-  fs.mkdirSync(parentArtifact, { recursive: true });
-
   for (const item of input.staged) {
     const relUnderArtifact = item.path.startsWith(`${ARTIFACT_DIR}/`)
       ? item.path.slice(ARTIFACT_DIR.length + 1)
@@ -193,6 +189,34 @@ export function copyStagedArtifactsToParent(input: {
     let destRel = `${ARTIFACT_DIR}/${folder}/${flat}`;
     destRel = disambiguateDeliveryPath(destRel, used);
     used.add(destRel);
+    const entry: { path: string; size?: number } = { path: destRel };
+    if (typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0) {
+      entry.size = item.size;
+    }
+    delivered.push(entry);
+  }
+  return delivered;
+}
+
+/** 把 staging 拷到父 cwd：`ARTIFACT/from-<name>-<id>/…`。空 staging 不写盘。 */
+export function copyStagedArtifactsToParent(input: {
+  sourceCwd: string;
+  parentCwd: string;
+  toAgentId: string;
+  toAgentName?: string;
+  staged: readonly StagedArtifact[];
+}): string[] {
+  const mapped = mapStagedToParentPaths(input);
+  if (mapped.length === 0) return [];
+  const sourceRoot = path.resolve(input.sourceCwd);
+  const parentRoot = path.resolve(input.parentCwd);
+  const parentArtifact = path.join(parentRoot, ARTIFACT_DIR);
+  fs.mkdirSync(parentArtifact, { recursive: true });
+  const delivered: string[] = [];
+
+  for (let index = 0; index < mapped.length; index += 1) {
+    const destRel = mapped[index]!.path;
+    const item = input.staged[index]!;
     const sourceAbs = path.resolve(sourceRoot, ...item.path.split("/"));
     const destAbs = path.resolve(parentRoot, ...destRel.split("/"));
     if (!destAbs.startsWith(`${parentArtifact}${path.sep}`)) {

@@ -80,7 +80,10 @@ function collectFromRegex(text: string, re: RegExp, group: number, hits: Indexed
 function looksLikePathToken(token: string): boolean {
   const t = token.trim();
   if (!t || URLISH_RE.test(t) || AND_OR_RE.test(t) || VERSION_RE.test(t)) return false;
-  if (/^file:\/\//i.test(t)) return true;
+  // 只要带真实路径体的 file://；裸 `file://` / `file:///` 是协议名，不是可开路径
+  if (/^file:\/\//i.test(t)) {
+    return /^file:\/\/\/.+/i.test(t) || /^file:\/\/[^/].+/i.test(t);
+  }
   if (/^[A-Za-z]:[\\/]/.test(t) || t.startsWith("\\\\")) return true;
   if (t.startsWith("/") && t.includes("/", 1)) return true;
   if (t.startsWith("./") || t.startsWith("../")) return true;
@@ -136,7 +139,8 @@ export function normalizeLocalPathCandidate(raw: string): NormalizedLocalPath | 
       // file:///C:/x → /C:/x on posix URL parser; Windows 盘符单独处理
       let pathname = decodeURIComponent(url.pathname);
       if (/^\/[A-Za-z]:\//.test(pathname)) pathname = pathname.slice(1);
-      if (!pathname) return null;
+      // 裸 file:// / file:///：URL 规范常把 pathname 落成 "/"，勿当成磁盘根目录链
+      if (!pathname || pathname === "/") return null;
       return { kind: "absolute", path: pathname };
     } catch {
       return null;

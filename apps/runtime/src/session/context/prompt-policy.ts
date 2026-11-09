@@ -76,20 +76,33 @@ function renderSection(section: PromptSectionId, input: PromptCompileInput): str
     case "group-roster":
       return input.groupRoster?.trim() ?? "";
     case "group-task":
-      return formatGroupTaskPrompt(input.taskId, input.toAgentName);
+      return formatGroupTaskPrompt(input.taskId, input.toAgentName, input.groupWorkspace?.root);
     default:
       return "";
   }
 }
 
-function formatGroupTaskPrompt(taskId: string | undefined, toAgentName?: string): string {
+function formatGroupTaskPrompt(
+  taskId: string | undefined,
+  toAgentName?: string,
+  groupWorkspaceRoot?: string,
+): string {
   const folder = groupTaskDirName(taskId?.trim() || "task", toAgentName);
+  const root = groupWorkspaceRoot?.trim().replace(/\\/g, "/") ?? "";
   return [
     "# Group task delivery",
     "",
     "You are doing one group task. Do not delegate further.",
-    `Write in-progress files under the shared group \`WORK/${folder}/\`.`,
-    `Write finished files under the shared group \`ARTIFACT/${folder}/\`.`,
+    ...(root
+      ? [
+          `Shared group workspace root (absolute): \`${root}\`.`,
+          `Relative \`WORK/...\` and \`ARTIFACT/...\` paths are relative to that shared root — not to your private Working directory.`,
+        ]
+      : [
+          "Relative `WORK/...` and `ARTIFACT/...` paths are relative to the shared group workspace root — not to your private Working directory.",
+        ]),
+    `Write in-progress files under \`WORK/${folder}/\`.`,
+    `Write finished files under \`ARTIFACT/${folder}/\`.`,
     "Do not modify shared ATTACHMENTS/, and do not write these files into your private cwd.",
     "When you finish, call complete_group_task with those relative paths and what the group should do next.",
     "Do not copy files into the caller's private workspace.",

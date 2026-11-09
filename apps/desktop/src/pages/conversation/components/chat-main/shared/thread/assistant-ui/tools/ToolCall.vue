@@ -96,6 +96,13 @@ const component = computed(() => {
     case "deliver_artifacts":
       return DeliverTool;
     case "todo":
+    case "TaskCreate":
+    case "TaskUpdate":
+    case "TaskList":
+    case "TaskGet":
+    case "TodoWrite":
+    case "todo_write":
+    case "UpdateTodos":
       return TodoTool;
     case "skill_list":
     case "skill_load":

@@ -44,8 +44,17 @@ export type DelegationTask = {
   artifacts?: { path: string; size?: number }[];
   /** 是否已拷入父 visit 的 ARTIFACT/from-<name>-<id>/。 */
   artifactsDelivered?: boolean;
+  /**
+   * 父侧（或群共享）可展示路径：一对一为拷贝后的 `ARTIFACT/from-…/`；
+   * 群聊为已确认的 `ARTIFACT/…`（不含 WORK/）。
+   */
+  deliveredPaths?: { path: string; size?: number }[];
+  /** 收口气泡是否已写入 agentup-deliverables（避免重复自动挂）。 */
+  deliverablesPresented?: boolean;
   /** 群内派出的工作单。有值时结果回到群，不唤醒一对一。 */
   groupId?: string;
+  /** 父回合工具调用 id；开跑后再发 started 时回填，供协助面板按 toolCallId 反查。 */
+  toolCallId?: string;
   /**
    * 派出时记下的模型策略。统一带具体模型；单配开跑时再读被派者。
    * 旧工单没有这份时，仍用设备最近使用。

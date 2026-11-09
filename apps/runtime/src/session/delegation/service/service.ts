@@ -17,33 +17,25 @@ import {
   formatDelegationSteerNote,
   STEER_NOTE_MAX,
 } from "../steer.js";
-import type { ModelRef } from "../../../config/provider/index.js";
-import {
-  agentSessionDir,
-  readVisitModelMode,
-  type DelegationModelPin,
-} from "../../model/assignment.js";
-import { replyModelFromRef, type AgentUpReplyModel } from "../../history/reply-model.js";
-import { peekVisitModelRef } from "../../model/session-model.js";
 import { DelegationStore } from "../store.js";
-import {
-  MAX_DELEGATION_FANOUT,
-  type DelegateFanoutItem,
-  type DelegateFanoutResult,
-  type DelegateRunResult,
-  type DelegationTask,
-  type RecruitedAgentInfo,
+import type {
+  DelegateFanoutItem,
+  DelegateFanoutResult,
+  DelegateRunResult,
+  DelegationTask,
+  RecruitedAgentInfo,
 } from "../types.js";
-import { materializePendingArtifacts as materializePending } from "./artifacts.js";
+import type { DelegationModelPin } from "../../model/assignment.js";
+import {
+  listUnpresentedDeliverables as listUnpresented,
+  markDeliverablesPresented as markPresented,
+  materializePendingArtifacts as materializePending,
+} from "./artifacts.js";
 import { DelegationError } from "./errors.js";
 import { executeDelegationTask } from "./execute.js";
-import {
-  AGENT_ID,
-  fromLocalCard,
-  mergePlanned,
-  parentKey,
-  reuseBlockedMessage,
-} from "./helpers.js";
+import { runDelegateFanout } from "./fanout.js";
+import { fromLocalCard, parentKey } from "./helpers.js";
+import type { GroupSpeakerModelPlan } from "./model-pin.js";
 import {
   afterTerminal,
   notifyParent as enqueueParentNotify,
@@ -82,11 +74,7 @@ export class DelegationService {
     brief: string;
   }) => void;
   /** 群统一抄本群模型；单配让调用方不写具体模型。 */
-  private groupSpeakerModel?: (input: {
-    userId: string;
-    groupId: string;
-    speaker: ModelRef | null;
-  }) => { kind: "visit" } | { kind: "room"; ref: ModelRef };
+  private groupSpeakerModel?: GroupSpeakerModelPlan;
   /**
    * 这名成员本轮已经交回、执掌者还没告诉用户。
    * 再派只会把同一件事重做一遍。
@@ -148,15 +136,7 @@ export class DelegationService {
     this.groupQueue = handler;
   }
 
-  /**
-   * 群里统一时工单抄本群模型。单配返回 visit，调用方不再写具体模型。
-   * 房间还没有模型时，实现方负责把开口者的模型抄进群里。
-   */
-  setGroupSpeakerModel(
-    handler: (input: { userId: string; groupId: string; speaker: ModelRef | null }) =>
-      | { kind: "visit" }
-      | { kind: "room"; ref: ModelRef },
-  ): void {
+  setGroupSpeakerModel(handler: GroupSpeakerModelPlan): void {
     this.groupSpeakerModel = handler;
   }
 
@@ -239,9 +219,9 @@ export class DelegationService {
       unseenOnly?: boolean;
       status?: DelegationTask["status"];
       fromAgentId?: string;
+      groupId?: string;
     } = {},
   ): DelegationTask[] {
-    // 愈合历史：旧版 sync / 群终态未标 seen，会反复进桌面 toast / 私聊未读。
     for (const task of this.store.list(userId)) {
       settleIfSync(this.store, task);
       settleGroupIfNotified(this.store, task);
@@ -453,214 +433,27 @@ export class DelegationService {
     signal?: AbortSignal;
     toolCallId?: string;
     groupId?: string;
-    /** 子会话再委派时带上父工单的 pin，整条链不再回读会话模式。 */
     modelPin?: DelegationModelPin;
   }): Promise<DelegateFanoutResult> {
-    if (input.items.length === 0) {
-      throw new DelegationError("tasks 不能为空");
-    }
-    const groupId = input.groupId;
-    if (groupId) {
-      for (const item of input.items) this.requireGroupMember(input.userId, groupId, item.toAgentId);
-    }
-    if (input.items.length > MAX_DELEGATION_FANOUT) {
-      throw new DelegationError(`一次最多委托 ${MAX_DELEGATION_FANOUT} 个专家`);
-    }
-
-    if (groupId && this.groupAwaitingReply) {
-      for (const item of input.items) {
-        const done = this.groupAwaitingReply({
-          userId: input.userId,
-          groupId,
-          agentId: item.toAgentId,
-        });
-        if (!done) continue;
-        throw new DelegationError(
-          `This member already finished task ${done.taskId} in this turn. Do not call delegate_to_agent again. Reply to the user with the result below.\n${done.summary}`,
-        );
-      }
-    }
-
-    const roster = await this.listRecruited(input.userId);
-    const resolved: Array<{ toAgentId: string; toAgentName: string; brief: string }> = [];
-    for (const item of input.items) {
-      if (!AGENT_ID.test(item.toAgentId)) {
-        throw new DelegationError(`agent_id 无效: ${item.toAgentId}`);
-      }
-      if (item.toAgentId === input.fromAgentId) {
-        throw new DelegationError("不能委托给自己");
-      }
-      if (item.toAgentId === PERSONAL_ASSISTANT_ID) {
-        throw new DelegationError("不能委托给私人助理");
-      }
-      const brief = item.brief.trim();
-      if (!brief) throw new DelegationError("brief 不能为空");
-      const card = roster.find((entry) => entry.agentId === item.toAgentId);
-      if (!card) {
-        throw new DelegationError(`目标不在可用 Agents 列表中: ${item.toAgentId}`);
-      }
-      resolved.push({
-        toAgentId: item.toAgentId,
-        toAgentName: card.remark || card.name || item.toAgentId,
-        brief,
-      });
-    }
-
-    // 群里只有异步：执掌者拿 task_id 结束回合，工作单交回后由群重新唤醒；模型传什么都压成 false。
-    // 一对一：扇出仅显式 wait=true 才同步汇合；单项省略 wait 回落同步（避免漏参整轮空等）。
-    const wait = groupId ? false : input.items.length > 1 ? input.wait === true : input.wait !== false;
-    const modelPin =
-      input.modelPin ?? this.pinFor(input.userId, input.fromAgentId, groupId);
-
-    const planned: Array<{
-      item: (typeof resolved)[number];
-      existing?: DelegationTask;
-    }> = [];
-    for (const item of resolved) {
-      const active = this.store.list(input.userId).filter(
-        (task) =>
-          task.fromAgentId === input.fromAgentId &&
-          task.toAgentId === item.toAgentId &&
-          (task.status === "running" || task.status === "pending_auth"),
-      );
-      if (active.length > 1) {
-        throw new DelegationError(
-          `同一专员已有多项进行中的任务（${active.map((task) => task.id).join(", ")}）。请用 steer_delegation 指定 task_id，不要再派一次。`,
-        );
-      }
-      const current = active[0];
-      if (!current) {
-        planned.push({ item });
-        continue;
-      }
-      const outcome = await this.steer({
-        taskId: current.id,
-        userId: input.userId,
-        fromAgentId: input.fromAgentId,
-        note: item.brief,
-      });
-      if (!outcome.queued && outcome.reason === "not_started") {
-        // 专员会话还没挂上 steerer（排队/刚启动）：先改 brief，开跑时 execute 会读最新 brief。
-        const revised = this.store.update(current.id, { brief: item.brief }) ?? outcome.task;
-        planned.push({ item, existing: revised });
-        continue;
-      }
-      if (!outcome.queued) {
-        throw new DelegationError(reuseBlockedMessage(outcome.reason, outcome.task.id));
-      }
-      // 已插入专员回合：同步改 brief，避免 check_delegation 仍显示旧需求
-      const revised = this.store.update(current.id, { brief: item.brief }) ?? outcome.task;
-      planned.push({ item, existing: revised });
-    }
-
-    const steeredTaskIds = planned.flatMap((slot) => (slot.existing ? [slot.existing.id] : []));
-    const toCreate = planned.filter((slot) => !slot.existing);
-    if (toCreate.length === 0) {
-      return {
-        tasks: planned.map((slot) => slot.existing!),
-        steeredTaskIds,
-      };
-    }
-
-    const created: DelegationTask[] = [];
-    const visits: Visit[] = [];
-    for (const slot of toCreate) {
-      const item = slot.item;
-      const replyModel = this.snapshotReplyModel(modelPin, input.userId, item.toAgentId);
-      const task = this.store.create({
-        userId: input.userId,
-        fromAgentId: input.fromAgentId,
-        toAgentId: item.toAgentId,
-        toAgentName: item.toAgentName,
-        brief: item.brief,
-        wait,
-        groupId,
-        modelPin,
-        ...(replyModel ? { replyModel } : {}),
-      });
-      this.store.update(task.id, { status: "running" });
-      this.owned.add(task.id);
-      this.progress.emitStarted({
-        taskId: task.id,
-        userId: task.userId,
-        fromAgentId: task.fromAgentId,
-        toAgentId: task.toAgentId,
-        toAgentName: task.toAgentName,
-        brief: task.brief,
-        toolCallId: input.toolCallId,
-        wait,
-        ...(replyModel ? { replyModel } : {}),
-      });
-      // 异步也要先在令牌仍绑定时装好 visit，避免 turn 结束后 sync 失败。
-      // 子会话没装上时不要记进群，否则执掌者会空等一张永远不会交回的单。
-      visits.push(await this.syncVisit(task.userId, task.toAgentId));
-      if (groupId) {
-        this.groupStarted?.({ userId: input.userId, groupId, taskId: task.id });
-      }
-      created.push(this.store.get(task.id)!);
-    }
-
-    const join = wait && steeredTaskIds.length === 0;
-    if (!join) {
-      for (let i = 0; i < created.length; i += 1) {
-        const task = created[i]!;
-        const visit = visits[i]!;
-        void this.executeTask(task.id, visit, input.signal).catch(() => undefined);
-      }
-      return {
-        tasks: mergePlanned(planned, created.map((task) => this.store.get(task.id)!)),
-        steeredTaskIds,
-      };
-    }
-
-    await Promise.all(
-      created.map((task, index) => this.executeTask(task.id, visits[index]!, input.signal)),
+    return runDelegateFanout(
+      {
+        store: this.store,
+        progress: this.progress,
+        owned: this.owned,
+        userDataRoot: this.options.userDataRoot,
+        getModel: this.options.getModel,
+        listRecruited: (userId) => this.listRecruited(userId),
+        requireGroupMember: (userId, groupId, toAgentId) =>
+          this.requireGroupMember(userId, groupId, toAgentId),
+        groupAwaitingReply: this.groupAwaitingReply,
+        groupSpeakerModel: this.groupSpeakerModel,
+        groupStarted: this.groupStarted,
+        steer: (steerInput) => this.steer(steerInput),
+        syncVisit: (userId, agentId) => this.syncVisit(userId, agentId),
+        executeTask: (taskId, visit, signal) => this.executeTask(taskId, visit, signal),
+      },
+      input,
     );
-    const done = created.map((task) => this.store.get(task.id)!);
-    return {
-      tasks: done,
-      texts: done.map((task) => task.resultSummary ?? ""),
-    };
-  }
-
-  /**
-   * 一对一统一：记下开口者此刻的一对一模型。
-   * 群统一：记下这间群自己的模型。单配：工单上不写具体模型。
-   * 显式传入的 pin（嵌套）原样沿用。
-   */
-  private pinFor(userId: string, fromAgentId: string, groupId?: string): DelegationModelPin {
-    const speaker = peekVisitModelRef(
-      this.options.userDataRoot,
-      agentSessionDir(this.options.userDataRoot, userId, fromAgentId),
-    );
-    if (groupId) {
-      const plan = this.groupSpeakerModel?.({ userId, groupId, speaker });
-      if (!plan || plan.kind === "visit") return { mode: "perAgent" };
-      return { mode: "unified", templateId: plan.ref.templateId, modelId: plan.ref.modelId };
-    }
-    const mode = readVisitModelMode(agentSessionDir(this.options.userDataRoot, userId, fromAgentId));
-    if (mode === "perAgent" || !speaker) return { mode: "perAgent" };
-    return { mode: "unified", templateId: speaker.templateId, modelId: speaker.modelId };
-  }
-
-  /** 派出时尽量快照模型；统一用 pin，单配先读专员一对一 sidecar。 */
-  private snapshotReplyModel(
-    pin: DelegationModelPin,
-    userId: string,
-    toAgentId: string,
-  ): AgentUpReplyModel | undefined {
-    if (pin.mode === "unified") {
-      return replyModelFromRef(
-        { templateId: pin.templateId, modelId: pin.modelId },
-        this.options.userDataRoot,
-      );
-    }
-    const specialist = peekVisitModelRef(
-      this.options.userDataRoot,
-      agentSessionDir(this.options.userDataRoot, userId, toAgentId),
-    );
-    if (!specialist) return undefined;
-    return replyModelFromRef(specialist, this.options.userDataRoot);
   }
 
   private async executeTask(taskId: string, visit: Visit, signal?: AbortSignal): Promise<void> {
@@ -722,5 +515,14 @@ export class DelegationService {
       fromAgentId,
       parentCwd,
     );
+  }
+
+  /** 收口网格：尚未 presented 的 deliveredPaths。 */
+  listUnpresentedDeliverables(userId: string, fromAgentId: string) {
+    return listUnpresented(this.store, userId, fromAgentId);
+  }
+
+  markDeliverablesPresented(taskIds: readonly string[]): void {
+    markPresented(this.store, taskIds);
   }
 }

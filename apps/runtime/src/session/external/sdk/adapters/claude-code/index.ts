@@ -3,6 +3,7 @@
  * 同构 query + systemPrompt preset/append + AskUserQuestion；登录为 Console API Key。
  */
 export { claudeCodeDriver } from "./driver.js";
+export { claudeCodeTodoProjector } from "./todo.js";
 export {
   loadClaudeModule,
   resolveClaudeCliPath,

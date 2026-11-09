@@ -17,6 +17,7 @@ import {
 } from "./login-impl.js";
 import { fetchAgentSdkModels } from "./models-impl.js";
 import { codebuddyCompactOptionsOf, codebuddyOptionsOf } from "./options.js";
+import { codebuddyTodoProjector } from "./todo.js";
 
 const CAPABILITIES: ExternalDriverCapabilities = {
   driverId: "codebuddy",
@@ -31,6 +32,7 @@ const CAPABILITIES: ExternalDriverCapabilities = {
  */
 export const codebuddyDriver: ExternalDriver = {
   capabilities: CAPABILITIES,
+  todoProjector: codebuddyTodoProjector,
 
   async login(input: ExternalLoginInput) {
     // 设置页仍走 startAgentSdkLogin（需先返回 auth_url）；契约 login 用于统一面

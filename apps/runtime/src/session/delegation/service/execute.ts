@@ -66,8 +66,19 @@ export async function executeDelegationTask(
       const latestTask = ctx.store.get(task.id) ?? task;
       const model = ctx.getModel(latestTask, visit);
       // 以开跑时的真实模型覆盖派出快照（单配排队期间可能换模）
-      ctx.store.update(task.id, {
-        replyModel: replyModelFromConfig(model, ctx.userDataRoot),
+      const replyModel = replyModelFromConfig(model, ctx.userDataRoot);
+      const refreshed = ctx.store.update(task.id, { replyModel }) ?? latestTask;
+      // 排队后再定模：再发一次 started，协助面板进行中即可按 toolCallId 更新标形。
+      ctx.progress.emitStarted({
+        taskId: refreshed.id,
+        userId: refreshed.userId,
+        fromAgentId: refreshed.fromAgentId,
+        toAgentId: refreshed.toAgentId,
+        toAgentName: refreshed.toAgentName,
+        brief: refreshed.brief,
+        wait: refreshed.wait,
+        ...(refreshed.toolCallId ? { toolCallId: refreshed.toolCallId } : {}),
+        replyModel,
       });
       const outcome = await runDelegatedPrompt(
         visit,

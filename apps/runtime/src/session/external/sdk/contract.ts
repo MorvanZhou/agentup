@@ -5,6 +5,8 @@
  * Host 只认本文件类型；厂商差异全部进 adapters/<driverId>/。
  */
 
+import type { TodoItem } from "../../tools/todo.js";
+
 /** 与模板 agentSdk.driverId 对齐的稳定实现 id。 */
 export type ExternalDriverId =
   | "codebuddy"
@@ -31,6 +33,34 @@ export interface ExternalDriverCapabilities {
    * false → Host 无 API 模型时跳过语义压缩，回落硬裁。
    */
   compactSummarize: boolean;
+}
+
+/** Host 侧 Todo 看板；厂商工具名/参数由各 driver 的 ExternalTodoProjector 认领。 */
+export type ExternalTodoBoard = {
+  items: TodoItem[];
+  /** 厂商字符串 id → Host 数字 id */
+  idMap: Map<string, number>;
+  nextId: number;
+};
+
+export type ExternalTodoApplyResult = {
+  board: ExternalTodoBoard;
+  resultText: string;
+  hostArgs: Record<string, unknown>;
+};
+
+/**
+ * Driver 自有的 task/todo → Host PlanDock 投影。
+ * 实现放 `adapters/<driverId>/todo.ts`；Host translator 只调用，不认厂商工具名。
+ */
+export interface ExternalTodoProjector {
+  ownsTool(toolName: string): boolean;
+  apply(
+    board: ExternalTodoBoard,
+    toolName: string,
+    args: Record<string, unknown>,
+    rawResult: unknown,
+  ): ExternalTodoApplyResult;
 }
 
 /**
@@ -155,4 +185,9 @@ export interface ExternalDriverTurn {
 
 export interface ExternalDriver extends ExternalDriverLifecycle, ExternalDriverTurn {
   readonly capabilities: ExternalDriverCapabilities;
+  /**
+   * 厂商 task/todo → Host `todo` + formatTodoList。
+   * 缺省 = 本 driver 无 task list（verification N/A）。
+   */
+  readonly todoProjector?: ExternalTodoProjector;
 }

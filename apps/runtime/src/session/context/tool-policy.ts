@@ -29,7 +29,8 @@ export type PolicyToolName =
   | "steer_delegation"
   | "resolve_delegation_update"
   | "deliver_artifacts"
-  | "complete_group_task";
+  | "complete_group_task"
+  | "present_artifacts";
 
 const FILE_TOOLS = ["read", "grep", "find", "ls", "write", "edit", "shell"] as const satisfies readonly PolicyToolName[];
 
@@ -67,8 +68,16 @@ export const TOOL_POLICY: Record<ExecutionMode, readonly PolicyToolName[]> = {
     "tool_search",
     ...SINGLE_ONLY_DELEGATION_TOOLS,
     ...ROOM_DELEGATION_TOOLS,
+    "present_artifacts",
   ],
-  "group-holder": [...FILE_TOOLS, ...COMMON_TOOLS, ...BACKGROUND_TOOLS, "tool_search", ...ROOM_DELEGATION_TOOLS],
+  "group-holder": [
+    ...FILE_TOOLS,
+    ...COMMON_TOOLS,
+    ...BACKGROUND_TOOLS,
+    "tool_search",
+    ...ROOM_DELEGATION_TOOLS,
+    "present_artifacts",
+  ],
   "single-delegation": [...FILE_TOOLS, ...COMMON_TOOLS, "shell_hang_decide", "tool_search", "deliver_artifacts"],
   "group-delegation": [...FILE_TOOLS, ...COMMON_TOOLS, "shell_hang_decide", "tool_search", "complete_group_task"],
 };

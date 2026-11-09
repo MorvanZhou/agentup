@@ -2,6 +2,7 @@ import type { Visit } from "../../../../package/sync.js";
 import type { WorkspacePolicy } from "../../../context/workspace-policy.js";
 import type { McpTool } from "../../mcp/server.js";
 import type { AskUserAnswer, AskUserQuestion } from "../../../tools/ask-user.js";
+import type { ExternalTodoProjector } from "../contract.js";
 
 /** 审批通道（ApprovalBroker 的最小面）；SDK 信任模式下通常不再 request。 */
 export interface AgentSdkApprovalSink {
@@ -61,9 +62,14 @@ export type ExternalAgentQuery = {
   /** 立刻打断厂商侧（如 OpenCode session.abort）；仅 abort controller 不够停住 SSE */
   abort?: () => void;
   close?: () => Promise<void>;
+  /** 本轮 driver 的 todo 投影；透传给 createExternalTranslator */
+  todoProjector?: ExternalTodoProjector;
 };
 
-/** 整回合上限：外部 agent 可能长时间不给结果。 */
+/**
+ * 外部 Agent 流空闲超时：两次 SDK 消息之间的最长等待。
+ * Host 每收到一条消息就续命，整轮可长跑；挂死无产出仍会掐断。
+ */
 export const AGENT_SDK_TURN_TIMEOUT_MS = 10 * 60_000;
 
 /**

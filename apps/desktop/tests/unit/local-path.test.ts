@@ -40,6 +40,12 @@ describe("extractLocalPathCandidates", () => {
     expect(extractLocalPathCandidates(text)).toEqual([]);
   });
 
+  it("skips bare file:// protocol mentions (inline code or prose)", () => {
+    expect(extractLocalPathCandidates("无头 Chrome 以 `file://` 直接打开")).toEqual([]);
+    expect(extractLocalPathCandidates("协议是 file:// 不是路径")).toEqual([]);
+    expect(extractLocalPathCandidates("空壳 file:/// 也不算")).toEqual([]);
+  });
+
   it("dedupes and caps at 32", () => {
     const many = Array.from({ length: 40 }, (_, i) => `dir/f${i}.ts`).join(" ");
     expect(extractLocalPathCandidates(many)).toHaveLength(32);
@@ -61,5 +67,10 @@ describe("normalizeLocalPathCandidate", () => {
       kind: "relative",
       path: "src/b.ts",
     });
+  });
+
+  it("rejects bare file:// / file:/// (URL pathname 会落成 /，勿当根目录链)", () => {
+    expect(normalizeLocalPathCandidate("file://")).toBeNull();
+    expect(normalizeLocalPathCandidate("file:///")).toBeNull();
   });
 });

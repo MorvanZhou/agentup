@@ -1,4 +1,5 @@
 export { cursorDriver } from "./driver.js";
+export { cursorTodoProjector } from "./todo.js";
 export {
   startCursorLogin,
   checkCursorLogin,

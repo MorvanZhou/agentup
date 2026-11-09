@@ -81,6 +81,7 @@ export function buildExternalAgentContext(input: ExternalAgentContextInput): Ext
       skills,
       cwd,
       additionalDirs,
+      ...(input.groupWorkspaceRoot ? { groupWorkspaceRoot: input.groupWorkspaceRoot } : {}),
       ...(input.skillsProjectRel ? { skillsProjectRel: input.skillsProjectRel } : {}),
       ...(input.groupRoster ? { groupRoster: input.groupRoster } : {}),
     }),
@@ -97,6 +98,8 @@ export type SystemAppendInput = {
   skills: InvocableSkill[];
   cwd: string;
   additionalDirs: string[];
+  /** 群共享工作区绝对根；有则在目录列表里标明相对 WORK/ARTIFACT 的解析基准。 */
+  groupWorkspaceRoot?: string;
   /** 方案 D 厂商投影路径；写入技能段指引。 */
   skillsProjectRel?: string;
   /** 群花名册（含 agent_id）；有则走群协议而非单聊 Collaboration。 */
@@ -137,11 +140,24 @@ export function composeSystemAppend(input: SystemAppendInput): string {
     ];
     sections.push(skillLines.join("\n"));
   }
-  const dirs = [input.cwd, ...input.additionalDirs];
+  const cwdNorm = input.cwd.replace(/\\/g, "/");
+  const groupRoot = input.groupWorkspaceRoot?.trim().replace(/\\/g, "/") ?? "";
+  const groupReal = groupRoot ? realOrSelf(groupRoot) : "";
+  const dirLines = [cwdNorm, ...input.additionalDirs.map((dir) => dir.replace(/\\/g, "/"))].map(
+    (dir) => {
+      if (dir === cwdNorm) {
+        return `- ${dir} (private Working directory — ordinary relative paths resolve here)`;
+      }
+      if (groupRoot && (dir === groupRoot || realOrSelf(dir) === groupReal)) {
+        return `- ${dir} (shared group workspace — relative WORK/... and ARTIFACT/... for group tasks resolve here, not under your private cwd)`;
+      }
+      return `- ${dir}`;
+    },
+  );
   sections.push(
     [
       "## Directories you may read and write",
-      ...dirs.map((dir) => `- ${dir}`),
+      ...dirLines,
       "Do not write outside the directories listed above; access to other paths will be denied.",
     ].join("\n"),
   );

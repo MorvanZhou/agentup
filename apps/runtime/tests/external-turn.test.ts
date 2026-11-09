@@ -596,7 +596,7 @@ describe("失败与中断", () => {
     ).rejects.toThrow("SDK 掉线");
   });
 
-  it("外部流超时会中断执行并正常收束 UI", async () => {
+  it("外部流空闲超时会中断执行并正常收束 UI", async () => {
     const chunks: UIMessageChunk[] = [];
     let stopped = false;
     await runExternalTurn({
@@ -616,6 +616,49 @@ describe("失败与中断", () => {
     expect(stopped).toBe(true);
     expect(types(chunks)).toContain("finish");
     expect(JSON.stringify(chunks)).toContain("超时");
+  });
+
+  it("流持续有消息时按空闲窗口续命，不因墙钟超过 timeoutMs 而掐断", async () => {
+    const chunks: UIMessageChunk[] = [];
+    let stopped = false;
+    const outcome = await runExternalTurn({
+      source: (async function* () {
+        // 三段间隔各 ~25ms，墙钟合计 > timeoutMs(40)，但每次收包后应续命
+        yield {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "先" },
+          },
+        };
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        yield {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "后" },
+          },
+        };
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        yield { type: "result", subtype: "success", result: "做完了", num_turns: 3 };
+      })(),
+      timeoutMs: 40,
+      onTimeout: () => {
+        stopped = true;
+      },
+      write: (batch) => chunks.push(...batch),
+      errorPolicy: "prompt",
+      locale: "zh",
+    });
+
+    expect(stopped).toBe(false);
+    expect(outcome.aborted).toBe(false);
+    expect(outcome.visibleText).toContain("先");
+    expect(outcome.visibleText).toContain("后");
+    expect(outcome.result?.finishReason).toBe("completed");
+    expect(JSON.stringify(chunks)).not.toContain("超时");
   });
 
   it("用户停止时即使厂商流挂死也能立刻收束（群聊不再卡进行中）", async () => {

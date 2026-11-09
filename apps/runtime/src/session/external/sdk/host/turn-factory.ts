@@ -82,6 +82,7 @@ export async function queryExternalAgent(
         await Promise.resolve(handle.close()).catch(() => undefined);
         await mcp?.close().catch(() => undefined);
       },
+      ...(driver.todoProjector ? { todoProjector: driver.todoProjector } : {}),
     };
   } catch (error) {
     signal?.removeEventListener("abort", onUserAbort);

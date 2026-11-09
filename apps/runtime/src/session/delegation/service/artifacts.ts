@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { copyStagedArtifactsToParent } from "../../tools/deliver-artifacts.js";
 import { ensureCwdLayout } from "../../workspace/cwd-layout.js";
@@ -18,21 +19,48 @@ export function deliverTaskArtifacts(
   if (task.artifactsDelivered) return;
   if (task.artifacts === undefined) return;
   if (task.groupId) {
-    store.update(task.id, { artifactsDelivered: true });
+    // 群：不拷贝；展示路径直接用已确认的 ARTIFACT/（WORK/ 不进交付网格）。
+    const deliveredPaths = (task.artifacts ?? [])
+      .filter((item) => item.path.startsWith("ARTIFACT/"))
+      .map((item) => {
+        const entry: { path: string; size?: number } = { path: item.path };
+        if (typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0) {
+          entry.size = item.size;
+        }
+        return entry;
+      });
+    store.update(task.id, {
+      artifactsDelivered: true,
+      ...(deliveredPaths.length > 0 ? { deliveredPaths } : {}),
+    });
     return;
   }
   if (!parentCwd) return;
   if (!fs.existsSync(sourceCwd)) return;
   ensureCwdLayout(parentCwd);
   try {
-    copyStagedArtifactsToParent({
+    const paths = copyStagedArtifactsToParent({
       sourceCwd,
       parentCwd,
       toAgentId: task.toAgentId,
       toAgentName: task.toAgentName,
       staged: task.artifacts,
     });
-    store.update(task.id, { artifactsDelivered: true });
+    const deliveredPaths = paths.map((rel) => {
+      const entry: { path: string; size?: number } = { path: rel };
+      try {
+        const abs = path.resolve(parentCwd, ...rel.split("/"));
+        const size = fs.statSync(abs).size;
+        if (Number.isFinite(size) && size >= 0) entry.size = size;
+      } catch {
+        // 缺 size 仍可展示
+      }
+      return entry;
+    });
+    store.update(task.id, {
+      artifactsDelivered: true,
+      ...(deliveredPaths.length > 0 ? { deliveredPaths } : {}),
+    });
   } catch {
     // 投递失败不阻断委托终态；下次父 turn 可再试
   }
@@ -57,5 +85,33 @@ export function materializePendingArtifacts(
     const sourceCwd = resolveAgentCwd(userDataRoot, task.userId, task.toAgentId);
     if (!sourceCwd) continue;
     deliverTaskArtifacts(store, userDataRoot, task, sourceCwd, parentCwd);
+  }
+}
+
+/** 收口展示：终态、有 deliveredPaths、尚未标记 presented 的任务。 */
+export function listUnpresentedDeliverables(
+  store: DelegationStore,
+  userId: string,
+  fromAgentId: string,
+): { taskId: string; files: { path: string; size?: number }[] }[] {
+  const out: { taskId: string; files: { path: string; size?: number }[] }[] = [];
+  for (const task of store.list(userId, { fromAgentId })) {
+    if (!isTerminalStatus(task.status)) continue;
+    if (task.deliverablesPresented) continue;
+    if (!task.deliveredPaths || task.deliveredPaths.length === 0) continue;
+    out.push({ taskId: task.id, files: [...task.deliveredPaths] });
+  }
+  return out;
+}
+
+/** settle 写入交付网格后打标，避免下回合重复自动挂。 */
+export function markDeliverablesPresented(
+  store: DelegationStore,
+  taskIds: readonly string[],
+): void {
+  for (const id of taskIds) {
+    const task = store.get(id);
+    if (!task || task.deliverablesPresented) continue;
+    store.update(id, { deliverablesPresented: true });
   }
 }

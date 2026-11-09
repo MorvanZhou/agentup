@@ -28,6 +28,7 @@ import {
   cursorTurnPromptOf,
 } from "./options.js";
 import { mirrorCursorRun, workerResultFromCursorMessage } from "./stream.js";
+import { cursorTodoProjector } from "./todo.js";
 
 const CAPABILITIES: ExternalDriverCapabilities = {
   driverId: "cursor",
@@ -45,6 +46,7 @@ const CAPABILITIES: ExternalDriverCapabilities = {
  */
 export const cursorDriver: ExternalDriver = {
   capabilities: CAPABILITIES,
+  todoProjector: cursorTodoProjector,
 
   async login(input: ExternalLoginInput) {
     const result = await startCursorLogin(input.userDataRoot, input.templateId);

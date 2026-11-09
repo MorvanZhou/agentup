@@ -127,6 +127,7 @@ describe("groupLinesToUiMessages", () => {
           assistantCustom: {
             agentUpSummary: { textPartIndex: 1 },
             agentUpArtifacts: { files: [{ path: "ARTIFACT/a.md", kind: "added" }] },
+            agentUpDeliverables: { files: [{ path: "ARTIFACT/from-x/a.md", size: 1 }] },
           },
         },
       ],
@@ -142,6 +143,7 @@ describe("groupLinesToUiMessages", () => {
         author: { id: "pm", name: "产品经理" },
         agentUpSummary: { textPartIndex: 1 },
         agentUpArtifacts: { files: [{ path: "ARTIFACT/a.md", kind: "added" }] },
+        agentUpDeliverables: { files: [{ path: "ARTIFACT/from-x/a.md", size: 1 }] },
       },
     });
   });

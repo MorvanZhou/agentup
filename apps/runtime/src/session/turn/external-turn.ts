@@ -9,6 +9,7 @@ import {
   externalTextEvent,
   type ExternalTrailItem,
 } from "../external/events.js";
+import type { ExternalTodoProjector } from "../external/sdk/contract.js";
 import { PiUIMessageProjector } from "../history/frames.js";
 import {
   AGENTUP_REPLY_MODEL_CUSTOM_TYPE,
@@ -25,6 +26,7 @@ import {
   type WorkerResult,
 } from "../model/agent-sdk.js";
 import { assistantFailureNotice } from "../model/unavailable.js";
+import { sanitizeToolResultForContext } from "../history/sanitize-tool-result.js";
 import { sanitizeStreamText } from "../stream-guard.js";
 import type { AskUserRequest, AskUserResolved } from "../tools/ask-user.js";
 import type { TurnErrorPolicy, TurnHitlLabel } from "./turn-runner.js";
@@ -54,8 +56,12 @@ export type ExternalTurnInput = {
   /** 外部 agent 的消息流（`query()` 的返回值）。 */
   source: AsyncIterable<unknown>;
   signal?: AbortSignal;
+  /**
+   * 流空闲超时（毫秒）：两次 SDK 消息之间的最长等待。
+   * 每收到一条消息就续命，整轮可长跑；不是墙钟总时长。
+   */
   timeoutMs?: number;
-  /** 超时或用户停止时打断厂商（abort session / 关流） */
+  /** 空闲超时或用户停止时打断厂商（abort session / 关流） */
   onTimeout?: () => void;
   write: (chunks: UIMessageChunk[]) => void;
   locale?: UiLocale | string | null;
@@ -86,6 +92,8 @@ export type ExternalTurnInput = {
   }) => void;
   /** 本轮回复模型；写入流式 start metadata。 */
   replyModel?: AgentUpReplyModel;
+  /** 本轮 driver 的 todo 投影（来自 ExternalAgentQuery）。 */
+  todoProjector?: ExternalTodoProjector;
 };
 
 export type ExternalTurnResult = {
@@ -99,7 +107,9 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
   const projector = new PiUIMessageProjector({
     replyModel: input.replyModel,
   });
-  const translator = createExternalTranslator();
+  const translator = createExternalTranslator(
+    input.todoProjector ? { todoProjector: input.todoProjector } : {},
+  );
   let visibleText = "";
   let result: WorkerResult | null = null;
   let aborted = input.signal?.aborted === true;
@@ -191,7 +201,9 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
 
   try {
     iterator = input.source[Symbol.asyncIterator]();
-    const deadline = input.timeoutMs ? Date.now() + input.timeoutMs : undefined;
+    // 空闲窗口：有消息就续命，避免长任务被墙钟总时长误杀（Cody 开发回合）
+    let idleDeadline =
+      input.timeoutMs !== undefined ? Date.now() + input.timeoutMs : undefined;
     for (;;) {
       if (aborted || input.signal?.aborted) {
         aborted = true;
@@ -199,7 +211,8 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
         void iterator.return?.().catch(() => undefined);
         break;
       }
-      const remaining = deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
+      const remaining =
+        idleDeadline === undefined ? undefined : Math.max(0, idleDeadline - Date.now());
       // 与 abort 竞态：OpenCode SSE 挂死时不能干等 next()，否则群聊卡「进行中」
       const next = await nextExternalMessage(iterator, remaining, input.signal);
       if (next === "aborted") {
@@ -216,6 +229,9 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
       }
       if (next.done) break;
       const message = next.value;
+      if (input.timeoutMs !== undefined) {
+        idleDeadline = Date.now() + input.timeoutMs;
+      }
       if (aborted || input.signal?.aborted) {
         aborted = true;
         interruptVendor();
@@ -275,7 +291,7 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
     return { visibleText, result: null, aborted: true };
   }
   if (timedOut) {
-    const raw = "外部 agent 响应超时";
+    const raw = "外部 agent 空闲超时（长时间无新消息）";
     finishOpenTools(raw);
     input.write(projector.finish(assistantFailureNotice(raw, input.locale) ?? raw));
     writeBack(input, translator, visibleText, null, false);
@@ -428,6 +444,7 @@ export async function runExternalSessionTurn(input: {
       delegationStarted: input.delegationStarted,
       writeBack,
       ...(replyModel ? { replyModel } : {}),
+      ...(query.todoProjector ? { todoProjector: query.todoProjector } : {}),
     });
   } finally {
     input.signal?.removeEventListener("abort", abortExternal);
@@ -652,13 +669,15 @@ function externalAssistantMessage(
 }
 
 function toolResultContent(result: unknown): unknown {
-  if (typeof result === "string") return [{ type: "text", text: result }];
-  if (Array.isArray(result)) return result;
-  if (result == null) return [{ type: "text", text: "" }];
+  // ViewImage 等会塞 data:image base64；落盘前剥离，避免下一轮 prompt 爆窗
+  const cleaned = sanitizeToolResultForContext(result);
+  if (typeof cleaned === "string") return [{ type: "text", text: cleaned }];
+  if (Array.isArray(cleaned)) return cleaned;
+  if (cleaned == null) return [{ type: "text", text: "" }];
   try {
-    return [{ type: "text", text: JSON.stringify(result) }];
+    return [{ type: "text", text: JSON.stringify(cleaned) }];
   } catch {
-    return [{ type: "text", text: String(result) }];
+    return [{ type: "text", text: String(cleaned) }];
   }
 }
 

@@ -271,6 +271,9 @@ it("DelegationStore persists artifacts and materializePendingArtifacts copies on
   const dest = path.join(parentCwd, "ARTIFACT", "from-Spec-spec1", "maze.html");
   expect(fs.readFileSync(dest, "utf8")).toBe("game");
   expect(service.getTask(task.id)?.artifactsDelivered).toBe(true);
+  expect(service.getTask(task.id)?.deliveredPaths).toEqual([
+    { path: "ARTIFACT/from-Spec-spec1/maze.html", size: 4 },
+  ]);
 
   fs.unlinkSync(dest);
   service.materializePendingArtifacts(userId, PERSONAL_ASSISTANT_ID, parentCwd);

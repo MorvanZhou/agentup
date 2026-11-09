@@ -21,6 +21,7 @@ import type { Visit } from "../../package/sync.js";
 import { createCheckpointExtension } from "../checkpoint/extension.js";
 import { formatEnvironmentPrompt } from "../environment.js";
 import { createArtifactsExtension } from "../history/artifacts.js";
+import { createDeliverablesExtension } from "../history/deliverables.js";
 import { healInterruptedSessionTools } from "../history/history.js";
 import { createReplyModelExtension } from "../history/reply-model.js";
 import { createSummaryExtension } from "../history/summary.js";
@@ -66,6 +67,12 @@ export type ParentSessionExtensions = {
   /** 插在检查点之后、MCP 之前，例如再委托和后台任务。 */
   afterShell?: ExtensionFactory[];
   resolveDelegationLabel?: (toAgentId: string) => Promise<string | undefined>;
+  /** 收口交付网格：列出尚未 presented 的委托产物。 */
+  listDeliverablesPending?: () => {
+    taskId: string;
+    files: { path: string; size?: number }[];
+  }[];
+  markDeliverablesPresented?: (taskIds: readonly string[]) => void;
 };
 
 type SharedOpen = {
@@ -218,6 +225,16 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
       ...(profile.summary ? [createSummaryExtension()] : []),
       ...(profile.artifactPanel ? [createArtifactsExtension()] : []),
       ...(profile.delegationInbox ? parent.afterArtifacts ?? [] : []),
+      // 一对一 / 执掌：交付网格（自动挂委托产物 + present_artifacts）
+      ...(profile.mode === "single" || profile.mode === "group-holder"
+        ? [
+            createDeliverablesExtension({
+              cwd: plan.cwd,
+              listPending: parent.listDeliverablesPending ?? (() => []),
+              markPresented: parent.markDeliverablesPresented ?? (() => {}),
+            }),
+          ]
+        : []),
       ...(profile.deliverArtifacts && deliverState && artifactBefore
         ? [createDeliverArtifactsExtension({ cwd: plan.cwd, before: artifactBefore, state: deliverState })]
         : []),

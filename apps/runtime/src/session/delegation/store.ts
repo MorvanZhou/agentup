@@ -23,6 +23,7 @@ export class DelegationStore {
     brief: string;
     wait: boolean;
     groupId?: string;
+    toolCallId?: string;
     modelPin?: DelegationModelPin;
     replyModel?: DelegationTask["replyModel"];
   }): DelegationTask {
@@ -41,6 +42,7 @@ export class DelegationStore {
       seen: false,
       notified: false,
       groupId: input.groupId,
+      ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
       ...(input.modelPin ? { modelPin: input.modelPin } : {}),
       ...(input.replyModel ? { replyModel: input.replyModel } : {}),
     };
@@ -66,8 +68,11 @@ export class DelegationStore {
         | "toAgentName"
         | "artifacts"
         | "artifactsDelivered"
+        | "deliveredPaths"
+        | "deliverablesPresented"
         | "groupId"
         | "brief"
+        | "toolCallId"
         | "replyModel"
       >
     >,
@@ -216,7 +221,13 @@ function parseTask(raw: unknown): DelegationTask | undefined {
     notified: value.notified === true,
     artifacts: parseArtifacts(value.artifacts),
     artifactsDelivered: value.artifactsDelivered === true,
+    deliveredPaths: parseArtifacts(value.deliveredPaths),
+    deliverablesPresented: value.deliverablesPresented === true,
     groupId: typeof value.groupId === "string" && value.groupId ? value.groupId : undefined,
+    toolCallId:
+      typeof value.toolCallId === "string" && value.toolCallId.trim()
+        ? value.toolCallId.trim()
+        : undefined,
     modelPin: parseModelPin(value.modelPin),
     replyModel: parseReplyModelEntryData(value.replyModel),
   };

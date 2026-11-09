@@ -36,8 +36,20 @@ export function todoPlacement(parts: readonly TodoPartRef[]): TodoPlacement | un
   return { anchorIndex, sourceIndex: sourceIndex < 0 ? anchorIndex : sourceIndex };
 }
 
+/** Host `todo` + 厂商 task list 别名（旧 transcript 可能仍是 TaskCreate / TodoWrite）。 */
+const TODO_TOOL_NAMES = new Set([
+  "todo",
+  "TaskCreate",
+  "TaskUpdate",
+  "TaskList",
+  "TaskGet",
+  "TodoWrite",
+  "todo_write",
+  "UpdateTodos",
+]);
+
 export function isTodoPart(part: TodoPartRef | undefined): boolean {
-  return part?.type === "tool-call" && part.toolName === "todo";
+  return part?.type === "tool-call" && Boolean(part.toolName && TODO_TOOL_NAMES.has(part.toolName));
 }
 
 export type TodoMessageRef = {
@@ -135,12 +147,68 @@ export function parseTodoToolResult(result: string): { error?: string; items: To
       continue;
     }
     const match = ITEM_LINE.exec(line);
-    if (!match) continue;
-    items.push({
-      id: Number(match[2]),
-      done: match[1] === "x",
-      text: match[3] ?? "",
-    });
+    if (match) {
+      items.push({
+        id: Number(match[2]),
+        done: match[1] === "x",
+        text: match[3] ?? "",
+      });
+      continue;
+    }
+    // 厂商成功句兜底（rewrite 前的旧落盘）：Task #1 created successfully: …
+    const created = /^Task\s*#(\d+)\s+created successfully:\s*(.+)$/i.exec(line);
+    if (created) {
+      items.push({ id: Number(created[1]), done: false, text: created[2] ?? "" });
+      continue;
+    }
+    const updated = /^Task\s*#(\d+)\s+.*\bcompleted\b/i.exec(line);
+    if (updated) {
+      const id = Number(updated[1]);
+      const existing = items.find((item) => item.id === id);
+      if (existing) existing.done = true;
+      else items.push({ id, done: true, text: `Task #${id}` });
+    }
   }
+  if (items.length > 0) return error ? { error, items } : { items };
+
+  // Cursor TodoWrite 等可能整段 JSON
+  const fromJson = parseTodoJsonBlob(result);
+  if (fromJson.length > 0) return error ? { error, items: fromJson } : { items: fromJson };
   return error ? { error, items } : { items };
+}
+
+function parseTodoJsonBlob(result: string): TodoListItem[] {
+  const trimmed = result.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    const rows = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === "object" && Array.isArray((parsed as { todos?: unknown }).todos)
+        ? (parsed as { todos: unknown[] }).todos
+        : [];
+    const items: TodoListItem[] = [];
+    rows.forEach((row, index) => {
+      if (!row || typeof row !== "object") return;
+      const rec = row as Record<string, unknown>;
+      const rawId = rec.id;
+      const id =
+        typeof rawId === "number" && Number.isInteger(rawId)
+          ? rawId
+          : Number.parseInt(String(rawId ?? index + 1), 10) || index + 1;
+      const text =
+        (typeof rec.content === "string" && rec.content) ||
+        (typeof rec.text === "string" && rec.text) ||
+        `Task #${id}`;
+      const status = typeof rec.status === "string" ? rec.status : "";
+      items.push({
+        id,
+        text,
+        done: status === "completed" || status === "cancelled",
+      });
+    });
+    return items;
+  } catch {
+    return [];
+  }
 }

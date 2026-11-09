@@ -90,7 +90,8 @@ const timeline = computed(() =>
         : undefined
     "
   >
-    <div ref="processContent" class="min-w-0">
+    <!-- padding 在滚动内容上：条贴右缘，文字仍有边距 -->
+    <div ref="processContent" class="min-w-0 px-3">
       <template
         v-for="(item, itemIndex) in timeline.items"
         :key="`${item.kind}-${item.kind === 'group' ? item.id : item.index}-${itemIndex}`"

@@ -48,11 +48,18 @@ import {
 } from "../../../../model/thread/thread-earlier";
 import { injectThreadInsertCue } from "../../../../model/thread/thread-insert-cue";
 import { injectThreadWakeLive } from "../../../../model/thread/thread-wake-live";
+import {
+  activeUserNavId,
+  collectUserMessageNavItems,
+  shouldShowUserMessageNav,
+  windowStartToInclude,
+} from "../../../../model/thread/user-message-nav";
 import AssistantMessage from "./assistant-ui/AssistantMessage.vue";
 import ContextResetMessage from "./ContextResetMessage.vue";
 import SurfaceNotice from "./SurfaceNotice.vue";
 import TimeSeparator from "./TimeSeparator.vue";
 import UserMessage from "./user-message/UserMessage.vue";
+import UserMessageNav from "./UserMessageNav.vue";
 import WakeLiveMessage from "./WakeLiveMessage.vue";
 
 /** 在 MessageByIdProvider 作用域内按 role 分发到独立消息组件。 */
@@ -94,6 +101,11 @@ const loadingEarlier = ref(false);
 const earlierSentinel = ref<HTMLElement | null>(null);
 const threadNav = ref<HTMLElement | null>(null);
 const scrollingToPreviousUser = ref(false);
+const scrollingToUserNav = ref(false);
+/** 视口内当前锚定的 user 消息（右侧短横高亮）。 */
+const activeUserNavIdRef = ref<string | null>(null);
+const userNavItems = computed(() => collectUserMessageNavItems(threadMessages.value));
+const showUserNav = computed(() => shouldShowUserMessageNav(userNavItems.value.length));
 /** 补历史时关掉贴底跟随。重挂载揭示从关闭开始，避免新视口把阅读位置拉回最新消息。 */
 const followLatest = ref(revealOnMount === 0);
 // 中途插入滚到中段时：先停贴底，否则流式 chunk 会立刻把视口拽回底部
@@ -268,6 +280,23 @@ async function loadEarlier(): Promise<void> {
   }
 }
 
+function refreshActiveUserNav(scroller: HTMLElement): void {
+  if (!showUserNav.value) {
+    activeUserNavIdRef.value = null;
+    return;
+  }
+  const pin = scroller.getBoundingClientRect().top + 8;
+  const users: { id: string; top: number }[] = [];
+  for (const item of userNavItems.value) {
+    const node = scroller.querySelector<HTMLElement>(
+      `[data-thread-message-id="${CSS.escape(item.id)}"]`,
+    );
+    if (!node) continue;
+    users.push({ id: item.id, top: node.getBoundingClientRect().top });
+  }
+  activeUserNavIdRef.value = activeUserNavId(users, pin);
+}
+
 watch(
   threadNav,
   (el, _, onCleanup) => {
@@ -280,9 +309,21 @@ watch(
       ) {
         followLatest.value = true;
       }
+      refreshActiveUserNav(scroller);
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
+    // 首帧按当前视口点亮锚点
+    requestAnimationFrame(() => refreshActiveUserNav(scroller));
     onCleanup(() => scroller.removeEventListener("scroll", onScroll));
+  },
+  { flush: "post" },
+);
+
+watch(
+  [showUserNav, userNavItems, visibleIds],
+  () => {
+    const scroller = scrollParentOf(threadNav.value);
+    if (scroller) refreshActiveUserNav(scroller);
   },
   { flush: "post" },
 );
@@ -349,6 +390,40 @@ async function scrollToPreviousUserMessage(): Promise<void> {
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   } finally {
     scrollingToPreviousUser.value = false;
+  }
+}
+
+/** 锚点跳转：先揭开窗口（必要时继续 loadEarlier），再滚到对应 user 气泡。 */
+async function scrollToUserMessage(id: string): Promise<void> {
+  if (scrollingToUserNav.value) return;
+  const item = userNavItems.value.find((row) => row.id === id);
+  if (!item) return;
+  scrollingToUserNav.value = true;
+  followLatest.value = false;
+  try {
+    const nextStart = windowStartToInclude(windowStart.value, item.index, THREAD_WINDOW_PAGE);
+    if (nextStart < windowStart.value) {
+      windowStart.value = nextStart;
+      await nextTick();
+    }
+    const scroller = scrollParentOf(threadNav.value);
+    let guard = 0;
+    while (guard < 40) {
+      guard += 1;
+      const node = scroller?.querySelector<HTMLElement>(
+        `[data-thread-message-id="${CSS.escape(id)}"]`,
+      );
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "start" });
+        activeUserNavIdRef.value = id;
+        return;
+      }
+      if (!hasEarlier.value || loadingEarlier.value) break;
+      await loadEarlier();
+      await nextTick();
+    }
+  } finally {
+    scrollingToUserNav.value = false;
   }
 }
 </script>
@@ -426,29 +501,40 @@ async function scrollToPreviousUserMessage(): Promise<void> {
         />
         <component :is="delegationTrail" v-if="delegationTrail" />
       </div>
-      <!-- 右侧导航：贴滚动视口右下角（上一条 user / 最新消息） -->
+      <!-- 右侧导航簇：锚点贴在 ↑↓ 上方，同贴底右下角 -->
       <div
         ref="threadNav"
         class="pointer-events-none sticky bottom-3 z-10 mt-auto flex shrink-0 justify-end px-3"
       >
-        <div
-          class="pointer-events-auto flex w-fit flex-col overflow-hidden rounded-xl border border-rule bg-paper/95 shadow-sm backdrop-blur-sm"
-        >
-          <button
-            type="button"
-            class="inline-flex size-9 cursor-pointer items-center justify-center text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/30 disabled:cursor-default disabled:opacity-40"
-            :aria-label="t('threadScrollToPreviousUser')"
-            :disabled="scrollingToPreviousUser || messageCount === 0"
-            @click="scrollToPreviousUserMessage"
+        <div class="pointer-events-auto flex flex-col items-end gap-1.5">
+          <!-- user 锚点：贴上下按钮上方 -->
+          <UserMessageNav
+            v-if="showUserNav"
+            :items="userNavItems"
+            :active-id="activeUserNavIdRef"
+            :disabled="scrollingToUserNav"
+            @select="scrollToUserMessage"
+          />
+          <!-- 上一条 user / 回底部 -->
+          <div
+            class="border-rule bg-paper/95 flex w-fit flex-col overflow-hidden rounded-xl border shadow-sm backdrop-blur-sm"
           >
-            <ArrowUpIcon class="size-4" stroke-width="2" />
-          </button>
-          <ThreadPrimitiveScrollToBottom
-            class="inline-flex size-9 cursor-pointer items-center justify-center border-t border-rule text-muted-foreground transition duration-200 hover:bg-paper-deep hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/30 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-            :aria-label="t('threadScrollToBottom')"
-          >
-            <ArrowDownToLineIcon class="size-4" stroke-width="2" />
-          </ThreadPrimitiveScrollToBottom>
+            <button
+              type="button"
+              class="text-muted-foreground hover:bg-paper-deep hover:text-foreground inline-flex size-9 cursor-pointer items-center justify-center transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/30 disabled:cursor-default disabled:opacity-40"
+              :aria-label="t('threadScrollToPreviousUser')"
+              :disabled="scrollingToPreviousUser || messageCount === 0"
+              @click="scrollToPreviousUserMessage"
+            >
+              <ArrowUpIcon class="size-4" stroke-width="2" />
+            </button>
+            <ThreadPrimitiveScrollToBottom
+              class="border-rule text-muted-foreground hover:bg-paper-deep hover:text-foreground inline-flex size-9 cursor-pointer items-center justify-center border-t transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/30 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+              :aria-label="t('threadScrollToBottom')"
+            >
+              <ArrowDownToLineIcon class="size-4" stroke-width="2" />
+            </ThreadPrimitiveScrollToBottom>
+          </div>
         </div>
       </div>
   </ThreadPrimitiveViewport>

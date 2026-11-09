@@ -1,3 +1,5 @@
+import { sanitizeToolResultText } from "./sanitize-tool-result.js";
+
 export type ToolImagePayload = {
   mimeType: string;
   data: string;
@@ -13,9 +15,10 @@ const IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"
 /**
  * 工具结果投影到 UI。
  * 纯文本保持字符串；带图片块时保留 base64，供 Read 展开显示。
+ * 厂商 ViewImage 常把 data:image 整段当字符串返回——剥掉以免过程卡/群 lines 塞满 base64。
  */
 export function projectToolOutput(value: unknown): string | ToolOutputWithImages {
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return sanitizeToolResultText(value);
   const blocks = contentBlocks(value);
   if (!blocks) return JSON.stringify(value);
   const images: ToolImagePayload[] = [];

@@ -121,6 +121,23 @@ it("tells a group specialist to write in the shared workspace for that task", ()
   expect(preamble).not.toMatch(/[\u4e00-\u9fff]/);
 });
 
+it("群委派 prompt 写明相对 WORK/ARTIFACT 相对群 workspace 绝对根，而非私人 cwd", () => {
+  const root = "/Users/demo/.agentup/users/u1/.runtime/groups/g1/workspace";
+  const text = formatDelegationPrompt("做迷宫", true, "Ab12Cd34", "QA", {
+    groupWorkspaceRoot: root,
+  });
+  expect(text).toContain(root);
+  expect(text).toMatch(/relative to (that|the) shared (group )?workspace root/i);
+  expect(text).toContain("not to your private");
+  expect(text).toContain("WORK/from-QA-Ab12Cd34/");
+  expect(text).toContain("ARTIFACT/from-QA-Ab12Cd34/");
+  // 允许群根下的绝对路径；禁止把共享路径解析到私人 cwd
+  expect(text).toMatch(/absolute paths under the shared group workspace root/i);
+  expect(text).not.toMatch(/If the task names an absolute path[\s\S]*ignore that location/);
+  const preamble = text.slice(0, text.indexOf("## Task"));
+  expect(preamble).not.toMatch(/[\u4e00-\u9fff]/);
+});
+
 it("tells the specialist in English to write only in their cwd and ignore caller paths", () => {
   const text = formatDelegationPrompt("做迷宫");
   expect(text).toContain("## Task\n做迷宫");
