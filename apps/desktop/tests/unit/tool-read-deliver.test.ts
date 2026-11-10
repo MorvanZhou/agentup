@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 
-import { deliverArtifactView } from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/delegation/tool-deliver.js";
+import {
+  completeGroupTaskView,
+  deliverArtifactView,
+} from "../../src/pages/conversation/components/chat-main/shared/thread/assistant-ui/tools/delegation/tool-deliver.js";
 import {
   imagesFromToolResult,
   isImageReadPath,
@@ -50,4 +53,35 @@ it("lists confirmed artifact paths and treats an empty confirm as nothing to del
     empty: false,
   });
   expect(deliverArtifactView({}, "")).toEqual({ paths: [], error: "", empty: false });
+});
+
+it("complete_group_task 抽出共享路径与 next_step", () => {
+  expect(
+    completeGroupTaskView(
+      {
+        paths: ["ARTIFACT/from-a-t1/out.md"],
+        next_step: "交给排版",
+      },
+      "Confirmed 1 shared file(s):\n- ARTIFACT/from-a-t1/out.md\nNext step: 交给排版",
+    ),
+  ).toEqual({
+    paths: ["ARTIFACT/from-a-t1/out.md"],
+    error: "",
+    empty: false,
+    nextStep: "交给排版",
+  });
+  expect(
+    completeGroupTaskView({ paths: [], next_step: "" }, "Confirmed: no shared files for this task.\nNext step: none."),
+  ).toEqual({
+    paths: [],
+    error: "",
+    empty: true,
+    nextStep: "",
+  });
+  expect(completeGroupTaskView({ paths: [], next_step: "等执掌者派下一岗" }, "")).toEqual({
+    paths: [],
+    error: "",
+    empty: false,
+    nextStep: "等执掌者派下一岗",
+  });
 });

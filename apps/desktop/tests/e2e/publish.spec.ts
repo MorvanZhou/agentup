@@ -51,7 +51,7 @@ test("用共用表单发布 Agent 并支持只改名片", async ({ page }) => {
   await expect(page.getByRole("button", { name: "编辑 MCP" })).toBeVisible();
 
   await page.getByLabel("名字").fill("写作助手 Pro");
-  // 只改名片走 PUT /card，不升版本。
+  // 只改名片仍走 PUT /card；服务端有变更会升版，招募方可看到更新。
   const cardUpdated = page.waitForRequest(
     (request) => request.url().endsWith("/runtime/agents/writer/card") && request.method() === "PUT",
   );

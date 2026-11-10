@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { isInside } from "../workspace/project-roots.js";
 import { ARTIFACT_DIR, ATTACHMENTS_DIR, WORK_DIR } from "../workspace/cwd-layout.js";
+import { removeAgentupWorkspaceConfig } from "../workspace/workspace-config.js";
 import { GroupError } from "./types.js";
 
 const ID = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
@@ -47,6 +48,8 @@ export function clearGroupWorkspace(
   }
   emptyInside(root, path.join(root, ARTIFACT_DIR));
   if (includeWork) emptyInside(root, path.join(root, WORK_DIR));
+  // Recipe / thread 通用配置随工作区清掉（不进 ARTIFACT/WORK）。
+  removeAgentupWorkspaceConfig(root);
 }
 
 export function ensureGroupWorkspace(userDataRoot: string, userId: string, groupId: string): GroupWorkspace {

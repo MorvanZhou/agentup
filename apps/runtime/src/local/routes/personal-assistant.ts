@@ -137,6 +137,7 @@ export function registerPersonalAssistantRoutes(app: Hono<LocalAppEnv>, deps: Lo
       const ref = requireEnabledModelRef(config.userDataRoot, {
         templateId: text(body, "template_id"),
         modelId: text(body, "model_id"),
+        connectionId: optionalText(body, "connection_id"),
       });
       const visit = personalAssistantVisit(config.userDataRoot, userId);
       const cwd = path.join(visit.root, "cwd");

@@ -17,14 +17,17 @@ export function emptyStored(): StoredFile {
   };
 }
 
-/** 读 settings/provider.json；v2 / v3 可读，v1 丢弃，坏档报错。 */
+/** 读 settings/provider.json；v2 / v3 / v4 可读，v1 丢弃，坏档报错。 */
 export function readStored(userDataRoot: string): StoredFile {
   const file = path.join(userDataRoot, "settings", "provider.json");
   if (!fs.existsSync(file)) return emptyStored();
   try {
     const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
-    // v3 起带本地 SDK 状态；v2 没有该字段，按「都没装」补齐
-    if ((raw.version === 2 || raw.version === 3) && Array.isArray(raw.connections)) {
+    // v3 起带本地 SDK 状态；v4 起连接带 connectionId；v2 没有 agentSdks，按「都没装」补齐
+    if (
+      (raw.version === 2 || raw.version === 3 || raw.version === 4) &&
+      Array.isArray(raw.connections)
+    ) {
       const connections = (raw.connections as ProviderConnection[]).map(validateConnection);
       // 先读本地 SDK 状态：启用模型里可能有本地接入的模型，校验时要用得上
       const agentSdks = Array.isArray(raw.agentSdks)

@@ -70,12 +70,14 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const local = parseLocalPathHref(href);
   if (local) {
     // 本地路径：应用内打开，勿 target=_blank；链内前置文件类型 icon（Lucide path）
+    // 可见文案多为 basename，title 挂全路径方便悬停核对
     removeTokenAttr(token, "target");
     removeTokenAttr(token, "rel");
     appendTokenClass(token, "aui-md-a");
     appendTokenClass(token, "aui-md-path");
     setTokenAttr(token, "data-local-kind", local.kind);
     setTokenAttr(token, "data-local-path", local.path);
+    setTokenAttr(token, "title", local.path);
     return `${defaultLinkOpen(tokens, idx, options, env, self)}${localPathIconHtml(local.path)}`;
   }
   setTokenAttr(token, "target", "_blank");

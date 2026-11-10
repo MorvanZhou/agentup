@@ -70,10 +70,20 @@ export function serializeState(state: UserState) {
   };
 }
 
+function modelRefBody(model: { templateId: string; modelId: string; connectionId?: string }) {
+  return {
+    template_id: model.templateId,
+    model_id: model.modelId,
+    connection_id: model.connectionId ?? model.templateId,
+  };
+}
+
 export function providerSettingsBody(settings: ReturnType<typeof readProviderSettings>) {
   return {
     connections: settings.connections.map((connection) => ({
+      connection_id: connection.connectionId,
       template_id: connection.templateId,
+      display_name: connection.displayName ?? null,
       base_url: connection.baseUrl,
       api_key_cipher: connection.apiKeyCipher,
       custom_model_ids: connection.customModelIds ?? [],
@@ -86,15 +96,11 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       option_label: connection.optionLabel,
       label: connection.label,
     })),
-    enabled_models: settings.enabledModels.map((model) => ({
-      template_id: model.templateId,
-      model_id: model.modelId,
-    })),
-    active_model: settings.activeModel
-      ? { template_id: settings.activeModel.templateId, model_id: settings.activeModel.modelId }
-      : null,
+    enabled_models: settings.enabledModels.map(modelRefBody),
+    active_model: settings.activeModel ? modelRefBody(settings.activeModel) : null,
     available_models: settings.availableModels.map((model) => ({
       template_id: model.templateId,
+      connection_id: model.connectionId,
       model_id: model.modelId,
       name: model.name,
       vendor_id: model.vendorId,
@@ -126,8 +132,9 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
         default_model_id: option.defaultModelId,
         hint: option.hint,
         api: option.api,
-        supports_model_discovery: option.supportsModelDiscovery,
-        models: (option.models ?? []).map((model) => ({
+      supports_model_discovery: option.supportsModelDiscovery,
+      allows_multiple_connections: option.allowsMultipleConnections,
+      models: (option.models ?? []).map((model) => ({
           id: model.id,
           name: model.name,
           api: model.api,
@@ -180,6 +187,7 @@ export function providerSettingsBody(settings: ReturnType<typeof readProviderSet
       hint: template.hint,
       api: template.api,
       supports_model_discovery: template.supportsModelDiscovery,
+      allows_multiple_connections: template.allowsMultipleConnections,
       models: (template.models ?? []).map((model) => ({
         id: model.id,
         name: model.name,
@@ -201,11 +209,10 @@ export function sessionModelBody(
   const current = peekVisitModelRef(userDataRoot, sessionDir);
   const enabled = settings.availableModels.filter((model) => model.enabled);
   return {
-    current: current
-      ? { template_id: current.templateId, model_id: current.modelId }
-      : null,
+    current: current ? modelRefBody(current) : null,
     models: enabled.map((model) => ({
       template_id: model.templateId,
+      connection_id: model.connectionId,
       model_id: model.modelId,
       name: model.name,
       vendor_id: model.vendorId,

@@ -579,6 +579,88 @@ it("tool_result 后新世代旁白仍要推出（块状态按世代复位）", (
   expect(translator.text).toBe("先搜专家接下来委托 Weaty。");
 });
 
+it("tool_result 后 SDK 把上一段旁白当前缀回放时只推新尾部（Cody/Remy 叠字）", () => {
+  const translator = createExternalTranslator();
+  const first = "I'll break the zero-delivery loop by actually building the M1 project.";
+  const second = " WORK/from-Cody-M1/ already exists — let me see what's inside.";
+  const all: AgentSessionEvent[] = [];
+
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: first } },
+    }),
+  );
+  translator.push({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "text", text: first },
+        { type: "tool_use", id: "t-bash", name: "Bash", input: { command: "ls" } },
+      ],
+    },
+  });
+  translator.push({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "t-bash", content: "ok" }],
+    },
+  });
+
+  // 新世代整段 = 上一段旁白 + 新句（CodeBuddy 工具后常见）
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: `${first}${second}` },
+      },
+    }),
+  );
+  // 下一段又以「新句」为前缀继续累加
+  const third = " Found the brief and a partial prior delivery.";
+  all.push(
+    ...translator.push({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: `${first}${second}` },
+          { type: "tool_use", id: "t-read", name: "Read", input: { file_path: "brief.md" } },
+        ],
+      },
+    }),
+  );
+  translator.push({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "t-read", content: "ok" }],
+    },
+  });
+  all.push(
+    ...translator.push({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: `${second}${third}` },
+      },
+    }),
+  );
+
+  expect(deltas(all, "text_delta")).toEqual([first, second, third]);
+  expect(translator.text).toBe(`${first}${second}${third}`);
+  expect(translator.trail.filter((item) => item.kind === "text").map((item) => item.text)).toEqual([
+    first,
+    second,
+    third,
+  ]);
+});
+
 it("completeTool 写入结果后，finishOpenTools 不再覆盖", () => {
   const translator = createExternalTranslator();
   translator.push({

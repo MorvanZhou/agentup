@@ -89,6 +89,19 @@ export {
 } from "../history/deliverables.js";
 
 export {
+  AGENTUP_PREVIEW_CUSTOM_TYPE,
+  PRESENT_PREVIEW_MCP_TOOL,
+  PRESENT_PREVIEW_TOOL,
+  createPresentPreviewExtension,
+  isPresentPreviewToolName,
+  parsePreviewEntryData,
+  registerPresentPreviewRecipe,
+  slugifyPreviewId,
+  type AgentUpPreviewData,
+  type PresentPreviewRegisterResult,
+} from "./present-preview.js";
+
+export {
   COMPLETE_GROUP_TASK_TOOL,
   createCompleteGroupTaskExtension,
   normalizeGroupWorkspacePaths,

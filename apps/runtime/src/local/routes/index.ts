@@ -16,6 +16,7 @@ import { registerProjectRootsRoutes } from "./project-roots.js";
 import { registerSettingsRoutes } from "./settings.js";
 import { registerStateRoutes } from "./state.js";
 import { registerTeamsRoutes } from "./teams.js";
+import { registerPreviewRoutes } from "./preview.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
 
 export function registerLocalRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
@@ -34,5 +35,6 @@ export function registerLocalRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
   registerAgentsRoutes(app, deps);
   registerTeamsRoutes(app, deps);
   registerWorkspaceRoutes(app, deps);
+  registerPreviewRoutes(app, deps);
   registerProjectRootsRoutes(app, deps);
 }

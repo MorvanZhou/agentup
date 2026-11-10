@@ -26,7 +26,7 @@ import { zaiProvider } from "@earendil-works/pi-ai/providers/zai";
 import { zaiCodingCnProvider } from "@earendil-works/pi-ai/providers/zai-coding-cn";
 
 import { t, type UiLocale } from "../i18n/index.js";
-import { supportsModelDiscovery } from "./discover-models.js";
+import { allowsMultipleConnections, supportsModelDiscovery } from "./discover-models.js";
 import { volcengineArkProviderConfig } from "./providers/volcengine-ark.js";
 
 export type { UiLocale };
@@ -118,6 +118,8 @@ export interface ProviderTemplate {
   agentSdk?: AgentSdkProfile;
   /** 是否可通过 List Models 自动发现候选 */
   supportsModelDiscovery: boolean;
+  /** 是否允许同一模板配置多条连接（不同 Base URL） */
+  allowsMultipleConnections: boolean;
 }
 
 export interface VendorGroup {
@@ -178,6 +180,7 @@ function resolveTemplate(def: TemplateDef, locale: UiLocale): ProviderTemplate {
     api: def.api,
     models: def.models,
     supportsModelDiscovery: supportsModelDiscovery(def.kind),
+    allowsMultipleConnections: allowsMultipleConnections(def.kind),
   };
 }
 
@@ -225,7 +228,7 @@ const TEMPLATE_DEFS: TemplateDef[] = [
     kind: "ollama",
     piProviderId: "ollama",
     requiresApiKey: false,
-    defaultBaseUrl: "http://localhost:11434/v1",
+    defaultBaseUrl: "http://localhost:11434/v1/chat/completions",
     defaultModelId: "qwen3:4b",
     hint: { key: "provider.template.ollama.hint" },
     api: "openai-completions",
@@ -621,7 +624,7 @@ const TEMPLATE_DEFS: TemplateDef[] = [
     kind: "custom-openai",
     piProviderId: "custom-openai",
     requiresApiKey: true,
-    defaultBaseUrl: "https://api.openai.com/v1",
+    defaultBaseUrl: "https://api.openai.com/v1/chat/completions",
     api: "openai-completions",
     models: [],
   },

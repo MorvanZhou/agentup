@@ -398,6 +398,7 @@ export async function setSessionModel(
     user_id: userId,
     template_id: ref.templateId,
     model_id: ref.modelId,
+    ...(ref.connectionId ? { connection_id: ref.connectionId } : {}),
   }, "PUT");
   return readSessionModelState(payload);
 }

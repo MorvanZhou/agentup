@@ -4,6 +4,12 @@ import { createInlineImageAttachmentAdapter } from "../../../model/composer/inli
 import { AuiConfig, AuiProvider } from "@assistant-ui/vue";
 import type { UIMessage } from "ai";
 import { computed, onBeforeUnmount, provide, ref, shallowRef, toRef, watch } from "vue";
+import { useThreadPreview } from "../../../composables/useThreadPreview";
+import { provideThreadPreview } from "../../../model/thread/thread-preview";
+import EmbeddedPreviewPanel from "../shared/preview/EmbeddedPreviewPanel.vue";
+import PreviewPortConflictDialog from "../shared/preview/PreviewPortConflictDialog.vue";
+import RightPaneResizeHandle from "../shared/RightPaneResizeHandle.vue";
+import { RIGHT_PANE_SHELL_CLASS } from "../shared/right-pane-shell";
 
 import { DesktopApi } from "../../../../../shared/api/runtime";
 import ChatSettingsPanel from "./ChatSettingsPanel.vue";
@@ -120,6 +126,15 @@ const emit = defineEmits<{
 }>();
 
 provide(threadExtrasKey, toRef(props, "extras"));
+/** 人侧预览：thread 工作区 recipe + 内嵌面板 */
+const threadPreview = useThreadPreview({
+  agentId: toRef(props, "agentId"),
+  personal: computed(() => props.extras.personal === true),
+});
+provideThreadPreview(threadPreview);
+const previewActive = threadPreview.active;
+const previewOpen = threadPreview.open;
+const previewBusy = threadPreview.busy;
 provide(
   threadEarlierKey,
   computed<ThreadEarlier>(() => ({
@@ -381,12 +396,13 @@ async function clearPendingFollowUps(): Promise<void> {
 }
 provide(threadActionsKey, threadActions);
 
-/** 右侧抽屉：工作空间 / 对话配置 互斥。 */
-type RightPane = "closed" | "workspace" | "chat-settings";
+/** 右侧抽屉：工作空间 / 对话配置 / 浏览器预览 互斥（同槽同宽）。 */
+type RightPane = "closed" | "workspace" | "chat-settings" | "preview";
 const rightPane = ref<RightPane>("closed");
 const rightPaneOpen = computed(() => rightPane.value !== "closed");
 const workspaceOpen = computed(() => rightPane.value === "workspace");
 const chatSettingsOpen = computed(() => rightPane.value === "chat-settings");
+const previewPaneOpen = computed(() => rightPane.value === "preview");
 const workspaceGeneration = ref(0);
 const bodyEl = ref<HTMLElement | null>(null);
 const { width: rightPaneWidth, startResize: startRightPaneResize } = useWorkspacePaneWidth();
@@ -412,6 +428,27 @@ function openChatSettings(): void {
 function closeRightPane(): void {
   rightPane.value = "closed";
 }
+
+// 启动预览 → 右侧栏切到 preview（与 Workspace 同槽）；停预览 / 离开 preview 槽 → 互相同步
+watch(
+  () => threadPreview.open.value,
+  (isOpen) => {
+    if (isOpen) {
+      rightPane.value = "preview";
+      return;
+    }
+    if (rightPane.value === "preview") rightPane.value = "closed";
+  },
+);
+watch(
+  () => rightPane.value,
+  (pane, prev) => {
+    if (prev === "preview" && pane !== "preview" && threadPreview.open.value) {
+      const recipe = threadPreview.active.value;
+      if (recipe) void threadPreview.stop(recipe);
+    }
+  },
+);
 
 function onThreadResize(event: PointerEvent): void {
   if (!bodyEl.value) return;
@@ -482,6 +519,7 @@ const config = AuiConfig({
     },
     onFinish({ messages }) {
       workspaceGeneration.value += 1;
+      void threadPreview.refresh();
       emit("turn-end", lastMessagePreview(messages), messages);
     },
   }),
@@ -489,6 +527,8 @@ const config = AuiConfig({
 </script>
 
 <template>
+  <!-- 外层 h-full：AuiProvider 无 DOM 壳，须自填 absolute inset-0 会话格 -->
+  <div class="flex h-full min-h-0 min-w-0 w-full flex-col">
   <AuiProvider :config="config">
     <ThreadRunningBridge @change="streamRunning = $event" @dismiss-hitl="dismissHitl" />
     <DelegationProcessDialog
@@ -500,7 +540,6 @@ const config = AuiConfig({
       @update:open="processOpen = $event"
       @cancelled="noteFleetCancelled"
     />
-    <!-- 会话线程 -->
     <ChatPane :side-open="rightPaneOpen" @row="setBodyRow">
       <template #header>
         <ConversationHeader
@@ -555,15 +594,7 @@ const config = AuiConfig({
       <template #composer>
         <Composer />
       </template>
-      <template #resize>
-        <button
-          v-if="rightPaneOpen && agentId && token && userId"
-          type="button"
-          class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 outline-none transition duration-200 hover:bg-muted focus-visible:bg-muted/80 min-[730px]:block"
-          aria-label="调整对话区宽度"
-          @pointerdown="onThreadResize"
-        />
-      </template>
+      <template #resize />
       <template #side>
         <button
           v-if="rightPaneOpen"
@@ -572,11 +603,14 @@ const config = AuiConfig({
           :aria-label="chatSettingsOpen ? t('chatSettingsClose') : t('wsClose')"
           @click="closeRightPane"
         />
+        <!-- 壳 class 见 RIGHT_PANE_SHELL_CLASS：relative 锚定拖条，z-40 压过对话列 -->
         <div
           v-if="rightPaneOpen && agentId && token && userId"
-          class="absolute inset-y-0 right-0 z-20 flex h-full shrink-0 min-[730px]:static"
+          :class="RIGHT_PANE_SHELL_CLASS"
           :style="{ width: `${rightPaneWidth}px` }"
         >
+          <!-- 工作区 / 设置 / 预览共用左缘拖宽（避免预览 iframe 抢指针） -->
+          <RightPaneResizeHandle :start-resize="onThreadResize" />
           <WorkspacePanel
             v-if="workspaceOpen"
             :token="token"
@@ -595,8 +629,20 @@ const config = AuiConfig({
             class="h-full w-full"
             @close="closeRightPane"
           />
+          <!-- 浏览器预览：复用工作区侧栏槽位与宽度 -->
+          <EmbeddedPreviewPanel
+            v-else-if="previewPaneOpen"
+            class="h-full w-full"
+            :recipe="previewActive"
+            :open="previewOpen"
+            :busy="previewBusy"
+            @close="previewActive ? void threadPreview.stop(previewActive) : undefined"
+          />
         </div>
       </template>
     </ChatPane>
   </AuiProvider>
+  <!-- 预览端口被其它进程占用时确认是否结束并重启 -->
+  <PreviewPortConflictDialog />
+  </div>
 </template>

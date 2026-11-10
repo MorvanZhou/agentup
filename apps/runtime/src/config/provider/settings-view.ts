@@ -1,5 +1,6 @@
 import type { UiLocale } from "../../i18n/index.js";
 import { peekTemplateModelLimits } from "../model-catalog.js";
+import { supportsModelDiscovery } from "../discover-models.js";
 import {
   getProviderTemplate,
   listProviderTemplateViews,
@@ -42,11 +43,16 @@ export function readProviderSettings(
     availableModels,
     configured: Boolean(
       overriddenByEnvironment.model ||
-        stored.enabledModels.some(
-          (model) =>
-            stored.connections.some((connection) => connection.templateId === model.templateId) ||
-            readySdkIds.has(model.templateId),
-        ),
+        stored.enabledModels.some((model) => {
+          const connectionId = model.connectionId || model.templateId;
+          return (
+            stored.connections.some(
+              (connection) =>
+                connection.connectionId === connectionId ||
+                connection.templateId === model.templateId,
+            ) || readySdkIds.has(model.templateId)
+          );
+        }),
     ),
     overriddenByEnvironment: Boolean(
       overriddenByEnvironment.model ||
@@ -87,7 +93,12 @@ export function buildAvailableModels(
         reasoning: false,
       })),
     ];
-    if (models.length === 0 && template.defaultModelId) {
+    // 可发现类（Ollama / 自定义）：空目录就空着，禁止用 defaultModelId 冒充「已发现」
+    if (
+      models.length === 0 &&
+      template.defaultModelId &&
+      !supportsModelDiscovery(template.kind)
+    ) {
       models.push({
         id: template.defaultModelId,
         name: template.defaultModelId,
@@ -101,10 +112,16 @@ export function buildAvailableModels(
     ]);
     const customIds = new Set(connection.customModelIds ?? []);
     const seen = new Set<string>();
+    // 多端点：端点名（若有）或 host，避免两条自定义都叫同一句
+    const sourceLabel = connectionSourceLabel(connection, template.label);
     for (const model of models) {
       if (seen.has(model.id)) continue;
       seen.add(model.id);
-      const ref = { templateId: connection.templateId, modelId: model.id };
+      const ref = {
+        templateId: connection.templateId,
+        connectionId: connection.connectionId,
+        modelId: model.id,
+      };
       const key = modelKey(ref);
       // API：只展示内置模板已知窗口（pi-native / ark），勿用默认 128k 冒充
       const limits = peekTemplateModelLimits(connection.templateId, model.id);
@@ -112,12 +129,13 @@ export function buildAvailableModels(
         limits && limits.contextWindow > 0 ? limits.contextWindow : undefined;
       rows.push({
         templateId: connection.templateId,
+        connectionId: connection.connectionId,
         modelId: model.id,
         name: model.name,
         vendorId: template.vendorId,
         vendorLabel: template.vendorLabel,
         optionLabel: template.optionLabel,
-        label: template.label,
+        label: sourceLabel,
         enabled: enabled.has(key),
         active: key === activeKey,
         custom: customIds.has(model.id) && !catalogIds.has(model.id),
@@ -143,12 +161,13 @@ export function buildAvailableModels(
         .map((model) => [model.id, model.contextWindow as number]),
     );
     for (const model of models) {
-      const ref = { templateId, modelId: model.id };
+      const ref = { templateId, connectionId: templateId, modelId: model.id };
       const key = modelKey(ref);
       const credits = rates.get(model.id);
       const contextWindow = windows.get(model.id);
       rows.push({
         templateId,
+        connectionId: templateId,
         modelId: model.id,
         name: model.name,
         vendorId: template.vendorId,
@@ -167,6 +186,23 @@ export function buildAvailableModels(
   return rows;
 }
 
+/** 多端点展示名：优先旧档 displayName，否则拼 host，免用户手填。 */
+function connectionSourceLabel(connection: ProviderConnection, baseLabel: string): string {
+  const named = connection.displayName?.trim();
+  if (named) return named;
+  const host = hostOfBaseUrl(connection.baseUrl);
+  return host ? `${baseLabel} · ${host}` : baseLabel;
+}
+
+function hostOfBaseUrl(baseUrl: string | undefined): string | undefined {
+  if (!baseUrl?.trim()) return undefined;
+  try {
+    return new URL(baseUrl).host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** 连接 + 模板静态描述 + 本机是否已有明文密钥。 */
 export function toConnectionView(
   connection: ProviderConnection,
@@ -174,17 +210,18 @@ export function toConnectionView(
 ): ProviderConnectionView {
   const template = getProviderTemplate(connection.templateId, locale);
   const requiresApiKey = template?.requiresApiKey ?? true;
+  const baseLabel = template?.label ?? connection.templateId;
   return {
     ...connection,
     hasApiKey:
       Boolean(connection.apiKeyCipher) ||
-      hasRuntimeApiKey(connection.templateId) ||
+      hasRuntimeApiKey(connection.connectionId) ||
       !requiresApiKey,
     piProviderId: template?.piProviderId ?? connection.templateId,
     requiresApiKey,
     vendorId: template?.vendorId ?? connection.templateId,
     vendorLabel: template?.vendorLabel ?? connection.templateId,
     optionLabel: template?.optionLabel ?? connection.templateId,
-    label: template?.label ?? connection.templateId,
+    label: connectionSourceLabel(connection, baseLabel),
   };
 }

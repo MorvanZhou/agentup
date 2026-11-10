@@ -7,6 +7,7 @@ import { expect, it } from "vitest";
 import { GroupStore, holderSessionRelative, projectTranscript } from "../src/session/group/index.js";
 import {
   completedDelegationAwaitingReply,
+  composeGroupHandbackSummary,
   createGroupRoom,
   finishHolderTurn,
   formatFinishedDelegationCue,
@@ -569,14 +570,48 @@ it("blocks another delegation to a member who already finished and has not been 
     summary: "今天风挺大",
   });
   expect(completedDelegationAwaitingReply(waiting, "design")).toBeNull();
-  expect(formatFinishedDelegationCue("今天风挺大")).toContain("delegate_to_agent");
-  expect(formatFinishedDelegationCue("今天风挺大")).toContain("今天风挺大");
+  const cue = formatFinishedDelegationCue("今天风挺大");
+  expect(cue).toContain("今天风挺大");
+  expect(cue).toContain("Do not re-delegate the same finished brief");
+  expect(cue).not.toContain("Do not call delegate_to_agent again for the same request");
+  expect(cue).toMatch(/delegate that work|summarize and stop/i);
 
   store.finishHolder("u1", room.id, "开发说：今天风挺大");
   expect(completedDelegationAwaitingReply(store.get("u1", room.id), "dev")).toBeNull();
 
   store.post("u1", room.id, "@产品经理 再让开发说一句");
   expect(completedDelegationAwaitingReply(store.get("u1", room.id), "dev")).toBeNull();
+});
+
+it("交回摘要带上 complete_group_task 的 next_step，cue 提示执掌者可派下一岗", () => {
+  const withStep = composeGroupHandbackSummary({
+    text: "登录页已写完",
+    confirmed: true,
+    nextStep: "Ask Scout to verify the login flow",
+  });
+  expect(withStep).toContain("登录页已写完");
+  expect(withStep).toContain("Next step: Ask Scout to verify the login flow");
+
+  const none = composeGroupHandbackSummary({
+    text: "草稿已交",
+    confirmed: true,
+    nextStep: "",
+  });
+  expect(none).toContain("Next step: none.");
+
+  const unconfirmed = composeGroupHandbackSummary({
+    text: "只有正文",
+    confirmed: false,
+    nextStep: "should be ignored",
+  });
+  expect(unconfirmed).toBe("只有正文");
+  expect(unconfirmed).not.toContain("Next step:");
+
+  const cue = formatFinishedDelegationCue(withStep);
+  expect(cue).toContain("Next step: Ask Scout to verify the login flow");
+  expect(cue).toMatch(/call delegate_to_agent for that next stage|ask the user/i);
+  expect(cue).toContain("Do not re-delegate the same finished brief");
+  expect(cue).not.toContain("Tell the user this result");
 });
 
 it("starts a new group session on clear context and keeps the old one out of the model transcript", () => {

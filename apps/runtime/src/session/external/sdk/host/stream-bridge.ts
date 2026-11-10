@@ -12,6 +12,7 @@ import { agentSdkStateOf } from "../../../../config/provider/index.js";
 import type { WorkerResult } from "../contract.js";
 import { driverIdOfTemplate, getExternalDriver, installedCliPathFor } from "../registry.js";
 import { classifyAgentSdkFailure, markAgentSdkFailure } from "./failures.js";
+import { platformMcpServersOf } from "../../../mcp/platform-mcp.js";
 import { openExternalMcp } from "./mcp.js";
 import { transcriptToPrompt } from "./prompt.js";
 import { resultFromSdkMessage } from "./result.js";
@@ -97,6 +98,7 @@ export function createAgentSdkStreamSimple(ctx: AgentSdkStreamContext): AgentSdk
         systemAppend: external?.systemAppend ?? "",
         ...(ctx.modelId && ctx.modelId !== "default" ? { modelId: ctx.modelId } : {}),
         ...(mcp?.clientConfig ? { mcpServer: mcp.clientConfig } : {}),
+        platformMcpServers: platformMcpServersOf(ctx.userDataRoot),
         abortController: controller,
         ...(ctx.askUser
           ? {

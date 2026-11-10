@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { ConfigError } from "../load.js";
 import { getProviderTemplate } from "../provider-templates.js";
 import { MAX_AGENT_SDK_MODELS, MAX_DISCOVERED_MODELS } from "./constants.js";
@@ -10,7 +12,12 @@ import type {
   ProviderConnection,
   StoredFile,
 } from "./types.js";
-import { clean, normalizeBaseUrl } from "./util.js";
+import { clean, connectionIdOf, findConnection, normalizeBaseUrl } from "./util.js";
+
+/** 多实例连接的主键：templateId_短随机，避免与旧单槽 templateId 冲突。 */
+export function mintConnectionId(templateId: string): string {
+  return `${clean(templateId)}_${randomBytes(4).toString("hex")}`;
+}
 
 const AGENT_SDK_STATES: readonly AgentSdkState[] = [
   "not_installed",
@@ -39,11 +46,14 @@ export function validateConnection(value: ProviderConnection): ProviderConnectio
   if (!templateId) throw new ConfigError("请选择服务商");
   const template = getProviderTemplate(templateId);
   if (!template) throw new ConfigError("未知的服务商");
+  // 旧档无 connectionId：一律用 templateId，保证旧 ModelRef / 密钥键仍能命中
+  const connectionId = clean(value.connectionId) || templateId;
   let baseUrl: string | undefined;
   if (value.baseUrl !== undefined && value.baseUrl !== null && String(value.baseUrl).trim()) {
     baseUrl = normalizeBaseUrl(String(value.baseUrl));
   } else if (template.defaultBaseUrl && template.kind !== "pi-native") {
-    baseUrl = template.defaultBaseUrl;
+    // 模板默认可能是 …/v1/chat/completions（给 UI 占位），落盘一律剥成 root
+    baseUrl = normalizeBaseUrl(template.defaultBaseUrl);
   }
   if ((template.kind === "ollama" || template.kind === "custom-openai") && !baseUrl) {
     throw new ConfigError("请填写服务地址");
@@ -62,8 +72,11 @@ export function validateConnection(value: ProviderConnection): ProviderConnectio
         ),
       ].slice(0, MAX_DISCOVERED_MODELS)
     : undefined;
+  const displayName = clean(value.displayName) || undefined;
   return {
+    connectionId,
     templateId,
+    ...(displayName ? { displayName } : {}),
     ...(baseUrl ? { baseUrl } : {}),
     ...(apiKeyCipher ? { apiKeyCipher } : {}),
     ...(customModelIds?.length ? { customModelIds } : {}),
@@ -72,17 +85,30 @@ export function validateConnection(value: ProviderConnection): ProviderConnectio
 }
 
 export function validateModelRef(ref: ModelRef, stored: StoredFile): ModelRef {
-  const templateId = clean(ref.templateId);
   const modelId = clean(ref.modelId);
-  if (!templateId || !modelId || modelId.length > 200) throw new ConfigError("模型无效");
+  if (!modelId || modelId.length > 200) throw new ConfigError("模型无效");
+  const requestedConnectionId = connectionIdOf(ref);
+  // 先按 connectionId 找；旧会话只有 templateId 时也能命中 connectionId===templateId 的迁移档
+  let connection = findConnection(stored.connections, requestedConnectionId);
+  if (!connection && clean(ref.templateId)) {
+    connection = stored.connections.find((item) => item.templateId === clean(ref.templateId));
+  }
+  if (connection) {
+    const template = getProviderTemplate(connection.templateId);
+    if (!template) throw new ConfigError("未知的服务商");
+    return {
+      templateId: connection.templateId,
+      connectionId: connection.connectionId,
+      modelId,
+    };
+  }
+  const templateId = clean(ref.templateId);
+  if (!templateId) throw new ConfigError("模型无效");
   const template = getProviderTemplate(templateId);
   if (!template) throw new ConfigError("未知的服务商");
   // 本地接入没有连接记录，靠「已安装且已登录」判定可用
   if (template.access === "agent-sdk") return validateAgentSdkModelRef(templateId, modelId, stored);
-  if (!stored.connections.some((item) => item.templateId === templateId)) {
-    throw new ConfigError("请先配置该服务商");
-  }
-  return { templateId, modelId };
+  throw new ConfigError("请先配置该服务商");
 }
 
 /** 本地接入的启用/切换：状态必须 ready，模型必须在这家 SDK 给的目录里。 */
@@ -101,7 +127,8 @@ function validateAgentSdkModelRef(
   if (known.length > 0 && !known.some((model) => model.id === modelId)) {
     throw new ConfigError("该模型不在本地接入的目录里");
   }
-  return { templateId, modelId };
+  // SDK 无多连接：connectionId 与 templateId 同值，方便统一 modelKey
+  return { templateId, connectionId: templateId, modelId };
 }
 
 /** 丢弃未知模板或非法状态的记录，避免坏数据把设置页卡住。 */

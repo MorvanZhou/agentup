@@ -95,7 +95,7 @@ it("publishes a selected agent directory and a later version", async () => {
   }
 });
 
-it("updates card without republishing the package", async () => {
+it("proxies card update and returns bumped version from backend", async () => {
   let cardName = "Weaty";
   let cardBackground = "演示天气";
   let cardRules = "";
@@ -112,7 +112,7 @@ it("updates card without republishing the package", async () => {
         role: fields.role ?? "",
         background: cardBackground,
         rules: cardRules,
-        latest_version: 1,
+        latest_version: 2,
         latest_digest: "digest-v1",
         recruited: false,
         has_avatar: false,
@@ -147,7 +147,7 @@ it("updates card without republishing the package", async () => {
       agent_id: "generated-id",
       name: "Weaty 改名",
       background: "只改名片",
-      latest_version: 1,
+      latest_version: 2,
       latest_digest: "digest-v1",
     });
     expect(cardName).toBe("Weaty 改名");

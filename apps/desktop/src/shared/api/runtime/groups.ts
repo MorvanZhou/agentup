@@ -9,6 +9,8 @@ export type GroupAssistantCustom = {
   agentUpArtifacts?: unknown;
   agentUpDeliverables?: unknown;
   agentUpReplyModel?: unknown;
+  /** present_preview 登记的 Launch Recipe（气泡脚卡）。 */
+  agentUpPreview?: unknown;
 };
 
 export type GroupDelegationActivity = "queued" | "running";
@@ -183,12 +185,17 @@ export async function setGroupModel(
   token: string,
   userId: string,
   groupId: string,
-  ref: { templateId: string; modelId: string },
+  ref: { templateId: string; modelId: string; connectionId?: string },
 ): Promise<GroupRoom> {
   const payload = await http.request(
     `/groups/${encodeURIComponent(groupId)}/model`,
     token,
-    { user_id: userId, template_id: ref.templateId, model_id: ref.modelId },
+    {
+      user_id: userId,
+      template_id: ref.templateId,
+      model_id: ref.modelId,
+      ...(ref.connectionId ? { connection_id: ref.connectionId } : {}),
+    },
     "PUT",
   );
   return readRoom(payload.group);
@@ -487,5 +494,6 @@ function readAssistantCustom(value: unknown): GroupAssistantCustom | undefined {
   if ("agentUpArtifacts" in raw) custom.agentUpArtifacts = raw.agentUpArtifacts;
   if ("agentUpDeliverables" in raw) custom.agentUpDeliverables = raw.agentUpDeliverables;
   if ("agentUpReplyModel" in raw) custom.agentUpReplyModel = raw.agentUpReplyModel;
+  if ("agentUpPreview" in raw) custom.agentUpPreview = raw.agentUpPreview;
   return Object.keys(custom).length > 0 ? custom : undefined;
 }

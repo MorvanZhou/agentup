@@ -1,5 +1,6 @@
 import type { ModelConfig } from "../load.js";
 import { ConfigError } from "../load.js";
+import { toOpenAiCompatRoot } from "../openai-compat-url.js";
 import { resolveModelLimits } from "../model-catalog.js";
 import { getProviderTemplate, type ProviderTemplate } from "../provider-templates.js";
 import { PLACEHOLDER_KEY } from "./constants.js";
@@ -46,18 +47,25 @@ export function loadModelConfigFromRef(
   if (!template) throw new ConfigError("未知的服务商");
   // 本地 Agent App 不用填密钥：装好 + 登录即可，状态校验已在 validateModelRef 里做过
   if (template.access === "agent-sdk") return agentSdkModelConfig(userDataRoot, model, template);
-  const connection = stored.connections.find((item) => item.templateId === model.templateId);
+  const connectionId = model.connectionId || model.templateId;
+  const connection =
+    stored.connections.find((item) => item.connectionId === connectionId) ??
+    stored.connections.find((item) => item.templateId === model.templateId);
   if (!connection) throw new ConfigError("当前模型所属服务商尚未配置");
   const apiKey = runtimeApiKey(template, connection);
   const limits = resolveModelLimits(userDataRoot, template.id, model.modelId);
+  // 模板默认可能带 /chat/completions；运行时只认 OpenAI root，避免再拼一层
+  const rawBase = connection.baseUrl || template.defaultBaseUrl || "";
+  const baseUrl = rawBase ? toOpenAiCompatRoot(rawBase) : undefined;
   return {
     providerId: template.piProviderId,
     templateId: template.id,
     modelId: model.modelId,
     apiKey,
-    baseUrl: connection.baseUrl || template.defaultBaseUrl,
+    baseUrl,
     kind: template.kind,
-    profileId: model.templateId,
+    // 多端点用 connectionId 区分 profile，避免两条自定义撞同一注册键
+    profileId: connection.connectionId,
     contextWindow: limits.contextWindow,
     maxTokens: limits.maxTokens,
   };
@@ -76,7 +84,7 @@ function agentSdkModelConfig(
     modelId: model.modelId,
     apiKey: PLACEHOLDER_KEY,
     kind: template.kind,
-    profileId: model.templateId,
+    profileId: model.connectionId || model.templateId,
     contextWindow: limits.contextWindow,
     maxTokens: limits.maxTokens,
   };

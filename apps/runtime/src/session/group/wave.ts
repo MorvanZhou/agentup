@@ -222,13 +222,37 @@ export function completedDelegationAwaitingReply(
   return latest ? { taskId: latest.taskId, summary: latest.summary } : null;
 }
 
-/** 交回执掌者的那一句。标明已经做完，避免他把「正在…」的过程正文当成还没做完再派一次。 */
+/**
+ * 群任务终态摘要：专员正文 + complete_group_task 确认过的 Next step。
+ * 未调用确认工具时不加 Next step 行，避免伪造专员交接意图。
+ */
+export function composeGroupHandbackSummary(input: {
+  text: string;
+  confirmed: boolean;
+  nextStep?: string;
+}): string {
+  const body = input.text.trim();
+  if (!input.confirmed) return body;
+  const step = typeof input.nextStep === "string" ? input.nextStep.trim() : "";
+  const line = step ? `Next step: ${step}` : "Next step: none.";
+  return body ? `${body}\n\n${line}` : line;
+}
+
+/**
+ * 交回执掌者的那一句。
+ * 禁止把同一张已完成 brief 再派给同一人；若摘要含 Next step，由模型决定是否派下一岗或问用户。
+ */
 export function formatFinishedDelegationCue(summary: string): string {
+  const trimmed = summary.trim();
+  const hasNextStep = /(?:^|\n)Next step:/i.test(trimmed);
   return [
-    "Group task finished. Tell the user this result.",
-    "Do not call delegate_to_agent again for the same request.",
+    "Group task finished. Specialist summary is below.",
+    "Do not re-delegate the same finished brief to that same member.",
+    hasNextStep
+      ? "Read Next step: if it names further work for another member or a later stage, call delegate_to_agent for that next stage (or ask the user if you need a decision). If it is none / user handoff, summarize for the user and stop."
+      : "If the overall user goal still needs another member or stage, delegate that work or ask the user; otherwise summarize and stop.",
     "",
-    summary.trim(),
+    trimmed,
   ].join("\n");
 }
 

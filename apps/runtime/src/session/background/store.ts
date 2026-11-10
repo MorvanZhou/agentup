@@ -19,6 +19,7 @@ export class BackgroundJobStore {
     command: string;
     cwd: string;
     groupId?: string;
+    silent?: boolean;
   }): BackgroundJob {
     const now = Date.now();
     const job: BackgroundJob = {
@@ -34,6 +35,7 @@ export class BackgroundJobStore {
       updatedAt: now,
       seen: false,
       notified: false,
+      ...(input.silent ? { silent: true } : {}),
     };
     this.jobs.set(job.id, job);
     this.persist(job);
@@ -49,7 +51,7 @@ export class BackgroundJobStore {
     patch: Partial<
       Pick<
         BackgroundJob,
-        "status" | "exitCode" | "outputTail" | "error" | "seen" | "notified" | "name"
+        "status" | "exitCode" | "outputTail" | "error" | "seen" | "notified" | "name" | "pid" | "silent"
       >
     >,
   ): BackgroundJob | undefined {

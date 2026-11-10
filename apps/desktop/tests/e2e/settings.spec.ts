@@ -109,12 +109,11 @@ test("配置本地 Ollama，并展示平台 AI 占位", async ({ page }) => {
   await expect(page.getByText("AgentUp 平台 AI")).toBeVisible();
   await expect(page.getByText("后续开放")).toBeVisible();
 
-  // 默认接入方式是本地 Agent App；配 Ollama 要先切到 API Key（左列），再落到 Ollama 表单
-  await page.getByRole("button", { name: "接入方式" }).click();
-  await page.getByRole("option", { name: "API Key 接入", exact: true }).click();
+  // 入口漏斗：先选 API 服务，默认落到 Ollama 表单
+  await page.getByRole("button", { name: /接入 API 服务/ }).click();
   await expect(page.getByRole("button", { name: "接入商" })).toContainText("Ollama");
 
-  await expect(page.getByLabel("服务地址")).toHaveValue("http://localhost:11434/v1");
+  await expect(page.getByLabel("服务地址")).toHaveValue("http://localhost:11434/v1/chat/completions");
   await page.getByLabel("服务地址").fill("http://127.0.0.1:11434/v1/");
   const saved = page.waitForRequest((request) => {
     if (request.method() !== "POST") return false;

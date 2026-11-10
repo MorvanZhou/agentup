@@ -91,6 +91,35 @@ it("cancels a long-running job", async () => {
   expect(latest?.status).toBe("cancelled");
 });
 
+it("quiet cancel marks notified and skips enqueueWake", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-bg-quiet-"));
+  const cwd = path.join(root, "cwd");
+  fs.mkdirSync(cwd, { recursive: true });
+  const wakes: unknown[] = [];
+  const jobs = new BackgroundJobs({
+    userDataRoot: root,
+    enqueueWake: (item) => {
+      wakes.push(item);
+    },
+  });
+  const started = await jobs.start({
+    userId: "patient",
+    agentId: PERSONAL_ASSISTANT_ID,
+    command: "sleep 30",
+    cwd,
+    name: "preview-sleep",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const cancelled = jobs.cancel(started.id, "patient", { quiet: true });
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.notified).toBe(true);
+  expect(cancelled.seen).toBe(true);
+  expect(wakes).toEqual([]);
+  expect(jobs.list("patient", { unseenOnly: true }).map((job) => job.id)).not.toContain(
+    started.id,
+  );
+});
+
 it("fails leftover background jobs on restart but leaves a live job running", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-bg-interrupt-"));
   const cwd = path.join(root, "cwd");

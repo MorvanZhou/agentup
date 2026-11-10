@@ -78,6 +78,8 @@ export class BackgroundJobs {
     cwd: string;
     name?: string;
     groupId?: string;
+    /** 人侧预览：终态不 wake / 不投递失败文案。 */
+    silent?: boolean;
   }): Promise<BackgroundJob> {
     const command = input.command.trim();
     if (!command) throw new BackgroundJobError("command 不能为空");
@@ -93,11 +95,21 @@ export class BackgroundJobs {
       name,
       command,
       cwd,
+      ...(input.silent ? { silent: true } : {}),
     });
     this.owned.add(job.id);
     this.store.update(job.id, { status: "running" });
     void this.execute(job.id).catch(() => undefined);
     return this.store.get(job.id)!;
+  }
+
+  /** 按 pid 找本用户仍活跃的作业（预览冲突时静默取消用）。 */
+  findActiveByPid(userId: string, pid: number): BackgroundJob | undefined {
+    if (!Number.isInteger(pid) || pid <= 0) return undefined;
+    return this.store.list(userId).find(
+      (job) =>
+        job.pid === pid && (job.status === "running" || job.status === "pending"),
+    );
   }
 
   /**
@@ -122,7 +134,11 @@ export class BackgroundJobs {
     return settled;
   }
 
-  cancel(jobId: string, userId: string): BackgroundJob {
+  /**
+   * 取消后台任务。
+   * `quiet: true`：不旁路通知 / 不进可见「已取消」文案（人侧关预览窗用）。
+   */
+  cancel(jobId: string, userId: string, options?: { quiet?: boolean }): BackgroundJob {
     this.store.list(userId);
     const job = this.store.get(jobId);
     if (!job || job.userId !== userId) {
@@ -150,12 +166,15 @@ export class BackgroundJobs {
         // ignore
       }
     }
+    const quiet = options?.quiet === true;
     const updated =
       this.store.update(jobId, {
         status: "cancelled",
         error: "用户已取消",
+        // quiet：已通知 + 已读，避免 wake，也不进 desktop unseen toast
+        ...(quiet ? { notified: true, seen: true } : {}),
       }) ?? job;
-    this.notifyOwner(updated);
+    if (!quiet) this.notifyOwner(updated);
     return this.store.get(jobId) ?? updated;
   }
 
@@ -206,6 +225,9 @@ export class BackgroundJobs {
         child.stdin?.end(spawnSpec.stdinCommand);
       }
       this.running.set(jobId, { child, logFd });
+      if (typeof child.pid === "number" && child.pid > 0) {
+        this.store.update(jobId, { pid: child.pid });
+      }
 
       const chunks: Buffer[] = [];
       const onData = (chunk: Buffer) => {
@@ -320,6 +342,11 @@ export class BackgroundJobs {
       job.status !== "failed" &&
       job.status !== "cancelled"
     ) {
+      return;
+    }
+    // 人侧预览 job：终态静默，不 wake / 不刷群聊 / 不进 desktop unseen toast
+    if (job.silent) {
+      this.store.update(job.id, { notified: true, seen: true });
       return;
     }
     const body = backgroundResultBody(job);

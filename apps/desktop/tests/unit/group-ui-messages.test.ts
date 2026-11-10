@@ -128,6 +128,17 @@ describe("groupLinesToUiMessages", () => {
             agentUpSummary: { textPartIndex: 1 },
             agentUpArtifacts: { files: [{ path: "ARTIFACT/a.md", kind: "added" }] },
             agentUpDeliverables: { files: [{ path: "ARTIFACT/from-x/a.md", size: 1 }] },
+            agentUpPreview: {
+              recipes: [
+                {
+                  id: "web",
+                  title: "Dev",
+                  command: "npm run dev",
+                  cwd: ".",
+                  preview_url: "http://127.0.0.1:5173",
+                },
+              ],
+            },
           },
         },
       ],
@@ -144,6 +155,17 @@ describe("groupLinesToUiMessages", () => {
         agentUpSummary: { textPartIndex: 1 },
         agentUpArtifacts: { files: [{ path: "ARTIFACT/a.md", kind: "added" }] },
         agentUpDeliverables: { files: [{ path: "ARTIFACT/from-x/a.md", size: 1 }] },
+        agentUpPreview: {
+          recipes: [
+            {
+              id: "web",
+              title: "Dev",
+              command: "npm run dev",
+              cwd: ".",
+              preview_url: "http://127.0.0.1:5173",
+            },
+          ],
+        },
       },
     });
   });

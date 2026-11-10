@@ -434,7 +434,8 @@ async function scrollToUserMessage(id: string): Promise<void> {
     :auto-scroll="followLatest"
     :scroll-to-bottom-on-initialize="revealOnMount === 0"
   >
-      <div class="mx-auto flex w-full min-w-0 flex-1 flex-col px-4 pt-4 sm:px-4 sm:pt-5">
+      <!-- pb 只给 ↑↓ 按钮留位；右侧标尺是叠层，不再用文档流高度顶开末条消息 -->
+      <div class="mx-auto flex w-full min-w-0 flex-1 flex-col px-4 pb-14 pt-4 sm:px-4 sm:pt-5">
         <!-- 未同步空状态 -->
         <div
           v-if="messageCount === 0 && !synced.ready"
@@ -501,12 +502,17 @@ async function scrollToUserMessage(id: string): Promise<void> {
         />
         <component :is="delegationTrail" v-if="delegationTrail" />
       </div>
-      <!-- 右侧导航簇：锚点贴在 ↑↓ 上方，同贴底右下角 -->
+      <!--
+        右侧导航簇：h-0 sticky 叠在视口右下，不进文档流高度。
+        否则 UserMessageNav 标尺（最高约 42vh）会把最后一条消息顶出可视区。
+      -->
       <div
         ref="threadNav"
-        class="pointer-events-none sticky bottom-3 z-10 mt-auto flex shrink-0 justify-end px-3"
+        class="pointer-events-none sticky bottom-3 z-10 mt-auto h-0 w-full shrink-0"
       >
-        <div class="pointer-events-auto flex flex-col items-end gap-1.5">
+        <div
+          class="pointer-events-auto absolute bottom-0 right-3 flex flex-col items-end gap-1.5"
+        >
           <!-- user 锚点：贴上下按钮上方 -->
           <UserMessageNav
             v-if="showUserNav"

@@ -2,7 +2,11 @@ import type { listProviderTemplateViews, listVendorGroups } from "../provider-te
 import type { FILE_VERSION } from "./constants.js";
 
 export interface ProviderConnection {
+  /** 连接主键；旧档迁移时等于 templateId，多实例时各不相同 */
+  connectionId: string;
   templateId: string;
+  /** 用户起的端点名（多 Ollama / 多自定义时区分来源） */
+  displayName?: string;
   baseUrl?: string;
   apiKeyCipher?: string;
   /** Ollama / 自定义等无目录时用户填写的模型 id */
@@ -14,6 +18,8 @@ export interface ProviderConnection {
 export interface ModelRef {
   templateId: string;
   modelId: string;
+  /** 所属连接；缺省时回落 templateId（旧会话 / 单槽服务商） */
+  connectionId?: string;
 }
 
 export interface ProviderConnectionView extends ProviderConnection {
@@ -28,13 +34,15 @@ export interface ProviderConnectionView extends ProviderConnection {
 
 export interface AvailableModelView {
   templateId: string;
+  /** 与连接主键一致，多端点时用来区分同名 model id */
+  connectionId: string;
   modelId: string;
   name: string;
   /** 稳定厂商 id，桌面端按此挂公司 logo */
   vendorId: string;
   vendorLabel: string;
   optionLabel: string;
-  /** 模板展示名（如 DeepSeek Harness）；列表接入标签优先用它 */
+  /** 模板展示名或端点显示名；列表接入标签优先用它 */
   label: string;
   enabled: boolean;
   active: boolean;

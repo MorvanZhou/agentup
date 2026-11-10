@@ -44,6 +44,8 @@ export type GroupAssistantCustom = {
   agentUpArtifacts?: unknown;
   agentUpDeliverables?: unknown;
   agentUpReplyModel?: unknown;
+  /** present_preview 登记的 Launch Recipe（顶栏常驻「启动预览」认 workspace.json；此字段供投影/回放）。 */
+  agentUpPreview?: unknown;
 };
 
 export type GroupLine = {

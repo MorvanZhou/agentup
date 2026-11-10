@@ -113,6 +113,36 @@ export function createExternalTranslator(
   };
 
   /**
+   * tool_result 会 beginNextGeneration 清空 blockText，但 trail 仍留着上一段旁白。
+   * CodeBuddy 等常在新世代把「上一段 + 新句」整段再推；对齐最近 text trail，只取新尾部。
+   * 返回 null 表示整段都是回放；否则返回应继续吸收的后缀（可能仍是原文）。
+   */
+  const stripTrailTextReplay = (piece: string): string | null => {
+    for (let i = trail.length - 1; i >= 0; i -= 1) {
+      const item = trail[i];
+      if (!item || item.kind !== "text" || !item.text) continue;
+      const prev = item.text;
+      if (piece === prev) return null;
+      if (piece.startsWith(prev)) return piece.slice(prev.length);
+      // 上一段尾部成了本段前缀（A+B 之后再来 B+C）
+      const limit = Math.min(prev.length, piece.length);
+      let overlap = 0;
+      for (let k = limit; k >= 1; k -= 1) {
+        if (piece.startsWith(prev.slice(prev.length - k))) {
+          overlap = k;
+          break;
+        }
+      }
+      // 短重叠易误伤正常续写；完整后缀或足够长才剥
+      if (overlap === prev.length || overlap >= 20) {
+        return piece.slice(overlap) || null;
+      }
+      break;
+    }
+    return piece;
+  };
+
+  /**
    * 吸收某一 content block 的文本：支持增量 delta、累计快照、同块 token 回放；
    * 只返回尚未发出的尾部。
    *
@@ -148,6 +178,23 @@ export function createExternalTranslator(
     }
 
     const prev = blockText.get(index) ?? "";
+    // 新世代首包：按 trail 剥跨工具回放前缀，block 快照仍记全文便于后续累计对齐
+    if (!prev) {
+      const stripped = stripTrailTextReplay(piece);
+      if (stripped === null) {
+        blockText.set(index, piece);
+        blockReplay.delete(index);
+        return null;
+      }
+      if (stripped !== piece) {
+        blockText.set(index, piece);
+        blockReplay.delete(index);
+        if (!stripped) return null;
+        text += stripped;
+        appendTextTrail(stripped);
+        return stripped;
+      }
+    }
     if (piece === prev) {
       blockReplay.delete(index);
       return null;

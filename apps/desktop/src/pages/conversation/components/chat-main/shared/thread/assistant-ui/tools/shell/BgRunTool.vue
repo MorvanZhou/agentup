@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { Layers2Icon } from "@lucide/vue";
 
+import { t } from "../../../../../../../../../shared/model/ui/ui-locale";
 import { argString, mergeToolArgs } from "../shared/tool-args";
 import { useToolPart } from "../shared/useToolPart";
 import ToolCard from "../shared/ToolCard.vue";
@@ -35,28 +36,38 @@ const detail = computed(() => {
   return command.value || jobName.value;
 });
 
-const showCommand = computed(() => Boolean(command.value));
+const showMeta = computed(() => Boolean(jobName.value || command.value));
 const showOutput = computed(() => hasResult.value && Boolean(resultText.value));
 const expandable = computed(
   () =>
-    showCommand.value ||
+    showMeta.value ||
     showOutput.value ||
     Boolean(argsText.value.trim()),
 );
 </script>
 
 <template>
-  <!-- 后台启动：像 bash，强调立刻返回的长命令 -->
+  <!-- 后台长任务：立刻返回 job，不堵 turn -->
   <ToolCard
-    title="bg_run"
+    :title="t('toolBgRun')"
     :detail="detail"
     :icon="Layers2Icon"
     :expandable="expandable"
     :prefer-open="showOutput && isActive"
   >
     <div class="flex min-w-0 flex-col gap-2 px-2.5 py-2">
+      <dl v-if="showMeta" class="grid gap-1.5 text-xs">
+        <div v-if="jobName" class="flex min-w-0 gap-2">
+          <dt class="w-14 shrink-0 text-muted-foreground">{{ t("toolBgRunName") }}</dt>
+          <dd class="min-w-0 truncate font-medium text-foreground">{{ jobName }}</dd>
+        </div>
+        <div v-if="command" class="flex min-w-0 gap-2">
+          <dt class="w-14 shrink-0 text-muted-foreground">{{ t("toolBgRunCmd") }}</dt>
+          <dd class="min-w-0 break-all font-mono text-foreground">{{ command }}</dd>
+        </div>
+      </dl>
       <pre
-        v-if="showCommand"
+        v-if="command"
         class="bg-paper text-foreground max-h-40 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-all"
       ><span class="text-muted-foreground">$ </span>{{ command }}</pre>
       <pre

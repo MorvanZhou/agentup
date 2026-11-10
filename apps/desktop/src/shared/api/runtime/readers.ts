@@ -212,6 +212,10 @@ export function readSessionModelState(payload: Record<string, unknown>): Session
       }
       return {
         templateId: row.template_id,
+        connectionId:
+          typeof row.connection_id === "string" && row.connection_id
+            ? row.connection_id
+            : row.template_id,
         modelId: row.model_id,
         name: row.name,
         // 老 runtime 没有 vendor_id 时回落空串，logo 走字母占位
@@ -364,7 +368,15 @@ function readProviderModelRef(value: unknown): ProviderModelRef {
   if (typeof payload.template_id !== "string" || typeof payload.model_id !== "string") {
     throw new DesktopApiError("AI 服务模型无效");
   }
-  return { templateId: payload.template_id, modelId: payload.model_id };
+  return {
+    templateId: payload.template_id,
+    modelId: payload.model_id,
+    // 老 runtime 无 connection_id 时回落 templateId
+    connectionId:
+      typeof payload.connection_id === "string" && payload.connection_id
+        ? payload.connection_id
+        : payload.template_id,
+  };
 }
 
 function readProviderConnection(value: unknown): ProviderConnection {
@@ -387,7 +399,16 @@ function readProviderConnection(value: unknown): ProviderConnection {
     throw new DesktopApiError("AI 服务连接无效");
   }
   return {
+    // 老 runtime 无 connection_id 时用 template_id 顶上
+    connectionId:
+      typeof payload.connection_id === "string" && payload.connection_id
+        ? payload.connection_id
+        : payload.template_id,
     templateId: payload.template_id,
+    displayName:
+      typeof payload.display_name === "string" && payload.display_name
+        ? payload.display_name
+        : undefined,
     baseUrl: typeof payload.base_url === "string" ? payload.base_url : undefined,
     apiKeyCipher: typeof payload.api_key_cipher === "string" ? payload.api_key_cipher : undefined,
     customModelIds: payload.custom_model_ids.filter((item): item is string => typeof item === "string"),
@@ -422,6 +443,10 @@ function readAvailableProviderModel(value: unknown): AvailableProviderModel {
   }
   return {
     templateId: payload.template_id,
+    connectionId:
+      typeof payload.connection_id === "string" && payload.connection_id
+        ? payload.connection_id
+        : payload.template_id,
     modelId: payload.model_id,
     name: payload.name,
     // 老 runtime 没有 vendor_id 时回落空串，logo 走字母占位
@@ -493,6 +518,11 @@ function readProviderTemplate(value: unknown): ProviderTemplate {
     hint: typeof payload.hint === "string" ? payload.hint : undefined,
     api: typeof payload.api === "string" ? payload.api : undefined,
     supportsModelDiscovery: payload.supports_model_discovery,
+    // 老 runtime 无该字段：按 kind 推断 Ollama / 自定义可多连
+    allowsMultipleConnections:
+      payload.allows_multiple_connections === true ||
+      payload.kind === "ollama" ||
+      payload.kind === "custom-openai",
     models: payload.models.map((model) => {
       if (!model || typeof model !== "object" || Array.isArray(model)) {
         throw new DesktopApiError("AI 服务模板无效");

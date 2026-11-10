@@ -78,6 +78,9 @@ export async function upsertProviderConnection(
   token: string,
   connection: {
     templateId: string;
+    connectionId?: string;
+    createNew?: boolean;
+    displayName?: string;
     baseUrl?: string;
     apiKeyCipher?: string;
     clearApiKey?: boolean;
@@ -88,6 +91,9 @@ export async function upsertProviderConnection(
   return readProviderSettings(
     await http.request(providerPath("/settings/provider/connections", locale), token, {
       template_id: connection.templateId,
+      ...(connection.connectionId ? { connection_id: connection.connectionId } : {}),
+      ...(connection.createNew ? { create_new: true } : {}),
+      ...(connection.displayName !== undefined ? { display_name: connection.displayName } : {}),
       ...(connection.baseUrl ? { base_url: connection.baseUrl } : {}),
       ...(connection.apiKeyCipher ? { api_key_cipher: connection.apiKeyCipher } : {}),
       ...(connection.clearApiKey ? { clear_api_key: true } : {}),
@@ -99,12 +105,12 @@ export async function upsertProviderConnection(
 export async function deleteProviderConnection(
   http: RuntimeHttp,
   token: string,
-  templateId: string,
+  connectionId: string,
   locale?: UiLocale,
 ): Promise<ProviderSettings> {
   return readProviderSettings(
     await http.request(
-      providerPath(`/settings/provider/connections/${encodeURIComponent(templateId)}`, locale),
+      providerPath(`/settings/provider/connections/${encodeURIComponent(connectionId)}`, locale),
       token,
       undefined,
       "DELETE",
@@ -115,13 +121,13 @@ export async function deleteProviderConnection(
 export async function refreshProviderModels(
   http: RuntimeHttp,
   token: string,
-  templateId: string,
+  connectionId: string,
   locale?: UiLocale,
 ): Promise<ProviderSettings> {
   return readProviderSettings(
     await http.request(
       providerPath(
-        `/settings/provider/connections/${encodeURIComponent(templateId)}/refresh-models`,
+        `/settings/provider/connections/${encodeURIComponent(connectionId)}/refresh-models`,
         locale,
       ),
       token,
@@ -136,10 +142,11 @@ export async function removeCustomProviderModel(
   ref: ProviderModelRef,
   locale?: UiLocale,
 ): Promise<ProviderSettings> {
+  const connectionId = ref.connectionId || ref.templateId;
   return readProviderSettings(
     await http.request(
       providerPath(
-        `/settings/provider/connections/${encodeURIComponent(ref.templateId)}/custom-models/${encodeURIComponent(ref.modelId)}`,
+        `/settings/provider/connections/${encodeURIComponent(connectionId)}/custom-models/${encodeURIComponent(ref.modelId)}`,
         locale,
       ),
       token,
@@ -160,6 +167,7 @@ export async function setProviderModelEnabled(
     await http.request(providerPath("/settings/provider/models/enabled", locale), token, {
       template_id: ref.templateId,
       model_id: ref.modelId,
+      ...(ref.connectionId ? { connection_id: ref.connectionId } : {}),
       enabled,
     }),
   );
@@ -175,6 +183,7 @@ export async function setProviderActiveModel(
     await http.request(providerPath("/settings/provider/models/active", locale), token, {
       template_id: ref.templateId,
       model_id: ref.modelId,
+      ...(ref.connectionId ? { connection_id: ref.connectionId } : {}),
     }),
   );
 }

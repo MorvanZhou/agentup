@@ -159,6 +159,11 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
     try {
       const settings = upsertProviderConnection(config.userDataRoot, {
         templateId: text(body, "template_id"),
+        connectionId: optionalText(body, "connection_id"),
+        createNew: body.create_new === true,
+        // 空串表示清掉端点名；缺字段则保留旧值
+        displayName:
+          body.display_name === "" ? "" : optionalText(body, "display_name"),
         baseUrl: optionalText(body, "base_url"),
         apiKeyCipher: optionalText(body, "api_key_cipher"),
         clearApiKey: body.clear_api_key === true,
@@ -354,6 +359,8 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
           removeCustomModel(
             config.userDataRoot,
             {
+              // 路径参数现为 connectionId（旧客户端传 templateId 仍兼容）
+              connectionId: c.req.param("templateId"),
               templateId: c.req.param("templateId"),
               modelId: decodeURIComponent(c.req.param("modelId")),
             },
@@ -378,7 +385,11 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
         providerSettingsBody(
           setModelEnabled(
             config.userDataRoot,
-            { templateId: text(body, "template_id"), modelId: text(body, "model_id") },
+            {
+              templateId: text(body, "template_id"),
+              modelId: text(body, "model_id"),
+              connectionId: optionalText(body, "connection_id"),
+            },
             body.enabled === true,
             locale,
           ),
@@ -404,6 +415,7 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
             {
               templateId: text(body, "template_id"),
               modelId: text(body, "model_id"),
+              connectionId: optionalText(body, "connection_id"),
             },
             locale,
           ),

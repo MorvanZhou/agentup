@@ -12,7 +12,7 @@ export class ProviderSecretPendingError extends ConfigError {
   }
 }
 
-/** 明文 Key 只留在进程内存，key = templateId。 */
+/** 明文 Key 只留在进程内存，key = connectionId（旧单槽等于 templateId）。 */
 const runtimeSecrets = new Map<string, string>();
 const secretReadyListeners = new Set<() => void>();
 
@@ -26,14 +26,14 @@ export function onRuntimeProviderSecrets(listener: () => void): () => void {
 
 export function setRuntimeProviderSecrets(secrets: Record<string, string>): void {
   let added = false;
-  for (const [templateId, apiKey] of Object.entries(secrets)) {
+  for (const [connectionId, apiKey] of Object.entries(secrets)) {
     const key = apiKey.trim();
-    if (!templateId.trim()) continue;
+    if (!connectionId.trim()) continue;
     if (!key) {
-      runtimeSecrets.delete(templateId);
+      runtimeSecrets.delete(connectionId);
       continue;
     }
-    runtimeSecrets.set(templateId, key);
+    runtimeSecrets.set(connectionId, key);
     added = true;
   }
   if (!added) return;
@@ -51,13 +51,13 @@ export function clearRuntimeProviderSecrets(): void {
 }
 
 /** 内存里是否已有明文；设置页用它判断「已填密钥」。 */
-export function hasRuntimeApiKey(templateId: string): boolean {
-  return Boolean(runtimeSecrets.get(templateId));
+export function hasRuntimeApiKey(connectionId: string): boolean {
+  return Boolean(runtimeSecrets.get(connectionId));
 }
 
 /** 清密钥 / 删连接时同步丢掉内存明文。 */
-export function dropRuntimeApiKey(templateId: string): void {
-  runtimeSecrets.delete(templateId);
+export function dropRuntimeApiKey(connectionId: string): void {
+  runtimeSecrets.delete(connectionId);
 }
 
 /** 要密钥的服务商：内存里有明文才可用。盘上有密文只说明还没注入，不是密钥丢了。 */
@@ -65,8 +65,9 @@ export function runtimeApiKey(
   template: { id: string; requiresApiKey: boolean },
   connection: ProviderConnection,
 ): string {
-  if (!template.requiresApiKey) return runtimeSecrets.get(template.id) || PLACEHOLDER_KEY;
-  const key = runtimeSecrets.get(template.id) ?? "";
+  const secretKey = connection.connectionId || template.id;
+  if (!template.requiresApiKey) return runtimeSecrets.get(secretKey) || PLACEHOLDER_KEY;
+  const key = runtimeSecrets.get(secretKey) ?? "";
   if (key) return key;
   if (connection.apiKeyCipher) throw new ProviderSecretPendingError();
   throw new ConfigError("当前服务商缺少 API Key，请重新保存密钥");

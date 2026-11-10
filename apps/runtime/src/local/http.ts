@@ -9,6 +9,7 @@ import type { ApprovalBroker } from "../session/hitl/approval/index.js";
 import type { ShellHangBroker } from "../session/hitl/shell-hang/index.js";
 import type { DelegationService } from "../session/delegation/index.js";
 import type { GroupRooms, GroupTurns } from "../session/group/index.js";
+import type { PreviewService } from "../session/preview/service.js";
 import type { AskUserBroker } from "../session/tools/index.js";
 import type { VisitChats } from "../session/turn/index.js";
 
@@ -26,6 +27,7 @@ export interface LocalAppDeps {
   groups: GroupRooms;
   groupTurns: GroupTurns;
   backgroundJobs: BackgroundJobs;
+  preview: PreviewService;
   readModel: () => ModelConfig;
 }
 

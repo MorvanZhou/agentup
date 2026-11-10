@@ -2,6 +2,7 @@ import { agentSdkStateOf } from "../../../../config/provider/index.js";
 import type { ExternalTurnRequest } from "../contract.js";
 import { driverIdOfTemplate, getExternalDriver, installedCliPathFor } from "../registry.js";
 import { externalContextOf } from "./context-of.js";
+import { platformMcpServersOf } from "../../../mcp/platform-mcp.js";
 import { openExternalMcp } from "./mcp.js";
 import { AGENT_SDK_TURN_TIMEOUT_MS, type AgentSdkStreamContext, type ExternalAgentQuery } from "./types.js";
 
@@ -35,6 +36,7 @@ export async function queryExternalAgent(
     systemAppend: external?.systemAppend ?? "",
     ...(ctx.modelId && ctx.modelId !== "default" ? { modelId: ctx.modelId } : {}),
     ...(mcp?.clientConfig ? { mcpServer: mcp.clientConfig } : {}),
+    platformMcpServers: platformMcpServersOf(ctx.userDataRoot),
     abortController: controller,
     ...(ctx.askUser
       ? {

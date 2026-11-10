@@ -5,15 +5,20 @@
 
 const MAX_CANDIDATES = 32;
 
-/** 边界：空白或常见中英文标点（不含路径字符 / \ : .） */
-const BOUNDARY_BEFORE = "(^|[\\s([{（【「『\"'<>])";
-const BOUNDARY_AFTER = "(?=$|[\\s,.;:!?，。；：！？)\\]}）】」』\"'<>])";
+/** 边界：空白或常见中英文标点（不含路径字符 / \ : .）；中文逗号/括号前后都要能断开 */
+const BOUNDARY_BEFORE = "(^|[\\s,，([{（【「『\"'<>])";
+const BOUNDARY_AFTER = "(?=$|[\\s,.;:!?，。；：！？)\\]}）（【】」』\"'<>])";
 
 /** 路径体：排除空白、括号引号，避免吃掉 Markdown `]` `)` */
 const PATH_BODY = "[^\\s<>\"'`\\[\\]()（）]+";
 
-const FILE_URL_RE = new RegExp(
+/** file:///绝对 或 file://相对（两斜杠、无 host；首段勿当 URL host） */
+const FILE_URL_ABS_RE = new RegExp(
   `${BOUNDARY_BEFORE}(file:\\/\\/\\/${PATH_BODY})${BOUNDARY_AFTER}`,
+  "gi",
+);
+const FILE_URL_REL_RE = new RegExp(
+  `${BOUNDARY_BEFORE}(file:\\/\\/(?!\\/)(${PATH_BODY}))${BOUNDARY_AFTER}`,
   "gi",
 );
 
@@ -91,13 +96,23 @@ function looksLikePathToken(token: string): boolean {
   return false;
 }
 
+/** chip 可见文案：basename；全路径留给 title / data-local-path。 */
+export function localPathChipLabel(target: NormalizedLocalPath, raw?: string): string {
+  const normalized = target.path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const base = normalized.split("/").filter(Boolean).pop() ?? "";
+  if (base) return base;
+  const fallback = (raw ?? "").trim();
+  return fallback || target.path;
+}
+
 /** 从 Markdown 原文抽出候选路径字符串（按出现顺序去重，最多 32）。 */
 export function extractLocalPathCandidates(source: string): string[] {
   if (!source) return [];
   const text = stripFencedCode(source);
   const hits: IndexedHit[] = [];
 
-  collectFromRegex(text, FILE_URL_RE, 2, hits);
+  collectFromRegex(text, FILE_URL_ABS_RE, 2, hits);
+  collectFromRegex(text, FILE_URL_REL_RE, 2, hits);
   collectFromRegex(text, WIN_ABS_RE, 2, hits);
   collectFromRegex(text, POSIX_ABS_RE, 2, hits);
   collectFromRegex(text, REL_DOT_RE, 2, hits);
@@ -127,19 +142,33 @@ export function extractLocalPathCandidates(source: string): string[] {
   return out;
 }
 
-/** 规范化候选：file:// → 绝对路径；./ 剥掉；相对统一 /。 */
+/**
+ * 规范化候选。
+ * file:///abs → absolute；file://rel/path（两斜杠）→ relative，勿把首段当 host 吞掉。
+ */
 export function normalizeLocalPathCandidate(raw: string): NormalizedLocalPath | null {
   let value = raw.trim();
   if (!value) return null;
 
   if (/^file:\/\//i.test(value)) {
+    const rest = value.replace(/^file:\/\//i, "");
+    // 裸 file:// / file:///
+    if (!rest || rest === "/") return null;
+
+    // file://相对：第二段不是空（没有第三道 /）
+    if (!rest.startsWith("/")) {
+      const relative = rest.replace(/\\/g, "/");
+      if (!relative || relative === ".") return null;
+      return { kind: "relative", path: relative };
+    }
+
     try {
       const url = new URL(value);
       if (url.protocol !== "file:") return null;
       // file:///C:/x → /C:/x on posix URL parser; Windows 盘符单独处理
       let pathname = decodeURIComponent(url.pathname);
       if (/^\/[A-Za-z]:\//.test(pathname)) pathname = pathname.slice(1);
-      // 裸 file:// / file:///：URL 规范常把 pathname 落成 "/"，勿当成磁盘根目录链
+      // 裸 file:///：URL 规范常把 pathname 落成 "/"，勿当成磁盘根目录链
       if (!pathname || pathname === "/") return null;
       return { kind: "absolute", path: pathname };
     } catch {
@@ -200,7 +229,7 @@ export function parseLocalPathHref(href: string): NormalizedLocalPath | null {
 
 /**
  * 在围栏外把路径候选改成 MD 链接（伪协议 href），供 markdown-it 渲染。
- * 最长原文优先，避免短路径吞掉长路径。
+ * 最长原文优先，避免短路径吞掉长路径；可见文案用 basename。
  */
 export function injectLocalPathMarkdownLinks(source: string): string {
   if (!source) return "";
@@ -228,7 +257,7 @@ function injectInProse(
 ): string {
   if (!prose || keys.length === 0) return prose;
 
-  // 已是 MD 链接的 href：改写成伪协议，保留可见文案
+  // 已是 MD 链接的 href：改写成伪协议，保留作者写的可见文案
   let text = prose.replace(MD_LINK_HREF_RE, (full, href: string) => {
     if (URLISH_RE.test(href) || !looksLikePathToken(href)) return full;
     const normalized = map.get(href) ?? normalizeLocalPathCandidate(href);
@@ -237,12 +266,12 @@ function injectInProse(
     return `${label}(${encodeLocalPathHref(normalized)})`;
   });
 
-  // 行内 code 整段是路径 → 链化（去掉反引号，链上可另加 mono class）
+  // 行内 code 整段是路径 → 链化（basename 作可见文案）
   text = text.replace(INLINE_CODE_RE, (full, inner: string) => {
     const raw = inner.trim();
     const target = map.get(raw);
     if (!target) return full;
-    return `[${raw}](${encodeLocalPathHref(target)})`;
+    return `[${localPathChipLabel(target, raw)}](${encodeLocalPathHref(target)})`;
   });
 
   // 占位已有链接，避免裸路径二次包进 `[...](...)`
@@ -257,12 +286,13 @@ function injectInProse(
     const target = map.get(raw);
     if (!target) continue;
     const href = encodeLocalPathHref(target);
+    const label = localPathChipLabel(target, raw);
     const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(
-      `(^|[\\s([{（【「『\"'<>])(${escaped})(?=$|[\\s,.;:!?，。；：！？)\\]}）】」』\"'<>])`,
+      `(^|[\\s,，([{（【「『\"'<>])(${escaped})(?=$|[\\s,.;:!?，。；：！？)\\]}）（【】」』\"'<>])`,
       "g",
     );
-    text = text.replace(re, (_full, before: string, hit: string) => `${before}[${hit}](${href})`);
+    text = text.replace(re, (_full, before: string) => `${before}[${label}](${href})`);
   }
 
   return text.replace(/\0LP(\d+)\0/g, (_m, i: string) => held[Number(i)] ?? "");

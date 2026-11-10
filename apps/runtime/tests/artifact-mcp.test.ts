@@ -104,6 +104,7 @@ it("complete_group_task MCP 确认共享 ARTIFACT 路径并写入 deliverState",
   expect(ok.text).toContain("ARTIFACT/from-Cody-t1/page.html");
   expect(ok.text).toContain("Next step: Notify the user to open the HTML");
   expect(deliver.confirmed).toBe(true);
+  expect(deliver.nextStep).toBe("Notify the user to open the HTML");
   expect(deliver.staged).toEqual([
     { path: "ARTIFACT/from-Cody-t1/page.html", size: "<html></html>".length },
   ]);

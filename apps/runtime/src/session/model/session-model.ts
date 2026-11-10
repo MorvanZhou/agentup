@@ -30,8 +30,14 @@ export function readSessionModelRef(sessionFile: string): ModelRef | null {
     const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
     const templateId = typeof raw.templateId === "string" ? raw.templateId.trim() : "";
     const modelId = typeof raw.modelId === "string" ? raw.modelId.trim() : "";
+    const connectionId =
+      typeof raw.connectionId === "string" ? raw.connectionId.trim() : "";
     if (!templateId || !modelId) return null;
-    return { templateId, modelId };
+    return {
+      templateId,
+      modelId,
+      ...(connectionId ? { connectionId } : {}),
+    };
   } catch {
     return null;
   }
@@ -42,9 +48,14 @@ export function writeSessionModelRef(sessionFile: string, ref: ModelRef): void {
   const directory = path.dirname(file);
   fs.mkdirSync(directory, { recursive: true });
   const temporary = `${file}.tmp`;
+  const connectionId = ref.connectionId?.trim() || ref.templateId;
   fs.writeFileSync(
     temporary,
-    `${JSON.stringify({ templateId: ref.templateId, modelId: ref.modelId }, null, 2)}\n`,
+    `${JSON.stringify(
+      { templateId: ref.templateId, connectionId, modelId: ref.modelId },
+      null,
+      2,
+    )}\n`,
     { mode: 0o600 },
   );
   fs.renameSync(temporary, file);
@@ -115,7 +126,14 @@ export function resolveVisitModelRef(
 
   if (sessionFile) {
     const current = readSessionModelRef(sessionFile);
-    if (!current || current.templateId !== ref.templateId || current.modelId !== ref.modelId) {
+    const sameConnection =
+      (current?.connectionId || current?.templateId) === (ref.connectionId || ref.templateId);
+    if (
+      !current ||
+      current.templateId !== ref.templateId ||
+      current.modelId !== ref.modelId ||
+      !sameConnection
+    ) {
       writeSessionModelRef(sessionFile, ref);
     }
   }

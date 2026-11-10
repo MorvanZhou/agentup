@@ -63,6 +63,9 @@ it("tells a group holder to delegate only to the listed room members", () => {
   expect(text).toContain("always async");
   expect(text).toContain("Finish your turn");
   expect(text).not.toContain("wait=true");
+  // 交回唤醒后读 Next step，决定是否再派下一岗，而不是默认收口。
+  expect(text).toContain("Next step");
+  expect(text).toMatch(/next stage|another member/i);
 });
 
 it("lists every other group member and omits the speaker and long instructions", () => {

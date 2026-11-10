@@ -201,12 +201,17 @@ export function createHolderTurnDriver(deps: {
         }
 
         const text = visibleParts.join("\n").trim();
+        // abort 跳过 writeBack：会话里最后一条 assistant 仍是上轮；挂到 halt 行会整段复读。
+        const abortedNow = stopController.signal.aborted || input.signal.aborted;
         let message;
-        try {
-          message =
-            (await readLastAssistantAt(path.join(visit.root, "cwd"), input.sessionDir)) ?? undefined;
-        } catch {
-          // 投影失败时仍交回正文
+        if (!abortedNow) {
+          try {
+            message =
+              (await readLastAssistantAt(path.join(visit.root, "cwd"), input.sessionDir)) ??
+              undefined;
+          } catch {
+            // 投影失败时仍交回正文
+          }
         }
         return { text, ...(message ? { message } : {}) };
       } finally {

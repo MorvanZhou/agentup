@@ -27,6 +27,7 @@ import { injectThreadApproval } from "../../../model/thread/thread-approval";
 import { injectThreadAskUser } from "../../../model/thread/thread-ask-user";
 import { injectThreadBusyTurn } from "../../../model/thread/thread-busy-turn";
 import { injectThreadExtras } from "../../../model/thread/thread-extras";
+import PreviewHeaderEntry from "../shared/preview/PreviewHeaderEntry.vue";
 import ChatHeader from "../shared/ChatHeader.vue";
 
 defineProps<{
@@ -211,6 +212,8 @@ async function confirmDismissAction(): Promise<void> {
       </p>
     </template>
     <template #actions>
+      <!-- 有 Launch Recipe 时露出预览入口 -->
+      <PreviewHeaderEntry />
       <button
         v-if="name && actions"
         type="button"

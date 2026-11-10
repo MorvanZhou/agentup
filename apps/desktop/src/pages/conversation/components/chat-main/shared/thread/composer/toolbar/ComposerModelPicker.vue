@@ -31,7 +31,10 @@ const props = withDefaults(defineProps<{
   members?: ReadonlyArray<{ id: string; name: string; avatarUrl?: string }>;
   /** 当前接话的人，成员列表上做标记。 */
   speakerId?: string;
-  memberModels?: Record<string, { templateId: string; modelId: string; name: string }>;
+  memberModels?: Record<
+    string,
+    { templateId: string; modelId: string; connectionId?: string; name: string }
+  >;
 }>(), {
   // 布尔缺省会被当成 false；没传时仍显示供应商标，群单配由调用方显式关掉
   showLogo: true,
@@ -110,10 +113,12 @@ const hoveredModel = computed(() => {
 });
 
 function modelKey(model: SessionModelOption): string {
-  return `${model.templateId}::${model.modelId}`;
+  return `${model.connectionId ?? model.templateId}::${model.modelId}`;
 }
 
-function memberModel(agentId: string): { templateId: string; modelId: string; name: string } | null {
+function memberModel(
+  agentId: string,
+): { templateId: string; modelId: string; connectionId?: string; name: string } | null {
   const stored = props.memberModels?.[agentId] ?? null;
   if (stored) return stored;
   // 一对一没有群花名册，当前这位的模型就是本会话选中的那份。

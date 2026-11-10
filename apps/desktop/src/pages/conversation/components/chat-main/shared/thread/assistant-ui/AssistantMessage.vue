@@ -33,9 +33,16 @@ import { injectThreadAgentId } from "../../../../../model/thread/thread-agent-id
 import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
 import { injectThreadWakeLive } from "../../../../../model/thread/thread-wake-live";
 import { readAgentUpDeliverables } from "../../../../../model/message/message-deliverables";
+import {
+  previewRecipesFromParts,
+  readAgentUpPreview,
+  type AgentUpPreview,
+} from "../../../../../model/message/message-preview";
+import { injectThreadPreview } from "../../../../../model/thread/thread-preview";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
 import AssistantByproductContent from "./byproducts/AssistantByproductContent.vue";
 import DeliverablesGrid from "./DeliverablesGrid.vue";
+import PreviewRecipesCard from "./PreviewRecipesCard.vue";
 import ReplyModelMark from "./ReplyModelMark.vue";
 import ChatBubble from "../../ChatBubble.vue";
 
@@ -208,6 +215,19 @@ const hasArtifactsTab = computed(
 );
 /** 收口交付网格：metadata.custom.agentUpDeliverables（与产物 tab 分离）。 */
 const deliverables = computed(() => readAgentUpDeliverables(metadata.value));
+const threadPreview = injectThreadPreview();
+/**
+ * Launch Recipe 卡：优先 metadata；群旧行漏投影时从 present_preview 入参回落；
+ * 再回落 thread 工作区配方。
+ */
+const previewRecipes = computed((): AgentUpPreview | null => {
+  const fromMeta = readAgentUpPreview(metadata.value);
+  if (fromMeta) return fromMeta;
+  const fromParts = previewRecipesFromParts(parts.value);
+  if (fromParts) return fromParts;
+  const recipes = threadPreview?.recipes.value ?? [];
+  return recipes.length > 0 ? { recipes } : null;
+});
 </script>
 
 <template>
@@ -321,6 +341,11 @@ const deliverables = computed(() => readAgentUpDeliverables(metadata.value));
       <DeliverablesGrid
         v-if="deliverables && deliverables.files.length > 0"
         :deliverables="deliverables"
+      />
+      <!-- 预览配方卡：启动 / 钉顶栏（开发场景主入口） -->
+      <PreviewRecipesCard
+        v-if="previewRecipes && previewRecipes.recipes.length > 0"
+        :preview="previewRecipes"
       />
     </template>
   </ChatBubble>

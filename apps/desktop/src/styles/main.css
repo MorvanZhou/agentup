@@ -272,3 +272,10 @@ body:has([data-dismissable-layer]) .app-drag {
 .electron.darwin .app-titlebar-pad {
   padding-top: var(--app-titlebar-inset);
 }
+
+/*
+  右侧栏（工作区 / 预览）拖宽时：禁用 iframe 指针，避免预览页吞掉 pointermove/up。
+*/
+body.agentup-pane-dragging iframe {
+  pointer-events: none !important;
+}

@@ -47,10 +47,26 @@ const props = withDefaults(
     searchPlaceholder?: string;
     /** 无匹配时的提示文案 */
     searchEmpty?: string;
+    /**
+     * 强调触发器：更高、字重更实，用于「先选接入」这类首屏焦点。
+     * 选中态仍走灰阶，不抢 accent。
+     */
+    emphasis?: boolean;
   }>(),
   {
     searchable: false,
+    emphasis: false,
   },
+);
+
+/** 触发钮：默认紧凑；emphasis 抬高触控面与字重，作首屏决策控件 */
+const triggerClass = computed(() =>
+  [
+    "flex w-full min-w-0 items-center gap-2.5 rounded-lg border text-left outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60",
+    props.emphasis
+      ? "min-h-11 border-foreground/15 bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+      : "min-h-9 border-rule bg-paper px-2.5 py-1.5 text-sm font-normal text-foreground hover:bg-background",
+  ].join(" "),
 );
 
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
@@ -283,10 +299,14 @@ onBeforeUnmount(() => {
     <!-- 级联：左接入方式 · 右接入商 -->
     <div
       v-if="cascade"
-      class="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:items-end"
+      class="grid min-w-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:items-end"
+      :class="emphasis ? 'gap-3' : 'gap-2'"
     >
       <div class="grid min-w-0 gap-1.5">
-        <span :id="groupLabelId">{{ groupLabel ?? label }}</span>
+        <span
+          :id="groupLabelId"
+          :class="emphasis ? 'text-xs font-semibold tracking-wide text-muted-foreground' : undefined"
+        >{{ groupLabel ?? label }}</span>
         <div class="relative min-w-0">
           <button
             ref="groupTriggerRef"
@@ -296,7 +316,7 @@ onBeforeUnmount(() => {
             :aria-haspopup="true"
             :aria-labelledby="groupLabelId"
             :title="selectedGroup"
-            class="flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm font-normal text-foreground outline-none transition duration-200 hover:bg-background focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+            :class="triggerClass"
             @click="toggleCascade('group')"
           >
             <span class="min-w-0 flex-1 truncate">{{ selectedGroup }}</span>
@@ -343,7 +363,10 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="grid min-w-0 gap-1.5">
-        <span :id="labelId">{{ label }}</span>
+        <span
+          :id="labelId"
+          :class="emphasis ? 'text-xs font-semibold tracking-wide text-muted-foreground' : undefined"
+        >{{ label }}</span>
         <div class="relative min-w-0">
           <button
             ref="itemTriggerRef"
@@ -353,7 +376,7 @@ onBeforeUnmount(() => {
             :aria-haspopup="true"
             :aria-labelledby="labelId"
             :title="selected?.label"
-            class="flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm font-normal text-foreground outline-none transition duration-200 hover:bg-background focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+            :class="triggerClass"
             @click="toggleCascade('item')"
           >
             <span
@@ -473,7 +496,7 @@ onBeforeUnmount(() => {
           :aria-haspopup="true"
           :aria-labelledby="labelId"
           :title="selected?.label"
-          class="flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-lg border border-rule bg-paper px-2.5 py-1.5 text-left text-sm font-normal text-foreground outline-none transition duration-200 hover:bg-background focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+          :class="triggerClass"
           @click="toggle"
         >
           <span

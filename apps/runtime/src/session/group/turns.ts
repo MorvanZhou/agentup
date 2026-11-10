@@ -11,6 +11,13 @@ import { TRANSCRIPT_PAGE_SIZE } from "../transcript-page.js";
 import { TurnStreamHub } from "../turn/turn-stream-hub.js";
 import { GroupRooms } from "./rooms.js";
 import type { GroupAssistantPayload, GroupEffect, GroupLine, GroupRoom } from "./types.js";
+import {
+  isPresentPreviewToolName,
+  parsePreviewEntryData,
+  slugifyPreviewId,
+  type AgentUpPreviewData,
+} from "../tools/present-preview.js";
+import { isAllowedPreviewUrl } from "../workspace/workspace-config.js";
 import { formatFinishedDelegationCue, holderSessionRelative, projectTranscript } from "./wave.js";
 
 export type GroupTurnHandle = {
@@ -376,11 +383,14 @@ export class GroupTurns {
       if (turn.discard) {
         // 改发自己重写记录。
       } else if (!failed && turn.stopped) {
+        // abort 时 SDK writeBack 会跳过，readLastAssistantAt 常落到上轮气泡；
+        // 若把那份 parts 挂到「已停止」行，群 UI 会整段复读上一轮（Remy 截图）。
+        const body = text.trim();
         this.rooms.store.haltHolder(
           room.userId,
           room.id,
-          text.trim() || t("chat.turnCancelled"),
-          assistant,
+          body || t("chat.turnCancelled"),
+          body ? assistant : undefined,
         );
       } else if (!failed && !turn.stopped) {
         next = this.rooms.store.finishHolder(
@@ -493,7 +503,8 @@ function isCancel(error: unknown): boolean {
   return isUserCancelError(message);
 }
 
-function assistantPayloadFromMessage(message: UIMessage | undefined): GroupAssistantPayload {
+/** 群回合结束：把 UIMessage 的 parts / custom 收成 GroupLine 载荷（含预览配方）。 */
+export function assistantPayloadFromMessage(message: UIMessage | undefined): GroupAssistantPayload {
   if (!message || message.role !== "assistant") return {};
   const payload: GroupAssistantPayload = {};
   if (Array.isArray(message.parts) && message.parts.length > 0) {
@@ -507,12 +518,64 @@ function assistantPayloadFromMessage(message: UIMessage | undefined): GroupAssis
     metadata?.custom && typeof metadata.custom === "object"
       ? (metadata.custom as Record<string, unknown>)
       : null;
-  if (!custom) return payload;
   const assistantCustom: NonNullable<GroupAssistantPayload["assistantCustom"]> = {};
-  if ("agentUpSummary" in custom) assistantCustom.agentUpSummary = custom.agentUpSummary;
-  if ("agentUpArtifacts" in custom) assistantCustom.agentUpArtifacts = custom.agentUpArtifacts;
-  if ("agentUpDeliverables" in custom) assistantCustom.agentUpDeliverables = custom.agentUpDeliverables;
-  if ("agentUpReplyModel" in custom) assistantCustom.agentUpReplyModel = custom.agentUpReplyModel;
+  if (custom) {
+    if ("agentUpSummary" in custom) assistantCustom.agentUpSummary = custom.agentUpSummary;
+    if ("agentUpArtifacts" in custom) assistantCustom.agentUpArtifacts = custom.agentUpArtifacts;
+    if ("agentUpDeliverables" in custom) assistantCustom.agentUpDeliverables = custom.agentUpDeliverables;
+    if ("agentUpReplyModel" in custom) assistantCustom.agentUpReplyModel = custom.agentUpReplyModel;
+    if ("agentUpPreview" in custom) assistantCustom.agentUpPreview = custom.agentUpPreview;
+  }
+  // custom 漏投影时（旧 runtime / 竞态）：从 present_preview 工具入参回落，避免群气泡无配方卡
+  if (!("agentUpPreview" in assistantCustom)) {
+    const fromParts = previewFromPresentPreviewParts(payload.parts);
+    if (fromParts) assistantCustom.agentUpPreview = fromParts;
+  }
   if (Object.keys(assistantCustom).length > 0) payload.assistantCustom = assistantCustom;
   return payload;
+}
+
+function previewFromPresentPreviewParts(parts: UIMessage["parts"] | undefined): AgentUpPreviewData | undefined {
+  if (!Array.isArray(parts) || parts.length === 0) return undefined;
+  const recipes: AgentUpPreviewData["recipes"] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    const record = part as {
+      type?: unknown;
+      toolName?: unknown;
+      input?: unknown;
+      output?: unknown;
+    };
+    // Pi 裸名或 SDK MCP 全名；类型覆盖 dynamic-tool / Pi tool-present_preview
+    if (!isPresentPreviewToolName(record.toolName)) continue;
+    if (record.type !== "dynamic-tool" && record.type !== "tool-present_preview") continue;
+    const input =
+      record.input && typeof record.input === "object"
+        ? (record.input as Record<string, unknown>)
+        : null;
+    if (!input) continue;
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    const command = typeof input.command === "string" ? input.command.trim() : "";
+    const previewUrl = typeof input.preview_url === "string" ? input.preview_url.trim() : "";
+    if (!title || !command || !isAllowedPreviewUrl(previewUrl)) continue;
+    const fromInput = typeof input.id === "string" ? input.id.trim() : "";
+    const fromOutput =
+      typeof record.output === "string"
+        ? record.output.match(/Preview recipe registered \(([^)]+)\)/)?.[1]?.trim() || ""
+        : "";
+    const id = fromInput || fromOutput || slugifyPreviewId(title || previewUrl);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const linked = typeof input.linked_job_id === "string" ? input.linked_job_id.trim() : "";
+    recipes.push({
+      id,
+      title,
+      command,
+      cwd: typeof input.cwd === "string" && input.cwd.trim() ? input.cwd.trim() : ".",
+      preview_url: previewUrl,
+      ...(linked ? { linked_job_id: linked } : {}),
+    });
+  }
+  return parsePreviewEntryData({ recipes });
 }

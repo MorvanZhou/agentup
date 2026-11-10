@@ -80,7 +80,10 @@ it("uses the snapshotted model for a unified task and the delegatee's own model 
 
   const own = resolveDelegationModelConfig(root, { modelPin: { mode: "perAgent" } }, visit);
   expect(own.modelId).toBe("model-b");
-  expect(readStored(root).activeModel).toEqual({ templateId: "ollama", modelId: "model-a" });
+  expect(readStored(root).activeModel).toMatchObject({
+    templateId: "ollama",
+    modelId: "model-a",
+  });
 });
 
 it("keeps an existing group on unified until the room switches to per-agent", () => {
@@ -114,11 +117,11 @@ it("keeps a unified group's model on the room, and leaves per-agent turns on the
 
   expect(
     planGroupSpeakerModel(root, { mode: "unified", roomModel: room, speaker }),
-  ).toEqual({ kind: "room", ref: room, persist: false });
+  ).toMatchObject({ kind: "room", ref: room, persist: false });
 
   expect(
     planGroupSpeakerModel(root, { mode: "unified", roomModel: null, speaker }),
-  ).toEqual({ kind: "room", ref: speaker, persist: true });
+  ).toMatchObject({ kind: "room", ref: speaker, persist: true });
 
   expect(
     planGroupSpeakerModel(root, { mode: "perAgent", roomModel: room, speaker }),

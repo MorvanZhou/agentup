@@ -95,7 +95,7 @@ it("migrates a v2 provider.json without losing connections", () => {
   writeV2(root);
   const view = readProviderSettings(root, {}, "zh");
   expect(view.connections.map((item) => item.templateId)).toEqual(["ollama"]);
-  expect(view.activeModel).toEqual({ templateId: "ollama", modelId: "qwen3:4b" });
+  expect(view.activeModel).toMatchObject({ templateId: "ollama", modelId: "qwen3:4b" });
   expect(view.agentSdks.every((item) => item.state === "not_installed")).toBe(true);
 });
 
@@ -214,7 +214,7 @@ it("keeps an enabled SDK model across restarts but only while signed in", () => 
   const raw = JSON.parse(fs.readFileSync(file, "utf8")) as {
     enabledModels: Array<{ templateId: string; modelId: string }>;
   };
-  expect(raw.enabledModels).toEqual([{ templateId: "codebuddy-sdk", modelId: "claude-sonnet-5" }]);
+  expect(raw.enabledModels).toMatchObject([{ templateId: "codebuddy-sdk", modelId: "claude-sonnet-5" }]);
   const reread = readProviderSettings(root, {}, "zh");
   expect(reread.availableModels.find((item) => item.modelId === "claude-sonnet-5")?.enabled).toBe(
     true,

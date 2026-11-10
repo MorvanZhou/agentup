@@ -14,6 +14,10 @@ import {
   AGENTUP_DELIVERABLES_CUSTOM_TYPE,
   parseDeliverablesEntryData,
 } from "./deliverables.js";
+import {
+  AGENTUP_PREVIEW_CUSTOM_TYPE,
+  parsePreviewEntryData,
+} from "../tools/present-preview.js";
 import { healInterruptedSessionTools, settleInterruptedToolParts } from "./heal.js";
 import {
   AGENTUP_REPLY_MODEL_CUSTOM_TYPE,
@@ -78,6 +82,19 @@ export function projectHistoryFromManager(manager: SessionManager, idPrefix = "s
         const message = raw as { role?: unknown; __agentUpDelegation?: unknown };
         if (message.role !== "assistant" || message.__agentUpDelegation === true) continue;
         messages[index] = { ...message, __agentUpDeliverables: deliverables };
+        break;
+      }
+      continue;
+    }
+    if (entry.type === "custom" && entry.customType === AGENTUP_PREVIEW_CUSTOM_TYPE) {
+      const preview = parsePreviewEntryData(entry.data);
+      if (!preview) continue;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const raw = messages[index];
+        if (!raw || typeof raw !== "object") continue;
+        const message = raw as { role?: unknown; __agentUpDelegation?: unknown };
+        if (message.role !== "assistant" || message.__agentUpDelegation === true) continue;
+        messages[index] = { ...message, __agentUpPreview: preview };
         break;
       }
       continue;
@@ -261,7 +278,8 @@ export function projectHistory(
       const deliverables = parseDeliverablesEntryData(
         (raw as { __agentUpDeliverables?: unknown }).__agentUpDeliverables,
       );
-      if (summary || artifacts || deliverables) {
+      const preview = parsePreviewEntryData((raw as { __agentUpPreview?: unknown }).__agentUpPreview);
+      if (summary || artifacts || deliverables || preview) {
         const prev =
           typeof assistant.metadata === "object" && assistant.metadata
             ? (assistant.metadata as Record<string, unknown>)
@@ -278,6 +296,7 @@ export function projectHistory(
             ...(summary ? { agentUpSummary: clampSummaryIndex(summary, assistant.parts) } : {}),
             ...(artifacts ? { agentUpArtifacts: artifacts } : {}),
             ...(deliverables ? { agentUpDeliverables: deliverables } : {}),
+            ...(preview ? { agentUpPreview: preview } : {}),
           },
         };
       }

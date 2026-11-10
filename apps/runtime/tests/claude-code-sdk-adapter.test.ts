@@ -315,3 +315,37 @@ it("MCP：mcpServers.agentup 为 http + headers（流内应是 mcp__agentup__*�
   ]);
   expect(getExternalDriver("claude-code").capabilities.systemPromptMode).toBe("append");
 });
+
+it("MCP：平台 Playwright 与 agentup 一并写入 mcpServers（勿只挂 agentup）", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-claude-pw-"));
+  writeClaudeApiKey(root, "claude-agent-sdk", "sk-ant-test");
+  const playwright = {
+    command: "npx",
+    args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+    env: { PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers" },
+    exposure: "deferred" as const,
+  };
+  const options = claudeOptionsOf({
+    prompt: "hi",
+    cwd: "/tmp/proj",
+    additionalDirs: [],
+    systemAppend: "",
+    abortController: new AbortController(),
+    userDataRoot: root,
+    templateId: "claude-agent-sdk",
+    mcpServer: {
+      type: "http",
+      url: "http://127.0.0.1:18789/mcp",
+      headers: { Authorization: "Bearer tok" },
+    },
+    platformMcpServers: { playwright },
+  });
+  expect(options.mcpServers).toEqual({
+    agentup: {
+      type: "http",
+      url: "http://127.0.0.1:18789/mcp",
+      headers: { Authorization: "Bearer tok" },
+    },
+    playwright,
+  });
+});

@@ -140,6 +140,8 @@ export interface ExternalTurnRequest {
   systemAppend: string;
   modelId?: string;
   mcpServer?: Record<string, unknown>;
+  /** 平台额外 stdio/http MCP（如 Playwright）；与 agentup HTTP MCP 并列。 */
+  platformMcpServers?: Record<string, Record<string, unknown>>;
   abortController: AbortController;
   askUser?: ExternalAskUserSink;
   userId?: string;

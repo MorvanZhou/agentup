@@ -39,6 +39,8 @@ import * as pulseApi from "./pulse";
 import * as teamsApi from "./teams";
 import * as workspaceApi from "./workspace";
 import type { WorkspaceEntry, WorkspaceFile } from "./workspace";
+import * as previewApi from "./preview";
+import type { PreviewRecipeDto } from "./preview";
 import type { StagedAttachment } from "./attachments";
 
 /** 本机 runtime 的桌面端 API 门面；按领域拆在同目录其它文件。 */
@@ -268,6 +270,9 @@ export class DesktopApi {
     token: string,
     connection: {
       templateId: string;
+      connectionId?: string;
+      createNew?: boolean;
+      displayName?: string;
       baseUrl?: string;
       apiKeyCipher?: string;
       clearApiKey?: boolean;
@@ -280,23 +285,23 @@ export class DesktopApi {
 
   deleteProviderConnection(
     token: string,
-    templateId: string,
+    connectionId: string,
     locale?: UiLocale,
   ): Promise<ProviderSettings> {
-    return settingsApi.deleteProviderConnection(this.http, token, templateId, locale);
+    return settingsApi.deleteProviderConnection(this.http, token, connectionId, locale);
   }
 
   refreshProviderModels(
     token: string,
-    templateId: string,
+    connectionId: string,
     locale?: UiLocale,
   ): Promise<ProviderSettings> {
-    return settingsApi.refreshProviderModels(this.http, token, templateId, locale);
+    return settingsApi.refreshProviderModels(this.http, token, connectionId, locale);
   }
 
   setProviderModelEnabled(
     token: string,
-    ref: { templateId: string; modelId: string },
+    ref: { templateId: string; modelId: string; connectionId?: string },
     enabled: boolean,
     locale?: UiLocale,
   ): Promise<ProviderSettings> {
@@ -305,7 +310,7 @@ export class DesktopApi {
 
   removeCustomProviderModel(
     token: string,
-    ref: { templateId: string; modelId: string },
+    ref: { templateId: string; modelId: string; connectionId?: string },
     locale?: UiLocale,
   ): Promise<ProviderSettings> {
     return settingsApi.removeCustomProviderModel(this.http, token, ref, locale);
@@ -313,7 +318,7 @@ export class DesktopApi {
 
   setProviderActiveModel(
     token: string,
-    ref: { templateId: string; modelId: string },
+    ref: { templateId: string; modelId: string; connectionId?: string },
     locale?: UiLocale,
   ): Promise<ProviderSettings> {
     return settingsApi.setProviderActiveModel(this.http, token, ref, locale);
@@ -915,6 +920,93 @@ export class DesktopApi {
       personal,
       filePath,
       workspaceScope,
+    );
+  }
+
+  listPreviewRecipes(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+  ): Promise<PreviewRecipeDto[]> {
+    return previewApi.listPreviewRecipes(this.http, token, userId, agentId, personal);
+  }
+
+  startPreviewRecipe(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+    recipeId: string,
+    holderAgentId?: string,
+    force?: boolean,
+  ): Promise<previewApi.PreviewStartResultDto> {
+    return previewApi.startPreviewRecipe(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      recipeId,
+      holderAgentId,
+      force,
+    );
+  }
+
+  stopPreviewRecipe(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+    recipeId: string,
+    holderAgentId?: string,
+  ): Promise<PreviewRecipeDto> {
+    return previewApi.stopPreviewRecipe(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      recipeId,
+      holderAgentId,
+    );
+  }
+
+  pinPreviewRecipeHeader(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+    recipeId: string,
+    pinned: boolean,
+  ): Promise<PreviewRecipeDto> {
+    return previewApi.pinPreviewRecipeHeader(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      recipeId,
+      pinned,
+    );
+  }
+
+  dismissPreviewRecipe(
+    token: string,
+    userId: string,
+    agentId: string,
+    personal: boolean,
+    recipeId: string,
+    holderAgentId?: string,
+  ): Promise<PreviewRecipeDto> {
+    return previewApi.dismissPreviewRecipe(
+      this.http,
+      token,
+      userId,
+      agentId,
+      personal,
+      recipeId,
+      holderAgentId,
     );
   }
 

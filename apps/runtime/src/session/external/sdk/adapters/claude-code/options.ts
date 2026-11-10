@@ -4,6 +4,7 @@ import type {
   AskUserQuestion,
 } from "../../../../tools/ask-user.js";
 import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
+import { mergeExternalTurnMcpServers } from "../../mcp-servers.js";
 import { ensureClaudeHome, readClaudeApiKey } from "./home.js";
 import { resolveClaudeCliPath } from "./load.js";
 
@@ -29,6 +30,8 @@ export function claudeOptionsOf(input: ExternalTurnRequest): Record<string, unkn
   };
   if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
 
+  // 平台 MCP 与 agentup 并列（对齐 Cursor/Codex；勿只挂 agentup）
+  const mcpServers = mergeExternalTurnMcpServers(input);
   return {
     abortController: input.abortController,
     cwd: input.cwd,
@@ -55,7 +58,7 @@ export function claudeOptionsOf(input: ExternalTurnRequest): Record<string, unkn
     settingSources: ["project"],
     ...model,
     ...(cliPath ? { pathToClaudeCodeExecutable: cliPath } : {}),
-    ...(input.mcpServer ? { mcpServers: { agentup: input.mcpServer } } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
     env,
   };
 }

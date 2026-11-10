@@ -47,6 +47,18 @@ export function roomHolder(room: GroupRoomView): GroupMember | null {
   return roomMembers(room).find((member) => member.agentId === room.holderId) ?? null;
 }
 
+/**
+ * 群预览启停记在哪个 agent 名下：当前执掌者 → 默认执掌 → 名单首位。
+ * holderId 空闲时常为 null，不能只靠 roomHolder。
+ */
+export function previewJobAgentId(room: GroupRoomView): string {
+  const live = typeof room.holderId === "string" ? room.holderId.trim() : "";
+  if (live) return live;
+  const fallback = typeof room.defaultHolderId === "string" ? room.defaultHolderId.trim() : "";
+  if (fallback) return fallback;
+  return roomMembers(room)[0]?.agentId?.trim() || "";
+}
+
 export type HolderPhase = "idle" | "speaking" | "waiting" | "closing";
 
 export function holderPhase(room: GroupRoomView): HolderPhase {

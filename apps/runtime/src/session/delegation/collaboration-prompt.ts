@@ -90,6 +90,7 @@ export function formatGroupCollaborationPrompt(
     "If a task is waiting on the user, leave it. Do not steer it, and do not treat the group message as the answer to that question or approval.",
     "On a user turn with in-progress delegations, call resolve_delegation_update once per task before you finish. Mentioned running tasks: steer. Tasks the user did not mention: keep. cancel only when the user wants that task stopped.",
     "delegate_to_agent is always async in a group: it returns the task_id immediately. Finish your turn after delegating; the room wakes you with the result when the specialist hands it back.",
+    "When woken with a finished handback, read Next step: if further work remains for another member or a later stage, call delegate_to_agent for that next stage (or ask the user); do not stop only because one specialist finished.",
     `Shell: short ${commandTool} OK for work inside your role. Prefer delegate_to_agent when another room member's expertise fits better.`,
   ].join("\n");
 }

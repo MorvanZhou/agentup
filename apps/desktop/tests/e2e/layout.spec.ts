@@ -35,8 +35,10 @@ test("窄窗口里会话留在首屏，页面不横向溢出", async ({ page }) 
   await expect(page.getByRole("heading", { name: "通用" })).toBeVisible();
   await page.getByRole("button", { name: "AI 服务配置" }).click();
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
-  // 默认落到本地 Agent App：级联两列 + SDK 主钮（API 表单的保存/更新要先切接入方式）
-  await expect(page.getByRole("button", { name: "接入方式" })).toBeVisible();
+  // 默认入口漏斗两卡；点本地后才见接入商 + SDK 主钮
+  await expect(page.getByRole("button", { name: /接入本地 Agent 应用/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /接入 API 服务/ })).toBeVisible();
+  await page.getByRole("button", { name: /接入本地 Agent 应用/ }).click();
   await expect(page.getByRole("button", { name: "接入商" })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();
   await expect(messagesNav(page)).toBeVisible();
@@ -73,7 +75,8 @@ test("可拖拽调整会话列表与工作空间宽度", async ({ page }) => {
   expect(mainAfter!.x).toBeGreaterThan((mainBefore!.x ?? 0) + 40);
 
   await page.getByRole("button", { name: "工作空间", exact: true }).click();
-  const threadHandle = page.getByRole("button", { name: "调整对话区宽度" });
+  // 右栏统一把手：工作区 / 设置 / 预览共用「调整侧栏宽度」
+  const threadHandle = page.getByRole("button", { name: "调整侧栏宽度" });
   const workspace = page.locator("aside").filter({
     has: page.getByRole("navigation", { name: "工作空间分区" }),
   });

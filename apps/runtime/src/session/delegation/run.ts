@@ -27,10 +27,12 @@ import type { PromptSession } from "../turn/types.js";
 export type DelegationRunOutcome = {
   text: string;
   error?: string;
-  /** 是否调用过 deliver_artifacts（含 paths: []）。 */
+  /** 是否调用过 deliver_artifacts / complete_group_task（含 paths: []）。 */
   artifactsConfirmed: boolean;
   /** 确认后的附件；未确认时为空数组。 */
   artifacts: StagedArtifact[];
+  /** 群 complete_group_task 的 next_step；一对一或未确认时缺省。 */
+  nextStep?: string;
 };
 
 /** 委托隔离子会话目录（相对 visit.root）。 */
@@ -126,9 +128,15 @@ export async function runDelegatedPrompt(
     else signal.addEventListener("abort", onAbort, { once: true });
   }
 
-  const artifactsResult = (): Pick<DelegationRunOutcome, "artifactsConfirmed" | "artifacts"> => ({
+  const artifactsResult = (): Pick<
+    DelegationRunOutcome,
+    "artifactsConfirmed" | "artifacts" | "nextStep"
+  > => ({
     artifactsConfirmed: deliverState.confirmed,
     artifacts: deliverState.confirmed ? [...deliverState.staged] : [],
+    ...(deliverState.confirmed && typeof deliverState.nextStep === "string"
+      ? { nextStep: deliverState.nextStep }
+      : {}),
   });
 
   let releaseSteer: (() => void) | undefined;

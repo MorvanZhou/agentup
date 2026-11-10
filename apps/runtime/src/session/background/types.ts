@@ -30,6 +30,13 @@ export type BackgroundJob = {
   error?: string;
   seen: boolean;
   notified: boolean;
+  /** 子进程 pid（spawn 后写入；退出后可保留末次值）。 */
+  pid?: number | null;
+  /**
+   * 人侧预览等：终态不 wake Agent / 不投递群结果文案。
+   * 避免端口冲突等失败刷「后台任务失败」。
+   */
+  silent?: boolean;
 };
 
 export const MAX_BACKGROUND_CONCURRENT = 4;

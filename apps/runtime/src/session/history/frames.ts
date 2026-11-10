@@ -16,6 +16,11 @@ import {
   type AgentUpDeliverablesData,
 } from "./deliverables.js";
 import {
+  AGENTUP_PREVIEW_CUSTOM_TYPE,
+  parsePreviewEntryData,
+  type AgentUpPreviewData,
+} from "../tools/present-preview.js";
+import {
   AGENTUP_REPLY_MODEL_CUSTOM_TYPE,
   parseReplyModelEntryData,
   type AgentUpReplyModel,
@@ -92,6 +97,7 @@ export class PiUIMessageProjector {
         ...this.summaryFromEntry(event.entry),
         ...this.artifactsFromEntry(event.entry),
         ...this.deliverablesFromEntry(event.entry),
+        ...this.previewFromEntry(event.entry),
         ...this.replyModelFromEntry(event.entry),
       ];
     }
@@ -289,6 +295,13 @@ export class PiUIMessageProjector {
     return this.emitDeliverables(parsed);
   }
 
+  private previewFromEntry(entry: SessionEntry): UIMessageChunk[] {
+    if (entry.type !== "custom" || entry.customType !== AGENTUP_PREVIEW_CUSTOM_TYPE) return [];
+    const parsed = parsePreviewEntryData(entry.data);
+    if (!parsed || !this.started) return [];
+    return this.emitPreview(parsed);
+  }
+
   private replyModelFromEntry(entry: SessionEntry): UIMessageChunk[] {
     if (entry.type !== "custom" || entry.customType !== AGENTUP_REPLY_MODEL_CUSTOM_TYPE) return [];
     const parsed = parseReplyModelEntryData(entry.data);
@@ -316,6 +329,15 @@ export class PiUIMessageProjector {
       {
         type: "message-metadata",
         messageMetadata: { custom: { agentUpDeliverables: deliverables } },
+      },
+    ];
+  }
+
+  private emitPreview(preview: AgentUpPreviewData): UIMessageChunk[] {
+    return [
+      {
+        type: "message-metadata",
+        messageMetadata: { custom: { agentUpPreview: preview } },
       },
     ];
   }

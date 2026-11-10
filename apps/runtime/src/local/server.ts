@@ -6,6 +6,7 @@ import { type LocalConfig, type ModelConfig } from "../config/load.js";
 import { loadModelConfig } from "../config/provider/index.js";
 import { Runtime, type Visit } from "../package/sync.js";
 import { BackgroundJobs } from "../session/background/index.js";
+import { PreviewService } from "../session/preview/service.js";
 import { ApprovalBroker } from "../session/hitl/approval/index.js";
 import { ShellHangBroker } from "../session/hitl/shell-hang/index.js";
 import { DelegationService, type DelegationTask } from "../session/delegation/index.js";
@@ -80,6 +81,7 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
       groups.acceptBackground(job.userId, job.groupId, body);
     },
   });
+  const preview = new PreviewService(backgroundJobs);
   const groupTurns = new GroupTurns(
     groups,
     createHolderTurnDriver({
@@ -133,6 +135,7 @@ export function startLocalServer(config: LocalConfig, options: LocalServerOption
     groups,
     groupTurns,
     backgroundJobs,
+    preview,
     readModel,
   });
   const server = createAdaptorServer({ fetch: app.fetch }) as Server;

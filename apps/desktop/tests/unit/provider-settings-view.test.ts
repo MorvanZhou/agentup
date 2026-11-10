@@ -138,17 +138,13 @@ function optionTexts(host: HTMLElement): string[] {
 
 /**
  * 「启用服务」区也有供应商筛选下拉（同样 aria-haspopup）。
- * 级联：左「接入方式」· 右「接入商」；按标签找，避免点到筛选器。
+ * 接入商下拉按标签找，避免点到筛选器。
  */
 function labeledTrigger(host: HTMLElement, labelText: string): HTMLButtonElement {
   const label = [...host.querySelectorAll("span")].find((el) => (el.textContent ?? "").trim() === labelText);
   const trigger = label?.parentElement?.querySelector<HTMLButtonElement>("button[aria-haspopup='true']");
   if (!trigger) throw new Error(`缺少「${labelText}」下拉`);
   return trigger;
-}
-
-function accessTrigger(host: HTMLElement): HTMLButtonElement {
-  return labeledTrigger(host, "接入方式");
 }
 
 function vendorTrigger(host: HTMLElement): HTMLButtonElement {
@@ -170,11 +166,37 @@ function buttonByText(host: HTMLElement, text: string): HTMLButtonElement | null
   );
 }
 
-it("级联下拉默认 Agent App，本地 App 的模型出现在「启用服务」里", async () => {
+/** 入口卡文案含多行，用 includes 找 */
+function gateButton(host: HTMLElement, title: string): HTMLButtonElement {
+  const button = [...host.querySelectorAll("button")].find((el) =>
+    (el.textContent ?? "").includes(title),
+  );
+  if (!button) throw new Error(`缺少入口「${title}」`);
+  return button;
+}
+
+/** 点入口卡进入接入商下拉 + 配置 */
+async function enterAccessGate(
+  host: HTMLElement,
+  mode: "接入本地 Agent 应用" | "接入 API 服务",
+): Promise<void> {
+  gateButton(host, mode).click();
+  await nextTick();
+  await vi.waitFor(() => expect(vendorTrigger(host)).toBeTruthy());
+}
+
+it("入口漏斗：先选本地/API，再出现接入商；启用列表仍在下方", async () => {
   const host = mountProviderSettings(payload());
   await waitLoaded(host);
 
-  // 本地 App 的模型行 + 开关；服务商名改挂 title，行内只留模型名
+  // 首屏：入口两卡 + 启用区；未点入口前没有接入商下拉
+  expect(host.textContent).toContain("选择接入");
+  expect(host.textContent).toContain("接入本地 Agent 应用");
+  expect(host.textContent).toContain("接入 API 服务");
+  expect(host.textContent).toContain("启用服务");
+  expect(() => vendorTrigger(host)).toThrow(/缺少「接入商」下拉/);
+
+  // 本地 App 的模型行仍在启用区（与入口漏斗无关）
   expect(host.textContent).toContain("Claude-Sonnet-5");
   const modelRow = [...host.querySelectorAll("li")].find((el) =>
     (el.textContent ?? "").includes("Claude-Sonnet-5"),
@@ -182,35 +204,24 @@ it("级联下拉默认 Agent App，本地 App 的模型出现在「启用服务�
   expect(modelRow?.getAttribute("title")).toContain("CodeBuddy");
   expect(host.querySelectorAll('[role="switch"]').length).toBeGreaterThan(0);
 
-  // 左：两种接入方式；默认本地 Agent App
-  expect(accessTrigger(host).textContent).toContain("本地 Agent App 接入");
-  accessTrigger(host).click();
-  await nextTick();
-  const accessLabels = optionTexts(host);
-  expect(accessLabels.some((text) => text.includes("本地 Agent App 接入"))).toBe(true);
-  expect(accessLabels.some((text) => text.includes("API Key 接入"))).toBe(true);
-
-  // 关左开右：当前组只有本地 App 接入商
-  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-  await nextTick();
+  // 进本地入口：接入商只有本地 App
+  await enterAccessGate(host, "接入本地 Agent 应用");
   vendorTrigger(host).click();
   await nextTick();
   const sdkVendors = optionTexts(host);
   expect(sdkVendors.some((text) => text.includes("Workbuddy / CodeBuddy"))).toBe(true);
   expect(sdkVendors.some((text) => text.includes("OpenAI"))).toBe(false);
 
-  // 切到 API Key 后，右侧换成 API 接入商
+  // 更换 → API：接入商换成 API 目录
   document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   await nextTick();
-  accessTrigger(host).click();
-  await nextTick();
-  const apiOption = [...host.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((el) =>
-    (el.textContent ?? "").includes("API Key 接入"),
+  const change = [...host.querySelectorAll("button")].find(
+    (el) => (el.textContent ?? "").trim() === "返回",
   );
-  if (!apiOption) throw new Error("缺少 API Key 接入选项");
-  apiOption.click();
+  if (!change) throw new Error("缺少返回");
+  change.click();
   await nextTick();
-  await nextTick();
+  await enterAccessGate(host, "接入 API 服务");
   vendorTrigger(host).click();
   await nextTick();
   const apiVendors = optionTexts(host);
@@ -272,6 +283,7 @@ it("本地 App 的模型行显示 credit 倍率，没报倍率就不显示", asy
 it("已登录的本地 App 在卡片上显示账号，没登录就不显示", async () => {
   const host = mountProviderSettings(payload({ sdkOnly: true, sdkAccount: "morvanzhou" }));
   await waitLoaded(host);
+  await enterAccessGate(host, "接入本地 Agent 应用");
   expect(host.textContent).toContain("账号 morvanzhou");
   // 可用后收掉待接入排雷，只留短信任条
   expect(host.textContent).toContain("信任模式已开启");
@@ -280,14 +292,16 @@ it("已登录的本地 App 在卡片上显示账号，没登录就不显示", as
   // 没登录（account_label 为 null）不该留一个空的「账号」标签
   const plain = mountProviderSettings(payload({ sdkOnly: true, sdkAccount: null }));
   await waitLoaded(plain);
+  await enterAccessGate(plain, "接入本地 Agent 应用");
   expect(plain.textContent).not.toContain("账号");
   vi.restoreAllMocks();
 });
 
 it("已登录的本地 App 能登出：按钮打到 runtime 登出口，状态回落后按钮消失", async () => {
-  // sdkOnly：默认选中项就是本地 App，卡片直接渲染，不必在用例里切分支
+  // sdkOnly：进本地入口后卡片直接渲染，不必在用例里切分支
   const host = mountProviderSettings(payload({ sdkOnly: true }));
   await waitLoaded(host);
+  await enterAccessGate(host, "接入本地 Agent 应用");
   // 登出只清登录态：runtime 回一份 not_logged_in 的设置
   const spy = vi.spyOn(DesktopApi.prototype, "logoutAgentSdk");
   spy.mockResolvedValue(readProviderSettings(payload({ sdkOnly: true, sdkState: "not_logged_in" })));
@@ -305,6 +319,7 @@ it("已登录的本地 App 能登出：按钮打到 runtime 登出口，状态�
 it("没登录的本地 App 不显示登出", async () => {
   const host = mountProviderSettings(payload({ sdkOnly: true, sdkState: "not_logged_in" }));
   await waitLoaded(host);
+  await enterAccessGate(host, "接入本地 Agent 应用");
   // 卡片已渲染（移除接入在），但没登录就没有登出可言
   expect(buttonByText(host, "移除接入")).not.toBeNull();
   expect(buttonByText(host, "登出")).toBeNull();
@@ -314,9 +329,8 @@ it("没登录的本地 App 不显示登出", async () => {
 it("还没装本地 App 时接入商下拉里仍可选它，列表保持空态", async () => {
   const host = mountProviderSettings(payload({ sdkReady: false }));
   await waitLoaded(host);
+  await enterAccessGate(host, "接入本地 Agent 应用");
 
-  // 默认接入方式是 Agent App，右侧列本地接入商
-  expect(accessTrigger(host).textContent).toContain("本地 Agent App 接入");
   // 待接入：一句排雷 + 短信任，不叠 hint/副行
   expect(host.textContent).toContain("待接入");
   expect(host.textContent).toContain("不需要先装桌面版");

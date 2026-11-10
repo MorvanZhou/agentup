@@ -90,9 +90,15 @@ const AssistantScope = defineComponent({
     });
     return () => {
       if (!id.value) {
+        // 过程 tab 外层无 px，空态提示自己补边距
         return h(
           "p",
-          { class: "mb-0 text-sm text-muted-foreground" },
+          {
+            class:
+              props.tab === "process"
+                ? "mb-0 px-3 text-sm text-muted-foreground"
+                : "mb-0 text-sm text-muted-foreground",
+          },
           props.streaming ? t("assistRunningShort") : t("assistNoProcess"),
         );
       }
@@ -110,11 +116,27 @@ const AssistantScope = defineComponent({
 <template>
   <!-- 旁路任务：加载态与失败原因留在这一层，正文只渲染宿主所选副产物 -->
   <div class="flex min-w-0 flex-col gap-1.5" data-testid="delegation-process-panel">
-    <p v-if="taskError" class="m-0 text-xs text-destructive">{{ taskError }}</p>
-    <p v-if="loading && messages.length === 0" class="m-0 text-xs text-muted-foreground">
+    <!-- 过程 tab 外层无 px：状态行自己补边距，时间线 padding 在滚动内层 -->
+    <p
+      v-if="taskError"
+      class="m-0 text-xs text-destructive"
+      :class="tab === 'process' ? 'px-3' : undefined"
+    >
+      {{ taskError }}
+    </p>
+    <p
+      v-if="loading && messages.length === 0"
+      class="m-0 text-xs text-muted-foreground"
+      :class="tab === 'process' ? 'px-3' : undefined"
+    >
       {{ t("assistLoading") }}
     </p>
-    <p v-else-if="error && messages.length === 0" class="m-0 text-xs text-destructive" role="alert">
+    <p
+      v-else-if="error && messages.length === 0"
+      class="m-0 text-xs text-destructive"
+      :class="tab === 'process' ? 'px-3' : undefined"
+      role="alert"
+    >
       {{ error }}
     </p>
     <AuiProvider v-else :key="providerKey" :config="config" :extends="null">

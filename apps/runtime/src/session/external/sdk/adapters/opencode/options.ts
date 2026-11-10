@@ -1,5 +1,6 @@
 import type { ExternalCompactRequest, ExternalTurnRequest } from "../../contract.js";
 import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
+import { mergeExternalTurnMcpServers } from "../../mcp-servers.js";
 
 export const OPENCODE_CONTEXT_HEADER = [
   "You are running as a local OpenCode agent hosted inside AgentUp.",
@@ -43,11 +44,9 @@ export function opencodeSessionOptionsOf(input: ExternalTurnRequest): Record<str
 }
 
 export function opencodeServerConfigOf(input: ExternalTurnRequest): Record<string, unknown> {
-  const mcp: Record<string, unknown> = {};
-  if (input.mcpServer) mcp.agentup = toOpencodeRemoteMcp(input.mcpServer);
   return {
     permission: "allow",
-    mcp,
+    mcp: mergeExternalTurnMcpServers(input, toOpencodeRemoteMcp) ?? {},
   };
 }
 

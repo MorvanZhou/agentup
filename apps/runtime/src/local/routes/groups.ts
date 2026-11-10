@@ -163,8 +163,13 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
     const groupId = c.req.param("groupId");
     const templateId = text(body, "template_id");
     const modelId = text(body, "model_id");
+    const connectionId = optionalText(body, "connection_id");
     if (!templateId || !modelId) throw new LocalError("模型无效", 400);
-    const ref = tryEnabledModelRef(deps.config.userDataRoot, { templateId, modelId });
+    const ref = tryEnabledModelRef(deps.config.userDataRoot, {
+      templateId,
+      modelId,
+      ...(connectionId ? { connectionId } : {}),
+    });
     if (!ref) throw new LocalError("模型未启用", 400);
     try {
       const room = deps.groups.setModel(userId, groupId, ref);

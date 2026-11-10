@@ -15,6 +15,7 @@ import {
   rememberSkipClearContextConfirm,
   shouldSkipClearContextConfirm,
 } from "../../../model/thread/clear-context-confirm";
+import PreviewHeaderEntry from "../shared/preview/PreviewHeaderEntry.vue";
 import ChatHeader from "../shared/ChatHeader.vue";
 
 const props = defineProps<{
@@ -92,6 +93,7 @@ function confirmClear(): void {
       <p class="m-0 truncate text-xs text-muted-foreground">{{ subtitle }}</p>
     </template>
     <template #actions>
+      <PreviewHeaderEntry />
       <button
         type="button"
         class="app-no-drag inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border-0 bg-transparent px-3 text-sm font-medium text-foreground outline-none transition duration-200 hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-accent/40"

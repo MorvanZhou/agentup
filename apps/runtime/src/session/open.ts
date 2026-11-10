@@ -4,6 +4,7 @@ import type { ModelConfig } from "../config/load.js";
 import { getProviderTemplate } from "../config/provider-templates.js";
 import type { Visit } from "../package/sync.js";
 import { delegationTools } from "./external/mcp/delegation-tools.js";
+import { presentPreviewTools } from "./external/mcp/preview-tools.js";
 import type { McpTool } from "./external/mcp/server.js";
 import type { BackgroundJobs } from "./background/index.js";
 import { openProfiledSession } from "./core/session-factory.js";
@@ -66,8 +67,15 @@ export async function openSession(
     conversation,
     sessionDir: scope.sessionDir,
     services: { delegation: Boolean(delegation), background: Boolean(backgroundJobs) },
-    // 外部 agent：父会话 MCP 挂委托协调；产物确认由 session-factory 按委托 profile 另挂。技能走方案 D。
-    externalMcp: ({ cwd, groupId }) => externalMcpTools({ visit, cwd, delegation, groupId }),
+    // 外部 agent：父会话 MCP 挂 present_preview + 委托协调；产物确认由 session-factory 按委托 profile 另挂。技能走方案 D。
+    externalMcp: ({ cwd, groupId, workspaceRoot }) =>
+      externalMcpTools({
+        visit,
+        cwd,
+        workspaceRoot: workspaceRoot ?? cwd,
+        delegation,
+        groupId,
+      }),
     ...(groupRosterPrompt ? { groupRosterPrompt } : {}),
     parentExtensions: ({ cwd, groupId }) => ({
       afterArtifacts: delegation
@@ -109,22 +117,29 @@ export async function openSession(
 }
 
 /**
- * 外部 agent 的 MCP 工具集（委托协调）。
+ * 外部 agent 的 MCP 工具集：人侧 preview 登记 + 委托协调。
  * 技能改走方案 D：投影到厂商目录（如 `.codebuddy/skills`），由 SDK 自带工具读取；此处不再挂 skill_*。
+ * 委托子会话不传 externalMcp → 不挂本表（围栏）。
  */
 function externalMcpTools(input: {
   visit: Visit;
   /** 保留与开会话签名一致；技能投影不经 MCP。 */
   cwd: string;
+  /** Recipe 写入根：群共享 workspace，否则 visit cwd。 */
+  workspaceRoot: string;
   delegation?: DelegationService;
   groupId?: string;
 }): McpTool[] {
   void input.cwd;
-  if (!input.delegation) return [];
-  return delegationTools({
-    service: input.delegation,
-    userId: input.visit.userId,
-    agentId: input.visit.agentId,
-    ...(input.groupId ? { groupId: input.groupId } : {}),
-  });
+  const tools: McpTool[] = [...presentPreviewTools({ workspaceRoot: input.workspaceRoot })];
+  if (!input.delegation) return tools;
+  tools.push(
+    ...delegationTools({
+      service: input.delegation,
+      userId: input.visit.userId,
+      agentId: input.visit.agentId,
+      ...(input.groupId ? { groupId: input.groupId } : {}),
+    }),
+  );
+  return tools;
 }

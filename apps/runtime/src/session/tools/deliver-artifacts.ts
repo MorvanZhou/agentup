@@ -24,6 +24,8 @@ export type StagedArtifact = {
 export type DeliverArtifactsState = {
   confirmed: boolean;
   staged: StagedArtifact[];
+  /** 群 `complete_group_task` 写入；一对一 `deliver_artifacts` 不用。 */
+  nextStep?: string;
 };
 
 const DeliverParams = Type.Object({

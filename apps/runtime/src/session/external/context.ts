@@ -168,11 +168,12 @@ export function composeSystemAppend(input: SystemAppendInput): string {
   } else {
     sections.push(formatExternalCollaborationPrompt());
   }
+  sections.push(formatExternalPreviewPrompt());
   sections.push(
     [
       "## Boundaries",
       "- You do not have AgentUp's built-in read / write / bash tools; use only your own tools for files and commands.",
-      "- If this turn's MCP lists AgentUp delegation tools, you may call them as described; do not invent capabilities that are not listed. Skills do not go through MCP.",
+      "- If this turn's MCP lists AgentUp tools (preview / delegation), you may call them as described; do not invent capabilities that are not listed. Skills do not go through MCP.",
       "- Writes and execution require user approval first; if refused, pick another approach — do not keep retrying.",
       "- Keep artifacts in the session working directory; do not write outside the list above.",
     ].join("\n"),
@@ -192,6 +193,22 @@ export function formatExternalEnvironmentPrompt(
     `- Arch: ${env.arch}`,
     `- OS Version: ${env.osVersion}`,
     `- Working directory: ${cwd.replace(/\\/g, "/")}`,
+  ].join("\n");
+}
+
+/**
+ * 人侧 Launch Recipe：SDK 起本地服务后登记，供 Desktop 内嵌预览。
+ * 不写 Pi `bg_run` / 裸 `present_preview`——起服用厂商 shell，登记走 MCP 全名。
+ */
+export function formatExternalPreviewPrompt(): string {
+  return [
+    "## AgentUp Preview",
+    "",
+    "After you start a local web server the user should see in the app, call `mcp__agentup__present_preview` with a short title, the localhost `preview_url`, and the shell command to restart that server.",
+    "Static ARTIFACT HTML/Markdown/images use the file preview UI — do not call this tool for those.",
+    "Browser automation uses platform Playwright MCP (`mcp__playwright__browser_*`), not this tool — do not invent a local Playwright/Bash harness when those tools are available.",
+    "If Playwright tools are not listed, load/search the platform `playwright` MCP first; do not invent builtin `browser_*` tools.",
+    "If `mcp__agentup__present_preview` is not listed this turn, do not invent it.",
   ].join("\n");
 }
 

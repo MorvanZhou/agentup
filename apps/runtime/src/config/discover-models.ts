@@ -1,4 +1,5 @@
 import { ConfigError } from "./load.js";
+import { toOpenAiCompatRoot } from "./openai-compat-url.js";
 import { MODEL_CATALOG_UNAVAILABLE } from "./provider/model-list-policy.js";
 import type { ProviderTemplateKind } from "./provider-templates.js";
 
@@ -10,12 +11,18 @@ export function supportsModelDiscovery(kind: ProviderTemplateKind): boolean {
   return kind === "ollama" || kind === "custom-openai" || kind === "volcengine-ark";
 }
 
+/** Ollama / 自定义兼容端点允许同一模板挂多条连接（不同 Base URL）。 */
+export function allowsMultipleConnections(kind: ProviderTemplateKind): boolean {
+  return kind === "ollama" || kind === "custom-openai";
+}
+
 export async function discoverRemoteModels(input: {
   baseUrl: string;
   apiKey?: string;
   kind: ProviderTemplateKind;
 }): Promise<string[]> {
-  const base = input.baseUrl.replace(/\/+$/, "");
+  // 用户可能贴 …/v1/chat/completions；发现时改写成 …/v1/models
+  const base = toOpenAiCompatRoot(input.baseUrl);
   if (!base) throw new ConfigError("服务地址无效");
 
   const headers: Record<string, string> = { Accept: "application/json" };

@@ -63,7 +63,12 @@ function usePaneWidth(options: {
     if (!dragging) return;
     dragging = false;
     container = null;
-    document.body.classList.remove("select-none", "cursor-col-resize");
+    // 拖拽结束：恢复 iframe 指针（预览区否则会吞 pointerup）
+    document.body.classList.remove(
+      "select-none",
+      "cursor-col-resize",
+      "agentup-pane-dragging",
+    );
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", stopDrag);
     window.removeEventListener("pointercancel", stopDrag);
@@ -76,7 +81,11 @@ function usePaneWidth(options: {
     dragging = true;
     edge = dragEdge;
     container = host;
-    document.body.classList.add("select-none", "cursor-col-resize");
+    document.body.classList.add(
+      "select-none",
+      "cursor-col-resize",
+      "agentup-pane-dragging",
+    );
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", stopDrag);
     window.addEventListener("pointercancel", stopDrag);

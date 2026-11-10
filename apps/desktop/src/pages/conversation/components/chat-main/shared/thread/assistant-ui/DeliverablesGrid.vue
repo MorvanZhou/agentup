@@ -1,29 +1,31 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { ChevronRightIcon } from "@lucide/vue";
 
 import HtmlPreview from "../../../../../../../shared/components/preview/HtmlPreview.vue";
 import ImagePreview from "../../../../../../../shared/components/preview/ImagePreview.vue";
 import MarkdownPreview from "../../../../../../../shared/components/preview/MarkdownPreview.vue";
+import AppDialog from "../../../../../../../shared/components/AppDialog.vue";
 import { useDesktop } from "../../../../../../../app/desktop";
 import { DesktopApi } from "../../../../../../../shared/api/runtime";
-import { t } from "../../../../../../../shared/model/ui/ui-locale";
+import { t, tf } from "../../../../../../../shared/model/ui/ui-locale";
 import { usePreviewWorkspaceFile } from "../../../../../composables/usePreviewWorkspaceFile";
 import { useRevealWorkspaceFile } from "../../../../../composables/useRevealWorkspaceFile";
 import {
   isImageAttachmentPath,
   loadAttachmentImagePreview,
 } from "../../../../../model/composer/attachment-image-preview";
-import { middleEllipsisFileName } from "../../../../../model/composer/attachment-ref";
-import { deliverableFileIcon } from "../../../../../model/message/deliverable-icon";
 import {
-  deliverableFileName,
   type AgentUpDeliverable,
   type AgentUpDeliverables,
 } from "../../../../../model/message/message-deliverables";
 import { injectChatSurface } from "../../../../../model/thread/chat-surface";
 import { injectThreadAgentId } from "../../../../../model/thread/thread-agent-id";
 import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
-import { formatBytes } from "../../../../../model/workspace/workspace-path";
+import DeliverableFileCard from "./DeliverableFileCard.vue";
+
+/** 气泡内先露前 N 个，其余进「查看更多」弹窗。 */
+const PREVIEW_LIMIT = 4;
 
 const props = defineProps<{
   deliverables: AgentUpDeliverables;
@@ -55,8 +57,13 @@ const previews = ref(new Map<string, string>());
 /** metadata 缺 size 时从工作区补；失败记入 sizeFailed，不再重试。 */
 const sizes = ref(new Map<string, number>());
 const sizeFailed = ref(new Set<string>());
+/** 查看更多：弹窗 grid 展示全部交付。 */
+const moreOpen = ref(false);
 
 const files = computed(() => props.deliverables.files);
+const visibleFiles = computed(() => files.value.slice(0, PREVIEW_LIMIT));
+const remainingCount = computed(() => Math.max(0, files.value.length - PREVIEW_LIMIT));
+const hasMore = computed(() => remainingCount.value > 0);
 
 watch(
   files,
@@ -106,10 +113,6 @@ watch(
   { immediate: true },
 );
 
-function displayName(file: AgentUpDeliverable): string {
-  return middleEllipsisFileName(deliverableFileName(file.path), 22);
-}
-
 /** metadata.size 优先，否则用工作区回填。 */
 function resolvedSize(file: AgentUpDeliverable): number | undefined {
   if (typeof file.size === "number" && Number.isFinite(file.size) && file.size >= 0) {
@@ -137,7 +140,7 @@ function revealMarkdown(): void {
 </script>
 
 <template>
-  <!-- 收口交付：矩形卡片网格（工具栏下方） -->
+  <!-- 收口交付：矩形卡片网格（工具栏下方）；多则先露前 4，其余进弹窗 -->
   <div
     v-if="files.length > 0"
     class="mt-2 w-full min-w-0 select-none"
@@ -146,45 +149,48 @@ function revealMarkdown(): void {
     :aria-label="t('msgDeliverables')"
   >
     <ul class="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-      <li v-for="file in files" :key="file.path" class="min-w-0">
-        <button
-          type="button"
-          class="flex w-full min-w-0 items-center gap-2.5 rounded-lg border border-rule/80 bg-paper px-2 py-2 text-left transition duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-60"
-          :disabled="loading"
-          :title="file.path"
-          @click="onOpen(file)"
-        >
-          <!-- 左：图片缩略或类型图标 -->
-          <span
-            class="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-rule/60 bg-bubble"
-            aria-hidden="true"
-          >
-            <img
-              v-if="previews.get(file.path)"
-              :src="previews.get(file.path)"
-              alt=""
-              class="size-full object-cover"
-            />
-            <component
-              :is="deliverableFileIcon(file.path)"
-              v-else
-              class="size-5 text-muted-foreground"
-            />
-          </span>
-          <!-- 右：省略文件名 + 大小（缺 size 时现读工作区，读不到则不占行） -->
-          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span class="truncate text-xs font-medium text-foreground">{{ displayName(file) }}</span>
-            <span
-              v-if="resolvedSize(file) != null"
-              class="tabular-nums text-[11px] text-muted-foreground"
-            >
-              {{ formatBytes(resolvedSize(file)!) }}
-            </span>
-          </span>
-        </button>
+      <li v-for="file in visibleFiles" :key="file.path" class="min-w-0">
+        <DeliverableFileCard
+          :file="file"
+          :preview-url="previews.get(file.path)"
+          :size="resolvedSize(file)"
+          :loading="loading"
+          @open="onOpen"
+        />
       </li>
     </ul>
+
+    <!-- 超出预览上限：打开弹窗看全部 -->
+    <button
+      v-if="hasMore"
+      type="button"
+      class="mt-2 inline-flex min-h-8 items-center gap-1 rounded-lg px-1 text-xs font-medium text-muted-foreground transition duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent/30"
+      @click="moreOpen = true"
+    >
+      {{ tf("msgDeliverablesViewMore", { count: remainingCount }) }}
+      <ChevronRightIcon class="size-3.5" aria-hidden="true" />
+    </button>
   </div>
+
+  <!-- 全部交付：宽弹窗，一排多列 -->
+  <AppDialog
+    :open="moreOpen"
+    :title="t('msgDeliverables')"
+    size="xl"
+    @update:open="moreOpen = $event"
+  >
+    <ul class="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+      <li v-for="file in files" :key="file.path" class="min-w-0">
+        <DeliverableFileCard
+          :file="file"
+          :preview-url="previews.get(file.path)"
+          :size="resolvedSize(file)"
+          :loading="loading"
+          @open="onOpen"
+        />
+      </li>
+    </ul>
+  </AppDialog>
 
   <ImagePreview
     v-model:open="imageOpen"

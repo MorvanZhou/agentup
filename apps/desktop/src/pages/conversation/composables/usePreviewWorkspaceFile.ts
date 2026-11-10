@@ -12,6 +12,10 @@ import {
   isHtmlWorkspacePath,
   isMarkdownWorkspacePath,
 } from "../model/workspace/workspace-path";
+import {
+  workspacePackagePathCandidates,
+  type WorkspacePackageRoot,
+} from "../model/workspace/workspace-path-resolve";
 import { useOpenWorkspaceFile } from "./useOpenWorkspaceFile";
 
 /**
@@ -59,6 +63,76 @@ export function usePreviewWorkspaceFile(options?: { api?: DesktopApi; agentId?: 
     return { token, userId };
   }
 
+  function isNotFound(caught: unknown): boolean {
+    return (
+      caught instanceof DesktopApiError &&
+      (caught.status === 404 || /找不到文件/.test(caught.message))
+    );
+  }
+
+  /** 列出 WORK/ARTIFACT 下一层交付目录，供包内相对路径回落。 */
+  async function listPackageRoots(
+    token: string,
+    userId: string,
+  ): Promise<WorkspacePackageRoot[]> {
+    const roots: WorkspacePackageRoot[] = [];
+    // ARTIFACT 优先：交付镜像通常更完整
+    for (const root of ["ARTIFACT", "WORK"] as const) {
+      try {
+        const listed = await api.listWorkspace(
+          token,
+          userId,
+          agentId.value,
+          personal.value,
+          root,
+        );
+        const children = listed.entries
+          .filter((entry) => entry.kind === "dir")
+          .map((entry) => entry.name);
+        if (children.length > 0) roots.push({ root, children });
+      } catch {
+        // 根目录不存在时跳过
+      }
+    }
+    return roots;
+  }
+
+  async function readRelativeWithFallback(
+    token: string,
+    userId: string,
+    path: string,
+  ): Promise<{ file: Awaited<ReturnType<DesktopApi["readWorkspaceFile"]>>; path: string }> {
+    try {
+      const file = await api.readWorkspaceFile(
+        token,
+        userId,
+        agentId.value,
+        personal.value,
+        path,
+      );
+      return { file, path: file.path || path };
+    } catch (caught) {
+      if (!isNotFound(caught)) throw caught;
+      const candidates = workspacePackagePathCandidates(path, await listPackageRoots(token, userId));
+      for (const candidate of candidates) {
+        try {
+          const file = await api.readWorkspaceFile(
+            token,
+            userId,
+            agentId.value,
+            personal.value,
+            candidate,
+          );
+          return { file, path: file.path || candidate };
+        } catch (inner) {
+          if (isNotFound(inner)) continue;
+          throw inner;
+        }
+      }
+      throw caught;
+    }
+  }
+
   async function previewWorkspaceFile(relativePath: string): Promise<void> {
     const path = relativePath.replace(/^@/, "").trim();
     if (!path || loading.value) return;
@@ -68,15 +142,12 @@ export function usePreviewWorkspaceFile(options?: { api?: DesktopApi; agentId?: 
 
     loading.value = true;
     try {
-      const file = await api.readWorkspaceFile(
+      // 消息里常写 css/style.css（包内相对）；根下没有则回落 WORK/ARTIFACT/from-…
+      const { file, path: resolvedPath } = await readRelativeWithFallback(
         creds.token,
         creds.userId,
-        agentId.value,
-        personal.value,
         path,
       );
-
-      const resolvedPath = file.path || path;
 
       if (file.kind === "image") {
         imageSrc.value = `data:${file.mediaType};base64,${file.dataBase64}`;
@@ -106,7 +177,7 @@ export function usePreviewWorkspaceFile(options?: { api?: DesktopApi; agentId?: 
         }
       }
 
-      await openWorkspaceFile(path);
+      await openWorkspaceFile(resolvedPath);
     } catch (caught) {
       if (caught instanceof DesktopApiError) {
         showToast(caught.message, "error");

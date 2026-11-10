@@ -352,7 +352,7 @@ function readPublished(payload: Record<string, unknown>): PublishedAgent {
   };
 }
 
-/** 更新名片层（含规则 / 可选头像），不换运行包。 */
+/** 更新名片层（含规则 / 可选头像）；有变更则升版，不换能力对象。 */
 export async function updateCard(
   http: RuntimeHttp,
   token: string,

@@ -60,8 +60,8 @@ it("inherits previous session model when starting a new conversation", () => {
   const newest = files
     .map((name) => path.join(sessionDir, name))
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0]!;
-  expect(readSessionModelRef(newest)).toEqual({ templateId: "ollama", modelId: "model-b" });
-  expect(peekVisitModelRef(root, sessionDir)).toEqual({ templateId: "ollama", modelId: "model-b" });
+  expect(readSessionModelRef(newest)).toMatchObject({ templateId: "ollama", modelId: "model-b" });
+  expect(peekVisitModelRef(root, sessionDir)).toMatchObject({ templateId: "ollama", modelId: "model-b" });
 });
 
 it("falls back to first enabled when no session model exists", () => {
@@ -70,12 +70,12 @@ it("falls back to first enabled when no session model exists", () => {
   const cwd = path.join(root, "cwd");
   const sessionDir = path.join(root, "sessions");
   fs.mkdirSync(sessionDir, { recursive: true });
-  expect(peekVisitModelRef(root, sessionDir)).toEqual({
+  expect(peekVisitModelRef(root, sessionDir)).toMatchObject({
     templateId: "ollama",
     modelId: "model-a",
   });
   const resolved = resolveVisitModelRef(root, cwd, sessionDir);
-  expect(resolved.ref).toEqual({ templateId: "ollama", modelId: "model-a" });
+  expect(resolved.ref).toMatchObject({ templateId: "ollama", modelId: "model-a" });
 });
 
 it("setVisitSessionModel writes sidecar for the current session", () => {
@@ -84,7 +84,7 @@ it("setVisitSessionModel writes sidecar for the current session", () => {
   const cwd = path.join(root, "cwd");
   const sessionDir = path.join(root, "sessions");
   setVisitSessionModel(root, cwd, sessionDir, { templateId: "ollama", modelId: "model-b" });
-  expect(peekVisitModelRef(root, sessionDir)).toEqual({
+  expect(peekVisitModelRef(root, sessionDir)).toMatchObject({
     templateId: "ollama",
     modelId: "model-b",
   });
@@ -115,20 +115,20 @@ it("skips stale sidecar after provider is deleted and falls back to enabled mode
   fs.writeFileSync(sessionFile, "");
   writeSessionModelRef(sessionFile, { templateId: "deepseek", modelId: gone!.modelId });
 
-  expect(peekVisitModelRef(root, sessionDir)).toEqual({
+  expect(peekVisitModelRef(root, sessionDir)).toMatchObject({
     templateId: "deepseek",
     modelId: gone!.modelId,
   });
 
   deleteProviderConnection(root, "deepseek");
 
-  expect(peekVisitModelRef(root, sessionDir)).toEqual({
+  expect(peekVisitModelRef(root, sessionDir)).toMatchObject({
     templateId: "ollama",
     modelId: "keep-me",
   });
   const resolved = resolveVisitModelRef(root, cwd, sessionDir);
-  expect(resolved.ref).toEqual({ templateId: "ollama", modelId: "keep-me" });
-  expect(readSessionModelRef(sessionFile)).toEqual({
+  expect(resolved.ref).toMatchObject({ templateId: "ollama", modelId: "keep-me" });
+  expect(readSessionModelRef(sessionFile)).toMatchObject({
     templateId: "ollama",
     modelId: "keep-me",
   });
@@ -167,7 +167,7 @@ it("stampNewSessionModel skips deleted provider when inheriting", () => {
   fs.utimesSync(newer, later / 1000, later / 1000);
 
   stampNewSessionModel(root, cwd, sessionDir);
-  expect(readSessionModelRef(newer)).toEqual({
+  expect(readSessionModelRef(newer)).toMatchObject({
     templateId: "ollama",
     modelId: "keep-me",
   });

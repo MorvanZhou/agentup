@@ -48,3 +48,63 @@ it("omits environment when the user has not chosen a site yet", () => {
 
   expect(options.environment).toBeUndefined();
 });
+
+it("把平台 Playwright 与 agentup MCP 一并写入 mcpServers（勿只挂 agentup）", () => {
+  const root = tempRoot();
+  setAgentSdkState(root, "codebuddy-sdk", "ready", { installedVersion: "0.3.295" });
+  const playwright = {
+    command: "npx",
+    args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+    env: { PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers" },
+    exposure: "deferred" as const,
+  };
+
+  const options = codebuddyOptionsOf({
+    prompt: "hi",
+    cwd: root,
+    additionalDirs: [],
+    systemAppend: "",
+    abortController: new AbortController(),
+    userDataRoot: root,
+    templateId: "codebuddy-sdk",
+    mcpServer: {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer t" },
+    },
+    platformMcpServers: { playwright },
+  });
+
+  expect(options.mcpServers).toEqual({
+    agentup: {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer t" },
+    },
+    playwright,
+  });
+});
+
+it("仅有平台 Playwright、无 agentup 时仍挂 mcpServers.playwright", () => {
+  const root = tempRoot();
+  setAgentSdkState(root, "codebuddy-sdk", "ready", { installedVersion: "0.3.295" });
+  const playwright = {
+    command: "npx",
+    args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+    env: { PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers" },
+    exposure: "deferred" as const,
+  };
+
+  const options = codebuddyOptionsOf({
+    prompt: "hi",
+    cwd: root,
+    additionalDirs: [],
+    systemAppend: "",
+    abortController: new AbortController(),
+    userDataRoot: root,
+    templateId: "codebuddy-sdk",
+    platformMcpServers: { playwright },
+  });
+
+  expect(options.mcpServers).toEqual({ playwright });
+});

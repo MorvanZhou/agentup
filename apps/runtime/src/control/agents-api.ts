@@ -135,7 +135,7 @@ export async function setAgentRemark(
   return recruit(payload);
 }
 
-/** 更新名片层（name / role / background / rules / 可选 avatar），不换运行包。 */
+/** 更新名片层（name / role / background / rules / 可选 avatar）；有变更则升版，不换能力对象。 */
 export async function updateAgentCard(
   backendUrl: string,
   token: string,

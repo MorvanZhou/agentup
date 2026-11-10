@@ -7,14 +7,25 @@ import type { ApprovalBroker } from "../../hitl/approval/index.js";
 import type { ShellHangBroker } from "../../hitl/shell-hang/index.js";
 import type { AskUserBroker } from "../../tools/ask-user.js";
 import type { AsyncWakeItem } from "../../wake/index.js";
+import { composeGroupHandbackSummary } from "../../group/wave.js";
 import type { DelegationProgressHub } from "../progress.js";
-import { runDelegatedPrompt } from "../run.js";
+import { runDelegatedPrompt, type DelegationRunOutcome } from "../run.js";
 import type { DelegationStore } from "../store.js";
 import type { DelegationTask } from "../types.js";
 import { deliverTaskArtifacts } from "./artifacts.js";
 import { linkAbortSignals } from "./helpers.js";
 import { afterTerminal } from "./notify.js";
 import type { DelegationSlots } from "./slots.js";
+
+/** 群任务把 complete_group_task 的 next_step 拼进交回摘要；一对一仍只用正文。 */
+function resultSummaryForTask(task: DelegationTask, outcome: DelegationRunOutcome): string {
+  if (!task.groupId) return outcome.text;
+  return composeGroupHandbackSummary({
+    text: outcome.text,
+    confirmed: outcome.artifactsConfirmed,
+    nextStep: outcome.nextStep,
+  });
+}
 
 export type ExecuteTaskContext = {
   store: DelegationStore;
@@ -109,10 +120,11 @@ export async function executeDelegationTask(
         linked.aborted ||
         (typeof outcome.error === "string" && /取消|abort|cancelled/i.test(outcome.error));
       if (cancelled) {
+        const summary = resultSummaryForTask(task, outcome);
         ctx.store.update(task.id, {
           status: "cancelled",
           error: "用户已取消",
-          resultSummary: outcome.text || undefined,
+          resultSummary: summary || undefined,
           ...artifactPatch,
         });
       } else if (outcome.error && !outcome.text) {
@@ -126,13 +138,13 @@ export async function executeDelegationTask(
         ctx.store.update(task.id, {
           status: "failed",
           error: outcome.error,
-          resultSummary: outcome.text,
+          resultSummary: resultSummaryForTask(task, outcome),
           ...artifactPatch,
         });
       } else {
         ctx.store.update(task.id, {
           status: "completed",
-          resultSummary: outcome.text,
+          resultSummary: resultSummaryForTask(task, outcome),
           error: undefined,
           ...artifactPatch,
         });

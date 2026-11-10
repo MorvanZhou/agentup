@@ -36,6 +36,8 @@ export function formatToolsUsagePrompt(
     ...(background
       ? [
           `Duration rule: if a command may take > ~20s (builds, watches, migrations, heavy scripts, installs), prefer \`bg_run\` instead of blocking ${shell}; then \`bg_status\` / \`bg_kill\`. Short commands stay on ${shell}. \`bg_run\` uses the same shell as ${shell}.`,
+          "After \`bg_run\` starts a local web server the user should see, call \`present_preview\` with the localhost URL and the restart command. Static ARTIFACT HTML/MD/images use the file preview UI instead.",
+          "To verify a running page yourself, \`tool_search\` for Playwright MCP tools — do not invent builtin browser_* tools.",
         ]
       : []),
     `Idle hang: if blocking ${shell} stops producing output but does not exit (open timers, servers, setInterval), runtime parks it and asks you to call \`shell_hang_decide\` (kill|wait|bg). Prefer kill when the useful work is done; headless scripts should clear timers or \`process.exit\`.`,

@@ -45,8 +45,11 @@ describe("renderMarkdown", () => {
     const linked = renderMarkdown("见 src/foo.ts", { linkLocalPaths: true });
     expect(linked).toContain('data-local-path="src/foo.ts"');
     expect(linked).toContain('data-local-kind="relative"');
+    expect(linked).toContain('title="src/foo.ts"');
     expect(linked).toContain("aui-md-path");
     expect(linked).toContain("aui-md-path-icon");
+    // chip 可见文案用 basename，全路径放 title / data-local-path
+    expect(linked).toMatch(/>foo\.ts<\/a>/);
     expect(linked).not.toContain('target="_blank"');
   });
 
@@ -57,6 +60,7 @@ describe("renderMarkdown", () => {
     expect(html).toContain('href="https://example.com"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('data-local-path="src/a.md"');
+    expect(html).toMatch(/>a\.md<\/a>/);
   });
 
   it("does not turn bare `file://` into a local-path chip", () => {

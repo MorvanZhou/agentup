@@ -54,7 +54,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
         kind: "ollama",
         pi_provider_id: "ollama",
         requires_api_key: false,
-        default_base_url: "http://localhost:11434/v1",
+        default_base_url: "http://localhost:11434/v1/chat/completions",
         supports_model_discovery: true,
         models: [],
       };
@@ -63,7 +63,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
           ? [
               {
                 template_id: body?.template_id ?? "ollama",
-                base_url: body?.base_url ?? "http://localhost:11434/v1",
+                base_url: body?.base_url ?? "http://localhost:11434/v1/chat/completions",
                 custom_model_ids: [modelId],
                 discovered_model_ids: [],
                 has_api_key: true,
@@ -195,7 +195,7 @@ it("recruits through the local runtime and then syncs the visit", async () => {
   await expect(
     api.upsertProviderConnection(session.token, {
       templateId: "ollama",
-      baseUrl: "http://localhost:11434/v1",
+      baseUrl: "http://localhost:11434/v1/chat/completions",
       customModelId: "qwen3:0.6b",
     }),
   ).resolves.toMatchObject({

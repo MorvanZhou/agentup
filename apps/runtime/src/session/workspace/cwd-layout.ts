@@ -7,11 +7,13 @@ export const ATTACHMENTS_DIR = "ATTACHMENTS";
 export const WORK_DIR = "WORK";
 /** 给用户的最终产物。 */
 export const ARTIFACT_DIR = "ARTIFACT";
+/** 平台 thread 级通用配置目录（含 workspace.json）；侧栏隐藏，文件工具仍可读写。 */
+export const AGENTUP_META_DIR = ".agentup";
 
 /** 工作空间根列表隐藏的 cwd 顶层名（不出现在侧栏根目录）。 */
-export const HIDDEN_WORKSPACE_TOP_LEVEL = new Set([WORK_DIR, ".pi"]);
+export const HIDDEN_WORKSPACE_TOP_LEVEL = new Set([WORK_DIR, ".pi", AGENTUP_META_DIR]);
 
-/** 路径 API 一律拒绝的顶层（系统态）；不含 WORK——聊天链化需可读可开。 */
+/** 路径 API 一律拒绝的顶层（系统态）；不含 WORK——聊天链化需可读可开。`.agentup` 可读以便调试，但不出现在根列表。 */
 export const BLOCKED_WORKSPACE_TOP_LEVEL = new Set([".pi"]);
 
 /** 确保 cwd 三分目录存在；幂等。 */

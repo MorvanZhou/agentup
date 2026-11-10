@@ -18,24 +18,18 @@ async function openProviderSettings(
   await expect(page.getByRole("heading", { name: "可用模型" })).toBeVisible();
 }
 
-/** 已有 API 连接时「连接服务商」默认折叠，先摊开再操作接入下拉。 */
-async function expandProviderConnect(page: Parameters<typeof signIn>[0]): Promise<void> {
-  const trigger = page.getByRole("button", { name: "接入方式" });
-  if (await trigger.isVisible().catch(() => false)) return;
-  await page.getByText("连接或修改服务商", { exact: true }).click();
-  await expect(trigger).toBeVisible();
-}
-
-/** 级联左列：选接入方式（API Key / 本地 Agent App）。 */
-async function selectAccessGroup(
+/** 入口漏斗：点本地 / API 大卡后才出现接入商下拉。 */
+async function enterAccessGate(
   page: Parameters<typeof signIn>[0],
-  group: "API Key 接入" | "本地 Agent App 接入",
+  mode: "sdk" | "api",
 ): Promise<void> {
-  await page.getByRole("button", { name: "接入方式" }).click();
-  await page.getByRole("option", { name: group, exact: true }).click();
+  const name =
+    mode === "sdk" ? /接入本地 Agent 应用/ : /接入 API 服务/;
+  await page.getByRole("button", { name }).click();
+  await expect(page.getByRole("button", { name: "接入商" })).toBeVisible();
 }
 
-/** 级联右列：选接入商（当前接入方式下的厂商）。 */
+/** 接入商下拉：当前入口方式下的厂商。 */
 async function selectAccessVendor(
   page: Parameters<typeof signIn>[0],
   vendor: RegExp,
@@ -44,10 +38,9 @@ async function selectAccessVendor(
   await page.getByRole("option", { name: vendor }).click();
 }
 
-/** 级联：选本地 Agent App → Workbuddy / CodeBuddy。 */
+/** 入口：本地 Agent 应用 → Workbuddy / CodeBuddy。 */
 async function selectLocalAgentApp(page: Parameters<typeof signIn>[0]): Promise<void> {
-  await expandProviderConnect(page);
-  await selectAccessGroup(page, "本地 Agent App 接入");
+  await enterAccessGate(page, "sdk");
   await selectAccessVendor(page, /Workbuddy \/ CodeBuddy/);
 }
 
@@ -55,19 +48,18 @@ async function selectLocalAgentApp(page: Parameters<typeof signIn>[0]): Promise<
  * 本地 Agent App（SDK）产品面回归：设置态机 + 信任说明 + 旧 API Key 路径仍在。
  * 细契约（canUseTool / context / skills 投影）仍靠 runtime L0；对话排队见 follow-up.spec。
  */
-test("下拉分两组：选本地 App 见信任说明，切回 API Key 仍能改 Ollama", async ({ page }) => {
+test("入口漏斗：选本地 App 见信任说明，更换后 API 仍能改 Ollama", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
   await openProviderSettings(page);
-  await expandProviderConnect(page);
 
-  // 左列是接入方式（组名作 option，不再是单列 presentation 标题）
-  await page.getByRole("button", { name: "接入方式" }).click();
-  await expect(page.getByRole("option", { name: "API Key 接入", exact: true })).toBeVisible();
-  await expect(page.getByRole("option", { name: "本地 Agent App 接入", exact: true })).toBeVisible();
-  await page.getByRole("option", { name: "本地 Agent App 接入", exact: true }).click();
+  // 默认只见两类入口，还没摊开接入商
+  await expect(page.getByRole("button", { name: /接入本地 Agent 应用/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /接入 API 服务/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "接入商" })).toHaveCount(0);
 
-  // 右列才是接入商；Codex 与 CodeBuddy 同组
+  await enterAccessGate(page, "sdk");
+  // 本地组：Codex 与 CodeBuddy 同目录
   await page.getByRole("button", { name: "接入商" }).click();
   await expect(page.getByRole("option", { name: /^Codex/ })).toBeVisible();
   await page.getByRole("option", { name: /Workbuddy \/ CodeBuddy/ }).click();
@@ -78,8 +70,9 @@ test("下拉分两组：选本地 App 见信任说明，切回 API Key 仍能改
   // 待接入只留一句排雷，不重复品牌名
   await expect(page.getByText(/不需要先装桌面版/)).toBeVisible();
 
-  // 旧路径：切到 API Key 组再选 Ollama，表单仍是地址 + 保存（不要被 SDK 卡片顶掉）
-  await selectAccessGroup(page, "API Key 接入");
+  // 旧路径：更换入口到 API，再选 Ollama；表单仍是地址 + 保存（不要被 SDK 卡片顶掉）
+  await page.getByRole("button", { name: "返回", exact: true }).click();
+  await enterAccessGate(page, "api");
   await selectAccessVendor(page, /^Ollama/);
   await expect(page.getByLabel("服务地址")).toBeVisible();
   // 已有连接时主按钮是「更新配置」（新建才是「保存连接」）
@@ -87,12 +80,11 @@ test("下拉分两组：选本地 App 见信任说明，切回 API Key 仍能改
   await expect(page.getByRole("button", { name: "开始接入" })).toHaveCount(0);
 });
 
-test("选 Codex：见信任说明与开始接入（入口在本地 App 组）", async ({ page }) => {
+test("选 Codex：见信任说明与开始接入（入口在本地 App）", async ({ page }) => {
   await installRuntime(page);
   await signIn(page);
   await openProviderSettings(page);
-  await expandProviderConnect(page);
-  await selectAccessGroup(page, "本地 Agent App 接入");
+  await enterAccessGate(page, "sdk");
   await selectAccessVendor(page, /^Codex/);
   await expect(page.getByRole("note")).toContainText("信任模式");
   await expect(page.getByRole("button", { name: "开始接入" })).toBeVisible();

@@ -6,6 +6,7 @@ import {
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
 import { compactUserPrompt } from "../../host/compact-instruction.js";
+import { mergeExternalTurnMcpServers } from "../../mcp-servers.js";
 import { startExternalMcpServer, type ExternalMcpServer } from "../../../mcp/server.js";
 import type { CodexAskUserIdBridge } from "./ask-user-bridge.js";
 
@@ -81,10 +82,10 @@ export function codexClientOptionsOf(
     askUserMcp?: { url: string; headers: Record<string, string> } | null;
   },
 ): CodexClientOptions {
-  const mcpServers: Record<string, unknown> = {};
-  if (input.mcpServer) {
-    mcpServers.agentup = toCodexHttpMcp(input.mcpServer);
-  }
+  // 平台 MCP + agentup HTTP；AskUser 另挂 agentup_ask
+  const mcpServers: Record<string, unknown> = {
+    ...(mergeExternalTurnMcpServers(input, toCodexHttpMcp) ?? {}),
+  };
   if (extras.askUserMcp) {
     mcpServers.agentup_ask = {
       url: extras.askUserMcp.url,

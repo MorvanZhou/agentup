@@ -5,6 +5,7 @@ import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_TOKENS,
 } from "../../config/model-catalog.js";
+import { toOpenAiCompatRoot } from "../../config/openai-compat-url.js";
 import type { ProviderTemplate } from "../../config/provider-templates.js";
 import type { Visit } from "../../package/sync.js";
 import { getProviderTemplate } from "../../config/provider-templates.js";
@@ -87,7 +88,7 @@ export async function openModelRuntime(plan: SessionPlan, options: OpenModelRunt
   } else if (template.kind === "agent-sdk") {
     externalContext = registerAgentSdk(runtime, binding, template, plan, options);
   } else {
-    const baseUrl = binding.baseUrl || template.defaultBaseUrl;
+    const baseUrl = toOpenAiCompatRoot(binding.baseUrl || template.defaultBaseUrl || "");
     if (!baseUrl) throw new Error("缺少模型服务地址");
     registerDynamicModel(runtime, binding, template, {
       baseUrl,

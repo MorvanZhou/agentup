@@ -76,6 +76,7 @@ function completeGroupTaskTool(workspaceRoot: string, state: DeliverArtifactsSta
         const nextStep = typeof args.next_step === "string" ? args.next_step.trim() : "";
         state.staged = staged;
         state.confirmed = true;
+        state.nextStep = nextStep;
         const files =
           staged.length === 0
             ? "Confirmed: no shared files for this task."

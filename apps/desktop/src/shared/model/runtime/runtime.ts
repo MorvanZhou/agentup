@@ -194,6 +194,8 @@ export interface ProviderTemplate {
   api?: string;
   models: ProviderTemplateModel[];
   supportsModelDiscovery: boolean;
+  /** 同一模板可否挂多条连接（Ollama / 自定义） */
+  allowsMultipleConnections: boolean;
 }
 
 export interface ProviderVendorGroup {
@@ -203,7 +205,10 @@ export interface ProviderVendorGroup {
 }
 
 export interface ProviderConnection {
+  /** 连接主键；多 Ollama / 多自定义时各不相同 */
+  connectionId: string;
   templateId: string;
+  displayName?: string;
   baseUrl?: string;
   apiKeyCipher?: string;
   customModelIds: string[];
@@ -220,17 +225,20 @@ export interface ProviderConnection {
 export interface ProviderModelRef {
   templateId: string;
   modelId: string;
+  /** 所属连接；缺省回落 templateId */
+  connectionId?: string;
 }
 
 export interface AvailableProviderModel {
   templateId: string;
+  connectionId: string;
   modelId: string;
   name: string;
   /** 稳定厂商 id，设置页 / Composer 按此挂公司 logo */
   vendorId: string;
   vendorLabel: string;
   optionLabel: string;
-  /** 模板展示名（如 DeepSeek Harness）；接入标签优先用它 */
+  /** 模板展示名或端点名；接入标签优先用它 */
   label: string;
   enabled: boolean;
   active: boolean;
@@ -245,6 +253,7 @@ export interface AvailableProviderModel {
 /** 当前 Pi session 选用的模型 + Composer 下拉候选。 */
 export interface SessionModelOption {
   templateId: string;
+  connectionId?: string;
   modelId: string;
   name: string;
   vendorId: string;

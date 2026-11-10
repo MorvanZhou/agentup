@@ -236,6 +236,78 @@ it("stops the live turn instead of leaving the room speaking", async () => {
   expect(script.calls).toHaveLength(1);
 });
 
+it("停止时不把上轮 assistant parts 挂到「已停止」行（Remy 复读）", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-halt-stale-"));
+  const staleParts = [
+    { type: "text" as const, text: "Same request as the one already clarified." },
+    {
+      type: "dynamic-tool" as const,
+      toolCallId: "t1",
+      toolName: "check_delegation",
+      state: "output-available" as const,
+      input: {},
+      output: "ok",
+    },
+    { type: "text" as const, text: "Fix verified. Routing to Scout now." },
+  ];
+  const calls: Array<{ agentId: string }> = [];
+  let releaseFirst: (text: string, message?: UIMessage) => void = () => undefined;
+  let resolveSecond: (value: { text: string; message?: UIMessage }) => void = () => undefined;
+  let call = 0;
+  const driver: GroupTurnDriver = {
+    start(input) {
+      calls.push({ agentId: input.agentId });
+      input.onReady({ inject: async () => undefined, abort: async () => undefined });
+      input.onChunk([{ type: "start", messageId: `live-${call}` } as UIMessageChunk]);
+      const index = call;
+      call += 1;
+      return new Promise((resolve, reject) => {
+        if (index === 0) {
+          releaseFirst = (text, message) => {
+            resolve({ text, ...(message ? { message } : {}) });
+          };
+          return;
+        }
+        // 第二轮：模拟 SDK abort 后仍 resolve，并带上 readLastAssistantAt 读到的上轮气泡
+        resolveSecond = resolve;
+        const onAbort = () => {
+          resolveSecond({
+            text: "",
+            message: {
+              id: "stale-asst",
+              role: "assistant",
+              parts: staleParts,
+              metadata: { custom: { agentUpSummary: { textPartIndex: 1 } } },
+            },
+          });
+        };
+        if (input.signal.aborted) onAbort();
+        else input.signal.addEventListener("abort", onAbort, { once: true });
+      });
+    },
+  };
+  const turns = new GroupTurns(roomsAt(root), driver, root);
+  const room = turns.post("u1", createId(turns, root), "@产品经理 澄清需求");
+  releaseFirst("Same request as the one already clarified. Fix verified. Routing to Scout now.", {
+    id: "asst-1",
+    role: "assistant",
+    parts: staleParts,
+    metadata: { custom: { agentUpSummary: { textPartIndex: 1 } } },
+  });
+  await vi.waitFor(() => expect(turns.get("u1", room.id).holderSpeaking).toBe(false));
+
+  // 系统通知再唤醒执掌者 → 用户立刻停止；不得把上轮过程 parts 再贴一条
+  turns.rooms.acceptBackground(room.userId, room.id, "【后台任务已取消】预览服务");
+  await vi.waitFor(() => expect(calls).toHaveLength(2));
+  const stopped = await turns.stop("u1", room.id);
+  const agentLines = stopped.lines.filter((line) => line.role === "agent");
+  expect(agentLines).toHaveLength(2);
+  expect(agentLines[0]?.parts).toEqual(staleParts);
+  expect(agentLines[1]?.text).toBe("已停止");
+  expect(agentLines[1]?.parts).toBeUndefined();
+  expect(agentLines[1]?.assistantCustom).toBeUndefined();
+});
+
 it("waits to resume the holder when the saved key is not in memory yet", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-turn-"));
   const script = scriptedDriver();
@@ -724,9 +796,9 @@ it("merges a handback into the holder turn that is still speaking", async () => 
   expect(taskId).toBeTruthy();
   delegation.cancel(taskId!, "u1");
   expect(script.calls).toHaveLength(1);
-  // 交回会包一层「已完成、不要再派」提示，数组 toContain 只认整段相等。
+  // 交回会包一层「已完成、勿重复同 brief；可看 Next step 决定是否下一岗」提示。
   expect(script.injected.join("\n")).toContain("用户已取消");
-  expect(script.injected.join("\n")).toContain("Do not call delegate_to_agent again");
+  expect(script.injected.join("\n")).toContain("Do not re-delegate the same finished brief");
   script.release("收到，这轮收口");
   await vi.waitFor(() => {
     const settled = turns.get("u1", room.id);

@@ -29,6 +29,7 @@ export type GroupUiCustom = {
   agentUpArtifacts?: unknown;
   agentUpDeliverables?: unknown;
   agentUpReplyModel?: unknown;
+  agentUpPreview?: unknown;
 };
 
 function authorOf(
@@ -78,6 +79,9 @@ function agentMessage(
       : {}),
     ...(line.assistantCustom?.agentUpReplyModel !== undefined
       ? { agentUpReplyModel: line.assistantCustom.agentUpReplyModel }
+      : {}),
+    ...(line.assistantCustom?.agentUpPreview !== undefined
+      ? { agentUpPreview: line.assistantCustom.agentUpPreview }
       : {}),
   };
   if (Array.isArray(line.parts) && line.parts.length > 0) {

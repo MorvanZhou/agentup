@@ -5,6 +5,7 @@ import type {
   AskUserQuestion,
 } from "../../../../tools/ask-user.js";
 import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
+import { mergeExternalTurnMcpServers } from "../../mcp-servers.js";
 
 /**
  * ExternalTurnRequest → CodeBuddy query options。
@@ -14,6 +15,8 @@ export function codebuddyOptionsOf(input: ExternalTurnRequest): Record<string, u
   const model = input.modelId ? { model: input.modelId } : {};
   // 与登录时同一 environment，否则 token 对不上站点
   const environment = agentSdkAuthEnvironment(input.userDataRoot, input.templateId);
+  // 平台 MCP 与 agentup 并列；漏传则委托会话只能 Bash 自建 harness
+  const mcpServers = mergeExternalTurnMcpServers(input);
   return {
     abortController: input.abortController,
     cwd: input.cwd,
@@ -26,7 +29,7 @@ export function codebuddyOptionsOf(input: ExternalTurnRequest): Record<string, u
     persistSession: false,
     ...model,
     ...(input.cliPath ? { pathToCodebuddyCode: input.cliPath } : {}),
-    ...(input.mcpServer ? { mcpServers: { agentup: input.mcpServer } } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
     ...(environment ? { environment } : {}),
   };
 }

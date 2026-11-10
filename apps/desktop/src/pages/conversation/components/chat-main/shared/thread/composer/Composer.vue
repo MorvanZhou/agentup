@@ -148,7 +148,9 @@ const pickerCurrent = computed(() => {
   return sessionModelCurrent.value;
 });
 const memberModelApi = new DesktopApi();
-const memberModels = ref<Record<string, { templateId: string; modelId: string; name: string }>>({});
+const memberModels = ref<
+  Record<string, { templateId: string; modelId: string; connectionId?: string; name: string }>
+>({});
 /** 会话当前模型就是本地 Agent App（SDK）接入：单聊回合中发送进 followUp 队列。 */
 const sdkAccess = computed(() => sessionModelState.value?.followUp === true);
 /** 群不接 followUp 队列（走 post+inject）；误入队会被 GroupThread 空实现吞掉。 */
@@ -174,15 +176,29 @@ async function loadMemberModels(): Promise<void> {
         if (!current) return [member.id, null] as const;
         const name =
           state.models.find(
-            (model) => model.templateId === current.templateId && model.modelId === current.modelId,
+            (model) =>
+              (model.connectionId ?? model.templateId) ===
+                (current.connectionId ?? current.templateId) &&
+              model.modelId === current.modelId,
           )?.name ?? current.modelId;
-        return [member.id, { templateId: current.templateId, modelId: current.modelId, name }] as const;
+        return [
+          member.id,
+          {
+            templateId: current.templateId,
+            modelId: current.modelId,
+            connectionId: current.connectionId,
+            name,
+          },
+        ] as const;
       } catch {
         return [member.id, null] as const;
       }
     }),
   );
-  const next: Record<string, { templateId: string; modelId: string; name: string }> = {};
+  const next: Record<
+    string,
+    { templateId: string; modelId: string; connectionId?: string; name: string }
+  > = {};
   for (const [id, model] of rows) {
     if (model) next[id] = model;
   }
@@ -223,7 +239,11 @@ async function onSetModelMode(mode: ModelAssignmentMode): Promise<void> {
 async function onSelectShownModel(model: SessionModelOption): Promise<void> {
   if (surface.value.groupId && assignmentMode.value === "unified") {
     try {
-      await groupModelMode?.setRoomModel({ templateId: model.templateId, modelId: model.modelId });
+      await groupModelMode?.setRoomModel({
+        templateId: model.templateId,
+        modelId: model.modelId,
+        connectionId: model.connectionId,
+      });
     } catch (caught) {
       showToast(caught instanceof DesktopApiError ? caught.message : t("composerModelSwitchFailed"), "error");
     }
@@ -235,7 +255,12 @@ async function onSelectShownModel(model: SessionModelOption): Promise<void> {
 async function onSelectMemberModel(agentId: string, model: SessionModelOption): Promise<void> {
   memberModels.value = {
     ...memberModels.value,
-    [agentId]: { templateId: model.templateId, modelId: model.modelId, name: model.name },
+    [agentId]: {
+      templateId: model.templateId,
+      modelId: model.modelId,
+      connectionId: model.connectionId,
+      name: model.name,
+    },
   };
   if (agentId === modelAgentId.value) {
     await selectSessionModel(model);
@@ -247,7 +272,11 @@ async function onSelectMemberModel(agentId: string, model: SessionModelOption): 
       session.value.token,
       agentId,
       session.value.userId,
-      { templateId: model.templateId, modelId: model.modelId },
+      {
+        templateId: model.templateId,
+        modelId: model.modelId,
+        connectionId: model.connectionId,
+      },
       readUiLocale(),
     );
   } catch (caught) {

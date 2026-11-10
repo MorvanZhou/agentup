@@ -10,6 +10,7 @@ import {
 } from "../../../../tools/ask-user.js";
 import { agentSdkSkillsProjectRel } from "../../../../../config/provider-templates.js";
 import { COMPACT_SYSTEM_PROMPT } from "../../host/compact-instruction.js";
+import { mergeExternalTurnMcpServers } from "../../mcp-servers.js";
 
 /**
  * Host ExternalTurnRequest → CopilotClient / createSession / send 选项。
@@ -49,9 +50,7 @@ export function copilotSessionConfigOf(
       : { model: "auto" };
 
   const skillDirectories = skillDirectoriesOf(input);
-  const mcpServers = input.mcpServer
-    ? { agentup: toCopilotHttpMcp(input.mcpServer) }
-    : undefined;
+  const mcpServers = mergeExternalTurnMcpServers(input, toCopilotHttpMcp);
 
   const systemAppend = input.systemAppend.trim();
   const systemMessage = {

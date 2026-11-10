@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { ChevronDownIcon, LoaderCircleIcon, Trash2Icon } from "@lucide/vue";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LoaderCircleIcon,
+  PencilIcon,
+  Trash2Icon,
+  XIcon,
+} from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 
 import AppSelect from "../../../../../shared/components/AppSelect.vue";
@@ -10,7 +19,6 @@ import { modelSourceLabel } from "../../../../../shared/model/provider/model-sou
 import type { AgentSdkAuthEnvironment } from "../../../../../shared/model/runtime/runtime";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
 import { useProviderSettings } from "../../../composables/useProviderSettings";
-import SettingsBlock from "../../SettingsBlock.vue";
 import SettingsSectionShell from "../../SettingsSectionShell.vue";
 import AgentSdkConnectPanel from "./provider-sdk/AgentSdkConnectPanel.vue";
 import { sdkReady, sdkStateLabel } from "./provider-sdk/sdk-state";
@@ -25,8 +33,12 @@ const {
   overridden,
   busy,
   draftTemplateId,
+  draftConnectionId,
   draftBaseUrl,
   draftApiKey,
+  draftInlineModelId,
+  editingModelKey,
+  editingModelId,
   modelFilter,
   modelProviderFilter,
   modelEnabledOnly,
@@ -39,11 +51,15 @@ const {
   existingConnection,
   needsBaseUrl,
   needsApiKey,
+  apiKeyRequired,
   canRefreshModels,
   canAddCustomModel,
+  canAddAnotherEndpoint,
   customModelTargets,
+  templateConnections,
+  inlineConnectionModels,
   draftCustomModelId,
-  draftAddTemplateId,
+  draftAddConnectionId,
   loaded,
   sdkBusy,
   sdkModelsBusy,
@@ -66,13 +82,34 @@ const {
   removeConnection,
   refreshAllDiscoverableModels,
   addCustomModel,
+  addInlineCustomModel,
   removeCustomModel,
+  refreshCurrentConnectionModels,
+  startEditInlineModel,
+  cancelEditInlineModel,
+  saveEditInlineModel,
   toggleModel,
+  startAnotherEndpoint,
+  selectEndpoint,
 } = useProviderSettings();
+
+/** 仅多端点时才露出「当前端点」切换；单实例 Ollama 只填服务地址 */
+const showEndpointSwitcher = computed(
+  () => templateConnections.value.length > 1 || (!draftConnectionId.value && templateConnections.value.length > 0),
+);
 
 const addTargetOptions = computed(() =>
   customModelTargets.value.map((item) => ({
-    value: item.templateId,
+    value: item.connectionId,
+    label: item.label,
+    active: true,
+  })),
+);
+
+/** 同模板多端点切换 */
+const endpointOptions = computed(() =>
+  templateConnections.value.map((item) => ({
+    value: item.connectionId,
     label: item.label,
     active: true,
   })),
@@ -104,10 +141,14 @@ function onSdkPrimary(environment?: AgentSdkAuthEnvironment): void {
   void startAgentSdkInstall(sdk.templateId);
 }
 
-/** 连接服务商为次要操作，默认折叠；选了本地 App 就摊开（要看到安装按钮） */
-const providerOpen = ref(false);
 /** 模型列表默认只展示前几条，避免一屏过长。 */
 const modelsExpanded = ref(false);
+
+/**
+ * 接入漏斗：null = 只显示两类入口；选中后才展开接入商下拉与配置。
+ * 不跟 draftTemplateId 自动同步，避免一进页就摊开全量表单。
+ */
+const accessMode = ref<"agent-sdk" | "api" | null>(null);
 
 const modelListOverflow = computed(() => filteredModels.value.length > MODEL_PREVIEW_COUNT);
 const visibleModels = computed(() =>
@@ -125,34 +166,93 @@ const connectedTemplateIds = computed(
 );
 
 /**
- * 级联下拉用：group = 接入方式，value = 接入商。
- * Agent App 在前，便于默认落到本地接入；选中后下方表单整体切换。
+ * 入口卡图标：跟当前目录全量对齐。
+ * 本地 App 按每条 SDK 列（产品各不同）；API 按 vendorId 去重（同厂多接入方式共用一标）。
+ * active = 已接入（SDK ready / 该厂已有连接）→ 小绿点。
  */
-const entryOptions = computed(() => [
-  ...agentSdks.value.map((sdk) => ({
-    value: sdk.templateId,
+const gateSdkMarks = computed(() =>
+  agentSdks.value.map((sdk) => ({
+    key: sdk.templateId,
+    vendorId: templates.value.find((item) => item.id === sdk.templateId)?.vendorId ?? sdk.templateId,
     label: sdk.label,
-    group: t("providerAccessSdk"),
-    hint: sdkStateLabel(sdk.state),
     active: sdkReady(sdk.state),
-    // 本地 App 卡片不带 vendorId，从全量模板目录取
-    icon: templates.value.find((item) => item.id === sdk.templateId)?.vendorId,
   })),
-  ...apiTemplates.value.map((item) => ({
-    value: item.id,
-    label: item.label,
-    group: t("providerAccessApi"),
-    active: connectedTemplateIds.value.has(item.id),
-    icon: item.vendorId,
-  })),
-]);
-
-/** 仅 API Key 接入商多，给右侧下拉开搜索；本地 App / 其它下拉保持默认无搜索 */
-const draftTemplateSearchable = computed(
-  () =>
-    entryOptions.value.find((item) => item.value === draftTemplateId.value)?.group ===
-    t("providerAccessApi"),
 );
+
+const gateApiMarks = computed(() => {
+  const connectedVendors = new Set(
+    connections.value
+      .map((item) => templates.value.find((template) => template.id === item.templateId)?.vendorId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const seen = new Set<string>();
+  const out: Array<{ key: string; vendorId: string; label: string; active: boolean }> = [];
+  for (const item of apiTemplates.value) {
+    if (seen.has(item.vendorId)) continue;
+    seen.add(item.vendorId);
+    out.push({
+      key: item.vendorId,
+      vendorId: item.vendorId,
+      label: item.vendorLabel,
+      active: connectedVendors.has(item.vendorId),
+    });
+  }
+  return out;
+});
+
+/** 当前接入方式下的接入商下拉（不再级联「接入方式」——方式已在入口选定） */
+const vendorOptions = computed(() => {
+  if (accessMode.value === "agent-sdk") {
+    return agentSdks.value.map((sdk) => ({
+      value: sdk.templateId,
+      label: sdk.label,
+      hint: sdkStateLabel(sdk.state),
+      active: sdkReady(sdk.state),
+      icon: templates.value.find((item) => item.id === sdk.templateId)?.vendorId,
+    }));
+  }
+  if (accessMode.value === "api") {
+    return apiTemplates.value.map((item) => ({
+      value: item.id,
+      label: item.label,
+      active: connectedTemplateIds.value.has(item.id),
+      icon: item.vendorId,
+    }));
+  }
+  return [];
+});
+
+/** API 接入商多，下拉开搜索；本地 App 项少保持默认 */
+const draftTemplateSearchable = computed(() => accessMode.value === "api");
+
+const accessModeLabel = computed(() =>
+  accessMode.value === "agent-sdk"
+    ? t("providerGateSdkTitle")
+    : accessMode.value === "api"
+      ? t("providerGateApiTitle")
+      : "",
+);
+
+/** 点入口：锁定方式，并把 draft 落到该组第一项（若当前不在该组） */
+function enterAccess(mode: "agent-sdk" | "api"): void {
+  accessMode.value = mode;
+  const inGroup =
+    mode === "agent-sdk"
+      ? templates.value.some(
+          (item) => item.id === draftTemplateId.value && item.access === "agent-sdk",
+        )
+      : templates.value.some((item) => item.id === draftTemplateId.value && item.access === "api");
+  if (inGroup) return;
+  const first =
+    mode === "agent-sdk"
+      ? templates.value.find((item) => item.access === "agent-sdk")
+      : templates.value.find((item) => item.access === "api");
+  if (first) draftTemplateId.value = first.id;
+}
+
+function resetAccessGate(): void {
+  accessMode.value = null;
+}
 
 watch([modelFilter, modelProviderFilter, modelEnabledOnly], () => {
   modelsExpanded.value = false;
@@ -182,17 +282,481 @@ function modelRowTitle(model: {
 
 <template>
   <SettingsSectionShell :title="t('providerTitle')" :lead="t('providerLead')">
-      <!-- 主区：启用服务（API Key 与本地 Agent App 的模型都在这里） -->
-      <SettingsBlock
-        :title="t('providerEnableServices')"
-        :description="t('providerEnableLead')"
+      <!-- 区一：接入配置（整块抬升面，与下方「启用」分区断档） -->
+      <section
+        class="grid gap-3 rounded-xl border border-foreground/12 bg-bubble p-3.5 shadow-sm animate-rise motion-reduce:animate-none sm:p-5"
+        :aria-label="t('providerPickTitle')"
       >
-        <template v-if="canRefreshModels" #actions>
-          <!-- 刷新全部：busy 整段可能很长，钮上转圈 + 文案，避免用户以为点了没反应 -->
+        <header class="flex flex-wrap items-start justify-between gap-2">
+          <div class="flex min-w-0 items-start gap-2.5">
+            <!-- 步骤序号：灰阶角标，标这是第 1 件事 -->
+            <span
+              class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold tabular-nums text-foreground"
+              aria-hidden="true"
+            >{{ t("providerPickStep") }}</span>
+            <div class="min-w-0">
+              <h2 class="m-0 text-base font-semibold tracking-tight text-foreground">
+                {{ t("providerPickTitle") }}
+              </h2>
+              <p class="mb-0 mt-1 max-w-xl text-xs leading-snug text-muted-foreground">
+                {{ t("providerPickLead") }}
+              </p>
+            </div>
+          </div>
+          <span
+            class="shrink-0 rounded-md border border-rule bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground"
+          >
+            {{
+              connections.length
+                ? tf("providerConnectedCount", { count: connections.length })
+                : t("providerConnectHint")
+            }}
+          </span>
+        </header>
+
+        <!-- 漏斗入口：未选方式时只露两张大卡，避免一屏堆满下拉与表单 -->
+        <div
+          v-if="!loaded"
+          class="grid gap-3 sm:grid-cols-2"
+          role="status"
+          aria-busy="true"
+          :aria-label="t('providerLoading')"
+        >
+          <UiSkeleton rounded="xl" class="h-36 w-full" />
+          <UiSkeleton rounded="xl" class="h-36 w-full" />
+        </div>
+        <div
+          v-else-if="!accessMode"
+          class="grid gap-3 sm:grid-cols-2"
+          role="group"
+          :aria-label="t('providerPickTitle')"
+        >
+          <!-- 入口：本地 Agent 应用（整卡可点：抬升边框 + 选择箭头） -->
           <button
             type="button"
+            class="group grid cursor-pointer gap-3 rounded-xl border border-foreground/15 bg-background p-3.5 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-muted hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15 active:translate-y-0 active:bg-muted active:shadow-sm disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:hover:translate-y-0 sm:p-4"
+            :disabled="busy"
+            @click="enterAccess('agent-sdk')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="m-0 text-sm font-semibold text-foreground">{{ t("providerGateSdkTitle") }}</p>
+                <p class="mb-0 mt-1 text-xs leading-snug text-muted-foreground">
+                  {{ t("providerGateSdkLead") }}
+                </p>
+              </div>
+              <span
+                class="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-rule bg-bubble px-2 py-1 text-xs font-medium text-muted-foreground transition duration-200 group-hover:border-foreground/20 group-hover:text-foreground"
+              >
+                {{ t("providerGateChoose") }}
+                <ChevronRightIcon
+                  class="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </span>
+            </div>
+            <ul class="m-0 flex list-none flex-wrap items-center gap-2 p-0" aria-hidden="true">
+              <li
+                v-for="mark in gateSdkMarks"
+                :key="mark.key"
+                class="relative grid size-8 place-items-center rounded-lg border border-rule bg-bubble transition duration-200 group-hover:border-foreground/15"
+                :title="mark.active ? `${mark.label} · ${t('providerConfiguredActive')}` : mark.label"
+              >
+                <ProviderLogo size="md" :vendor-id="mark.vendorId" :label="mark.label" />
+                <!-- 已接入：角上小绿点，对齐下拉 active 语义 -->
+                <span
+                  v-if="mark.active"
+                  class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-500 ring-2 ring-background"
+                />
+              </li>
+            </ul>
+          </button>
+          <!-- 入口：API 服务 -->
+          <button
+            type="button"
+            class="group grid cursor-pointer gap-3 rounded-xl border border-foreground/15 bg-background p-3.5 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-foreground/25 hover:bg-muted hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/15 active:translate-y-0 active:bg-muted active:shadow-sm disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:hover:translate-y-0 sm:p-4"
+            :disabled="busy"
+            @click="enterAccess('api')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="m-0 text-sm font-semibold text-foreground">{{ t("providerGateApiTitle") }}</p>
+                <p class="mb-0 mt-1 text-xs leading-snug text-muted-foreground">
+                  {{ t("providerGateApiLead") }}
+                </p>
+              </div>
+              <span
+                class="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-rule bg-bubble px-2 py-1 text-xs font-medium text-muted-foreground transition duration-200 group-hover:border-foreground/20 group-hover:text-foreground"
+              >
+                {{ t("providerGateChoose") }}
+                <ChevronRightIcon
+                  class="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </span>
+            </div>
+            <ul class="m-0 flex list-none flex-wrap items-center gap-2 p-0" aria-hidden="true">
+              <li
+                v-for="mark in gateApiMarks"
+                :key="mark.key"
+                class="relative grid size-8 place-items-center rounded-lg border border-rule bg-bubble transition duration-200 group-hover:border-foreground/15"
+                :title="mark.active ? `${mark.label} · ${t('providerConfiguredActive')}` : mark.label"
+              >
+                <ProviderLogo size="md" :vendor-id="mark.vendorId" :label="mark.label" />
+                <span
+                  v-if="mark.active"
+                  class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-500 ring-2 ring-background"
+                />
+              </li>
+            </ul>
+          </button>
+        </div>
+
+        <!-- 已选方式：接入商下拉 + 配置；左上角普通返回 -->
+        <template v-else>
+          <div class="grid gap-2">
+            <button
+              type="button"
+              class="inline-flex min-h-8 w-fit items-center gap-1 rounded-lg px-1.5 text-sm text-muted-foreground transition duration-200 hover:bg-muted hover:text-foreground disabled:opacity-50"
+              :disabled="busy"
+              @click="resetAccessGate"
+            >
+              <ArrowLeftIcon class="size-3.5 shrink-0" aria-hidden="true" />
+              {{ t("providerGateChange") }}
+            </button>
+            <p class="m-0 text-xs font-semibold tracking-wide text-muted-foreground">
+              {{ accessModeLabel }}
+            </p>
+          </div>
+
+          <div class="rounded-lg border border-rule bg-background p-3 sm:p-3.5">
+            <AppSelect
+              v-model="draftTemplateId"
+              emphasis
+              :searchable="draftTemplateSearchable"
+              :label="t('providerAccessVendor')"
+              :options="vendorOptions"
+              :disabled="busy"
+              :active-hint="t('providerConfiguredActive')"
+              :search-placeholder="t('providerSelectSearch')"
+              :search-empty="t('providerSelectSearchEmpty')"
+            />
+          </div>
+
+          <!-- 连接配置：选完接入商后才填 -->
+          <div class="grid gap-3 border-t border-rule pt-3">
+            <p class="m-0 text-xs font-semibold tracking-wide text-muted-foreground">
+              {{ t("providerConnectConfig") }}
+            </p>
+
+            <!-- 本地 Agent App：Base 面板 + 能力 parts（选站 / 验证码 / Key） -->
+            <AgentSdkConnectPanel
+              v-if="sdkSelected && selectedSdk"
+              v-model:api-key-draft="sdkLoginApiKeyDraft"
+              :sdk="selectedSdk"
+              :vendor-id="selectedTemplate?.vendorId"
+              :busy="busy"
+              :sdk-busy="sdkBusy"
+              :models-busy="sdkModelsBusy"
+              :install-phase="installPhase"
+              :device-code="sdkLoginDeviceCode"
+              :login-needs-api-key="sdkLoginNeedsApiKey"
+              :login-auth-url="sdkLoginAuthUrl"
+              @primary="onSdkPrimary"
+              @check="checkAgentSdkLogin(selectedSdk.templateId)"
+              @logout="logoutAgentSdk(selectedSdk.templateId)"
+              @uninstall="uninstallAgentSdk(selectedSdk.templateId)"
+              @submit-api-key="submitAgentSdkApiKey(selectedSdk.templateId)"
+              @open-api-key-doc="openAgentSdkApiKeyDoc"
+              @cancel-login="cancelAgentSdkLogin(selectedSdk.templateId)"
+              @cancel-install="cancelAgentSdkInstall(selectedSdk.templateId)"
+            />
+
+          <!-- API Key 接入：填地址、密钥、本连接模型 -->
+          <form v-else class="grid gap-3" @submit.prevent="saveConnection">
+            <p v-if="selectedTemplate?.hint" class="m-0 text-xs leading-snug text-muted-foreground">
+              {{ selectedTemplate.hint }}
+            </p>
+            <!-- 发现策略说明：Ollama 自动；自定义多手配 -->
+            <p
+              v-if="needsBaseUrl"
+              class="m-0 text-xs leading-snug text-muted-foreground"
+            >
+              {{
+                selectedTemplate?.kind === "ollama"
+                  ? t("providerDiscoverOllamaHint")
+                  : t("providerDiscoverCustomHint")
+              }}
+            </p>
+
+            <!-- 多端点才显示切换；单 Ollama 实例不打扰 -->
+            <div v-if="showEndpointSwitcher" class="grid gap-2">
+              <p
+                v-if="!draftConnectionId && templateConnections.length > 0"
+                class="m-0 text-xs leading-snug text-muted-foreground"
+              >
+                {{ t("providerNewEndpointDraft") }}
+              </p>
+              <AppSelect
+                v-else-if="templateConnections.length > 1 && draftConnectionId"
+                v-model="draftConnectionId"
+                :label="t('providerEndpointSelect')"
+                :options="endpointOptions"
+                :disabled="busy"
+                :active-hint="t('providerConfiguredActive')"
+                @update:model-value="selectEndpoint"
+              />
+              <button
+                v-if="!draftConnectionId && templateConnections.length > 0"
+                type="button"
+                :disabled="busy"
+                class="min-h-8 justify-self-start rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+                @click="selectEndpoint(templateConnections[0]!.connectionId)"
+              >
+                {{ t("providerBackToEndpoint") }}
+              </button>
+            </div>
+
+            <label v-if="needsBaseUrl" class="grid gap-1.5 text-sm font-medium text-foreground">
+              <span>
+                {{ t("providerBaseUrl") }}
+                <span class="text-destructive" aria-hidden="true">*</span>
+              </span>
+              <input
+                v-model="draftBaseUrl"
+                type="url"
+                required
+                :disabled="busy"
+                autocomplete="off"
+                class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                :placeholder="
+                  selectedTemplate?.kind === 'ollama'
+                    ? t('providerBaseUrlPlaceholderOllama')
+                    : t('providerBaseUrlPlaceholderCustom')
+                "
+              />
+            </label>
+
+            <label v-if="needsApiKey" class="grid gap-1.5 text-sm font-medium text-foreground">
+              <span>
+                API Key
+                <span v-if="apiKeyRequired" class="text-destructive" aria-hidden="true">*</span>
+              </span>
+              <input
+                v-model="draftApiKey"
+                type="password"
+                :required="apiKeyRequired"
+                :disabled="busy"
+                autocomplete="off"
+                class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                :placeholder="existingConnection?.hasApiKey ? t('providerApiKeyKeep') : t('providerApiKeyPaste')"
+              />
+            </label>
+
+            <!-- 本连接模型：发现 + 手配，可删改手配项 -->
+            <div
+              v-if="needsBaseUrl"
+              class="grid gap-2 rounded-lg border border-rule bg-paper/60 p-3"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="m-0 text-sm font-medium text-foreground">{{ t("providerInlineModelsTitle") }}</p>
+                <button
+                  v-if="existingConnection && selectedTemplate?.supportsModelDiscovery"
+                  type="button"
+                  :disabled="busy"
+                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-background px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+                  @click="refreshCurrentConnectionModels"
+                >
+                  {{ busy ? t("providerSdkRefreshingModels") : t("providerSdkRefreshThis") }}
+                </button>
+              </div>
+              <p class="m-0 text-xs leading-snug text-muted-foreground">
+                {{ t("providerInlineModelsLead") }}
+              </p>
+              <!-- 已有模型：手配可改/删；自动发现只读 -->
+              <ul
+                v-if="inlineConnectionModels.length"
+                class="m-0 grid list-none gap-1 p-0"
+              >
+                <li
+                  v-for="model in inlineConnectionModels"
+                  :key="`${model.connectionId}::${model.modelId}`"
+                  class="flex min-h-8 items-center gap-2 rounded-md px-2 py-1 text-sm"
+                >
+                  <template v-if="editingModelKey === `${model.connectionId}::${model.modelId}`">
+                    <input
+                      v-model="editingModelId"
+                      type="text"
+                      :disabled="busy"
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="min-h-8 min-w-0 flex-1 rounded-lg border border-rule bg-background px-2 py-1 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                      @keydown.enter.prevent="saveEditInlineModel(model)"
+                      @keydown.escape.prevent="cancelEditInlineModel"
+                    />
+                    <button
+                      type="button"
+                      :disabled="busy || !editingModelId.trim()"
+                      class="shrink-0 rounded-md p-1 text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+                      :aria-label="t('providerSaveModelEdit')"
+                      @click="saveEditInlineModel(model)"
+                    >
+                      <CheckIcon class="size-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="busy"
+                      class="shrink-0 rounded-md p-1 text-muted-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+                      :aria-label="t('cancel')"
+                      @click="cancelEditInlineModel"
+                    >
+                      <XIcon class="size-3.5" aria-hidden="true" />
+                    </button>
+                  </template>
+                  <template v-else>
+                    <span class="min-w-0 flex-1 truncate font-mono text-foreground">{{ model.modelId }}</span>
+                    <span
+                      v-if="!model.custom"
+                      class="shrink-0 rounded-md border border-rule bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+                    >
+                      {{ t("providerModelDiscovered") }}
+                    </span>
+                    <button
+                      v-if="model.custom"
+                      type="button"
+                      :disabled="busy"
+                      class="shrink-0 rounded-md p-1 text-muted-foreground transition duration-200 hover:bg-muted hover:text-foreground disabled:opacity-50"
+                      :aria-label="tf('providerEditModel', { name: model.modelId })"
+                      @click="startEditInlineModel(model)"
+                    >
+                      <PencilIcon class="size-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      v-if="model.custom"
+                      type="button"
+                      :disabled="busy"
+                      class="shrink-0 rounded-md p-1 text-muted-foreground transition duration-200 hover:bg-danger-soft hover:text-destructive disabled:opacity-50"
+                      :aria-label="tf('providerRemoveModel', { name: model.modelId })"
+                      @click="removeCustomModel(model)"
+                    >
+                      <Trash2Icon class="size-3.5" aria-hidden="true" />
+                    </button>
+                  </template>
+                </li>
+              </ul>
+              <p
+                v-else-if="existingConnection"
+                class="m-0 text-xs text-muted-foreground"
+              >
+                {{ t("providerInlineModelsEmpty") }}
+              </p>
+              <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <label class="grid gap-1.5 text-sm font-medium text-foreground">
+                  {{ t("providerAddModelId") }}
+                  <input
+                    v-model="draftInlineModelId"
+                    type="text"
+                    :disabled="busy"
+                    autocomplete="off"
+                    spellcheck="false"
+                    :placeholder="t('providerAddModelPlaceholder')"
+                    class="min-h-8 rounded-lg border border-rule bg-background px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                  />
+                </label>
+                <button
+                  type="button"
+                  :disabled="busy || !draftInlineModelId.trim()"
+                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-background px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+                  @click="addInlineCustomModel"
+                >
+                  {{ existingConnection ? t("providerAddModel") : t("providerSaveAndAddModel") }}
+                </button>
+              </div>
+            </div>
+
+            <p
+              v-if="overridden"
+              class="rounded-lg border border-amber-300/40 bg-warning-soft px-3 py-2 text-sm text-warning-foreground"
+            >
+              {{ t("providerEnvOverride") }}
+            </p>
+
+            <div class="grid gap-3 border-t border-rule pt-3">
+              <p class="m-0 text-xs leading-snug text-muted-foreground">
+                <span v-if="existingConnection">{{ tf("providerConnected", { label: existingConnection.label }) }}</span>
+                {{ t("providerGuestHint") }}
+              </p>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <!-- 进阶：同模板再挂一台（默认单实例不露出「当前端点」） -->
+                <button
+                  v-if="canAddAnotherEndpoint && draftConnectionId"
+                  type="button"
+                  :disabled="busy"
+                  class="min-h-8 shrink-0 rounded-lg px-2 text-sm text-muted-foreground transition duration-200 hover:text-foreground disabled:opacity-50"
+                  @click="startAnotherEndpoint"
+                >
+                  {{ t("providerAddEndpoint") }}
+                </button>
+                <span v-else class="min-w-0" />
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    v-if="existingConnection"
+                    type="button"
+                    :disabled="busy"
+                    class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
+                    @click="removeConnection(existingConnection.connectionId)"
+                  >
+                    {{ t("providerRemove") }}
+                  </button>
+                  <button
+                    type="submit"
+                    :disabled="busy"
+                    class="min-h-8 shrink-0 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
+                  >
+                    {{ busy ? t("saving") : existingConnection ? t("providerUpdate") : t("providerSave") }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+          </div>
+        </template>
+      </section>
+
+      <!-- 区界：无文案分隔线，只拉开两块职责 -->
+      <div
+        class="py-1 animate-rise motion-reduce:animate-none [animation-delay:40ms]"
+        role="separator"
+      >
+        <span class="block h-px w-full bg-rule" aria-hidden="true" />
+      </div>
+
+      <!-- 区二：启用服务（纸面底，与上方 bubble 接入区对比） -->
+      <section
+        class="grid gap-3 rounded-xl border border-rule bg-paper p-3.5 animate-rise motion-reduce:animate-none [animation-delay:60ms] sm:p-5"
+        :aria-label="t('providerEnableServices')"
+      >
+        <header class="flex flex-wrap items-start justify-between gap-2">
+          <div class="flex min-w-0 flex-1 items-start gap-2.5">
+            <span
+              class="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold tabular-nums text-foreground"
+              aria-hidden="true"
+            >{{ t("providerEnableStep") }}</span>
+            <div class="min-w-0">
+              <h2 class="m-0 text-base font-semibold tracking-tight text-foreground">
+                {{ t("providerEnableServices") }}
+              </h2>
+              <p class="mb-0 mt-1 max-w-xl text-xs leading-snug text-muted-foreground">
+                {{ t("providerEnableLead") }}
+              </p>
+            </div>
+          </div>
+          <!-- 刷新全部：busy 整段可能很长，钮上转圈 + 文案，避免用户以为点了没反应 -->
+          <button
+            v-if="canRefreshModels"
+            type="button"
             :disabled="busy || sdkModelsBusy"
-            class="inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+            class="inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-rule bg-background px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
             :aria-busy="busy || sdkModelsBusy ? 'true' : undefined"
             @click="refreshAllDiscoverableModels"
           >
@@ -207,7 +771,7 @@ function modelRowTitle(model: {
                 : t("providerRefreshModels")
             }}
           </button>
-        </template>
+        </header>
 
         <!-- 首次拉配置用骨架，不做纯文案加载态 -->
         <div
@@ -244,7 +808,7 @@ function modelRowTitle(model: {
                 type="search"
                 :disabled="busy"
                 :placeholder="t('providerSearchModels')"
-                class="min-h-9 w-full min-w-0 rounded-lg border border-rule bg-paper px-3 py-1.5 text-sm font-normal text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                class="min-h-9 w-full min-w-0 rounded-lg border border-rule bg-background px-3 py-1.5 text-sm font-normal text-foreground outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
               />
             </label>
           </div>
@@ -283,7 +847,7 @@ function modelRowTitle(model: {
                 <div class="grid min-w-0 gap-2">
                   <AppSelect
                     v-if="customModelTargets.length > 1"
-                    v-model="draftAddTemplateId"
+                    v-model="draftAddConnectionId"
                     :label="t('providerAddModelTarget')"
                     :options="addTargetOptions"
                     :disabled="busy"
@@ -298,14 +862,14 @@ function modelRowTitle(model: {
                       autocomplete="off"
                       spellcheck="false"
                       :placeholder="t('providerAddModelPlaceholder')"
-                      class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
+                      class="min-h-8 rounded-lg border border-rule bg-background px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
                     />
                   </label>
                 </div>
                 <button
                   type="submit"
                   :disabled="busy"
-                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
+                  class="min-h-8 shrink-0 rounded-lg border border-rule bg-background px-3 text-sm font-medium text-foreground transition duration-200 hover:bg-muted disabled:opacity-50"
                 >
                   {{ t("providerAddModel") }}
                 </button>
@@ -317,7 +881,7 @@ function modelRowTitle(model: {
           <ul v-if="filteredModels.length" class="m-0 mt-3 grid list-none gap-0.5 p-0">
             <li
               v-for="model in visibleModels"
-              :key="`${model.templateId}::${model.modelId}`"
+              :key="`${model.connectionId}::${model.modelId}`"
               class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 transition duration-150 hover:bg-muted"
               :title="modelRowTitle(model)"
             >
@@ -404,165 +968,13 @@ function modelRowTitle(model: {
         </template>
 
         <!-- 平台 AI 占位：虚线提示，不算内容卡 -->
-        <div class="mt-10 border-t border-dashed border-rule pt-4 text-muted-foreground">
+        <div class="mt-8 border-t border-dashed border-rule pt-4 text-muted-foreground">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="m-0 text-sm font-semibold text-foreground">{{ t("providerPlatformTitle") }}</p>
-            <span class="rounded-md border border-rule bg-paper px-2 py-0.5 text-xs font-medium">{{ t("providerPlatformSoon") }}</span>
+            <span class="rounded-md border border-rule bg-background px-2 py-0.5 text-xs font-medium">{{ t("providerPlatformSoon") }}</span>
           </div>
           <p class="mb-0 mt-1.5 text-xs leading-snug">{{ t("providerPlatformBody") }}</p>
         </div>
-      </SettingsBlock>
-
-      <!-- 次区：添加服务；扁平折叠，不套纸面卡 -->
-      <details
-        class="group/connect"
-        :open="providerOpen || !connections.length || sdkSelected"
-        @toggle="providerOpen = ($event.target as HTMLDetailsElement).open"
-      >
-        <summary
-          class="cursor-pointer list-none outline-none [&::-webkit-details-marker]:hidden"
-        >
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="m-0 text-sm font-semibold text-foreground">{{ t("providerConnect") }}</p>
-            </div>
-            <div class="flex shrink-0 items-center gap-2 pt-0.5">
-              <span class="text-xs text-muted-foreground">
-                {{ connections.length ? tf("providerConnectedCount", { count: connections.length }) : t("providerConnectHint") }}
-              </span>
-              <ChevronDownIcon
-                class="size-3.5 text-muted-foreground transition-transform duration-200 group-open/connect:rotate-180 motion-reduce:transition-none"
-                aria-hidden="true"
-              />
-            </div>
-          </div>
-        </summary>
-
-        <div class="mt-3 grid gap-3">
-          <!-- 骨架：级联两列下拉 + 表单占位 -->
-          <div
-            v-if="!loaded"
-            class="grid gap-3"
-            role="status"
-            aria-busy="true"
-            :aria-label="t('providerLoading')"
-          >
-            <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-              <div class="grid gap-1.5">
-                <UiSkeleton rounded="md" class="h-3 w-16" />
-                <UiSkeleton rounded="lg" class="h-8 w-full" />
-              </div>
-              <div class="grid gap-1.5">
-                <UiSkeleton rounded="md" class="h-3 w-16" />
-                <UiSkeleton rounded="lg" class="h-8 w-full" />
-              </div>
-            </div>
-            <UiSkeleton rounded="lg" class="h-8 w-full" />
-          </div>
-
-          <div v-else class="grid gap-3">
-            <AppSelect
-              v-model="draftTemplateId"
-              cascade
-              :searchable="draftTemplateSearchable"
-              :group-label="t('providerAccessKicker')"
-              :label="t('providerAccessVendor')"
-              :default-group="t('providerAccessSdk')"
-              :options="entryOptions"
-              :disabled="busy"
-              :active-hint="t('providerConfiguredActive')"
-              :search-placeholder="t('providerSelectSearch')"
-              :search-empty="t('providerSelectSearchEmpty')"
-            />
-
-            <!-- 本地 Agent App：Base 面板 + 能力 parts（选站 / 验证码 / Key） -->
-            <AgentSdkConnectPanel
-              v-if="sdkSelected && selectedSdk"
-              v-model:api-key-draft="sdkLoginApiKeyDraft"
-              :sdk="selectedSdk"
-              :vendor-id="selectedTemplate?.vendorId"
-              :busy="busy"
-              :sdk-busy="sdkBusy"
-              :models-busy="sdkModelsBusy"
-              :install-phase="installPhase"
-              :device-code="sdkLoginDeviceCode"
-              :login-needs-api-key="sdkLoginNeedsApiKey"
-              :login-auth-url="sdkLoginAuthUrl"
-              @primary="onSdkPrimary"
-              @check="checkAgentSdkLogin(selectedSdk.templateId)"
-              @logout="logoutAgentSdk(selectedSdk.templateId)"
-              @uninstall="uninstallAgentSdk(selectedSdk.templateId)"
-              @submit-api-key="submitAgentSdkApiKey(selectedSdk.templateId)"
-              @open-api-key-doc="openAgentSdkApiKeyDoc"
-              @cancel-login="cancelAgentSdkLogin(selectedSdk.templateId)"
-              @cancel-install="cancelAgentSdkInstall(selectedSdk.templateId)"
-            />
-
-            <!-- API Key 接入：填地址与密钥 -->
-            <form v-else class="grid gap-3" @submit.prevent="saveConnection">
-              <p v-if="selectedTemplate?.hint" class="m-0 text-xs leading-snug text-muted-foreground">
-                {{ selectedTemplate.hint }}
-              </p>
-
-              <label v-if="needsBaseUrl" class="grid gap-1.5 text-sm font-medium text-foreground">
-                {{ t("providerBaseUrl") }}
-                <input
-                  v-model="draftBaseUrl"
-                  type="url"
-                  required
-                  :disabled="busy"
-                  autocomplete="off"
-                  class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
-                  placeholder="http://localhost:11434/v1"
-                />
-              </label>
-
-              <label v-if="needsApiKey" class="grid gap-1.5 text-sm font-medium text-foreground">
-                API Key
-                <input
-                  v-model="draftApiKey"
-                  type="password"
-                  :disabled="busy"
-                  autocomplete="off"
-                  class="min-h-8 rounded-lg border border-rule bg-paper px-3 py-1.5 font-mono text-sm text-foreground outline-none transition duration-200 focus:border-accent focus:bg-background focus:ring-2 focus:ring-accent/15 disabled:opacity-60"
-                  :placeholder="existingConnection?.hasApiKey ? t('providerApiKeyKeep') : t('providerApiKeyPaste')"
-                />
-              </label>
-
-              <p
-                v-if="overridden"
-                class="rounded-lg border border-amber-300/40 bg-warning-soft px-3 py-2 text-sm text-warning-foreground"
-              >
-                {{ t("providerEnvOverride") }}
-              </p>
-
-              <div class="grid gap-3 border-t border-rule pt-3">
-                <p class="m-0 text-xs leading-snug text-muted-foreground">
-                  <span v-if="existingConnection">{{ tf("providerConnected", { label: existingConnection.label }) }}</span>
-                  {{ t("providerGuestHint") }}
-                </p>
-                <div class="flex flex-wrap items-center justify-end gap-2">
-                  <button
-                    v-if="existingConnection"
-                    type="button"
-                    :disabled="busy"
-                    class="min-h-8 shrink-0 rounded-lg border border-rule bg-paper px-3 text-sm font-medium text-destructive transition duration-200 hover:bg-danger-soft disabled:opacity-50"
-                    @click="removeConnection(existingConnection.templateId)"
-                  >
-                    {{ t("providerRemove") }}
-                  </button>
-                  <button
-                    type="submit"
-                    :disabled="busy"
-                    class="min-h-8 shrink-0 rounded-lg bg-accent px-3 text-sm font-semibold text-white transition duration-200 hover:bg-accent-deep disabled:opacity-50"
-                  >
-                    {{ busy ? t("saving") : existingConnection ? t("providerUpdate") : t("providerSave") }}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      </details>
+      </section>
   </SettingsSectionShell>
 </template>

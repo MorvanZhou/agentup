@@ -104,6 +104,7 @@ export function createCompleteGroupTaskExtension(options: {
             const nextStep = typeof params.next_step === "string" ? params.next_step.trim() : "";
             state.staged = staged;
             state.confirmed = true;
+            state.nextStep = nextStep;
             const files =
               staged.length === 0
                 ? "Confirmed: no shared files for this task."

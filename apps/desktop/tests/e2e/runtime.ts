@@ -5,6 +5,8 @@ type AgentRecord = {
   name: string;
   role: string;
   background: string;
+  /** 工作规则；名片更新升版时与 backend 对齐。 */
+  rules?: string;
   latest_version: number;
   latest_digest: string;
   local_version: number;
@@ -273,7 +275,7 @@ export async function installRuntime(
     kind: "ollama",
     pi_provider_id: "ollama",
     requires_api_key: false,
-    default_base_url: "http://localhost:11434/v1",
+    default_base_url: "http://localhost:11434/v1/chat/completions",
     default_model_id: "qwen3:4b",
     hint: "模型名需与 ollama list 一致",
     api: "openai-completions",
@@ -1843,13 +1845,28 @@ export async function installRuntime(
         rules?: string;
         avatar_data_url?: string;
       };
+      const nextRole = body.role ?? "";
+      const nextRules = typeof body.rules === "string" ? body.rules : (agent.rules ?? "");
+      const nextAvatar =
+        typeof body.avatar_data_url === "string" && body.avatar_data_url.length > 0
+          ? body.avatar_data_url
+          : null;
+      const cardDirty =
+        agent.name !== body.name ||
+        agent.role !== nextRole ||
+        agent.background !== body.background ||
+        (agent.rules ?? "") !== nextRules ||
+        nextAvatar !== null;
       agent.name = body.name;
-      agent.role = body.role ?? "";
+      agent.role = nextRole;
       agent.background = body.background;
-      if (typeof body.avatar_data_url === "string" && body.avatar_data_url.length > 0) {
+      agent.rules = nextRules;
+      if (nextAvatar !== null) {
         agent.has_avatar = true;
-        agent.avatar_url = body.avatar_data_url;
+        agent.avatar_url = nextAvatar;
       }
+      // 与 backend 一致：名片有变更才升版，方便顶栏「更新」红点测。
+      if (cardDirty) agent.latest_version += 1;
       return json(route, 200, agent);
     }
     if (request.method() === "POST" && path === "/agents/local/from-published") {

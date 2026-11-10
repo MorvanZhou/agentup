@@ -21,6 +21,7 @@ import type { Visit } from "../../package/sync.js";
 import { createCheckpointExtension } from "../checkpoint/extension.js";
 import { formatEnvironmentPrompt } from "../environment.js";
 import { createArtifactsExtension } from "../history/artifacts.js";
+import { createPresentPreviewExtension } from "../tools/present-preview.js";
 import { createDeliverablesExtension } from "../history/deliverables.js";
 import { healInterruptedSessionTools } from "../history/history.js";
 import { createReplyModelExtension } from "../history/reply-model.js";
@@ -49,7 +50,7 @@ import { createWebToolsExtension } from "../tools/web.js";
 import { projectVisitAgentsMd } from "../workspace/agents-md.js";
 import { snapshotArtifactDir } from "../workspace/artifact-diff.js";
 import { ensureCwdLayout } from "../workspace/cwd-layout.js";
-import { mergeVisitMcp, projectVisitMcp } from "../workspace/mcp.js";
+import { mergeVisitMcp, projectVisitMcp, setPlatformMcpUserDataRoot } from "../workspace/mcp.js";
 import { resolveAllowedRoots } from "../workspace/project-roots.js";
 import { compileSystemPrompt } from "../context/prompt-policy.js";
 import { executionModeOf } from "../context/mode.js";
@@ -87,10 +88,15 @@ type SharedOpen = {
    */
   parentExtensions?: (scope: { cwd: string; groupId?: string }) => ParentSessionExtensions;
   /**
-   * 交给外部 agent（本地 Agent App）的 MCP 工具，按 cwd 现算（§12.7 / §12.9）。
-   * 子会话（kind=delegation）不传 → 天然不再嵌套委托。
+   * 交给外部 agent（本地 Agent App）的 MCP 工具，按 cwd / workspaceRoot 现算（§12.7 / §12.9）。
+   * 子会话（kind=delegation）不传 → 天然不再嵌套委托 / 不挂 present_preview。
    */
-  externalMcp?: (scope: { cwd: string; groupId?: string }) => McpTool[];
+  externalMcp?: (scope: {
+    cwd: string;
+    groupId?: string;
+    /** Recipe 写入根：群共享 workspace，否则 cwd。 */
+    workspaceRoot?: string;
+  }) => McpTool[];
 };
 
 export type ProfiledSessionRequest = SharedOpen &
@@ -176,10 +182,13 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
   const resourceRoot = profile.personalSkills && personal ? visit.root : undefined;
   const packageSkills = path.join(plan.cwd, ".pi", "skills");
   const personalSkills = resourceRoot ? path.join(resourceRoot, "skills") : undefined;
+  // 平台 Playwright MCP 注入依赖 userDataRoot
+  setPlatformMcpUserDataRoot(userDataRootFromVisit(visit));
   const mcpConfig =
     profile.personalMcp && personal && resourceRoot
       ? mergeVisitMcp(plan.cwd, resourceRoot, visit.userId)
       : projectVisitMcp(plan.cwd, visit.userId);
+  // 始终有平台 playwright → MCP / tool_search 默认可用
   const mcpEnabled = mcpConfig.servers.length > 0;
   const settingsManager = SettingsManager.create(plan.cwd, plan.agentDir, { projectTrusted: true });
   // API/Pi：开内建 compact；阈值 = model.contextWindow - reserveTokens（窗长见 openModelRuntime）
@@ -232,6 +241,10 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
               cwd: plan.cwd,
               listPending: parent.listDeliverablesPending ?? (() => []),
               markPresented: parent.markDeliverablesPresented ?? (() => {}),
+            }),
+            // Recipe 写在 thread 工作区：群聊用共享 workspace，一对一用 visit cwd。
+            createPresentPreviewExtension({
+              workspaceRoot: groupWorkspace?.root ?? plan.cwd,
             }),
           ]
         : []),
@@ -322,8 +335,8 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
     ...(groupId ? { groupId } : {}),
     ...(groupWorkspace ? { groupWorkspaceRoot: groupWorkspace.root } : {}),
     ...(groupRosterPrompt ? { groupRosterPrompt } : {}),
-    // SDK：委托确认工具挂 MCP（与 Pi extension 同写 deliverState）；父会话另挂委托协调工具。
-    // 子会话不传 externalMcp → 天然不嵌套 delegate（围栏）。
+    // SDK：委托确认工具挂 MCP（与 Pi extension 同写 deliverState）；父会话另挂 preview + 委托协调。
+    // 子会话不传 externalMcp → 天然不嵌套 delegate、不挂 present_preview（围栏）。
     mcpTools: [
       ...artifactMcpToolsForProfile({
         profile,
@@ -331,7 +344,11 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
         cwd: plan.cwd,
         groupWorkspaceRoot: groupWorkspace?.root,
       }),
-      ...(input.externalMcp?.({ cwd: plan.cwd, ...(groupId ? { groupId } : {}) }) ?? []),
+      ...(input.externalMcp?.({
+        cwd: plan.cwd,
+        workspaceRoot: groupWorkspace?.root ?? plan.cwd,
+        ...(groupId ? { groupId } : {}),
+      }) ?? []),
     ],
   });
   const tools = sessionTools.length > 0 ? sessionTools : undefined;

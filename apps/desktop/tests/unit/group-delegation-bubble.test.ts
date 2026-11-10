@@ -247,3 +247,30 @@ it("renders a sparse in-flight card without process tabs", () => {
   expect(tab(host, "process")).toBeNull();
   expect(tab(host, "brief")).toBeNull();
 });
+
+it("shows working mark while the subagent task is still running", () => {
+  // 对齐主 Agent 气泡左下角「工作中」：跑着就该看得见，不依赖已展开过程
+  const host = mount({
+    ...card,
+    outcome: undefined,
+    activity: "running",
+  });
+  expect(host.querySelector('[data-testid="delegation-working"]')).not.toBeNull();
+});
+
+it("hides working mark when the subagent is waiting for the user", () => {
+  const host = mount(
+    {
+      ...card,
+      outcome: undefined,
+      activity: "running",
+    },
+    ["task-design"],
+  );
+  expect(host.querySelector('[data-testid="delegation-working"]')).toBeNull();
+});
+
+it("hides working mark after the subagent task completed", () => {
+  const host = mount(card);
+  expect(host.querySelector('[data-testid="delegation-working"]')).toBeNull();
+});

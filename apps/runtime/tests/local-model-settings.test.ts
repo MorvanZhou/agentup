@@ -54,7 +54,9 @@ it("reads and saves provider settings through the loopback API", async () => {
       connections: [{ template_id: "ollama", base_url: "http://127.0.0.1:11434/v1" }],
     });
     expect(savedBody.enabled_models).toEqual(
-      expect.arrayContaining([{ template_id: "ollama", model_id: "qwen3:0.6b" }]),
+      expect.arrayContaining([
+        { template_id: "ollama", connection_id: "ollama", model_id: "qwen3:0.6b" },
+      ]),
     );
 
     const secrets = await request("PUT", "/settings/provider/runtime-secrets", {

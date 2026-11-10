@@ -351,7 +351,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
     });
   });
 
-  /** 仅更新名片层（含规则），不换运行包。 */
+  /** 更新名片层（含规则）；有变更则升版，不换能力对象。 */
   app.put("/agents/:agentId/card", async (c) => {
     const agentId = requireAgentId(c.req.param("agentId"));
     const body = await readJson(c);
@@ -516,6 +516,7 @@ export function registerAgentsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps)
       const ref = requireEnabledModelRef(config.userDataRoot, {
         templateId: text(body, "template_id"),
         modelId: text(body, "model_id"),
+        connectionId: optionalText(body, "connection_id"),
       });
       const visitRoot = path.join(config.userDataRoot, "users", userId, "agents", agentId);
       const cwd = path.join(visitRoot, "cwd");

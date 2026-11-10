@@ -59,7 +59,11 @@ export function useSessionModel(agentId: Ref<string>, api = new DesktopApi()) {
         session.value.token,
         agentId.value,
         session.value.userId,
-        { templateId: model.templateId, modelId: model.modelId },
+        {
+          templateId: model.templateId,
+          modelId: model.modelId,
+          connectionId: model.connectionId,
+        },
         readUiLocale(),
       );
     } catch (caught) {

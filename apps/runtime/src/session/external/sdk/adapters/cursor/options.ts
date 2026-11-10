@@ -6,6 +6,7 @@ import {
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
 import { compactUserPrompt } from "../../host/compact-instruction.js";
+import { mergeExternalTurnMcpServers } from "../../mcp-servers.js";
 
 /**
  * Cursor 多数账号未开通 Custom system prompt（会报 invalid_argument）。
@@ -66,6 +67,7 @@ export function cursorCreateOptionsOf(
 ): Record<string, unknown> {
   const model =
     input.modelId && input.modelId !== "default" ? { model: { id: input.modelId } } : {};
+  const mcpServers = mergeExternalTurnMcpServers(input, normalizeMcp);
   return {
     apiKey: extras.apiKey,
     ...model,
@@ -76,7 +78,7 @@ export function cursorCreateOptionsOf(
       store: extras.localStore,
       ...(input.askUser ? { customTools: askUserCustomTools(input) } : {}),
     },
-    ...(input.mcpServer ? { mcpServers: { agentup: normalizeMcp(input.mcpServer) } } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
   };
 }
 

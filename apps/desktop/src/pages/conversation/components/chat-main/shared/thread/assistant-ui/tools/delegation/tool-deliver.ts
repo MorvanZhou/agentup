@@ -4,6 +4,10 @@ export type DeliverArtifactView = {
   empty: boolean;
 };
 
+export type CompleteGroupTaskView = DeliverArtifactView & {
+  nextStep: string;
+};
+
 /** 从 deliver_artifacts 的参数和结果整理出要展示的路径。 */
 export function deliverArtifactView(args: unknown, resultText: string): DeliverArtifactView {
   const requested = pathsFromArgs(args);
@@ -23,6 +27,33 @@ export function deliverArtifactView(args: unknown, resultText: string): DeliverA
   if (listed.length > 0) return { paths: listed, error: "", empty: false };
   if (text.startsWith("Confirmed:")) return { paths: [], error: "", empty: true };
   return { paths: requested, error: "", empty: false };
+}
+
+/**
+ * 群 complete_group_task：共享 WORK/ARTIFACT 路径 + next_step。
+ * 结果行形如 `Next step: …` / `Next step: none.`。
+ */
+export function completeGroupTaskView(
+  args: unknown,
+  resultText: string,
+): CompleteGroupTaskView {
+  const base = deliverArtifactView(args, resultText);
+  return { ...base, nextStep: nextStepFromComplete(args, resultText) };
+}
+
+function nextStepFromComplete(args: unknown, resultText: string): string {
+  const text = resultText.trim();
+  if (text) {
+    const match = /^Next step:\s*(.*)$/im.exec(text);
+    if (match) {
+      const value = (match[1] ?? "").trim();
+      if (!value || /^none\.?$/i.test(value)) return "";
+      return value;
+    }
+  }
+  if (!args || typeof args !== "object") return "";
+  const raw = (args as { next_step?: unknown }).next_step;
+  return typeof raw === "string" ? raw.trim() : "";
 }
 
 function pathsFromArgs(args: unknown): string[] {

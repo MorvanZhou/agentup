@@ -15,7 +15,7 @@ import { t, tf } from "../../../shared/model/ui/ui-locale";
 
 /**
  * 市场发布 / 更新：
- * - 名片层（name/role/background/rules/avatar）→ PUT /card，不升版
+ * - 名片层（name/role/background/rules/avatar）→ PUT /card，有变更则升版
  * - 能力层（skills/MCP）→ publish-editor 临时组包升版（不创建 loc-*）
  * - 打开更新 → publish-editor/preview（不 hydrate 本机草稿）
  */

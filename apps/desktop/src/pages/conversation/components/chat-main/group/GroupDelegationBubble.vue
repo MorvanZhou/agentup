@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LoaderCircleIcon } from "@lucide/vue";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui";
 import { computed, inject, ref, watch } from "vue";
 
@@ -16,7 +17,9 @@ import { delegationWorkspaceAgentId } from "../../../model/message/message-artif
 import { buildLatestAssistantByproducts } from "../../../model/message/message-byproducts";
 import { replyModelFromMessages } from "../../../model/message/message-reply-model";
 import {
+  groupDelegationPhase,
   groupDelegationRuntimeKey,
+  groupWaitingTaskIdsKey,
   type GroupDelegationCard,
 } from "../../../model/group/group-delegation";
 import { t, tf } from "../../../../../shared/model/ui/ui-locale";
@@ -27,6 +30,7 @@ import ChatBubble from "../shared/ChatBubble.vue";
 
 const props = defineProps<{ card: GroupDelegationCard }>();
 const profileHost = inject(agentProfileHostKey, null);
+const waitingTaskIds = inject(groupWaitingTaskIdsKey, null);
 /** 有专员 id 就可点开资料（host 缺失时点了无响应，仍保留按钮态）。 */
 const canOpenProfile = computed(() => Boolean(props.card.authorId));
 
@@ -163,6 +167,26 @@ watch(
 const taskError = computed(() =>
   task.value?.status === "failed" && task.value.error ? task.value.error : "",
 );
+
+const waiting = computed(
+  () =>
+    Boolean(props.card.taskId) &&
+    Boolean(waitingTaskIds?.value.includes(props.card.taskId)),
+);
+const phase = computed(() => groupDelegationPhase(props.card, waiting.value));
+/**
+ * 左下角「工作中」：对齐主 Agent AssistantMessage。
+ * 卡片仍在排队/执行，或旁路 SSE 仍在推，就给稳定反馈；等人处理或已终态不显示。
+ * 旁路已读到终态时以 task.status 为准，避免卡片 activity 滞后仍亮着。
+ */
+const showWorking = computed(() => {
+  const status = task.value?.status;
+  if (status === "completed" || status === "failed" || status === "cancelled") {
+    return false;
+  }
+  if (streaming.value) return true;
+  return phase.value === "running" || phase.value === "queued";
+});
 </script>
 
 <template>
@@ -252,12 +276,13 @@ const taskError = computed(() =>
           />
         </div>
 
-        <div class="px-3 py-3">
+        <!-- 水平 padding 下沉到内容层，过程区滚动条可贴气泡右缘 -->
+        <div class="py-3">
           <!-- 委派简述 -->
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'brief')"
             value="brief"
-            class="min-w-0 outline-none"
+            class="min-w-0 px-3 outline-none"
           >
             <p class="m-0 text-xs leading-snug text-pretty text-muted-foreground opacity-80">{{ card.brief }}</p>
           </TabsContent>
@@ -265,7 +290,7 @@ const taskError = computed(() =>
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'summary')"
             value="summary"
-            class="min-w-0 outline-none"
+            class="min-w-0 px-3 outline-none"
           >
             <DelegationProcessProducts
               :messages="messages"
@@ -281,7 +306,7 @@ const taskError = computed(() =>
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'artifacts')"
             value="artifacts"
-            class="min-w-0 outline-none"
+            class="min-w-0 px-3 outline-none"
           >
             <DelegationProcessProducts
               :messages="messages"
@@ -297,7 +322,7 @@ const taskError = computed(() =>
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'todo')"
             value="todo"
-            class="min-w-0 outline-none"
+            class="min-w-0 px-3 outline-none"
           >
             <DelegationProcessProducts
               :messages="messages"
@@ -309,7 +334,7 @@ const taskError = computed(() =>
               tab="todo"
             />
           </TabsContent>
-          <!-- 子任务过程：只显示时间线 -->
+          <!-- 子任务过程：勿加 px，padding 在滚动内层 -->
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'process')"
             value="process"
@@ -329,7 +354,7 @@ const taskError = computed(() =>
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'subagents')"
             value="subagents"
-            class="min-w-0 outline-none"
+            class="min-w-0 px-3 outline-none"
           >
             <DelegationProcessProducts
               :messages="messages"
@@ -341,8 +366,39 @@ const taskError = computed(() =>
               tab="subagents"
             />
           </TabsContent>
+
+          <!-- 左下角：子任务仍在跑时提示工作中（对齐主 Agent AssistantMessage） -->
+          <div
+            v-if="showWorking"
+            class="mt-2 flex items-center gap-1.5 px-3 select-none"
+            data-copy-ignore
+            data-testid="delegation-working"
+            role="status"
+            aria-live="polite"
+          >
+            <LoaderCircleIcon
+              class="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            <span class="text-xs text-muted-foreground">{{ t("msgWorking") }}</span>
+          </div>
         </div>
       </TabsRoot>
+      <!-- 尚无 tab 壳时也要露工作中（排队/刚开工空卡片） -->
+      <div
+        v-else-if="showWorking"
+        class="flex items-center gap-1.5 px-3 py-3 select-none"
+        data-copy-ignore
+        data-testid="delegation-working"
+        role="status"
+        aria-live="polite"
+      >
+        <LoaderCircleIcon
+          class="size-3 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <span class="text-xs text-muted-foreground">{{ t("msgWorking") }}</span>
+      </div>
     </div>
   </ChatBubble>
 </template>

@@ -30,7 +30,11 @@ it("persists provider connections and loads the active model", () => {
     customModelId: "qwen3:0.6b",
   });
   expect(settings.configured).toBe(true);
-  expect(settings.activeModel).toEqual({ templateId: "ollama", modelId: "qwen3:0.6b" });
+  expect(settings.activeModel).toEqual({
+    templateId: "ollama",
+    connectionId: "ollama",
+    modelId: "qwen3:0.6b",
+  });
   expect(settings.availableModels.some((m) => m.modelId === "qwen3:0.6b" && m.enabled)).toBe(true);
   expect(settings.availableModels.find((m) => m.modelId === "qwen3:0.6b")?.vendorId).toBe("ollama");
   expect(loadModelConfig(root, {})).toMatchObject({
@@ -91,7 +95,11 @@ it("toggles enabled models and keeps an active selection", () => {
   let settings = setModelEnabled(root, { templateId: "ollama", modelId: "b" }, true);
   expect(settings.availableModels.find((m) => m.modelId === "b")?.enabled).toBe(true);
   settings = setActiveModel(root, { templateId: "ollama", modelId: "b" });
-  expect(settings.activeModel).toEqual({ templateId: "ollama", modelId: "b" });
+  expect(settings.activeModel).toEqual({
+    templateId: "ollama",
+    connectionId: "ollama",
+    modelId: "b",
+  });
   settings = setModelEnabled(root, { templateId: "ollama", modelId: "b" }, false);
   expect(settings.activeModel?.modelId).toBe("a");
   deleteProviderConnection(root, "ollama");
@@ -116,7 +124,11 @@ it("removes a manually added custom model from the list", () => {
   settings = removeCustomModel(root, { templateId: "ollama", modelId: "drop-me" });
   expect(settings.connections[0]?.customModelIds).toEqual(["keep-me"]);
   expect(settings.availableModels.map((m) => m.modelId)).toEqual(["keep-me"]);
-  expect(settings.activeModel).toEqual({ templateId: "ollama", modelId: "keep-me" });
+  expect(settings.activeModel).toEqual({
+    templateId: "ollama",
+    connectionId: "ollama",
+    modelId: "keep-me",
+  });
   expect(() => removeCustomModel(root, { templateId: "ollama", modelId: "keep-me-not" })).toThrow(
     ConfigError,
   );
@@ -151,4 +163,16 @@ it("rejects invalid provider connections", () => {
       templateId: "nope",
     }),
   ).toThrow("未知的服务商");
+});
+
+it("strips chat/completions from pasted custom base URLs on save", () => {
+  clearRuntimeProviderSecrets();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-provider-url-"));
+  const settings = upsertProviderConnection(root, {
+    templateId: "custom-openai",
+    baseUrl: "https://api.example.com/v1/chat/completions/",
+    apiKeyCipher: "cipher",
+    customModelId: "demo",
+  });
+  expect(settings.connections[0]?.baseUrl).toBe("https://api.example.com/v1");
 });

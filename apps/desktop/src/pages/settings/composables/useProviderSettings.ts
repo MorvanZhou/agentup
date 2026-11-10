@@ -25,8 +25,15 @@ export function useProviderSettings(api = new DesktopApi()) {
   let ignoreNextEpoch = false;
 
   const draftTemplateId = ref("");
+  /** 当前编辑的连接；空串 = 尚未保存的新端点（createNew）。 */
+  const draftConnectionId = ref("");
   const draftBaseUrl = ref("");
   const draftApiKey = ref("");
+  /** 接入表单内手配的 model id 草稿 */
+  const draftInlineModelId = ref("");
+  /** 下方列表正在改名的 model：connectionId::oldId */
+  const editingModelKey = ref("");
+  const editingModelId = ref("");
   const modelFilter = ref("");
   /** 启用服务列表按供应商收窄；空串 = 已存在的全部供应商。 */
   const modelProviderFilter = ref("");
@@ -34,7 +41,8 @@ export function useProviderSettings(api = new DesktopApi()) {
   const modelEnabledOnly = ref(false);
   /** 手动追加模型 ID（仅 Ollama / 自定义 OpenAI 兼容可在运行时注册）。 */
   const draftCustomModelId = ref("");
-  const draftAddTemplateId = ref("");
+  /** 上方快捷添加：目标连接 */
+  const draftAddConnectionId = ref("");
 
   const vendors = computed(() => settings.value?.vendors ?? []);
   const connections = computed(() => settings.value?.connections ?? []);
@@ -55,14 +63,24 @@ export function useProviderSettings(api = new DesktopApi()) {
     () => agentSdks.value.find((item) => item.templateId === draftTemplateId.value) ?? null,
   );
   const sdkSelected = computed(() => selectedTemplate.value?.access === "agent-sdk");
-  const existingConnection = computed(
-    () => connections.value.find((item) => item.templateId === draftTemplateId.value) ?? null,
+  const existingConnection = computed(() => {
+    if (draftConnectionId.value) {
+      return connections.value.find((item) => item.connectionId === draftConnectionId.value) ?? null;
+    }
+    return null;
+  });
+  /** 当前模板下已有的全部连接（多端点） */
+  const templateConnections = computed(() =>
+    connections.value.filter((item) => item.templateId === draftTemplateId.value),
   );
   const needsBaseUrl = computed(() => {
     const kind = selectedTemplate.value?.kind;
     return kind === "ollama" || kind === "custom-openai";
   });
   const needsApiKey = computed(() => Boolean(selectedTemplate.value?.requiresApiKey));
+  const canAddAnotherEndpoint = computed(() =>
+    Boolean(selectedTemplate.value?.allowsMultipleConnections && templateConnections.value.length > 0),
+  );
   /** 可刷新的来源：能拉 List Models 的服务商 + 已登录的本地接入（后者问本地 SDK） */
   const sdkRefreshTargets = computed(() =>
     agentSdks.value.filter((sdk) => sdk.state === "ready").map((sdk) => sdk.templateId),
@@ -74,8 +92,26 @@ export function useProviderSettings(api = new DesktopApi()) {
     }) || sdkRefreshTargets.value.length > 0,
   );
   /** 任意已连接服务商均可手动追加模型 ID（runtime 会对内置目录外的 id 按同端点动态注册）。 */
-  const customModelTargets = computed(() => connections.value);
+  const customModelTargets = computed(() =>
+    connections.value.map((item) => ({
+      connectionId: item.connectionId,
+      templateId: item.templateId,
+      label: item.label,
+    })),
+  );
   const canAddCustomModel = computed(() => customModelTargets.value.length > 0);
+  /** 当前连接上全部模型（发现 + 手配），接入表单下方列表用 */
+  const inlineConnectionModels = computed(() => {
+    const connection = existingConnection.value;
+    if (!connection) return [];
+    return availableModels.value.filter(
+      (model) => model.connectionId === connection.connectionId,
+    );
+  });
+  /** 新建连接且尚无 API Key 时，Key 为必填 */
+  const apiKeyRequired = computed(
+    () => needsApiKey.value && !existingConnection.value?.hasApiKey,
+  );
   /**
    * 搜索框前的供应商下拉：从当前可用模型里去重 templateId。
    * 含 API 连接与已登录本地 App；默认项「全部」value 为空串。
@@ -167,11 +203,11 @@ export function useProviderSettings(api = new DesktopApi()) {
     customModelTargets,
     (targets) => {
       if (!targets.length) {
-        draftAddTemplateId.value = "";
+        draftAddConnectionId.value = "";
         return;
       }
-      if (!targets.some((item) => item.templateId === draftAddTemplateId.value)) {
-        draftAddTemplateId.value = targets[0]!.templateId;
+      if (!targets.some((item) => item.connectionId === draftAddConnectionId.value)) {
+        draftAddConnectionId.value = targets[0]!.connectionId;
       }
     },
     { immediate: true },
@@ -198,7 +234,7 @@ export function useProviderSettings(api = new DesktopApi()) {
     for (const connection of next.connections) {
       if (!connection.apiKeyCipher) continue;
       try {
-        secrets[connection.templateId] = await decryptSecret(connection.apiKeyCipher);
+        secrets[connection.connectionId] = await decryptSecret(connection.apiKeyCipher);
       } catch {
         /* 密文损坏时跳过 */
       }
@@ -208,10 +244,36 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
-  function applyTemplateDefaults(template: ProviderTemplate): void {
-    const existing = connections.value.find((item) => item.templateId === template.id);
-    draftBaseUrl.value = existing?.baseUrl ?? template.defaultBaseUrl ?? "";
+  function applyConnectionDraft(connection: ProviderConnection | null, template: ProviderTemplate): void {
+    draftConnectionId.value = connection?.connectionId ?? "";
+    // 表单默认展示 completions 完整地址；落盘仍会剥成 …/v1
+    const raw = connection?.baseUrl ?? template.defaultBaseUrl ?? "";
+    draftBaseUrl.value = toProviderBaseUrlDraft(raw, template.kind);
     draftApiKey.value = "";
+    draftInlineModelId.value = "";
+    editingModelKey.value = "";
+    editingModelId.value = "";
+  }
+
+  function applyTemplateDefaults(template: ProviderTemplate): void {
+    const existing = connections.value.find((item) => item.templateId === template.id) ?? null;
+    applyConnectionDraft(existing, template);
+  }
+
+  /** 多端点：再开一条新连接（清空表单，保存时 createNew） */
+  function startAnotherEndpoint(): void {
+    const template = selectedTemplate.value;
+    if (!template?.allowsMultipleConnections) return;
+    applyConnectionDraft(null, template);
+  }
+
+  /** 切换到同模板下某条已有连接 */
+  function selectEndpoint(connectionId: string): void {
+    const template = selectedTemplate.value;
+    if (!template) return;
+    const connection =
+      connections.value.find((item) => item.connectionId === connectionId) ?? null;
+    applyConnectionDraft(connection, template);
   }
 
   async function saveConnection(): Promise<void> {
@@ -226,7 +288,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       return;
     }
     const isNew = !existingConnection.value;
-    if (needsApiKey.value && isNew && !draftApiKey.value.trim()) {
+    if (apiKeyRequired.value && !draftApiKey.value.trim()) {
       showToast("请填写 API Key", "error");
       return;
     }
@@ -246,27 +308,50 @@ export function useProviderSettings(api = new DesktopApi()) {
         plaintext = draftApiKey.value.trim();
         apiKeyCipher = await encryptSecret(plaintext);
       }
+      const createNew = isNew && template.allowsMultipleConnections && templateConnections.value.length > 0;
       const next = await api.upsertProviderConnection(
         session.value.token,
         {
           templateId: template.id,
+          ...(existingConnection.value
+            ? { connectionId: existingConnection.value.connectionId }
+            : {}),
+          ...(createNew ? { createNew: true } : {}),
           baseUrl: needsBaseUrl.value ? draftBaseUrl.value.trim() : undefined,
           apiKeyCipher,
+          ...(draftInlineModelId.value.trim()
+            ? { customModelId: draftInlineModelId.value.trim() }
+            : {}),
         },
         locale(),
       );
       settings.value = next;
-      if (plaintext !== undefined) {
+      const saved =
+        next.connections.find((item) =>
+          existingConnection.value
+            ? item.connectionId === existingConnection.value!.connectionId
+            : item.templateId === template.id &&
+              (!createNew || item.baseUrl === draftBaseUrl.value.trim().replace(/\/+$/, "")),
+        ) ?? next.connections.filter((item) => item.templateId === template.id).at(-1);
+      if (saved) {
+        draftConnectionId.value = saved.connectionId;
+      }
+      if (plaintext !== undefined && saved) {
         await api.hydrateProviderRuntimeSecrets(session.value.token, {
-          [template.id]: plaintext,
+          [saved.connectionId]: plaintext,
         });
       } else {
         await hydrateSecrets(next);
       }
       draftApiKey.value = "";
+      if (draftInlineModelId.value.trim()) draftInlineModelId.value = "";
       showToast("服务商已保存", "success");
-      if (template.supportsModelDiscovery) {
-        await refreshModelsFor(template.id, { quiet: true });
+      if (template.supportsModelDiscovery && saved) {
+        const ok = await refreshModelsFor(saved.connectionId, { quiet: true });
+        if (!ok && needsBaseUrl.value) {
+          // 发现失败不阻断；引导手配（自定义网关常见）
+          showToast(t("providerDiscoverFailedHint"), "error");
+        }
       }
       notifyProviderConfigChanged();
     } catch (caught) {
@@ -277,18 +362,48 @@ export function useProviderSettings(api = new DesktopApi()) {
   }
 
   async function refreshModelsFor(
-    templateId: string,
+    connectionId: string,
     options?: { quiet?: boolean },
   ): Promise<boolean> {
     if (!session.value) return false;
     try {
-      settings.value = await api.refreshProviderModels(session.value.token, templateId, locale());
+      settings.value = await api.refreshProviderModels(session.value.token, connectionId, locale());
       if (!options?.quiet) showToast(t("providerSdkModelsSynced"), "success");
       return true;
     } catch (caught) {
+      // 失败时 runtime 已清掉陈旧 discovered；再读一次盘，别让 UI 继续显示幽灵模型
+      try {
+        settings.value = await api.providerSettings(session.value.token, locale());
+        notifyProviderConfigChanged();
+      } catch {
+        /* 回读失败仍提示原错 */
+      }
       // runtime 已统一 MODEL_CATALOG_UNAVAILABLE 文案
       showToast(messageOf(caught) || t("providerModelsUnavailable"), "error");
       return false;
+    }
+  }
+
+  /** 接入表单：只刷新当前编辑的这条连接（Ollama 本地换模型后用） */
+  async function refreshCurrentConnectionModels(): Promise<void> {
+    if (!session.value || busy.value) return;
+    const connection = existingConnection.value;
+    if (!connection) {
+      showToast(t("providerNeedConnection"), "error");
+      return;
+    }
+    const template = templates.value.find((item) => item.id === connection.templateId);
+    if (!template?.supportsModelDiscovery) {
+      showToast(t("providerModelsUnavailable"), "error");
+      return;
+    }
+    busy.value = true;
+    try {
+      await hydrateSecrets(settings.value!);
+      const ok = await refreshModelsFor(connection.connectionId);
+      if (ok) notifyProviderConfigChanged();
+    } finally {
+      busy.value = false;
     }
   }
 
@@ -308,7 +423,7 @@ export function useProviderSettings(api = new DesktopApi()) {
       await hydrateSecrets(settings.value!);
       let ok = 0;
       for (const connection of targets) {
-        if (await refreshModelsFor(connection.templateId, { quiet: true })) ok += 1;
+        if (await refreshModelsFor(connection.connectionId, { quiet: true })) ok += 1;
       }
       // 本地接入的目录不在服务端，走 runtime 代问本地 SDK
       for (const templateId of sdkTargets) {
@@ -352,9 +467,13 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
-  async function addCustomModel(): Promise<void> {
+  async function addCustomModelTo(
+    connectionId: string,
+    modelIdRaw: string,
+    draftRef: typeof draftCustomModelId | typeof draftInlineModelId,
+  ): Promise<void> {
     if (!session.value || busy.value) return;
-    const modelId = draftCustomModelId.value.trim();
+    const modelId = modelIdRaw.trim();
     if (!modelId) {
       showToast(t("providerAddModelEmpty"), "error");
       return;
@@ -363,14 +482,13 @@ export function useProviderSettings(api = new DesktopApi()) {
       showToast(t("providerAddModelEmpty"), "error");
       return;
     }
-    const templateId = draftAddTemplateId.value.trim();
-    const target = customModelTargets.value.find((item) => item.templateId === templateId);
+    const target = customModelTargets.value.find((item) => item.connectionId === connectionId);
     if (!target) {
       showToast(t("providerNeedConnection"), "error");
       return;
     }
     const already = availableModels.value.some(
-      (model) => model.templateId === templateId && model.modelId === modelId,
+      (model) => model.connectionId === connectionId && model.modelId === modelId,
     );
     if (already) {
       showToast(t("providerAddModelExists"), "error");
@@ -381,10 +499,14 @@ export function useProviderSettings(api = new DesktopApi()) {
     try {
       settings.value = await api.upsertProviderConnection(
         session.value.token,
-        { templateId, customModelId: modelId },
+        {
+          templateId: target.templateId,
+          connectionId: target.connectionId,
+          customModelId: modelId,
+        },
         locale(),
       );
-      draftCustomModelId.value = "";
+      draftRef.value = "";
       notifyProviderConfigChanged();
       showToast(tf("providerAddModelDone", { id: modelId }), "success");
     } catch (caught) {
@@ -394,13 +516,39 @@ export function useProviderSettings(api = new DesktopApi()) {
     }
   }
 
-  async function removeConnection(templateId: string): Promise<void> {
+  /** 上方列表快捷添加 */
+  async function addCustomModel(): Promise<void> {
+    await addCustomModelTo(draftAddConnectionId.value, draftCustomModelId.value, draftCustomModelId);
+  }
+
+  /** 接入表单内添加：未保存连接时先连同 model id 一起保存 */
+  async function addInlineCustomModel(): Promise<void> {
+    if (existingConnection.value) {
+      await addCustomModelTo(
+        existingConnection.value.connectionId,
+        draftInlineModelId.value,
+        draftInlineModelId,
+      );
+      return;
+    }
+    // 尚未建连：走保存，把草稿 model id 一并提交
+    await saveConnection();
+  }
+
+  async function removeConnection(connectionId: string): Promise<void> {
     if (!session.value || busy.value) return;
     busy.value = true;
     try {
-      settings.value = await api.deleteProviderConnection(session.value.token, templateId, locale());
-      if (draftTemplateId.value === templateId) {
-        const template = selectedTemplate.value;
+      const removedTemplateId =
+        connections.value.find((item) => item.connectionId === connectionId)?.templateId ??
+        draftTemplateId.value;
+      settings.value = await api.deleteProviderConnection(
+        session.value.token,
+        connectionId,
+        locale(),
+      );
+      if (draftConnectionId.value === connectionId || draftTemplateId.value === removedTemplateId) {
+        const template = templates.value.find((item) => item.id === removedTemplateId);
         if (template) applyTemplateDefaults(template);
       }
       notifyProviderConfigChanged();
@@ -418,7 +566,11 @@ export function useProviderSettings(api = new DesktopApi()) {
     try {
       settings.value = await api.setProviderModelEnabled(
         session.value.token,
-        { templateId: model.templateId, modelId: model.modelId },
+        {
+          templateId: model.templateId,
+          connectionId: model.connectionId,
+          modelId: model.modelId,
+        },
         enabled,
         locale(),
       );
@@ -440,11 +592,100 @@ export function useProviderSettings(api = new DesktopApi()) {
     try {
       settings.value = await api.removeCustomProviderModel(
         session.value.token,
-        { templateId: model.templateId, modelId: model.modelId },
+        {
+          templateId: model.templateId,
+          connectionId: model.connectionId,
+          modelId: model.modelId,
+        },
         locale(),
       );
+      if (editingModelKey.value === `${model.connectionId}::${model.modelId}`) {
+        editingModelKey.value = "";
+        editingModelId.value = "";
+      }
       notifyProviderConfigChanged();
       showToast(tf("providerRemoveModelDone", { id: model.modelId }), "success");
+    } catch (caught) {
+      showToast(messageOf(caught), "error");
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  function startEditInlineModel(model: AvailableProviderModel): void {
+    if (!model.custom) return;
+    editingModelKey.value = `${model.connectionId}::${model.modelId}`;
+    editingModelId.value = model.modelId;
+  }
+
+  function cancelEditInlineModel(): void {
+    editingModelKey.value = "";
+    editingModelId.value = "";
+  }
+
+  /** 改手配 model id：先删旧再加新，保留启用意图 */
+  async function saveEditInlineModel(model: AvailableProviderModel): Promise<void> {
+    if (!session.value || busy.value) return;
+    if (!model.custom) {
+      showToast(t("providerRemoveModelBuiltin"), "error");
+      return;
+    }
+    const nextId = editingModelId.value.trim();
+    if (!nextId) {
+      showToast(t("providerAddModelEmpty"), "error");
+      return;
+    }
+    if (nextId.length > 200) {
+      showToast(t("providerAddModelEmpty"), "error");
+      return;
+    }
+    if (nextId === model.modelId) {
+      cancelEditInlineModel();
+      return;
+    }
+    const clash = availableModels.value.some(
+      (item) => item.connectionId === model.connectionId && item.modelId === nextId,
+    );
+    if (clash) {
+      showToast(t("providerAddModelExists"), "error");
+      return;
+    }
+    busy.value = true;
+    try {
+      const wasEnabled = model.enabled;
+      settings.value = await api.removeCustomProviderModel(
+        session.value.token,
+        {
+          templateId: model.templateId,
+          connectionId: model.connectionId,
+          modelId: model.modelId,
+        },
+        locale(),
+      );
+      settings.value = await api.upsertProviderConnection(
+        session.value.token,
+        {
+          templateId: model.templateId,
+          connectionId: model.connectionId,
+          customModelId: nextId,
+        },
+        locale(),
+      );
+      if (wasEnabled) {
+        settings.value = await api.setProviderModelEnabled(
+          session.value.token,
+          {
+            templateId: model.templateId,
+            connectionId: model.connectionId,
+            modelId: nextId,
+          },
+          true,
+          locale(),
+        );
+      }
+      cancelEditInlineModel();
+      notifyProviderConfigChanged();
+      showToast(tf("providerRenameModelDone", { id: nextId }), "success");
     } catch (caught) {
       showToast(messageOf(caught), "error");
     } finally {
@@ -460,6 +701,7 @@ export function useProviderSettings(api = new DesktopApi()) {
         session.value.token,
         {
           templateId: model.templateId,
+          connectionId: model.connectionId,
           modelId: model.modelId,
         },
         locale(),
@@ -869,15 +1111,23 @@ export function useProviderSettings(api = new DesktopApi()) {
     busy,
     loaded,
     draftTemplateId,
+    draftConnectionId,
     draftBaseUrl,
     draftApiKey,
+    draftInlineModelId,
+    editingModelKey,
+    editingModelId,
     modelFilter,
     modelProviderFilter,
     modelEnabledOnly,
     draftCustomModelId,
-    draftAddTemplateId,
+    draftAddConnectionId,
     customModelTargets,
     canAddCustomModel,
+    inlineConnectionModels,
+    apiKeyRequired,
+    templateConnections,
+    canAddAnotherEndpoint,
     selectedTemplate,
     selectedSdk,
     sdkSelected,
@@ -885,6 +1135,13 @@ export function useProviderSettings(api = new DesktopApi()) {
     needsBaseUrl,
     needsApiKey,
     canRefreshModels,
+    startAnotherEndpoint,
+    selectEndpoint,
+    addInlineCustomModel,
+    refreshCurrentConnectionModels,
+    startEditInlineModel,
+    cancelEditInlineModel,
+    saveEditInlineModel,
     sdkBusy,
     sdkModelsBusy,
     sdkPhase,
@@ -917,4 +1174,17 @@ export type { ProviderTemplate, ProviderVendorGroup, ProviderConnection, Availab
 
 function messageOf(caught: unknown): string {
   return caught instanceof DesktopApiError ? caught.message : "AI 服务配置失败";
+}
+
+/**
+ * 设置页草稿展示：Ollama / 自定义若已是 …/v1 root，补上 /chat/completions，
+ * 与占位、用户粘贴习惯一致；保存时 runtime 会再剥回 root。
+ */
+function toProviderBaseUrlDraft(url: string, kind: string | undefined): string {
+  const trimmed = url.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  if (kind !== "ollama" && kind !== "custom-openai") return trimmed;
+  if (/\/chat\/completions$/i.test(trimmed) || /\/completions$/i.test(trimmed)) return trimmed;
+  if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/chat/completions`;
+  return trimmed;
 }

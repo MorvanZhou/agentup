@@ -4,6 +4,7 @@ import {
   DEFAULT_MAX_TOKENS,
   peekTemplateModelLimits,
 } from "../model-catalog.js";
+import { toOpenAiCompatRoot } from "../openai-compat-url.js";
 import { getProviderTemplate } from "../provider-templates.js";
 import { PLACEHOLDER_KEY } from "./constants.js";
 import type { EnvOverrides } from "./types.js";
@@ -36,7 +37,7 @@ export function modelConfigFromEnvOverride(override: EnvOverrides): ModelConfig 
     templateId,
     modelId,
     apiKey: override.apiKey || (template?.requiresApiKey === false ? PLACEHOLDER_KEY : ""),
-    baseUrl: override.baseUrl || template?.defaultBaseUrl,
+    baseUrl: toOpenAiCompatRoot(override.baseUrl || template?.defaultBaseUrl || "") || undefined,
     kind: template?.kind ?? "custom-openai",
     contextWindow: limits.contextWindow,
     maxTokens: limits.maxTokens,

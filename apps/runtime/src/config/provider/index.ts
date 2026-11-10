@@ -18,7 +18,7 @@
  * 依赖方向是单向的（settings-view → agent-sdk-state → store → validate），不要反向引。
  */
 
-export { supportsModelDiscovery } from "../discover-models.js";
+export { allowsMultipleConnections, supportsModelDiscovery } from "../discover-models.js";
 export {
   MODEL_CATALOG_UNAVAILABLE,
   modelCatalogUnavailableError,

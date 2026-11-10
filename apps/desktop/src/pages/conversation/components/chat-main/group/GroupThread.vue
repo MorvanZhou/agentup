@@ -5,6 +5,12 @@ import type { AppendMessage } from "@assistant-ui/core";
 import type { UIMessage } from "ai";
 import { computed, onBeforeUnmount, provide, ref, shallowRef, toRef, watch } from "vue";
 
+import { useThreadPreview } from "../../../composables/useThreadPreview";
+import { provideThreadPreview } from "../../../model/thread/thread-preview";
+import PreviewPortConflictDialog from "../shared/preview/PreviewPortConflictDialog.vue";
+import EmbeddedPreviewPanel from "../shared/preview/EmbeddedPreviewPanel.vue";
+import RightPaneResizeHandle from "../shared/RightPaneResizeHandle.vue";
+import { RIGHT_PANE_SHELL_CLASS } from "../shared/right-pane-shell";
 import { DesktopApi, runtimeBaseUrl as defaultRuntimeBaseUrl } from "../../../../../shared/api/runtime";
 import type { GroupMember } from "../../../../../shared/api/runtime/groups";
 import {
@@ -38,6 +44,7 @@ import {
 } from "../../../model/group/group-ui-messages";
 import { lastUserMessageMatchingText } from "../../../model/thread/thread-insert-cue";
 import {
+  previewJobAgentId,
   roomHolder,
   roomMembers,
   roomTaskIds,
@@ -138,12 +145,13 @@ const holder = computed(() => roomHolder(props.room));
 const clearing = ref(false);
 const deleting = ref(false);
 const clearingWorkspace = ref(false);
-/** 右侧抽屉：工作空间 / 对话配置 互斥。 */
-type RightPane = "closed" | "workspace" | "chat-settings";
+/** 右侧抽屉：工作空间 / 群设置 / 浏览器预览 互斥（同槽同宽）。 */
+type RightPane = "closed" | "workspace" | "chat-settings" | "preview";
 const rightPane = ref<RightPane>("closed");
 const rightPaneOpen = computed(() => rightPane.value !== "closed");
 const workspaceOpen = computed(() => rightPane.value === "workspace");
 const chatSettingsOpen = computed(() => rightPane.value === "chat-settings");
+const previewPaneOpen = computed(() => rightPane.value === "preview");
 const workspaceGeneration = ref(0);
 const bodyEl = ref<HTMLElement | null>(null);
 const { width: rightPaneWidth, startResize: startRightPaneResize } = useWorkspacePaneWidth();
@@ -162,8 +170,9 @@ function toggleWorkspace(): void {
   rightPane.value = rightPane.value === "workspace" ? "closed" : "workspace";
 }
 
+/** 群设置抽屉：已开则再点顶栏按钮收起，与工作区互斥。 */
 function openChatSettings(): void {
-  rightPane.value = "chat-settings";
+  rightPane.value = rightPane.value === "chat-settings" ? "closed" : "chat-settings";
 }
 
 function closeRightPane(): void {
@@ -451,6 +460,47 @@ const config = computed(() =>
 );
 
 provide(threadExtrasKey, extras);
+/** 群共享工作区 Launch Recipe / 内嵌预览 */
+const groupPreviewAgentId = computed(() =>
+  props.room.id ? `group:${props.room.id}` : "",
+);
+// 空闲时 holderId 常为空：回落 defaultHolder / 首位，否则 start 会 400「请求无效」
+const groupHolderAgentId = computed(() => previewJobAgentId(props.room) || undefined);
+const threadPreview = useThreadPreview({
+  agentId: groupPreviewAgentId,
+  personal: computed(() => false),
+  holderAgentId: groupHolderAgentId,
+});
+provideThreadPreview(threadPreview);
+const previewActive = threadPreview.active;
+const previewOpen = threadPreview.open;
+const previewBusy = threadPreview.busy;
+// 群记录增行后配方可能刚写入 workspace.json，刷新顶栏入口
+watch(
+  () => props.room.lines?.length ?? 0,
+  () => {
+    void threadPreview.refresh();
+  },
+);
+watch(
+  () => threadPreview.open.value,
+  (isOpen) => {
+    if (isOpen) {
+      rightPane.value = "preview";
+      return;
+    }
+    if (rightPane.value === "preview") rightPane.value = "closed";
+  },
+);
+watch(
+  () => rightPane.value,
+  (pane, prev) => {
+    if (prev === "preview" && pane !== "preview" && threadPreview.open.value) {
+      const recipe = threadPreview.active.value;
+      if (recipe) void threadPreview.stop(recipe);
+    }
+  },
+);
 provide(
   threadEarlierKey,
   computed<ThreadEarlier>(() => ({
@@ -557,6 +607,8 @@ provide(chatQueueBusyKey, computed(() => Boolean(props.busy)));
 </script>
 
 <template>
+  <!-- 外层 h-full：AuiProvider 无 DOM 壳，须自填 absolute inset-0 会话格 -->
+  <div class="flex h-full min-h-0 min-w-0 w-full flex-col">
   <AuiProvider :config="config" :extends="null">
     <DelegationProcessDialog
       :open="processOpen"
@@ -592,15 +644,7 @@ provide(chatQueueBusyKey, computed(() => Boolean(props.busy)));
       <template #composer>
         <Composer />
       </template>
-      <template #resize>
-        <button
-          v-if="rightPaneOpen && token && userId"
-          type="button"
-          class="app-no-drag absolute inset-y-0 right-0 z-10 hidden w-1.5 translate-x-1/2 cursor-col-resize border-0 bg-transparent p-0 min-[730px]:block"
-          aria-label="调整对话区宽度"
-          @pointerdown="onThreadResize"
-        />
-      </template>
+      <template #resize />
       <template #side>
         <button
           v-if="rightPaneOpen"
@@ -609,11 +653,14 @@ provide(chatQueueBusyKey, computed(() => Boolean(props.busy)));
           :aria-label="chatSettingsOpen ? t('chatSettingsClose') : t('wsClose')"
           @click="closeRightPane"
         />
+        <!-- 壳 class 见 RIGHT_PANE_SHELL_CLASS：relative 锚定拖条，z-40 压过对话列 -->
         <div
           v-if="rightPaneOpen && token && userId && room.id"
-          class="absolute inset-y-0 right-0 z-20 flex h-full shrink-0 min-[730px]:static"
+          :class="RIGHT_PANE_SHELL_CLASS"
           :style="{ width: `${rightPaneWidth}px` }"
         >
+          <!-- 工作区 / 设置 / 预览共用左缘拖宽 -->
+          <RightPaneResizeHandle :start-resize="onThreadResize" />
           <WorkspacePanel
             v-if="workspaceOpen"
             :token="token"
@@ -642,8 +689,20 @@ provide(chatQueueBusyKey, computed(() => Boolean(props.busy)));
             class="h-full w-full"
             @close="closeRightPane"
           />
+          <!-- 浏览器预览：复用工作区侧栏槽位与宽度 -->
+          <EmbeddedPreviewPanel
+            v-else-if="previewPaneOpen"
+            class="h-full w-full"
+            :recipe="previewActive"
+            :open="previewOpen"
+            :busy="previewBusy"
+            @close="previewActive ? void threadPreview.stop(previewActive) : undefined"
+          />
         </div>
       </template>
     </ChatPane>
   </AuiProvider>
+  <!-- 预览端口被其它进程占用时确认是否结束并重启 -->
+  <PreviewPortConflictDialog />
+  </div>
 </template>
