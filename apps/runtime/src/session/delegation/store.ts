@@ -62,6 +62,7 @@ export class DelegationStore {
         DelegationTask,
         | "status"
         | "resultSummary"
+        | "resultUserSummary"
         | "error"
         | "seen"
         | "notified"
@@ -216,6 +217,10 @@ function parseTask(raw: unknown): DelegationTask | undefined {
     updatedAt: numberOr(value.updatedAt, Date.now()),
     wait: value.wait !== false,
     resultSummary: typeof value.resultSummary === "string" ? value.resultSummary : undefined,
+    resultUserSummary:
+      typeof value.resultUserSummary === "string" && value.resultUserSummary.trim()
+        ? value.resultUserSummary.trim()
+        : undefined,
     error: typeof value.error === "string" ? value.error : undefined,
     seen: value.seen === true,
     notified: value.notified === true,

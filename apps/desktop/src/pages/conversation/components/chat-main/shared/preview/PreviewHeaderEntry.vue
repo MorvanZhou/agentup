@@ -49,7 +49,7 @@ async function onUnpin(): Promise<void> {
       @click="onToggle"
     >
       <SquareIcon v-if="isOpen" class="size-3.5 shrink-0" aria-hidden="true" />
-      <PlayIcon v-else class="size-3.5 shrink-0" aria-hidden="true" />
+      <PlayIcon v-else class="size-3.5 shrink-0 fill-current text-success-foreground" aria-hidden="true" />
       <span>{{ isOpen ? t("msgPreviewStop") : t("msgPreviewStart") }}</span>
     </button>
     <button

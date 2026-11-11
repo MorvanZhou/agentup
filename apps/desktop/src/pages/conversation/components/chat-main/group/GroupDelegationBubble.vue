@@ -94,6 +94,8 @@ const outer = computed(() =>
   buildDelegationOuterTabs({
     brief: props.card.brief,
     canOpenProcess: canOpen.value,
+    // 卡片上的给人短结果：有则先出总结 tab，不必等 history 长正文。
+    userSummary: props.card.userSummary,
     // 停 SSE 只代表不再看过程，不代表子任务已经写出总结。
     byproducts: buildLatestAssistantByproducts(
       messages.value,
@@ -104,6 +106,9 @@ const outer = computed(() =>
     ),
   }),
 );
+
+/** 给人看的短结果；有则总结 tab 直接渲染，不把长自述抬成主文。 */
+const humanSummary = computed(() => props.card.userSummary?.trim() || "");
 
 /** 顶栏：有 tab，或已拿到模型标时也铺右对齐区。 */
 const showChromeBar = computed(
@@ -286,13 +291,22 @@ const showWorking = computed(() => {
           >
             <p class="m-0 text-xs leading-snug text-pretty text-muted-foreground opacity-80">{{ card.brief }}</p>
           </TabsContent>
-          <!-- 子任务 history 的总结 -->
+          <!-- 给人短结果优先；旧卡无 userSummary 时回落子任务 history 总结 -->
           <TabsContent
             v-if="outer.tabs.some((tab) => tab.id === 'summary')"
             value="summary"
             class="min-w-0 px-3 outline-none"
           >
+            <!-- 字号跟聊天气泡 / Markdown 总结同一套 --chat-message-fs，勿用 text-sm -->
+            <p
+              v-if="humanSummary"
+              class="chat-message-text m-0 text-pretty text-foreground whitespace-pre-wrap break-words"
+              data-testid="delegation-user-summary"
+            >
+              {{ humanSummary }}
+            </p>
             <DelegationProcessProducts
+              v-else
               :messages="messages"
               :streaming="streaming"
               :loading="loading"

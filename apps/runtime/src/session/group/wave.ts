@@ -223,19 +223,24 @@ export function completedDelegationAwaitingReply(
 }
 
 /**
- * 群任务终态摘要：专员正文 + complete_group_task 确认过的 Next step。
- * 未调用确认工具时不加 Next step 行，避免伪造专员交接意图。
+ * 群任务终态摘要：给人看的 User summary（可选）+ 专员正文 + Next step。
+ * 未调用确认工具时不加 User summary / Next step，避免伪造专员交接意图。
  */
 export function composeGroupHandbackSummary(input: {
   text: string;
   confirmed: boolean;
   nextStep?: string;
+  userSummary?: string;
 }): string {
   const body = input.text.trim();
   if (!input.confirmed) return body;
+  const parts: string[] = [];
+  const user = typeof input.userSummary === "string" ? input.userSummary.trim() : "";
+  if (user) parts.push(`User summary: ${user}`);
+  if (body) parts.push(body);
   const step = typeof input.nextStep === "string" ? input.nextStep.trim() : "";
-  const line = step ? `Next step: ${step}` : "Next step: none.";
-  return body ? `${body}\n\n${line}` : line;
+  parts.push(step ? `Next step: ${step}` : "Next step: none.");
+  return parts.join("\n\n");
 }
 
 /**
@@ -245,9 +250,13 @@ export function composeGroupHandbackSummary(input: {
 export function formatFinishedDelegationCue(summary: string): string {
   const trimmed = summary.trim();
   const hasNextStep = /(?:^|\n)Next step:/i.test(trimmed);
+  const hasUserSummary = /(?:^|\n)User summary:/i.test(trimmed);
   return [
     "Group task finished. Specialist summary is below.",
     "Do not re-delegate the same finished brief to that same member.",
+    hasUserSummary
+      ? "If User summary is present, prefer that wording when telling the user; do not dump the specialist's long self-report."
+      : "When telling the user, keep it short: outcome and deliverables, not the specialist's process diary.",
     hasNextStep
       ? "Read Next step: if it names further work for another member or a later stage, call delegate_to_agent for that next stage (or ask the user if you need a decision). If it is none / user handoff, summarize for the user and stop."
       : "If the overall user goal still needs another member or stage, delegate that work or ask the user; otherwise summarize and stop.",
@@ -274,15 +283,21 @@ export function noteTaskFinished(
     summary: string;
     now: number;
     outcome?: GroupDelegationOutcome;
+    userSummary?: string;
   },
 ): { room: GroupRoom; effect: GroupEffect } {
   if (!room.taskIds.includes(input.taskId)) throw new GroupError("任务不属于这间群");
   const taskIds = room.taskIds.filter((id) => id !== input.taskId);
   const summary = input.summary.trim() || "已交回";
+  const userSummary = input.userSummary?.trim() || undefined;
   const next = patchDelegation(
     { ...room, taskIds },
     input.taskId,
-    { summary, outcome: input.outcome ?? "completed" },
+    {
+      summary,
+      outcome: input.outcome ?? "completed",
+      ...(userSummary ? { userSummary } : {}),
+    },
     input,
   );
   if (taskIds.length > 0) return { room: next, effect: { type: "stored" } };
@@ -501,6 +516,7 @@ function delegationLine(item: GroupPendingDelegation): GroupLine {
     handoff: item.handoff,
     ...(item.outcome ? { outcome: item.outcome } : {}),
     ...(item.summary ? { summary: item.summary } : {}),
+    ...(item.userSummary ? { userSummary: item.userSummary } : {}),
     ...(item.parentLineId ? { parentLineId: item.parentLineId } : {}),
   };
 }
@@ -535,7 +551,7 @@ function consumeSettled(room: GroupRoom): GroupRoom {
 function patchDelegation(
   room: GroupRoom,
   taskId: string,
-  patch: Partial<Pick<GroupPendingDelegation, "activity" | "summary" | "outcome">>,
+  patch: Partial<Pick<GroupPendingDelegation, "activity" | "summary" | "userSummary" | "outcome">>,
   created?: { id: string; now: number },
 ): GroupRoom {
   let found = false;

@@ -4,6 +4,7 @@ import {
   parseAgentUpPreview,
   previewRecipesFromParts,
   readAgentUpPreview,
+  resolveMessagePreviewRecipes,
 } from "../../src/pages/conversation/model/message/message-preview";
 
 it("parses agentUpPreview recipes from message metadata", () => {
@@ -94,4 +95,53 @@ it("rebuilds recipes from mcp__agentup__present_preview tool parts", () => {
       },
     ],
   });
+});
+
+/** 气泡脚卡：只认本条预览，meta / parts 皆无则 null（不挂工作区配方）。 */
+it("resolveMessagePreviewRecipes prefers metadata then parts, else null", () => {
+  const fromMeta = {
+    custom: {
+      agentUpPreview: {
+        recipes: [
+          {
+            id: "meta",
+            title: "Meta",
+            command: "npm run dev",
+            cwd: ".",
+            preview_url: "http://127.0.0.1:5173",
+          },
+        ],
+      },
+    },
+  };
+  const fromParts = [
+    {
+      type: "dynamic-tool",
+      toolName: "present_preview",
+      state: "output-available",
+      input: {
+        title: "Parts",
+        command: "python3 -m http.server 8765",
+        preview_url: "http://127.0.0.1:8765",
+      },
+      output: "Preview recipe registered (parts): Parts",
+    },
+  ];
+
+  expect(resolveMessagePreviewRecipes(fromMeta, fromParts)?.recipes[0]?.id).toBe(
+    "meta",
+  );
+  expect(resolveMessagePreviewRecipes({}, fromParts)).toEqual({
+    recipes: [
+      {
+        id: "parts",
+        title: "Parts",
+        command: "python3 -m http.server 8765",
+        cwd: ".",
+        preview_url: "http://127.0.0.1:8765",
+      },
+    ],
+  });
+  expect(resolveMessagePreviewRecipes({}, [{ type: "text", text: "hi" }])).toBeNull();
+  expect(resolveMessagePreviewRecipes(undefined, undefined)).toBeNull();
 });

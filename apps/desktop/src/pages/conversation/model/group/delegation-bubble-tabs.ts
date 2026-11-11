@@ -57,13 +57,17 @@ function productTab(id: ByproductTabId, byproducts: AssistantByproductState | nu
   return byproducts?.tabs.find((tab) => tab.id === id);
 }
 
-/** 初次展示优先可打开的过程；history 到达后不强制改写宿主当前选项。 */
+/** 初次展示优先可打开的过程；有给人短结果时优先总结；history 到达后不强制改写宿主当前选项。 */
 export function buildDelegationOuterTabs(input: {
   brief: string;
   canOpenProcess: boolean;
   byproducts: AssistantByproductState | null;
+  /** 卡片上的 user_summary；有则不必等 history 才出总结 tab。 */
+  userSummary?: string;
 }): DelegationOuterTabState {
   const visible = new Set<DelegationOuterTabId>();
+  const userSummary = input.userSummary?.trim() || "";
+  if (userSummary) visible.add("summary");
   if (input.brief.trim()) visible.add("brief");
   if (input.canOpenProcess) visible.add("process");
   for (const tab of input.byproducts?.tabs ?? []) {
@@ -74,15 +78,22 @@ export function buildDelegationOuterTabs(input: {
     const product = id === "brief" ? undefined : productTab(id, input.byproducts);
     return {
       id,
-      label: id === "brief" ? outerLabel(id) : (product?.label ?? t("tabProcess")),
+      label:
+        id === "brief"
+          ? outerLabel(id)
+          : id === "summary" && userSummary
+            ? t("tabSummary")
+            : (product?.label ?? t("tabProcess")),
       ...(product?.badge ? { badge: product.badge } : {}),
     };
   });
-  const defaultTabId: DelegationOuterTabId | null = visible.has("process")
-      ? "process"
-      : visible.has("brief")
-        ? "brief"
-        : null;
+  const defaultTabId: DelegationOuterTabId | null = userSummary && visible.has("summary")
+      ? "summary"
+      : visible.has("process")
+        ? "process"
+        : visible.has("brief")
+          ? "brief"
+          : null;
 
   return {
     tabs,

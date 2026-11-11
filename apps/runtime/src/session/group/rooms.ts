@@ -264,6 +264,7 @@ export class GroupRooms {
         task.resultSummary || task.error || "已交回",
         Date.now(),
         outcome,
+        task.resultUserSummary,
       );
       this.effectListener?.(result);
     } catch (error) {

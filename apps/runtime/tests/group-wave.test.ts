@@ -614,6 +614,41 @@ it("交回摘要带上 complete_group_task 的 next_step，cue 提示执掌者�
   expect(cue).not.toContain("Tell the user this result");
 });
 
+it("交回摘要在确认后带上给人看的 user_summary，未确认不伪造", () => {
+  const withUser = composeGroupHandbackSummary({
+    text: "长自述：我改了布局、测了…",
+    confirmed: true,
+    nextStep: "交给排版",
+    userSummary: "登录页已可打开预览",
+  });
+  expect(withUser).toContain("User summary: 登录页已可打开预览");
+  expect(withUser).toContain("长自述：我改了布局、测了…");
+  expect(withUser).toContain("Next step: 交给排版");
+  expect(withUser.indexOf("User summary:")).toBeLessThan(withUser.indexOf("长自述"));
+
+  const emptyUser = composeGroupHandbackSummary({
+    text: "只有过程",
+    confirmed: true,
+    nextStep: "",
+    userSummary: "",
+  });
+  expect(emptyUser).not.toContain("User summary:");
+  expect(emptyUser).toContain("Next step: none.");
+
+  const unconfirmed = composeGroupHandbackSummary({
+    text: "正文",
+    confirmed: false,
+    userSummary: "不该出现",
+    nextStep: "也不该",
+  });
+  expect(unconfirmed).toBe("正文");
+  expect(unconfirmed).not.toContain("User summary:");
+
+  const cue = formatFinishedDelegationCue(withUser);
+  expect(cue).toContain("User summary: 登录页已可打开预览");
+  expect(cue).toMatch(/prefer that wording when telling the user/i);
+});
+
 it("starts a new group session on clear context and keeps the old one out of the model transcript", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-group-sessions-"));
   const store = new GroupStore(root);

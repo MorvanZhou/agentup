@@ -20,6 +20,59 @@ export type GroupUiAuthor = { id: string; name: string; avatarUrl?: string; role
 /** 当前会话名单上的名片字段；群记录本身不保存这些。 */
 export type GroupUiProfile = { avatarUrl?: string; role?: string };
 
+/** ConversationPage → GroupThread 的名片行；流式时父级常 map 出新数组。 */
+export type GroupMemberRoleRow = {
+  agentId: string;
+  role: string;
+  avatarUrl?: string;
+};
+
+/** memberRoles 数组 → agentId 名片表。 */
+export function profilesByAgentFromMemberRoles(
+  roles: ReadonlyArray<GroupMemberRoleRow> | null | undefined,
+): Record<string, GroupUiProfile> {
+  const map: Record<string, GroupUiProfile> = {};
+  for (const profile of roles ?? []) {
+    map[profile.agentId] = {
+      ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+      ...(profile.role ? { role: profile.role } : {}),
+    };
+  }
+  return map;
+}
+
+/** 名片内容是否一致（忽略对象引用）。 */
+export function sameAgentUiProfiles(
+  a: Readonly<Record<string, GroupUiProfile>>,
+  b: Readonly<Record<string, GroupUiProfile>>,
+): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    const left = a[key];
+    const right = b[key];
+    if (!right) return false;
+    if ((left?.avatarUrl ?? "") !== (right.avatarUrl ?? "")) return false;
+    if ((left?.role ?? "") !== (right.role ?? "")) return false;
+  }
+  return true;
+}
+
+/**
+ * 内容不变时复用旧 map。
+ * 避免 liveMessage 每个 chunk 拖着父级新 memberRoles 重建整棵历史消息树。
+ */
+export function reuseAgentUiProfiles(
+  previous: Readonly<Record<string, GroupUiProfile>> | undefined,
+  next: Record<string, GroupUiProfile>,
+): Record<string, GroupUiProfile> {
+  if (previous && sameAgentUiProfiles(previous, next)) {
+    return previous as Record<string, GroupUiProfile>;
+  }
+  return next;
+}
+
 export type GroupUiCustom = {
   groupLineRole?: GroupLine["role"] | "queue";
   author?: GroupUiAuthor;
@@ -109,6 +162,7 @@ function delegationCard(
     ...(author.role ? { role: author.role } : {}),
     brief: source.brief?.trim() || "",
     summary: source.summary?.trim() || "",
+    ...(source.userSummary?.trim() ? { userSummary: source.userSummary.trim() } : {}),
     activity: source.activity === "queued" ? "queued" : "running",
     handoff: source.handoff === "consumed" ? "consumed" : "pending",
     ...(source.outcome ? { outcome: source.outcome } : {}),

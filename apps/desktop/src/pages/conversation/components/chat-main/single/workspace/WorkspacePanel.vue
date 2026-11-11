@@ -4,6 +4,7 @@ import {
   ChevronLeftIcon,
   EllipsisIcon,
   FilePlusIcon,
+  FolderMinusIcon,
   FolderPlusIcon,
   LayoutGridIcon,
   ListIcon,
@@ -109,7 +110,7 @@ const createOpen = ref(false);
 
 const showTreeTools = computed(() => !previewing.value);
 const showCreateTools = computed(() => showTreeTools.value && canCreate.value);
-/** 排序 / 刷新 / 批量删除仍在 … 菜单；新建与挂载提到外层 + */
+/** 排序 / 刷新 / 批量删除（挂载列表为取消挂载）仍在 … 菜单；新建与挂载提到外层 + */
 const showActionsMenu = computed(() => showTreeTools.value);
 const sortedEntries = computed(() => sortWorkspaceEntries(entries.value, sortBy.value));
 const deleteDescription = computed(() => {
@@ -127,6 +128,16 @@ const deleteDescription = computed(() => {
   }
   return tf("wsDeleteMany", { n: targets.length });
 });
+/** 挂载列表根：确认框标题 / 主按钮 / 批量操作都走「取消挂载」 */
+const removeConfirmTitle = computed(() =>
+  atProjectList.value ? t("wsUnmountConfirm") : t("wsDeleteConfirm"),
+);
+const removeConfirmAction = computed(() =>
+  atProjectList.value ? t("wsUnmount") : t("wsDelete"),
+);
+const removeSelectedLabel = computed(() =>
+  atProjectList.value ? t("wsUnmountSelected") : t("wsDeleteSelected"),
+);
 const batchSelected = computed(() => selected.value.length > 0);
 // 群聊与一对一共用全部 Tab：群的项目挂载由 runtime 群接口提供
 const workspaceTabs = computed(() => WORKSPACE_TABS);
@@ -331,7 +342,7 @@ function onAddProject(): void {
           </DropdownMenuContent>
         </DropdownMenuPortal>
       </DropdownMenuRoot>
-      <!-- 排序 / 刷新 / 批量删除收进 … 菜单 -->
+      <!-- 排序 / 刷新 / 批量删除或取消挂载收进 … 菜单 -->
       <DropdownMenuRoot v-if="showActionsMenu" v-model:open="actionsOpen">
         <DropdownMenuTrigger as-child>
           <button
@@ -387,8 +398,13 @@ function onAddProject(): void {
               :disabled="busy"
               @select="askRemoveSelected"
             >
-              <Trash2Icon class="size-3.5 shrink-0" aria-hidden="true" />
-              <span class="min-w-0 flex-1 truncate">{{ t("wsDeleteSelected") }}</span>
+              <FolderMinusIcon
+                v-if="atProjectList"
+                class="size-3.5 shrink-0"
+                aria-hidden="true"
+              />
+              <Trash2Icon v-else class="size-3.5 shrink-0" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">{{ removeSelectedLabel }}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenuPortal>
@@ -430,6 +446,7 @@ function onAddProject(): void {
       :selected="selected"
       :view-mode="viewMode"
       :allow-attach="!atProjectList"
+      :unmount-mode="atProjectList"
       :load-thumbnail="loadThumbnail"
       @update:selected="selected = $event"
       @open="openEntry"
@@ -513,7 +530,7 @@ function onAddProject(): void {
     </AppDialog>
     <AppDialog
       :open="deleteTargets.length > 0"
-      :title="t('wsDeleteConfirm')"
+      :title="removeConfirmTitle"
       :description="deleteDescription"
       @update:open="onDeleteOpen"
     >
@@ -530,7 +547,7 @@ function onAddProject(): void {
           class="min-h-8 rounded-lg bg-destructive px-3 text-sm font-semibold text-white transition duration-200 hover:opacity-90"
           @click="confirmRemove"
         >
-          {{ t("wsDelete") }}
+          {{ removeConfirmAction }}
         </button>
       </template>
     </AppDialog>

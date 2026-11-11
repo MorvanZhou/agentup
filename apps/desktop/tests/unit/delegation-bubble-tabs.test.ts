@@ -19,6 +19,17 @@ it("opens process first and does not render the card handoff summary", () => {
   expect(state.defaultTabId).toBe("process");
 });
 
+it("有给人看的 userSummary 时直接出总结 tab，并默认打开它", () => {
+  const state = buildDelegationOuterTabs({
+    brief: "做登录页",
+    canOpenProcess: true,
+    byproducts: null,
+    userSummary: "登录页已可预览",
+  });
+  expect(state.tabs.map((tab) => tab.id)).toEqual(["summary", "process", "brief"]);
+  expect(state.defaultTabId).toBe("summary");
+});
+
 it("promotes loaded history products to the same outer tab level", () => {
   const byproducts = buildAssistantByproducts({
     parts: [

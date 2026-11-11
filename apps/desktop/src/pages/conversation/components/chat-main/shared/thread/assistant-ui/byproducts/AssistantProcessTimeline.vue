@@ -10,15 +10,13 @@ import { isOpenAskUserPart } from "../../../../../../model/message/ask-user-summ
 import { injectPendingAskUserToolCallId } from "../../../../../../model/thread/thread-ask-user";
 import { injectPendingApprovalToolCallId } from "../../../../../../model/thread/thread-approval";
 import { injectThreadAgentId } from "../../../../../../model/thread/thread-agent-id";
-import { isAwaitingNextStep } from "../../../../../../model/message/turn-progress";
 import AssistantPart from "../parts/AssistantPart.vue";
 import MarkdownText from "../parts/MarkdownText.vue";
-import ShimmerTitle from "../parts/ShimmerTitle.vue";
 import ProcessSubgroup from "./ProcessSubgroup.vue";
 
 withDefaults(
   defineProps<{
-    /** 旁路只读时可关掉「正在计划…」与终止提示 */
+    /** 旁路只读时可关掉终止 / 错误提示（「正在计划」已全局去掉，避免流式跳动） */
     showStatus?: boolean;
   }>(),
   { showStatus: true },
@@ -28,9 +26,6 @@ const agentId = injectThreadAgentId();
 const pendingAskUserToolCallId = injectPendingAskUserToolCallId();
 const pendingApprovalToolCallId = injectPendingApprovalToolCallId();
 
-const awaitingNextStep = useAuiState((s) =>
-  isAwaitingNextStep(s.message.parts, s.message.status?.type === "running"),
-);
 const streaming = useAuiState((s) => s.message.status?.type === "running");
 const parts = useAuiState((s) => s.message.parts);
 const messageId = useAuiState((s) => s.message.id);
@@ -119,15 +114,8 @@ const timeline = computed(() =>
           <AssistantPart />
         </PartByIndexProvider>
       </template>
+      <!-- 终止 / 错误仍可展示；不再闪「正在计划…」（步骤间隙会整段上下跳） -->
       <template v-if="showStatus">
-        <!-- 状态提示不进拖选复制 -->
-        <div
-          v-if="awaitingNextStep && !terminated"
-          class="mt-1 select-none"
-          data-copy-ignore
-        >
-          <ShimmerTitle :active="true" :title="t('msgPlanning')" />
-        </div>
         <p
           v-if="terminated"
           class="text-muted-foreground mb-0 mt-2 text-xs select-none"

@@ -95,16 +95,22 @@ it("complete_group_task MCP 确认共享 ARTIFACT 路径并写入 deliverState",
   expect(list.result?.tools?.map((tool: { name: string }) => tool.name)).toEqual([
     "complete_group_task",
   ]);
+  const userSummaryDesc = list.result?.tools?.[0]?.inputSchema?.properties?.user_summary?.description ?? "";
+  expect(userSummaryDesc).toMatch(/spoken|conversational|texting/i);
+  expect(userSummaryDesc).toMatch(/Do NOT dump|PASS\/FAIL|SHA/i);
 
   const ok = await callTool(server, "complete_group_task", {
     paths: ["ARTIFACT/from-Cody-t1/page.html"],
     next_step: "Notify the user to open the HTML",
+    user_summary: "HTML preview is ready in ARTIFACT",
   });
   expect(ok.isError).toBeUndefined();
   expect(ok.text).toContain("ARTIFACT/from-Cody-t1/page.html");
+  expect(ok.text).toContain("User summary: HTML preview is ready in ARTIFACT");
   expect(ok.text).toContain("Next step: Notify the user to open the HTML");
   expect(deliver.confirmed).toBe(true);
   expect(deliver.nextStep).toBe("Notify the user to open the HTML");
+  expect(deliver.userSummary).toBe("HTML preview is ready in ARTIFACT");
   expect(deliver.staged).toEqual([
     { path: "ARTIFACT/from-Cody-t1/page.html", size: "<html></html>".length },
   ]);
@@ -122,6 +128,7 @@ it("complete_group_task MCP 拒绝对路径 / 缺文件，且不误标 confirmed
   const missing = await callTool(server, "complete_group_task", {
     paths: ["ARTIFACT/nope.html"],
     next_step: "",
+    user_summary: "",
   });
   expect(missing.isError).toBe(true);
   expect(missing.text).toMatch(/missing|Error/i);

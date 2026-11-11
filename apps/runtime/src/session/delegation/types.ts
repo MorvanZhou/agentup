@@ -32,6 +32,8 @@ export type DelegationTask = {
   /** 同步等待时为 true；异步完成后靠通知回注助理。 */
   wait: boolean;
   resultSummary?: string;
+  /** 群 complete_group_task.user_summary；给人看的短结果。一对一无此字段。 */
+  resultUserSummary?: string;
   error?: string;
   /** 完成后是否已由桌面/助理确认看见。 */
   seen: boolean;

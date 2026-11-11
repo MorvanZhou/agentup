@@ -17,7 +17,13 @@ const view = computed(() =>
 
 const detail = computed(() => {
   const parts: string[] = [];
-  if (view.value.empty) parts.push(t("toolCompleteGroupNone"));
+  if (view.value.userSummary) {
+    const summary =
+      view.value.userSummary.length > 36
+        ? `${view.value.userSummary.slice(0, 35)}…`
+        : view.value.userSummary;
+    parts.push(summary);
+  } else if (view.value.empty) parts.push(t("toolCompleteGroupNone"));
   else if (view.value.paths.length === 1) parts.push(shortPath(view.value.paths[0] ?? ""));
   else if (view.value.paths.length > 1) {
     parts.push(tf("toolDeliverCount", { n: view.value.paths.length }));
@@ -35,6 +41,7 @@ const detail = computed(() => {
 const expandable = computed(
   () =>
     view.value.paths.length > 0 ||
+    Boolean(view.value.userSummary) ||
     Boolean(view.value.nextStep) ||
     Boolean(view.value.error) ||
     view.value.empty,
@@ -42,7 +49,7 @@ const expandable = computed(
 </script>
 
 <template>
-  <!-- 群委托收尾：确认共享文件 + 下一步 -->
+  <!-- 群委托收尾：给人短结果 + 确认共享文件 + 下一步 -->
   <ToolCard
     :title="t('toolCompleteGroupTask')"
     :detail="detail"
@@ -50,6 +57,17 @@ const expandable = computed(
     :expandable="expandable"
   >
     <div v-if="expandable" class="flex min-w-0 flex-col">
+      <div
+        v-if="view.userSummary"
+        class="border-border/60 min-w-0 border-b px-2.5 py-2"
+      >
+        <p class="text-muted-foreground mb-1 text-xs font-medium">
+          {{ t("toolCompleteGroupUserSummary") }}
+        </p>
+        <p class="text-foreground text-xs whitespace-pre-wrap break-words">
+          {{ view.userSummary }}
+        </p>
+      </div>
       <DeliverArtifactList :paths="view.paths" :error="view.error" />
       <div
         v-if="view.nextStep || view.empty"

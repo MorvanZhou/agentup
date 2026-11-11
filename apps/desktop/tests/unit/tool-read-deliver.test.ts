@@ -55,33 +55,45 @@ it("lists confirmed artifact paths and treats an empty confirm as nothing to del
   expect(deliverArtifactView({}, "")).toEqual({ paths: [], error: "", empty: false });
 });
 
-it("complete_group_task 抽出共享路径与 next_step", () => {
+it("complete_group_task 抽出共享路径、next_step 与 user_summary", () => {
   expect(
     completeGroupTaskView(
       {
         paths: ["ARTIFACT/from-a-t1/out.md"],
         next_step: "交给排版",
+        user_summary: "登录页已交到 ARTIFACT",
       },
-      "Confirmed 1 shared file(s):\n- ARTIFACT/from-a-t1/out.md\nNext step: 交给排版",
+      "Confirmed 1 shared file(s):\n- ARTIFACT/from-a-t1/out.md\nUser summary: 登录页已交到 ARTIFACT\nNext step: 交给排版",
     ),
   ).toEqual({
     paths: ["ARTIFACT/from-a-t1/out.md"],
     error: "",
     empty: false,
     nextStep: "交给排版",
+    userSummary: "登录页已交到 ARTIFACT",
   });
   expect(
-    completeGroupTaskView({ paths: [], next_step: "" }, "Confirmed: no shared files for this task.\nNext step: none."),
+    completeGroupTaskView(
+      { paths: [], next_step: "", user_summary: "" },
+      "Confirmed: no shared files for this task.\nNext step: none.",
+    ),
   ).toEqual({
     paths: [],
     error: "",
     empty: true,
     nextStep: "",
+    userSummary: "",
   });
-  expect(completeGroupTaskView({ paths: [], next_step: "等执掌者派下一岗" }, "")).toEqual({
+  expect(
+    completeGroupTaskView(
+      { paths: [], next_step: "等执掌者派下一岗", user_summary: "草稿已就绪" },
+      "",
+    ),
+  ).toEqual({
     paths: [],
     error: "",
     empty: false,
     nextStep: "等执掌者派下一岗",
+    userSummary: "草稿已就绪",
   });
 });

@@ -28,6 +28,17 @@ export function readAgentUpPreview(metadata: unknown): AgentUpPreview | null {
   return parseAgentUpPreview(raw);
 }
 
+/**
+ * 气泡脚预览卡：仅本条 message 的 metadata / present_preview parts；
+ * 不回落 thread 工作区配方（无关回复不挂卡）。
+ */
+export function resolveMessagePreviewRecipes(
+  metadata: unknown,
+  parts: unknown,
+): AgentUpPreview | null {
+  return readAgentUpPreview(metadata) ?? previewRecipesFromParts(parts);
+}
+
 /** Pi 裸名或 SDK `mcp__agentup__present_preview`。 */
 export function isPresentPreviewToolName(name: unknown): boolean {
   return name === "present_preview" || name === "mcp__agentup__present_preview";

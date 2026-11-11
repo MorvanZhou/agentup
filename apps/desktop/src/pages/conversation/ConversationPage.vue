@@ -548,6 +548,15 @@ function selectAgent(agent: Parameters<typeof select>[0]): void {
   select(agent);
 }
 
+/** 群名片：用 computed 稳住引用，避免 liveMessage 每个 chunk 都 map 新数组拖垮历史线程。 */
+const groupMemberRoles = computed(() =>
+  conversations.value.map((agent) => ({
+    agentId: agent.agentId,
+    role: agent.role,
+    avatarUrl: agent.avatarUrl,
+  })),
+);
+
 const threadRoster = computed((): ThreadRoster => ({
   agents: conversations.value.map((agent) => ({
     agentId: agent.agentId,
@@ -620,13 +629,7 @@ const threadRoster = computed((): ThreadRoster => ({
           v-else-if="roomGroups.openRoom.value"
           :room="roomGroups.openRoom.value"
           :roster="threadRoster"
-          :member-roles="
-            conversations.map((agent) => ({
-              agentId: agent.agentId,
-              role: agent.role,
-              avatarUrl: agent.avatarUrl,
-            }))
-          "
+          :member-roles="groupMemberRoles"
           :token="session?.token ?? ''"
           :user-id="session?.userId ?? ''"
           :busy="roomGroups.busy.value"

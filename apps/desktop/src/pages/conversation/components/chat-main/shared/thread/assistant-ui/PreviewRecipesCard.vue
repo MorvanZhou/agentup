@@ -54,7 +54,7 @@ async function onTogglePin(id: string): Promise<void> {
   <!-- 气泡脚：Launch Recipe 卡（开发场景主入口） -->
   <div
     v-if="preview.recipes.length > 0"
-    class="mt-2 w-full min-w-0 select-none"
+    class="mb-2 w-full min-w-0 select-none"
     data-copy-ignore
     role="group"
     :aria-label="t('msgPreviewRecipes')"
@@ -104,7 +104,7 @@ async function onTogglePin(id: string): Promise<void> {
           :disabled="busy"
           @click="onStart(recipe.id)"
         >
-          <PlayIcon class="size-3.5" aria-hidden="true" />
+          <PlayIcon class="size-3.5 fill-current text-success-foreground" aria-hidden="true" />
           {{ t("msgPreviewStart") }}
         </button>
       </li>

@@ -323,6 +323,8 @@ function groupSearchText(room: GroupRoom): string {
 }
 
 function linePreview(line: GroupLine): string {
-  if (line.role === "delegation") return (line.summary || line.brief || line.authorName || line.text).trim();
+  if (line.role === "delegation") {
+    return (line.userSummary || line.summary || line.brief || line.authorName || line.text).trim();
+  }
   return line.text.trim();
 }

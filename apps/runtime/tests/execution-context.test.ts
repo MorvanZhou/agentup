@@ -123,6 +123,33 @@ it("adds group mounted roots to a group delegation prompt", () => {
   expect(parts.join("\n")).toContain("Allowed Project Roots");
 });
 
+it("一对一与群委派系统提示都声明 Playwright MCP 为浏览器工具", () => {
+  for (const mode of ["single", "group-holder", "group-delegation", "single-delegation"] as const) {
+    const parts = compileSystemPrompt(["base"], {
+      mode,
+      environment: "# Environment",
+      commandTool: "bash",
+      collaborationEnabled: true,
+      projectRoots: [],
+      ...(mode === "group-delegation" || mode === "group-holder"
+        ? {
+            groupWorkspace: {
+              root: "/tmp/g/workspace",
+              attachments: "/tmp/g/workspace/ATTACHMENTS",
+              work: "/tmp/g/workspace/WORK",
+              artifact: "/tmp/g/workspace/ARTIFACT",
+            },
+          }
+        : {}),
+      ...(mode === "group-delegation" ? { taskId: "t1", toAgentName: "Cody" } : {}),
+    });
+    const text = parts.join("\n");
+    expect(text, mode).toContain("To operate a browser");
+    expect(text, mode).toContain("`playwright` MCP");
+    expect(text, mode).toContain("`tool_search`");
+  }
+});
+
 it("keeps the one-to-one prompt on the private cwd and its own delivery rule", () => {
   const parts = compileSystemPrompt(["base"], {
     mode: "single",

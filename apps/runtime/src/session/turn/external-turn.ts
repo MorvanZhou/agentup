@@ -201,9 +201,7 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
 
   try {
     iterator = input.source[Symbol.asyncIterator]();
-    // 空闲窗口：有消息就续命，避免长任务被墙钟总时长误杀（Cody 开发回合）
-    let idleDeadline =
-      input.timeoutMs !== undefined ? Date.now() + input.timeoutMs : undefined;
+    // 空闲窗口：每次等下一条都给满 timeoutMs（处理耗时不吃窗口），避免长任务被墙钟总时长误杀
     for (;;) {
       if (aborted || input.signal?.aborted) {
         aborted = true;
@@ -211,10 +209,8 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
         void iterator.return?.().catch(() => undefined);
         break;
       }
-      const remaining =
-        idleDeadline === undefined ? undefined : Math.max(0, idleDeadline - Date.now());
       // 与 abort 竞态：OpenCode SSE 挂死时不能干等 next()，否则群聊卡「进行中」
-      const next = await nextExternalMessage(iterator, remaining, input.signal);
+      const next = await nextExternalMessage(iterator, input.timeoutMs, input.signal);
       if (next === "aborted") {
         aborted = true;
         interruptVendor();
@@ -229,9 +225,6 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
       }
       if (next.done) break;
       const message = next.value;
-      if (input.timeoutMs !== undefined) {
-        idleDeadline = Date.now() + input.timeoutMs;
-      }
       if (aborted || input.signal?.aborted) {
         aborted = true;
         interruptVendor();

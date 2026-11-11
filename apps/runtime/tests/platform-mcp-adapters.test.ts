@@ -142,8 +142,11 @@ it("mergeExternalTurnMcpServers 整表合并 platform 键（含探针）", () =>
   expectPlatformKeysMerged(merged!, "helper");
 });
 
-it("platformMcpServersOf 至少包含 playwright，且是 Host 唯一组装口的契约", () => {
+it("platformMcpServersOf 至少包含 playwright，且是 Host 唯一组装口的契约", async () => {
+  const { PLATFORM_MCP_NAMES } = await import("../src/session/mcp/platform-mcp.js");
   const servers = platformMcpServersOf("/tmp/agentup-user");
+  // 审批官方免审名单与组装口同表，禁止只改一边
+  expect([...PLATFORM_MCP_NAMES].sort()).toEqual(Object.keys(servers).sort());
   expect(Object.keys(servers)).toContain(PLAYWRIGHT_MCP_NAME);
   expect(servers[PLAYWRIGHT_MCP_NAME]).toMatchObject({
     exposure: "deferred",

@@ -4,6 +4,7 @@ import {
   EllipsisVerticalIcon,
   FileIcon,
   FolderIcon,
+  FolderMinusIcon,
   FolderOpenIcon,
   ImageIcon,
   MessageSquarePlusIcon,
@@ -38,9 +39,11 @@ const props = withDefaults(
     viewMode?: WorkspaceViewMode;
     /** 挂载列表根不提供「添加到对话」。 */
     allowAttach?: boolean;
+    /** 挂载列表根：remove 语义是取消挂载，不是删盘上文件。 */
+    unmountMode?: boolean;
     loadThumbnail?: WorkspaceThumbLoader;
   }>(),
-  { allowAttach: true, viewMode: "list", directory: "" },
+  { allowAttach: true, unmountMode: false, viewMode: "list", directory: "" },
 );
 
 const emit = defineEmits<{
@@ -69,11 +72,21 @@ function itemMenu(_entry: WorkspaceEntry): AppDropdownItem[] {
   if (props.allowAttach) {
     items.push({ id: "attach", label: t("wsAddToChat"), icon: MessageSquarePlusIcon });
   }
-  items.push(
-    { id: "reveal", label: revealInFolderLabel(detectDesktopPlatform()), icon: FolderOpenIcon },
-    { id: "rename", label: t("wsRename"), icon: PencilIcon },
-    { id: "remove", label: t("wsDelete"), icon: Trash2Icon, danger: true },
-  );
+  items.push({
+    id: "reveal",
+    label: revealInFolderLabel(detectDesktopPlatform()),
+    icon: FolderOpenIcon,
+  });
+  // 挂载列表只是取消挂载，不能重命名条目
+  if (!props.unmountMode) {
+    items.push({ id: "rename", label: t("wsRename"), icon: PencilIcon });
+  }
+  items.push({
+    id: "remove",
+    label: t(props.unmountMode ? "wsUnmount" : "wsDelete"),
+    icon: props.unmountMode ? FolderMinusIcon : Trash2Icon,
+    danger: true,
+  });
   return items;
 }
 

@@ -238,7 +238,8 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
       ...(profile.mode === "single" || profile.mode === "group-holder"
         ? [
             createDeliverablesExtension({
-              cwd: plan.cwd,
+              // 群执掌：交付网格读写共享 workspace，勿用私人 cwd（否则会把 WORK 裸名误加成死链 ARTIFACT/）
+              cwd: groupWorkspace?.root ?? plan.cwd,
               listPending: parent.listDeliverablesPending ?? (() => []),
               markPresented: parent.markDeliverablesPresented ?? (() => {}),
             }),

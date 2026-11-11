@@ -79,6 +79,7 @@ export {
   AGENTUP_DELIVERABLES_CUSTOM_TYPE,
   PRESENT_ARTIFACTS_TOOL,
   applyPresentArtifactsAction,
+  requirePresentableArtifacts,
   createDeliverablesExtension,
   enrichDeliverableSizes,
   mergeDeliverableFiles,

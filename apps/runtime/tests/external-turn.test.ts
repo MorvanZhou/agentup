@@ -623,7 +623,7 @@ describe("失败与中断", () => {
     let stopped = false;
     const outcome = await runExternalTurn({
       source: (async function* () {
-        // 三段间隔各 ~25ms，墙钟合计 > timeoutMs(40)，但每次收包后应续命
+        // 间隙各 ~40ms，墙钟合计 > timeoutMs(80)，但每次等下一条都给满空闲窗口
         yield {
           type: "stream_event",
           event: {
@@ -632,7 +632,7 @@ describe("失败与中断", () => {
             delta: { type: "text_delta", text: "先" },
           },
         };
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        await new Promise((resolve) => setTimeout(resolve, 40));
         yield {
           type: "stream_event",
           event: {
@@ -641,10 +641,10 @@ describe("失败与中断", () => {
             delta: { type: "text_delta", text: "后" },
           },
         };
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        await new Promise((resolve) => setTimeout(resolve, 40));
         yield { type: "result", subtype: "success", result: "做完了", num_turns: 3 };
       })(),
-      timeoutMs: 40,
+      timeoutMs: 80,
       onTimeout: () => {
         stopped = true;
       },
@@ -659,6 +659,54 @@ describe("失败与中断", () => {
     expect(outcome.visibleText).toContain("后");
     expect(outcome.result?.finishReason).toBe("completed");
     expect(JSON.stringify(chunks)).not.toContain("超时");
+  });
+
+  it("处理消息耗时不吃下一段空闲窗口", async () => {
+    const chunks: UIMessageChunk[] = [];
+    let stopped = false;
+    const outcome = await runExternalTurn({
+      source: (async function* () {
+        yield {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "先" },
+          },
+        };
+        // 间隙 25ms；若把 write 的 40ms 也算进空闲，会误超时
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        yield {
+          type: "stream_event",
+          event: {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "后" },
+          },
+        };
+        yield { type: "result", subtype: "success", result: "做完了", num_turns: 2 };
+      })(),
+      timeoutMs: 50,
+      onTimeout: () => {
+        stopped = true;
+      },
+      write: (batch) => {
+        chunks.push(...batch);
+        // 旧实现在收包时续命，这里会把剩余窗口吃光
+        const end = Date.now() + 40;
+        while (Date.now() < end) {
+          /* busy */
+        }
+      },
+      errorPolicy: "prompt",
+      locale: "zh",
+    });
+
+    expect(stopped).toBe(false);
+    expect(outcome.aborted).toBe(false);
+    expect(outcome.visibleText).toContain("先");
+    expect(outcome.visibleText).toContain("后");
+    expect(outcome.result?.finishReason).toBe("completed");
   });
 
   it("用户停止时即使厂商流挂死也能立刻收束（群聊不再卡进行中）", async () => {

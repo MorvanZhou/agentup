@@ -1,5 +1,7 @@
 import {
   COMPLETE_GROUP_TASK_TOOL,
+  USER_SUMMARY_PARAM_DESCRIPTION,
+  formatCompleteGroupTaskResult,
   stageGroupWorkspacePaths,
 } from "../../tools/complete-group-task.js";
 import {
@@ -49,7 +51,7 @@ function completeGroupTaskTool(workspaceRoot: string, state: DeliverArtifactsSta
   return {
     name: COMPLETE_GROUP_TASK_TOOL,
     description:
-      "Confirm the shared group files this task produced and say what should happen next. " +
+      "Confirm the shared group files this task produced, write a short human-facing outcome, and say what should happen next. " +
       "Paths are relative to the group workspace (WORK/… or ARTIFACT/…). Does not copy files into a private workspace. " +
       "Call this before finishing a group delegated task.",
     inputSchema: {
@@ -62,27 +64,34 @@ function completeGroupTaskTool(workspaceRoot: string, state: DeliverArtifactsSta
             "Files from THIS task under the group workspace. Use WORK/from-<name>-<task_id>/... or ARTIFACT/from-<name>-<task_id>/.... " +
             "Use [] if this task produced no shared files.",
         },
+        user_summary: {
+          type: "string",
+          description: USER_SUMMARY_PARAM_DESCRIPTION,
+        },
         next_step: {
           type: "string",
           description: "What the group should do next. Empty string if nobody needs to continue.",
         },
       },
-      required: ["paths", "next_step"],
+      required: ["paths", "user_summary", "next_step"],
     },
     async handler(args) {
       try {
         const paths = Array.isArray(args.paths) ? (args.paths as string[]) : [];
         const staged = stageGroupWorkspacePaths(workspaceRoot, paths);
         const nextStep = typeof args.next_step === "string" ? args.next_step.trim() : "";
+        const userSummary = typeof args.user_summary === "string" ? args.user_summary.trim() : "";
         state.staged = staged;
         state.confirmed = true;
         state.nextStep = nextStep;
-        const files =
-          staged.length === 0
-            ? "Confirmed: no shared files for this task."
-            : `Confirmed ${staged.length} shared file(s):\n${staged.map((item) => `- ${item.path}`).join("\n")}`;
-        const next = nextStep ? `Next step: ${nextStep}` : "Next step: none.";
-        return { text: `${files}\n${next}` };
+        state.userSummary = userSummary;
+        return {
+          text: formatCompleteGroupTaskResult({
+            paths: staged.map((item) => item.path),
+            userSummary,
+            nextStep,
+          }),
+        };
       } catch (error) {
         const message = error instanceof Error && error.message ? error.message : "invalid paths";
         return { text: `Error: ${message}`, isError: true };

@@ -25,7 +25,7 @@ export function writeDeviceLocale(locale: UiLocale): void {
   }
 }
 
-/** 打开 Web 登录页时选用路径前缀（zh → /zh/login，en → /login）。 */
+/** 打开 Web 登录页时选用路径前缀（zh → /zh/auth/login，en → /auth/login）。 */
 export function readUiLocale(): UiLocale {
   const current = i18n.global.locale.value;
   return isUiLocale(current) ? current : uiLocale.value;

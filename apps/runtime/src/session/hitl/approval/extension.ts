@@ -42,9 +42,7 @@ export function createApprovalExtension(
       if (isCommandTool(event.toolName) && broker.allowsCommand(userId, agentId)) {
         return undefined;
       }
-      if (isMcpTool(event.toolName) && broker.allowsTool(userId, agentId, event.toolName)) {
-        return undefined;
-      }
+      // 委托（含 mcp__agentup__delegate_to_agent）走 delegationAllow，不走 MCP toolAllow
       if (isDelegationTool(event.toolName)) {
         const targets = targetAgentIds(event.input);
         if (
@@ -53,6 +51,8 @@ export function createApprovalExtension(
         ) {
           return undefined;
         }
+      } else if (isMcpTool(event.toolName) && broker.allowsTool(userId, agentId, event.toolName)) {
+        return undefined;
       }
       const args = await enrichApprovalArgs(event.toolName, event.input, options);
       const allowed = await broker.request(

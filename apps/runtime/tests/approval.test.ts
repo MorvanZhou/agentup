@@ -56,6 +56,61 @@ it("lets mcp resource list/read tools run without approval", async () => {
   expect(seen).not.toHaveBeenCalled();
 });
 
+it("lets official AgentUp and platform MCP tools run like builtins, still asks for third-party MCP", async () => {
+  const broker = new ApprovalBroker();
+  const handler = await bindToolHandler(broker);
+  const seen = vi.fn();
+  broker.subscribe((request) => {
+    seen(request);
+    broker.decide(request.id, false);
+  });
+
+  // 官方 MCP（agentup 宿主能力 + 平台 playwright）与内建工具同性质：免审
+  for (const toolName of [
+    "mcp__agentup__agent_search",
+    "mcp__agentup__present_preview",
+    "mcp__agentup__check_delegation",
+    "mcp__playwright__browser_console_messages",
+    "mcp__playwright__browser_navigate",
+  ]) {
+    await expect(
+      handler({ type: "tool_call", toolCallId: toolName, toolName, input: {} }, { signal: undefined }),
+    ).resolves.toBeUndefined();
+  }
+  expect(seen).not.toHaveBeenCalled();
+
+  // 用户 mcp.json 第三方 MCP 仍须审批
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "hospital-1",
+        toolName: "mcp__hospital__write",
+        input: { record: "a" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toEqual({ block: true, reason: "用户拒绝了这次工具调用" });
+  expect(seen).toHaveBeenCalledTimes(1);
+
+  // 委托（含 MCP 全名）仍与裸名 delegate_to_agent 一样要审
+  seen.mockClear();
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "delegate-mcp-1",
+        toolName: "mcp__agentup__delegate_to_agent",
+        input: { agent_id: "specialist" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toEqual({ block: true, reason: "用户拒绝了这次工具调用" });
+  expect(seen).toHaveBeenCalledWith(
+    expect.objectContaining({ toolName: "mcp__agentup__delegate_to_agent" }),
+  );
+});
+
 it("lets write, edit, web_fetch, todo, and get_local_time run without approval", async () => {
   const broker = new ApprovalBroker();
   const handler = await bindToolHandler(broker);

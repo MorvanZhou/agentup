@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { groupDelegationPhase } from "../../src/pages/conversation/model/group/group-delegation";
+import {
+  groupDelegationPhase,
+  readGroupDelegationCard,
+} from "../../src/pages/conversation/model/group/group-delegation";
 import {
   GROUP_HOLDER_PENDING_LIVE_ID,
   groupLinesToUiMessages,
   pendingDelegationCards,
+  profilesByAgentFromMemberRoles,
   resolveGroupWakeLive,
+  reuseAgentUiProfiles,
   withHolderAuthor,
 } from "../../src/pages/conversation/model/group/group-ui-messages";
 import { AISDKMessageConverter } from "../../src/pages/conversation/model/thread/ui-to-thread-messages";
@@ -185,6 +190,7 @@ describe("groupLinesToUiMessages", () => {
             taskId: "task-design",
             brief: "做登录页",
             summary: "登录页已完成",
+            userSummary: "登录页已可预览",
             activity: "running" as const,
             handoff: "pending" as const,
             outcome: "completed" as const,
@@ -203,10 +209,14 @@ describe("groupLinesToUiMessages", () => {
         delegation: {
           taskId: "task-design",
           summary: "登录页已完成",
+          userSummary: "登录页已可预览",
           handoff: "pending",
         },
       },
     });
+    // GroupDelegationMessage 从 metadata 重建卡片时必须保住 userSummary，否则总结 tab 回落长文。
+    const custom = (messages[0]?.metadata as { custom?: { delegation?: unknown } }).custom;
+    expect(readGroupDelegationCard(custom?.delegation)?.userSummary).toBe("登录页已可预览");
     expect(JSON.stringify(messages[0])).not.toContain("tool:");
     expect(
       groupDelegationPhase(
@@ -215,6 +225,24 @@ describe("groupLinesToUiMessages", () => {
       ),
     ).toBe("pending_summary");
     expect(groupDelegationPhase({ activity: "queued", handoff: "pending" }, true)).toBe("waiting");
+  });
+
+  it("readGroupDelegationCard 丢掉 userSummary 时总结会饿死（锁旧路径）", () => {
+    expect(
+      readGroupDelegationCard({
+        id: "d1",
+        taskId: "t1",
+        authorId: "cody",
+        authorName: "Cody",
+        brief: "收尾",
+        summary: "交回长文",
+        userSummary: "给人短结果",
+        activity: "running",
+        handoff: "pending",
+        outcome: "completed",
+      })?.userSummary,
+    ).toBe("给人短结果");
+    expect(readGroupDelegationCard({ id: "d1", summary: "only" })?.userSummary).toBeUndefined();
   });
 
   it("does not fold the holder utterance into the following delegation card", () => {
@@ -354,5 +382,31 @@ describe("resolveGroupWakeLive", () => {
     });
     expect(wake.message?.id).toBe("live-1");
     expect(wake.streaming).toBe(true);
+  });
+});
+
+describe("reuseAgentUiProfiles", () => {
+  it("keeps the previous map when member-role content is unchanged", () => {
+    const previous = profilesByAgentFromMemberRoles([
+      { agentId: "cody", role: "工程师", avatarUrl: "cody.webp" },
+      { agentId: "pm", role: "产品" },
+    ]);
+    // 父组件每次 render 都 map 出新数组：内容相同必须复用旧引用
+    const next = profilesByAgentFromMemberRoles([
+      { agentId: "cody", role: "工程师", avatarUrl: "cody.webp" },
+      { agentId: "pm", role: "产品" },
+    ]);
+    expect(next).not.toBe(previous);
+    expect(reuseAgentUiProfiles(previous, next)).toBe(previous);
+  });
+
+  it("returns the new map when a role or avatar actually changes", () => {
+    const previous = profilesByAgentFromMemberRoles([
+      { agentId: "cody", role: "工程师", avatarUrl: "cody.webp" },
+    ]);
+    const next = profilesByAgentFromMemberRoles([
+      { agentId: "cody", role: "工程师", avatarUrl: "cody-v2.webp" },
+    ]);
+    expect(reuseAgentUiProfiles(previous, next)).toBe(next);
   });
 });

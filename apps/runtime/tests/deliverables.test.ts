@@ -15,6 +15,7 @@ import { DelegationStore } from "../src/session/delegation/store.js";
 import {
   applyPresentArtifactsAction,
   parseDeliverablesEntryData,
+  requirePresentableArtifacts,
 } from "../src/session/history/deliverables.js";
 import { resolveExecutionTools } from "../src/session/context/tool-policy.js";
 
@@ -67,6 +68,50 @@ it("applyPresentArtifactsAction set keeps seeded size when cwd has no file", () 
     cwd: "/tmp/agentup-missing-deliverable-cwd",
   });
   expect(next.get("ARTIFACT/a.md")).toEqual({ path: "ARTIFACT/a.md", size: 42 });
+});
+
+it("requirePresentableArtifacts rejects missing ARTIFACT files on set/add", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-present-require-"));
+  fs.mkdirSync(path.join(root, "ARTIFACT"), { recursive: true });
+  fs.writeFileSync(path.join(root, "ARTIFACT", "ok.md"), "hi");
+  fs.mkdirSync(path.join(root, "WORK", "from-remy-brief"), { recursive: true });
+  fs.writeFileSync(path.join(root, "WORK", "from-remy-brief", "brief-incredibox-like.md"), "brief");
+
+  expect(() =>
+    requirePresentableArtifacts({
+      action: "set",
+      paths: ["brief-incredibox-like.md"],
+      cwd: root,
+    }),
+  ).toThrow(/missing ARTIFACT file: ARTIFACT\/brief-incredibox-like\.md/);
+
+  expect(() =>
+    requirePresentableArtifacts({
+      action: "add",
+      paths: ["ARTIFACT/missing.md"],
+      cwd: root,
+    }),
+  ).toThrow(/missing ARTIFACT file/);
+
+  expect(
+    requirePresentableArtifacts({
+      action: "set",
+      paths: ["ok.md"],
+      cwd: root,
+    }),
+  ).toBeUndefined();
+
+  // 清空网格 / remove 不要求磁盘上仍有文件
+  expect(
+    requirePresentableArtifacts({ action: "set", paths: [], cwd: root }),
+  ).toBeUndefined();
+  expect(
+    requirePresentableArtifacts({
+      action: "remove",
+      paths: ["ARTIFACT/gone.md"],
+      cwd: root,
+    }),
+  ).toBeUndefined();
 });
 
 it("parseDeliverablesEntryData keeps curated empty sets and drops empty non-curated", () => {

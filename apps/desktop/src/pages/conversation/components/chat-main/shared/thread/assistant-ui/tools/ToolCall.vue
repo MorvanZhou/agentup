@@ -25,6 +25,7 @@ import FindTool from "./files/FindTool.vue";
 import GenericTool from "./shared/GenericTool.vue";
 import GrepTool from "./files/GrepTool.vue";
 import LocalTimeTool from "./session/LocalTimeTool.vue";
+import PresentArtifactsTool from "./session/PresentArtifactsTool.vue";
 import PresentPreviewTool from "./session/PresentPreviewTool.vue";
 import LsTool from "./files/LsTool.vue";
 import McpResourceTool from "./mcp/McpResourceTool.vue";
@@ -132,6 +133,8 @@ const component = computed(() => {
       return DeliverTool;
     case "complete_group_task":
       return CompleteGroupTaskTool;
+    case "present_artifacts":
+      return PresentArtifactsTool;
     case "present_preview":
       return PresentPreviewTool;
     case "todo":

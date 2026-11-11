@@ -9,6 +9,17 @@ import type { DeliverArtifactsState } from "./deliver-artifacts.js";
 /** 群内委托：确认共享工作区里属于本任务的文件，不复制到调用方私有目录。 */
 export const COMPLETE_GROUP_TASK_TOOL = "complete_group_task";
 
+/**
+ * user_summary 参数说明（Pi / MCP 共用）。
+ * 面向人类聊天气泡：口语、短、只写用户要知道的重点。
+ */
+export const USER_SUMMARY_PARAM_DESCRIPTION =
+  "1–2 short spoken sentences for the human chat bubble: what they get / can do now, and any decision they need. " +
+  "Plain conversational language (as if texting a teammate). " +
+  "Focus on outcomes that matter to a person — e.g. “调试入口默认藏起来了，加 ?debug=1 才出现；说明文档也改好了，可以打开预览看看。” " +
+  "Do NOT dump QA checklists, PASS/FAIL counts, byte sizes, SHA hashes, AC ids, § refs, or a process diary. " +
+  "Empty string if nothing needs telling the user yet.";
+
 const SHARED_ROOTS = ["WORK", "ARTIFACT"] as const;
 
 const CompleteParams = Type.Object({
@@ -17,6 +28,9 @@ const CompleteParams = Type.Object({
       "Files from THIS task under the group workspace. Use WORK/from-<name>-<task_id>/... or ARTIFACT/from-<name>-<task_id>/.... " +
       "Use [] if this task produced no shared files.",
   }),
+  user_summary: Type.String({
+    description: USER_SUMMARY_PARAM_DESCRIPTION,
+  }),
   next_step: Type.String({
     description: "What the group should do next. Empty string if nobody needs to continue.",
   }),
@@ -24,9 +38,27 @@ const CompleteParams = Type.Object({
 
 type CompleteDetails = {
   paths: string[];
+  userSummary: string;
   nextStep: string;
   error?: string;
 };
+
+/** 拼 complete_group_task 成功回文：文件清单 + User summary + Next step。 */
+export function formatCompleteGroupTaskResult(input: {
+  paths: readonly string[];
+  userSummary: string;
+  nextStep: string;
+}): string {
+  const files =
+    input.paths.length === 0
+      ? "Confirmed: no shared files for this task."
+      : `Confirmed ${input.paths.length} shared file(s):\n${input.paths.map((item) => `- ${item}`).join("\n")}`;
+  const user = input.userSummary.trim();
+  const next = input.nextStep.trim()
+    ? `Next step: ${input.nextStep.trim()}`
+    : "Next step: none.";
+  return user ? `${files}\nUser summary: ${user}\n${next}` : `${files}\n${next}`;
+}
 
 /** 规范化为共享 WORK/ 或 ARTIFACT/ 下的相对路径。拒绝对路径、附件目录和穿越。 */
 export function normalizeGroupWorkspacePaths(paths: readonly string[]): string[] {
@@ -89,12 +121,13 @@ export function createCompleteGroupTaskExtension(options: {
         name: COMPLETE_GROUP_TASK_TOOL,
         label: "Complete group task",
         description:
-          "Confirm the shared group files this task produced and say what should happen next. " +
+          "Confirm the shared group files this task produced, write a short human-facing outcome, and say what should happen next. " +
           "Paths are relative to the group workspace. Does not copy files into a private workspace.",
-        promptSnippet: "Confirm shared group files and the next step",
+        promptSnippet: "Confirm shared files, user summary, and next step",
         promptGuidelines: [
           "Call complete_group_task before finishing a group task.",
           "Only list files under WORK/ or ARTIFACT/ that belong to this task.",
+          "user_summary: short spoken lines for the human — outcome they care about, no hashes / AC counts / QA dumps; next_step is for the group.",
         ],
         parameters: CompleteParams,
         executionMode: "sequential",
@@ -102,23 +135,27 @@ export function createCompleteGroupTaskExtension(options: {
           try {
             const staged = stageGroupWorkspacePaths(workspaceRoot, params.paths ?? []);
             const nextStep = typeof params.next_step === "string" ? params.next_step.trim() : "";
+            const userSummary =
+              typeof params.user_summary === "string" ? params.user_summary.trim() : "";
             state.staged = staged;
             state.confirmed = true;
             state.nextStep = nextStep;
-            const files =
-              staged.length === 0
-                ? "Confirmed: no shared files for this task."
-                : `Confirmed ${staged.length} shared file(s):\n${staged.map((item) => `- ${item.path}`).join("\n")}`;
-            const next = nextStep ? `Next step: ${nextStep}` : "Next step: none.";
+            state.userSummary = userSummary;
+            const paths = staged.map((item) => item.path);
             return {
-              content: [{ type: "text" as const, text: `${files}\n${next}` }],
-              details: { paths: staged.map((item) => item.path), nextStep },
+              content: [
+                {
+                  type: "text" as const,
+                  text: formatCompleteGroupTaskResult({ paths, userSummary, nextStep }),
+                },
+              ],
+              details: { paths, userSummary, nextStep },
             };
           } catch (error) {
             const message = error instanceof Error && error.message ? error.message : "invalid paths";
             return {
               content: [{ type: "text" as const, text: `Error: ${message}` }],
-              details: { paths: [], nextStep: "", error: message },
+              details: { paths: [], userSummary: "", nextStep: "", error: message },
             };
           }
         },

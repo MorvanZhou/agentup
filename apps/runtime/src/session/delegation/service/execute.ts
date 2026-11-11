@@ -17,14 +17,25 @@ import { linkAbortSignals } from "./helpers.js";
 import { afterTerminal } from "./notify.js";
 import type { DelegationSlots } from "./slots.js";
 
-/** 群任务把 complete_group_task 的 next_step 拼进交回摘要；一对一仍只用正文。 */
+/** 群任务把 user_summary / next_step 拼进交回摘要；一对一仍只用正文。 */
 function resultSummaryForTask(task: DelegationTask, outcome: DelegationRunOutcome): string {
   if (!task.groupId) return outcome.text;
   return composeGroupHandbackSummary({
     text: outcome.text,
     confirmed: outcome.artifactsConfirmed,
     nextStep: outcome.nextStep,
+    userSummary: outcome.userSummary,
   });
+}
+
+/** 群确认后的给人短结果；未确认或缺省不写。 */
+function resultUserSummaryForTask(
+  task: DelegationTask,
+  outcome: DelegationRunOutcome,
+): string | undefined {
+  if (!task.groupId || !outcome.artifactsConfirmed) return undefined;
+  const text = typeof outcome.userSummary === "string" ? outcome.userSummary.trim() : "";
+  return text || undefined;
 }
 
 export type ExecuteTaskContext = {
@@ -121,10 +132,12 @@ export async function executeDelegationTask(
         (typeof outcome.error === "string" && /取消|abort|cancelled/i.test(outcome.error));
       if (cancelled) {
         const summary = resultSummaryForTask(task, outcome);
+        const userSummary = resultUserSummaryForTask(task, outcome);
         ctx.store.update(task.id, {
           status: "cancelled",
           error: "用户已取消",
           resultSummary: summary || undefined,
+          ...(userSummary ? { resultUserSummary: userSummary } : {}),
           ...artifactPatch,
         });
       } else if (outcome.error && !outcome.text) {
@@ -135,17 +148,21 @@ export async function executeDelegationTask(
           ...artifactPatch,
         });
       } else if (outcome.error) {
+        const userSummary = resultUserSummaryForTask(task, outcome);
         ctx.store.update(task.id, {
           status: "failed",
           error: outcome.error,
           resultSummary: resultSummaryForTask(task, outcome),
+          ...(userSummary ? { resultUserSummary: userSummary } : {}),
           ...artifactPatch,
         });
       } else {
+        const userSummary = resultUserSummaryForTask(task, outcome);
         ctx.store.update(task.id, {
           status: "completed",
           resultSummary: resultSummaryForTask(task, outcome),
           error: undefined,
+          ...(userSummary ? { resultUserSummary: userSummary } : {}),
           ...artifactPatch,
         });
       }

@@ -188,6 +188,23 @@ it("does not show a summary tab when leaving process before the task finishes", 
   }
 });
 
+it("有 userSummary 时默认开总结并直接展示短文，不依赖 history 长正文", async () => {
+  vi.stubGlobal("fetch", async () => jsonResponse({ error: "should not load" }));
+  try {
+    const host = mount(
+      { ...card, userSummary: "登录页已可预览", summary: "很长的交回自述……" },
+      [],
+      { token: "", userId: "" },
+    );
+    await frames();
+    expect(tab(host, "summary")?.getAttribute("data-state")).toBe("active");
+    expect(host.textContent).toContain("登录页已可预览");
+    expect(host.textContent).not.toContain("很长的交回自述");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("opens the process immediately when the card has no summary", async () => {
   const calls: string[] = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {

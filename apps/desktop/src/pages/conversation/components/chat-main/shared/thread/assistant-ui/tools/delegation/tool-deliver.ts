@@ -6,6 +6,7 @@ export type DeliverArtifactView = {
 
 export type CompleteGroupTaskView = DeliverArtifactView & {
   nextStep: string;
+  userSummary: string;
 };
 
 /** 从 deliver_artifacts 的参数和结果整理出要展示的路径。 */
@@ -30,15 +31,19 @@ export function deliverArtifactView(args: unknown, resultText: string): DeliverA
 }
 
 /**
- * 群 complete_group_task：共享 WORK/ARTIFACT 路径 + next_step。
- * 结果行形如 `Next step: …` / `Next step: none.`。
+ * 群 complete_group_task：共享 WORK/ARTIFACT 路径 + user_summary + next_step。
+ * 结果行形如 `User summary: …`、`Next step: …` / `Next step: none.`。
  */
 export function completeGroupTaskView(
   args: unknown,
   resultText: string,
 ): CompleteGroupTaskView {
   const base = deliverArtifactView(args, resultText);
-  return { ...base, nextStep: nextStepFromComplete(args, resultText) };
+  return {
+    ...base,
+    userSummary: userSummaryFromComplete(args, resultText),
+    nextStep: nextStepFromComplete(args, resultText),
+  };
 }
 
 function nextStepFromComplete(args: unknown, resultText: string): string {
@@ -53,6 +58,17 @@ function nextStepFromComplete(args: unknown, resultText: string): string {
   }
   if (!args || typeof args !== "object") return "";
   const raw = (args as { next_step?: unknown }).next_step;
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function userSummaryFromComplete(args: unknown, resultText: string): string {
+  const text = resultText.trim();
+  if (text) {
+    const match = /^User summary:\s*(.*)$/im.exec(text);
+    if (match) return (match[1] ?? "").trim();
+  }
+  if (!args || typeof args !== "object") return "";
+  const raw = (args as { user_summary?: unknown }).user_summary;
   return typeof raw === "string" ? raw.trim() : "";
 }
 

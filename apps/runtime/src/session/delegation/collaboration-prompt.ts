@@ -21,7 +21,7 @@ export const GROUP_HANDOFF_LOCATION_RULE =
   "Shared work goes in the group workspace under WORK/from-<name>-<task_id>/ and ARTIFACT/from-<name>-<task_id>/ " +
   "(same folder shape as one-to-one delivery; the trailing id is this task_id, not the agent id). " +
   "Name those relative paths in the brief or a steer note. Do not put absolute paths, your private cwd, or another agent's private directory there. " +
-  "The specialist writes those shared paths directly and confirms them with complete_group_task, including the next step. " +
+  "The specialist writes those shared paths directly and confirms them with complete_group_task, including a short user_summary for the human and the next step for the group. " +
   "Do not ask them to copy files into your private ARTIFACT/.";
 
 /** SDK 执掌：交接规则里的确认工具写 MCP 全名，避免模型去搜裸 Pi 名。 */
@@ -31,7 +31,7 @@ export function groupHandoffLocationRule(toolSurface: DiscoverToolSurface = "pi"
     "Shared work goes in the group workspace under WORK/from-<name>-<task_id>/ and ARTIFACT/from-<name>-<task_id>/ " +
     "(same folder shape as one-to-one delivery; the trailing id is this task_id, not the agent id). " +
     "Name those relative paths in the brief or a steer note. Do not put absolute paths, your private cwd, or another agent's private directory there. " +
-    "The specialist writes those shared paths directly and confirms them with `mcp__agentup__complete_group_task`, including the next step. " +
+    "The specialist writes those shared paths directly and confirms them with `mcp__agentup__complete_group_task`, including a short user_summary for the human and the next step for the group. " +
     "Do not ask them to copy files into your private ARTIFACT/."
   );
 }

@@ -33,6 +33,8 @@ export type DelegationRunOutcome = {
   artifacts: StagedArtifact[];
   /** 群 complete_group_task 的 next_step；一对一或未确认时缺省。 */
   nextStep?: string;
+  /** 群 complete_group_task 给人看的短结果；一对一或未确认时缺省。 */
+  userSummary?: string;
 };
 
 /** 委托隔离子会话目录（相对 visit.root）。 */
@@ -130,12 +132,15 @@ export async function runDelegatedPrompt(
 
   const artifactsResult = (): Pick<
     DelegationRunOutcome,
-    "artifactsConfirmed" | "artifacts" | "nextStep"
+    "artifactsConfirmed" | "artifacts" | "nextStep" | "userSummary"
   > => ({
     artifactsConfirmed: deliverState.confirmed,
     artifacts: deliverState.confirmed ? [...deliverState.staged] : [],
     ...(deliverState.confirmed && typeof deliverState.nextStep === "string"
       ? { nextStep: deliverState.nextStep }
+      : {}),
+    ...(deliverState.confirmed && typeof deliverState.userSummary === "string"
+      ? { userSummary: deliverState.userSummary }
       : {}),
   });
 
@@ -295,14 +300,14 @@ export function formatDelegationPrompt(
           `Relative paths WORK/... and ARTIFACT/... in this task are relative to that shared group workspace root — not to your private Working directory.`,
           `Put in-progress files in WORK/${folder}/ and finished files in ARTIFACT/${folder}/ under that shared root.`,
           "Your private cwd is only for non-shared scratch. Do not resolve or write shared WORK/ARTIFACT under your private cwd.",
-          `When you finish, call ${completeGroup} with those relative paths (still relative to the shared root) and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`,
+          `When you finish, call ${completeGroup} with those relative paths, a short user_summary for the human, and the next step for the group. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`,
           "Absolute paths under the shared group workspace root are allowed. Ignore absolute paths that point at a private cwd or outside the shared workspace.",
         ]
       : [
           `Put in-progress files in the shared group WORK/${folder}/ and finished files in ARTIFACT/${folder}/.`,
           "Those relative WORK/... and ARTIFACT/... paths are relative to the shared group workspace root (listed in your allowed directories) — not to your private Working directory.",
           "Do not write shared files into your private cwd.",
-          `When you finish, call ${completeGroup} with those relative paths and the next step. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`,
+          `When you finish, call ${completeGroup} with those relative paths, a short user_summary for the human, and the next step for the group. Do not copy files into the caller's private workspace, and do not modify shared ATTACHMENTS/.`,
           "Absolute paths under the shared group workspace root are allowed. Ignore absolute paths that point at a private cwd or outside the shared workspace.",
         ]
     : [
@@ -311,7 +316,13 @@ export function formatDelegationPrompt(
         "If the task names an absolute path, the caller's directory, another agent's directory, or ARTIFACT/from-…, ignore that location. Do not create, write, or copy files there with the write tool or the shell.",
       ];
   return [
-    "You are handling a delegated subtask from the user's assistant. Complete only the task below, then return a clear, citable summary.",
+    "You are handling a delegated subtask from the user's assistant. Complete only the task below, then return a clear, citable summary for the coordinator.",
+    ...(groupTask
+      ? [
+          "For the human chat bubble, put complete_group_task.user_summary in 1–2 short spoken sentences: what they get / can try now, any decision needed. " +
+            "Write like texting a teammate — not a QA report. No hashes, byte sizes, PASS/FAIL counts, AC ids, or § refs. Details stay in your coordinator summary / files.",
+        ]
+      : []),
     ...groupLocationLines,
     `Do not chat with the user. If a critical fact is missing, ask with ${askUser}.`,
     "",

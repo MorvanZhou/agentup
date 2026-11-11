@@ -38,9 +38,12 @@ import {
 import {
   groupLinesToUiMessages,
   pendingDelegationCards,
+  profilesByAgentFromMemberRoles,
   resolveGroupReloadEdit,
   resolveGroupWakeLive,
+  reuseAgentUiProfiles,
   uiMessagePlainText,
+  type GroupUiProfile,
 } from "../../../model/group/group-ui-messages";
 import { lastUserMessageMatchingText } from "../../../model/thread/thread-insert-cue";
 import {
@@ -239,16 +242,21 @@ const speaking = computed(() => props.room.holderSpeaking === true);
 const resolvedRuntimeBaseUrl = computed(
   () => props.runtimeBaseUrl ?? defaultRuntimeBaseUrl(),
 );
-const profileByAgent = computed(() => {
-  const map: Record<string, { avatarUrl?: string; role?: string }> = {};
-  for (const profile of props.memberRoles ?? []) {
-    map[profile.agentId] = {
-      ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-      ...(profile.role ? { role: profile.role } : {}),
-    };
-  }
-  return map;
-});
+/**
+ * 名片表按内容复用旧引用：父级即使每次传入新 memberRoles 数组，
+ * 也不要因流式 chunk 重建历史 messages / ExternalThread。
+ */
+const profileByAgent = shallowRef<Record<string, GroupUiProfile>>({});
+watch(
+  () => props.memberRoles,
+  (roles) => {
+    profileByAgent.value = reuseAgentUiProfiles(
+      profileByAgent.value,
+      profilesByAgentFromMemberRoles(roles),
+    );
+  },
+  { immediate: true },
+);
 const avatarByAgent = computed(() => {
   const map: Record<string, string> = {};
   for (const [agentId, profile] of Object.entries(profileByAgent.value)) {
@@ -344,9 +352,12 @@ const insertCueApi = createThreadInsertCueApi(insertCue);
 provide(threadInsertCueKey, insertCueApi);
 
 const messages = computed(() => groupLinesToUiMessages(props.room, profileByAgent.value));
+/**
+ * 历史线程不做 streaming 转换：直播在 WakeLiveMessage 隔离树里。
+ * 若跟 speaking 绑定，开跑瞬间会整表 toThreadMessages，放大重绘。
+ */
 const threadMessages = computed(
-  () =>
-    AISDKMessageConverter.toThreadMessages(messages.value, speaking.value) as ExternalThreadMessage[],
+  () => AISDKMessageConverter.toThreadMessages(messages.value, false) as ExternalThreadMessage[],
 );
 
 const wakeLive = computed(() =>

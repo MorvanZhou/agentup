@@ -4,7 +4,10 @@ import path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
-import { normalizeArtifactPaths } from "../tools/deliver-artifacts.js";
+import {
+  normalizeArtifactPaths,
+  stageArtifactPaths,
+} from "../tools/deliver-artifacts.js";
 
 /** 会话 custom entry：本回合对用户展示的交付附件（与 ARTIFACT 差分 tab 分离）。 */
 export const AGENTUP_DELIVERABLES_CUSTOM_TYPE = "agentup-deliverables";
@@ -81,6 +84,22 @@ export function mergeDeliverableFiles(
     }
     target.set(file.path, entry);
   }
+}
+
+/**
+ * set/add 且 paths 非空时，要求 cwd 下 ARTIFACT 文件真实存在。
+ * remove / 清空网格跳过；无 cwd 时无法校验（测试用）。
+ * 裸名会先规范成 ARTIFACT/…，缺文件抛错，避免点名死链进交付网格。
+ */
+export function requirePresentableArtifacts(input: {
+  action: PresentArtifactsAction;
+  paths: readonly string[];
+  cwd?: string;
+}): void {
+  if (!input.cwd) return;
+  if (input.action === "remove") return;
+  if (input.paths.length === 0) return;
+  stageArtifactPaths(input.cwd, input.paths);
 }
 
 /** present_artifacts 对内存展示集的纯更新。 */
@@ -176,20 +195,26 @@ export function createDeliverablesExtension(options: {
         label: "Present artifacts",
         description:
           "Choose which ARTIFACT files appear in the deliverables grid under this reply. " +
-          "By default the platform already attaches confirmed delegation deliveries; use this to add, remove, or replace that set.",
+          "By default the platform already attaches confirmed delegation deliveries; use this to add, remove, or replace that set. " +
+          "Paths must already exist under ARTIFACT/ (WORK/ and missing files are rejected).",
         promptSnippet: "Curate the deliverables grid under this reply",
         promptGuidelines: [
           "Call present_artifacts only when you need to change which files the user sees under your reply.",
-          "Paths must be under ARTIFACT/. Use action set with [] to hide the grid.",
+          "Paths must be existing files under ARTIFACT/ (ARTIFACT/… or bare names that resolve there).",
+          "Do not present WORK/ drafts; copy or write finished files into ARTIFACT/ first.",
+          "Use action set with [] to hide the grid.",
         ],
         parameters: PresentParams,
         executionMode: "sequential",
         async execute(_toolCallId, params) {
           try {
             const action = params.action as PresentArtifactsAction;
+            const paths = params.paths ?? [];
+            // 先校验再改内存集：缺文件 / WORK 路径不得进网格
+            requirePresentableArtifacts({ action, paths, cwd: options.cwd });
             const next = applyPresentArtifactsAction({
               action,
-              paths: params.paths ?? [],
+              paths,
               current: files,
               cwd: options.cwd,
             });

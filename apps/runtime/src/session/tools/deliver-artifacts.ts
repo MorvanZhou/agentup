@@ -26,6 +26,8 @@ export type DeliverArtifactsState = {
   staged: StagedArtifact[];
   /** 群 `complete_group_task` 写入；一对一 `deliver_artifacts` 不用。 */
   nextStep?: string;
+  /** 群 `complete_group_task`：给人看的短结果；一对一不用。 */
+  userSummary?: string;
 };
 
 const DeliverParams = Type.Object({

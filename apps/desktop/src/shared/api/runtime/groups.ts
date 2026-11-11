@@ -28,6 +28,8 @@ export type GroupPendingDelegation = {
   handoff: GroupHandoff;
   outcome?: GroupDelegationOutcome;
   summary?: string;
+  /** complete_group_task.user_summary：给人看的短结果。 */
+  userSummary?: string;
 };
 
 export type GroupLine = {
@@ -45,6 +47,8 @@ export type GroupLine = {
   handoff?: GroupHandoff;
   outcome?: GroupDelegationOutcome;
   summary?: string;
+  /** complete_group_task.user_summary：给人看的短结果。 */
+  userSummary?: string;
   taskId?: string;
 };
 
@@ -460,6 +464,7 @@ function readPending(value: unknown): GroupPendingDelegation {
     handoff: fields.handoff ?? "pending",
     ...(fields.outcome ? { outcome: fields.outcome } : {}),
     ...(fields.summary ? { summary: fields.summary } : {}),
+    ...(fields.userSummary ? { userSummary: fields.userSummary } : {}),
   };
 }
 
@@ -470,10 +475,16 @@ function readDelegationFields(line: {
   handoff?: unknown;
   outcome?: unknown;
   summary?: unknown;
+  userSummary?: unknown;
   taskId?: unknown;
-}): Pick<GroupLine, "authorName" | "brief" | "activity" | "handoff" | "outcome" | "summary" | "taskId"> {
-  const fields: Pick<GroupLine, "authorName" | "brief" | "activity" | "handoff" | "outcome" | "summary" | "taskId"> =
-    {};
+}): Pick<
+  GroupLine,
+  "authorName" | "brief" | "activity" | "handoff" | "outcome" | "summary" | "userSummary" | "taskId"
+> {
+  const fields: Pick<
+    GroupLine,
+    "authorName" | "brief" | "activity" | "handoff" | "outcome" | "summary" | "userSummary" | "taskId"
+  > = {};
   if (typeof line.authorName === "string" && line.authorName) fields.authorName = line.authorName;
   if (typeof line.brief === "string") fields.brief = line.brief;
   if (line.activity === "queued" || line.activity === "running") fields.activity = line.activity;
@@ -482,6 +493,9 @@ function readDelegationFields(line: {
     fields.outcome = line.outcome;
   }
   if (typeof line.summary === "string" && line.summary) fields.summary = line.summary;
+  if (typeof line.userSummary === "string" && line.userSummary.trim()) {
+    fields.userSummary = line.userSummary.trim();
+  }
   if (typeof line.taskId === "string" && line.taskId) fields.taskId = line.taskId;
   return fields;
 }

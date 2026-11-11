@@ -33,6 +33,8 @@ export type GroupPendingDelegation = {
   handoff: GroupHandoff;
   outcome?: GroupDelegationOutcome;
   summary?: string;
+  /** complete_group_task.user_summary：给人看的短结果。 */
+  userSummary?: string;
   parentLineId?: string;
 };
 
@@ -64,6 +66,8 @@ export type GroupLine = {
   handoff?: GroupHandoff;
   outcome?: GroupDelegationOutcome;
   summary?: string;
+  /** complete_group_task.user_summary：给人看的短结果。 */
+  userSummary?: string;
   parentLineId?: string;
   /** 执掌者气泡完整 parts（过程 / 工具 / 正文）；旧行没有。 */
   parts?: UIMessage["parts"];

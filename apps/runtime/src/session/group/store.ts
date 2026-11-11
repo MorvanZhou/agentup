@@ -272,6 +272,7 @@ export class GroupStore {
     summary: string,
     now = Date.now(),
     outcome: GroupDelegationOutcome = "completed",
+    userSummary?: string,
   ): { room: GroupRoom; effect: GroupEffect } {
     const result = noteTaskFinished(this.get(userId, groupId), {
       id: randomUUID(),
@@ -279,6 +280,7 @@ export class GroupStore {
       summary,
       now,
       outcome,
+      ...(userSummary?.trim() ? { userSummary: userSummary.trim() } : {}),
     });
     this.save(result.room);
     return result;

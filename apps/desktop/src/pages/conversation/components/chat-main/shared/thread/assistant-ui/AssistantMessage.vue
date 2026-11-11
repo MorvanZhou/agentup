@@ -34,11 +34,9 @@ import { injectThreadExtras } from "../../../../../model/thread/thread-extras";
 import { injectThreadWakeLive } from "../../../../../model/thread/thread-wake-live";
 import { readAgentUpDeliverables } from "../../../../../model/message/message-deliverables";
 import {
-  previewRecipesFromParts,
-  readAgentUpPreview,
+  resolveMessagePreviewRecipes,
   type AgentUpPreview,
 } from "../../../../../model/message/message-preview";
-import { injectThreadPreview } from "../../../../../model/thread/thread-preview";
 import AssistAgentsPanel from "./byproducts/AssistAgentsPanel.vue";
 import AssistantByproductContent from "./byproducts/AssistantByproductContent.vue";
 import DeliverablesGrid from "./DeliverablesGrid.vue";
@@ -215,19 +213,10 @@ const hasArtifactsTab = computed(
 );
 /** 收口交付网格：metadata.custom.agentUpDeliverables（与产物 tab 分离）。 */
 const deliverables = computed(() => readAgentUpDeliverables(metadata.value));
-const threadPreview = injectThreadPreview();
-/**
- * Launch Recipe 卡：优先 metadata；群旧行漏投影时从 present_preview 入参回落；
- * 再回落 thread 工作区配方。
- */
-const previewRecipes = computed((): AgentUpPreview | null => {
-  const fromMeta = readAgentUpPreview(metadata.value);
-  if (fromMeta) return fromMeta;
-  const fromParts = previewRecipesFromParts(parts.value);
-  if (fromParts) return fromParts;
-  const recipes = threadPreview?.recipes.value ?? [];
-  return recipes.length > 0 ? { recipes } : null;
-});
+/** Launch Recipe 卡：仅本条 metadata / present_preview parts，不挂工作区回落。 */
+const previewRecipes = computed((): AgentUpPreview | null =>
+  resolveMessagePreviewRecipes(metadata.value, parts.value),
+);
 </script>
 
 <template>
