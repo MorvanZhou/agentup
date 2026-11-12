@@ -7,11 +7,6 @@ export interface SessionCredential {
   avatarUrl?: string;
 }
 
-export interface RegisterPending {
-  email: string;
-  status: "pending_verification";
-}
-
 export interface PublishedAgent {
   agentId: string;
   name: string;

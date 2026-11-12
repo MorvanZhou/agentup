@@ -2,7 +2,7 @@ import { isWebp, putCosObject, type ObjectCredential } from "./cos-put.js";
 import { requestJson } from "./http.js";
 import { credential } from "./parse.js";
 import { BackendClientError } from "./errors.js";
-import type { RegisterPending, SessionCredential } from "./types.js";
+import type { SessionCredential } from "./types.js";
 
 export async function login(
   backendUrl: string,
@@ -12,78 +12,6 @@ export async function login(
 ): Promise<SessionCredential> {
   const payload = await requestJson(fetchImpl, backendUrl, "POST", "/v1/login", {
     email,
-    password,
-  });
-  return credential(payload);
-}
-
-export async function registerAccount(
-  backendUrl: string,
-  email: string,
-  password: string,
-  turnstileToken = "",
-  fetchImpl: typeof fetch = fetch,
-): Promise<RegisterPending> {
-  const payload = await requestJson(fetchImpl, backendUrl, "POST", "/v1/register", {
-    email,
-    password,
-    turnstile_token: turnstileToken,
-  });
-  if (typeof payload.email !== "string" || payload.status !== "pending_verification") {
-    throw new BackendClientError("注册响应无效", 200);
-  }
-  return { email: payload.email, status: "pending_verification" };
-}
-
-export async function resendVerification(
-  backendUrl: string,
-  email: string,
-  password: string,
-  turnstileToken = "",
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  await requestJson(fetchImpl, backendUrl, "POST", "/v1/auth/resend-verification", {
-    email,
-    password,
-    turnstile_token: turnstileToken,
-  });
-}
-
-export async function verifyEmail(
-  backendUrl: string,
-  email: string,
-  code: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<SessionCredential> {
-  const payload = await requestJson(fetchImpl, backendUrl, "POST", "/v1/auth/verify-email", {
-    email,
-    code,
-  });
-  return credential(payload);
-}
-
-export async function forgotPassword(
-  backendUrl: string,
-  email: string,
-  turnstileToken = "",
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  await requestJson(fetchImpl, backendUrl, "POST", "/v1/auth/forgot-password", {
-    email,
-    turnstile_token: turnstileToken,
-  });
-}
-
-export async function resetPassword(
-  backendUrl: string,
-  email: string,
-  code: string,
-  password: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<SessionCredential> {
-  const payload = await requestJson(fetchImpl, backendUrl, "POST", "/v1/auth/reset-password", {
-    email,
-    code,
     password,
   });
   return credential(payload);
@@ -130,17 +58,6 @@ export async function desktopHandoff(
     throw new BackendClientError("handoff 响应无效", 502);
   }
   return payload.code.trim();
-}
-
-export async function turnstilePublic(
-  backendUrl: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ siteKey: string; required: boolean }> {
-  const payload = await requestJson(fetchImpl, backendUrl, "GET", "/v1/auth/turnstile");
-  return {
-    siteKey: typeof payload.site_key === "string" ? payload.site_key : "",
-    required: payload.required === true,
-  };
 }
 
 /** 续签会话（含短期头像 GET）；Desktop 冷启动用来刷新本机头像缓存。 */

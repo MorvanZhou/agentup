@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
+import { SKILL_MAX_BYTES } from "../../package/archive.js";
+
 export type CommunitySkillSource = "skillhub" | "clawhub";
 /** 下载量 / 最近更新 */
 export type CommunitySkillSort = "downloads" | "updated";
@@ -37,7 +39,8 @@ const SKILLHUB_BASE = "https://api.skillhub.cn";
 const CLAWHUB_BASE = "https://clawhub.ai";
 const USER_AGENT = "AgentUp/1.0 (+https://agentup.app; community-skills)";
 const SEARCH_LIMIT = 20;
-const DOWNLOAD_MAX_BYTES = 5_000_000;
+/** 与本机装入 / backend 上传同一闸，避免社区包先下完再被装入拒绝。 */
+const DOWNLOAD_MAX_BYTES = SKILL_MAX_BYTES;
 const FETCH_TIMEOUT_MS = 60_000;
 
 export function isCommunitySkillSource(value: string): value is CommunitySkillSource {

@@ -33,6 +33,7 @@ import {
   applyUiLocale,
   readDeviceLocale,
   readUiLocale,
+  resolveAccountLocaleOnLogin,
   t,
   uiLocale,
   writeDeviceLocale,
@@ -298,101 +299,6 @@ export function useDesktopApp(api = new DesktopApi()) {
     await refresh();
   }
 
-  /** @returns 注册成功时返回 pending 邮箱；登录成功返回 null */
-  async function authenticate(
-    mode: "login" | "register",
-    email: string,
-    password: string,
-    turnstileToken = "",
-  ): Promise<string | null> {
-    busy.value = true;
-    try {
-      if (mode === "register") {
-        const pending = await api.register(email, password, turnstileToken);
-        return pending.email;
-      }
-      const next = await api.login(email, password);
-      await establishAccount(next);
-      return null;
-    } catch (caught) {
-      showToast(messageOf(caught), "error");
-      return null;
-    } finally {
-      busy.value = false;
-    }
-  }
-
-  async function completeSession(next: Session): Promise<void> {
-    busy.value = true;
-    try {
-      await establishAccount(next);
-    } catch (caught) {
-      showToast(messageOf(caught), "error");
-    } finally {
-      busy.value = false;
-    }
-  }
-
-  async function resendVerification(
-    email: string,
-    password: string,
-    turnstileToken = "",
-  ): Promise<boolean> {
-    busy.value = true;
-    try {
-      await api.resendVerification(email, password, turnstileToken);
-      showToast("验证邮件已发送", "success");
-      return true;
-    } catch (caught) {
-      showToast(messageOf(caught), "error");
-      return false;
-    } finally {
-      busy.value = false;
-    }
-  }
-
-  async function verifyEmailCode(email: string, code: string): Promise<boolean> {
-    busy.value = true;
-    try {
-      const next = await api.verifyEmail(email, code);
-      await establishAccount(next);
-      return true;
-    } catch (caught) {
-      showToast(messageOf(caught), "error");
-      return false;
-    } finally {
-      busy.value = false;
-    }
-  }
-
-  async function requestPasswordReset(email: string, turnstileToken = ""): Promise<boolean> {
-    busy.value = true;
-    try {
-      await api.forgotPassword(email, turnstileToken);
-      showToast("若账号存在，重置邮件已发送", "success");
-      return true;
-    } catch (caught) {
-      showToast(messageOf(caught), "error");
-      return false;
-    } finally {
-      busy.value = false;
-    }
-  }
-
-  async function confirmPasswordReset(email: string, code: string, password: string): Promise<boolean> {
-    busy.value = true;
-    try {
-      const next = await api.resetPassword(email, code, password);
-      await establishAccount(next);
-      return true;
-    } catch (caught) {
-      showToast(messageOf(caught), "error");
-      return false;
-    } finally {
-      busy.value = false;
-    }
-  }
-
   /** 进行中的浏览器登录地址；关掉网页后用同一 loopback 再打开。 */
   let browserLoginUrl = "";
   /** 取消 / 重新发起时递增，避免旧 wait 的 finally 清掉新一轮 busy。 */
@@ -400,13 +306,26 @@ export function useDesktopApp(api = new DesktopApi()) {
 
   /** 再次打开当前这次登录页，不重新换 loopback。 */
   async function reopenBrowserLogin(): Promise<void> {
-    const url = browserLoginUrl;
+    let url = browserLoginUrl;
     const open = window.agentUp?.openExternal;
     if (!url || !open) {
       showToast(t("loginFailed"), "error");
       return;
     }
     try {
+      const parsed = new URL(url);
+      // 改密 bridge 一次性：同链重开会换票失败，须重新签发
+      if (parsed.searchParams.has("bridge")) {
+        const current = session.value;
+        if (!current || !isAccountSession(current)) {
+          showToast(t("loginFailed"), "error");
+          return;
+        }
+        const bridgeCode = await api.desktopHandoff(current.token);
+        parsed.searchParams.set("bridge", bridgeCode);
+        url = parsed.toString();
+        browserLoginUrl = url;
+      }
       await open(url);
     } catch (caught) {
       showToast(messageOf(caught), "error");
@@ -503,11 +422,6 @@ export function useDesktopApp(api = new DesktopApi()) {
         }, 120_000);
       }
     }
-  }
-
-  async function loginWithOAuth(provider: "github" | "google"): Promise<boolean> {
-    void provider;
-    return loginWithBrowser();
   }
 
   /** 菜单 / 账号设置：直接打开 Web 登录。进行中则只重新打开同一页。 */
@@ -623,7 +537,12 @@ export function useDesktopApp(api = new DesktopApi()) {
       return;
     }
     try {
-      const prefs = await api.preferences(token);
+      let prefs = await api.preferences(token);
+      // 首次登录补齐：账号仍是出厂 zh、本机已是 en 时写入账号（注册经 Web 多半已带 ui_locale）
+      const aligned = resolveAccountLocaleOnLogin(readDeviceLocale(), prefs.uiLocale);
+      if (aligned.pushToAccount) {
+        prefs = await api.savePreferences(token, { uiLocale: aligned.locale });
+      }
       themeMode.value = prefs.themeMode;
       chatFontSize.value = prefs.chatFontSize;
       skipEditResendConfirm.value = prefs.skipEditResendConfirm;
@@ -1067,19 +986,12 @@ export function useDesktopApp(api = new DesktopApi()) {
     busyAgent,
     pullAttention,
     pullPulse,
-    authenticate,
-    completeSession,
-    resendVerification,
-    verifyEmailCode,
-    requestPasswordReset,
-    confirmPasswordReset,
     loginWithBrowser,
     beginBrowserLogin,
     beginForgotPassword,
     beginChangePassword,
     reopenBrowserLogin,
     cancelBrowserLogin,
-    loginWithOAuth,
     refresh,
     select,
     start,

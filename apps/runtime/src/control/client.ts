@@ -7,7 +7,6 @@ export type {
   PreferencesUpdate,
   PublishedAgent,
   Recruit,
-  RegisterPending,
   SessionCredential,
   TeamCard,
   TeamMember,
@@ -21,16 +20,10 @@ export type {
 export {
   desktopHandoff,
   fetchProfile,
-  forgotPassword,
   login,
   oauthAuthorizeUrl,
   oauthExchange,
-  registerAccount,
-  resendVerification,
-  resetPassword,
-  turnstilePublic,
   updateProfile,
-  verifyEmail,
 } from "./auth-api.js";
 export {
   deleteOwnedAgent,

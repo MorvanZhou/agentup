@@ -33,12 +33,6 @@ it("recruits team members, syncs all, and creates a group with sourceTeamId", as
         json(res, 200, { user_id: local, email: body.email, nickname: local, token: local });
       });
     }
-    if (url === "/v1/register" && req.method === "POST") {
-      return readBody(req).then((raw) => {
-        const body = JSON.parse(raw) as { email: string };
-        json(res, 200, { email: body.email, status: "pending_verification" });
-      });
-    }
     const token = req.headers.authorization?.slice("Bearer ".length);
     if (!token) return json(res, 401, { error: "未登录" });
 
@@ -148,12 +142,6 @@ it("does not create a group when a member sync fails", async () => {
         json(res, 200, { user_id: local, email: body.email, nickname: local, token: local });
       });
     }
-    if (url === "/v1/register" && req.method === "POST") {
-      return readBody(req).then((raw) => {
-        const body = JSON.parse(raw) as { email: string };
-        json(res, 200, { email: body.email, status: "pending_verification" });
-      });
-    }
     const token = req.headers.authorization?.slice("Bearer ".length);
     if (!token) return json(res, 401, { error: "未登录" });
     if (url === `/v1/teams/${teamId}/recruit` && req.method === "POST") {
@@ -255,7 +243,6 @@ function sendPackage(
 }
 
 async function createAccount(base: string, email: string) {
-  await postJson(base, "/register", { email, password: "secret12" });
   return postJson(base, "/login", { email, password: "secret12" });
 }
 

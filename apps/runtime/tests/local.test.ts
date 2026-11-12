@@ -20,12 +20,6 @@ it("lets two accounts recruit one agent and sync separate visits", async () => {
   const homeBefore = directoryStamp(homeUser);
   const recruited = new Set<string>();
   const backend = await listen((req, res) => {
-    if (req.url === "/v1/register" && req.method === "POST") {
-      return readBody(req).then((raw) => {
-        const body = JSON.parse(raw) as { email: string };
-        json(res, 200, { email: body.email, status: "pending_verification" });
-      });
-    }
     if (req.url === "/v1/login" && req.method === "POST") {
       return readBody(req).then((raw) => {
         const body = JSON.parse(raw) as { email: string };
@@ -182,10 +176,8 @@ it("allows CORS preflight from file:// packaged renderer (Origin null)", async (
   }
 });
 
-/** 注册仅返回 pending；测业务时用 login 拿 session（不依赖真实邮件验证）。 */
+/** 测业务用 login 拿 session（不经本机注册代理）。 */
 async function createAccount(base: string, email: string, password: string) {
-  const pending = await post(base, "/register", { email, password });
-  expect(pending).toMatchObject({ email, status: "pending_verification" });
   return post(base, "/login", { email, password });
 }
 

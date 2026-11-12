@@ -101,6 +101,8 @@ export async function mockAgentUp(
   const recordOpenedVisit = options.recordOpenedVisit ?? false;
   await page.addInitScript(
     ({ selectSkillPackage: skillPackage, recordOpenedVisit: record }) => {
+      // e2e 统一中文界面（断言词条）；避免本机/Chrome 默认 en 触发语言探测
+      localStorage.setItem("agentup.locale", "zh");
       const existing = window.agentUp;
       window.agentUp = {
         platform: "darwin",

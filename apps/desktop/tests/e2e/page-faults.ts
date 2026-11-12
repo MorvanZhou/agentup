@@ -15,6 +15,10 @@ export function isPageFault(text: string): boolean {
 
 export const test = base.extend({
   page: async ({ page }, use) => {
+    // e2e 断言中文词条；须在首跳前写入，否则本机语言探测会落成 en
+    await page.addInitScript(() => {
+      localStorage.setItem("agentup.locale", "zh");
+    });
     const faults: string[] = [];
     const onPageError = (error: Error) => {
       const text = error.stack || error.message;

@@ -1579,45 +1579,6 @@ export async function installRuntime(
       ];
       return json(route, 200, { cleared: true });
     }
-    if (request.method() === "POST" && path === "/register") {
-      const body = request.postDataJSON() as { email?: string };
-      const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "patient-b@example.com";
-      // 故意不发真实邮件：e2e 只返回 pending，验证走 /auth/verify-email mock
-      return json(route, 200, {
-        email,
-        status: "pending_verification",
-      });
-    }
-    if (request.method() === "POST" && path === "/auth/resend-verification") {
-      return json(route, 200, { ok: true });
-    }
-    if (request.method() === "POST" && path === "/auth/verify-email") {
-      const body = request.postDataJSON() as { email?: string; code?: string };
-      if (!body.code || !/^\d{6}$/.test(body.code)) {
-        return json(route, 400, { error: "验证码无效或已过期" });
-      }
-      return json(route, 200, {
-        user_id: "patient-b",
-        email: typeof body.email === "string" ? body.email : "patient-b@example.com",
-        nickname: "patient-b",
-        token: "token-b",
-        has_avatar: false,
-        avatar_url: null,
-      });
-    }
-    if (request.method() === "POST" && path === "/auth/forgot-password") {
-      return json(route, 200, { ok: true });
-    }
-    if (request.method() === "POST" && path === "/auth/reset-password") {
-      return json(route, 200, {
-        user_id: "patient-a",
-        email: "patient-a@example.com",
-        nickname: "patient-a",
-        token: "token-a",
-        has_avatar: false,
-        avatar_url: null,
-      });
-    }
     if (request.method() === "POST" && path.startsWith("/auth/oauth/") && path.endsWith("/authorize-url")) {
       return json(route, 200, { url: "https://example.com/oauth-mock" });
     }
@@ -1634,9 +1595,6 @@ export async function installRuntime(
     }
     if (request.method() === "POST" && path === "/auth/desktop/handoff") {
       return json(route, 200, { code: "desktop-bridge-mock" });
-    }
-    if (request.method() === "GET" && path === "/auth/turnstile") {
-      return json(route, 200, { site_key: "", required: false });
     }
     if (request.method() === "POST" && path === "/login") {
       if (options?.loginError) return json(route, 401, { error: options.loginError });

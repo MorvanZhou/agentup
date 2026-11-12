@@ -25,7 +25,6 @@ export {
   publishAgent,
   putPreferences,
   recruitAgent,
-  registerAccount,
   setAgentRemark,
   unrecruitAgent,
   updateAgentCard,

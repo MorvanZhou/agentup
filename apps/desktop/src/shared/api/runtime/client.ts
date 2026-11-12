@@ -51,36 +51,9 @@ export class DesktopApi {
     this.http = new RuntimeHttp(baseUrl, fetchImpl);
   }
 
-  register(
-    email: string,
-    password: string,
-    turnstileToken = "",
-  ): Promise<authApi.RegisterPending> {
-    return authApi.register(this.http, email, password, turnstileToken);
-  }
-
+  /** 测例用；产品登录走浏览器 + oauthExchange。 */
   login(email: string, password: string): Promise<Session> {
     return authApi.login(this.http, email, password);
-  }
-
-  resendVerification(email: string, password: string, turnstileToken = ""): Promise<void> {
-    return authApi.resendVerification(this.http, email, password, turnstileToken);
-  }
-
-  verifyEmail(email: string, code: string): Promise<Session> {
-    return authApi.verifyEmail(this.http, email, code);
-  }
-
-  forgotPassword(email: string, turnstileToken = ""): Promise<void> {
-    return authApi.forgotPassword(this.http, email, turnstileToken);
-  }
-
-  resetPassword(email: string, code: string, password: string): Promise<Session> {
-    return authApi.resetPassword(this.http, email, code, password);
-  }
-
-  oauthAuthorizeUrl(provider: "github" | "google", loopbackUri: string): Promise<string> {
-    return authApi.oauthAuthorizeUrl(this.http, provider, loopbackUri);
   }
 
   oauthExchange(code: string): Promise<Session> {
@@ -89,10 +62,6 @@ export class DesktopApi {
 
   desktopHandoff(token: string): Promise<string> {
     return authApi.desktopHandoff(this.http, token);
-  }
-
-  turnstileInfo(): Promise<authApi.TurnstileInfo> {
-    return authApi.turnstileInfo(this.http);
   }
 
   fetchMe(token: string): Promise<Session> {

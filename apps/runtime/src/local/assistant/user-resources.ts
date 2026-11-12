@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { openPromise as openZipPromise } from "yauzl";
 
 import { normalizeMcpServers } from "../../package/mcp-document.js";
+import { SKILL_MAX_BYTES as SKILL_PACKAGE_MAX_BYTES } from "../../package/archive.js";
 import {
   isSafeSkillName,
   repairSkillMarkdown,
@@ -13,8 +14,8 @@ import {
   type PackageIssue,
 } from "../../package/validate.js";
 import { ensurePersonalAssistant } from "./personal-assistant.js";
-const SKILL_MAX_BYTES = 200_000;
-const SKILL_PACKAGE_MAX_BYTES = 5_000_000;
+/** SKILL.md 正文上限（与包体积闸不同）。 */
+const SKILL_MD_MAX_BYTES = 200_000;
 const MCP_MAX_BYTES = 200_000;
 /** 与 backend `RULES_MAX_BYTES` 对齐：5000 个汉字。 */
 const AGENTS_MD_MAX_BYTES = 15_000;
@@ -360,7 +361,7 @@ function collectSkillFiles(skillRoot: string, name: string): Record<string, Uint
       const bytes = fs.readFileSync(full);
       total += bytes.byteLength;
       if (total > SKILL_PACKAGE_MAX_BYTES) throw new UserResourceError("Skill 包过大");
-      if (nextRel === "SKILL.md" && bytes.byteLength > SKILL_MAX_BYTES) {
+      if (nextRel === "SKILL.md" && bytes.byteLength > SKILL_MD_MAX_BYTES) {
         throw new UserResourceError("SKILL.md 过大");
       }
       files[`skills/${name}/${nextRel}`] = bytes;

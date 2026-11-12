@@ -8,43 +8,8 @@ import { expect, it } from "vitest";
 
 import { startLocalServer } from "../src/local/server.js";
 
-it("proxies register, verify-email, oauth and turnstile through the loopback API", async () => {
+it("proxies oauth exchange through the loopback API", async () => {
   const backend = await listen((req, res) => {
-    if (req.url === "/v1/register" && req.method === "POST") {
-      return readBody(req).then((raw) => {
-        const body = JSON.parse(raw) as { email: string };
-        json(res, 200, { email: body.email, status: "pending_verification" });
-      });
-    }
-    if (req.url === "/v1/auth/verify-email" && req.method === "POST") {
-      return readBody(req).then((raw) => {
-        const body = JSON.parse(raw) as { email: string; code: string };
-        if (body.code !== "123456" || body.email !== "patient@example.com") {
-          return json(res, 400, { error: "验证码无效或已过期" });
-        }
-        json(res, 200, {
-          user_id: "patient",
-          email: "patient@example.com",
-          nickname: "patient",
-          token: "tok-patient",
-          has_avatar: false,
-          avatar_url: null,
-        });
-      });
-    }
-    if (req.url === "/v1/auth/forgot-password" && req.method === "POST") {
-      return json(res, 200, { ok: true });
-    }
-    if (req.url === "/v1/auth/reset-password" && req.method === "POST") {
-      return json(res, 200, {
-        user_id: "patient",
-        email: "patient@example.com",
-        nickname: "patient",
-        token: "tok-reset",
-        has_avatar: false,
-        avatar_url: null,
-      });
-    }
     if (req.url?.startsWith("/v1/auth/oauth/github/start")) {
       return json(res, 200, { note: "start is a redirect in real backend" });
     }
@@ -58,9 +23,6 @@ it("proxies register, verify-email, oauth and turnstile through the loopback API
         avatar_url: null,
       });
     }
-    if (req.url === "/v1/auth/turnstile" && req.method === "GET") {
-      return json(res, 200, { site_key: "", required: false });
-    }
     return json(res, 404, { error: "没有这个接口" });
   });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-auth-extra-"));
@@ -71,31 +33,6 @@ it("proxies register, verify-email, oauth and turnstile through the loopback API
     port: 0,
   });
   try {
-    const pending = await request(local.url, "POST", "/register", {
-      email: "patient@example.com",
-      password: "secret12",
-      turnstile_token: "",
-    });
-    expect(pending.status).toBe(200);
-    expect(pending.body).toEqual({ email: "patient@example.com", status: "pending_verification" });
-
-    const verified = await request(local.url, "POST", "/auth/verify-email", {
-      email: "patient@example.com",
-      code: "123456",
-    });
-    expect(verified.status).toBe(200);
-    expect(verified.body).toMatchObject({ user_id: "patient", token: "tok-patient" });
-
-    expect((await request(local.url, "POST", "/auth/forgot-password", { email: "patient@example.com" })).status).toBe(
-      200,
-    );
-    const reset = await request(local.url, "POST", "/auth/reset-password", {
-      email: "patient@example.com",
-      code: "654321",
-      password: "secret99",
-    });
-    expect(reset.body).toMatchObject({ token: "tok-reset" });
-
     const authorize = await request(local.url, "POST", "/auth/oauth/github/authorize-url", {
       loopback_uri: "http://127.0.0.1:9/cb",
     });
@@ -105,9 +42,6 @@ it("proxies register, verify-email, oauth and turnstile through the loopback API
 
     const exchanged = await request(local.url, "POST", "/auth/oauth/exchange", { code: "x" });
     expect(exchanged.body).toMatchObject({ user_id: "oauth", token: "tok-oauth" });
-
-    const turnstile = await request(local.url, "GET", "/auth/turnstile");
-    expect(turnstile.body).toEqual({ site_key: "", required: false });
   } finally {
     await local.close();
     await close(backend);

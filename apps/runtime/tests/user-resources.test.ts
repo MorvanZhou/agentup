@@ -47,6 +47,21 @@ it("inspects skill package name without installing", async () => {
   expect(inspected).toEqual({ name: "note-taker", description: "整理笔记" });
 });
 
+it("allows skill packages up to the backend 20MB limit", async () => {
+  // 旧本机闸是 5MB；与 backend SKILL_MAX_BYTES 对齐后，略大于 5MB 应能装入。
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-skill-20m-"));
+  const source = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), "skill-src-")), "big-skill", "大包");
+  fs.writeFileSync(path.join(source, "blob.bin"), Buffer.alloc(6 * 1024 * 1024, 1));
+  await expect(installSkillPackageTo(parent, source)).resolves.toMatchObject({ name: "big-skill" });
+});
+
+it("rejects skill packages over 20MB", async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-skill-over-"));
+  const source = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), "skill-src-")), "huge-skill", "过大");
+  fs.writeFileSync(path.join(source, "blob.bin"), Buffer.alloc(20 * 1024 * 1024 + 1, 1));
+  await expect(installSkillPackageTo(parent, source)).rejects.toThrow(/Skill 包过大/);
+});
+
 it("persists repaired frontmatter when community skill has nested quotes", async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-skill-parent-"));
   const source = fs.mkdtempSync(path.join(os.tmpdir(), "skill-nested-"));

@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { crc32, deflateRawSync } from "node:zlib";
 
+import { SKILL_MAX_BYTES } from "../../package/archive.js";
+
 type ZipFileEntry = {
   name: string;
   data: Buffer;
@@ -19,7 +21,8 @@ export function writeZipFromDirectory(
   zipPath: string,
   options: { maxBytes?: number } = {},
 ): void {
-  const maxBytes = options.maxBytes ?? 5_000_000;
+  // 默认与 backend / 本机装入 SKILL_MAX_BYTES（20MB）对齐。
+  const maxBytes = options.maxBytes ?? SKILL_MAX_BYTES;
   const root = path.resolve(sourceDir);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
     throw new Error("source missing");

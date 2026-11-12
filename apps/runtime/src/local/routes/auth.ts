@@ -3,16 +3,10 @@ import type { Hono } from "hono";
 import {
   desktopHandoff,
   fetchProfile,
-  forgotPassword,
   login,
   oauthAuthorizeUrl,
   oauthExchange,
-  registerAccount,
-  resendVerification,
-  resetPassword,
-  turnstilePublic,
   updateProfile,
-  verifyEmail,
 } from "../../control/client.js";
 import type { SessionCredential } from "../../control/types.js";
 import { MigrateUserError, migrateUserData } from "../user/migrate.js";
@@ -20,11 +14,6 @@ import { materializeSessionAvatar } from "../user/cached-session-avatar.js";
 import { readCachedUserAvatarDataUrl } from "../agents/cached-avatar.js";
 import { bearer, json, LocalError, readJson, text, type LocalAppDeps, type LocalAppEnv } from "../http.js";
 import { session } from "../serialize.js";
-
-function optionalText(body: Record<string, unknown>, key: string): string {
-  const value = body[key];
-  return typeof value === "string" ? value : "";
-}
 
 async function sessionBody(
   userDataRoot: string,
@@ -37,17 +26,7 @@ async function sessionBody(
 export function registerAuthRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
   const { config } = deps;
 
-  app.post("/register", async (c) => {
-    const body = await readJson(c);
-    const pending = await registerAccount(
-      config.backendUrl,
-      text(body, "email"),
-      text(body, "password"),
-      optionalText(body, "turnstile_token"),
-    );
-    return json(c, 200, pending);
-  });
-
+  /** 测例造会话；产品登录走浏览器 + oauth/exchange。 */
   app.post("/login", async (c) => {
     const body = await readJson(c);
     return json(
@@ -56,54 +35,6 @@ export function registerAuthRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
       await sessionBody(
         config.userDataRoot,
         await login(config.backendUrl, text(body, "email"), text(body, "password")),
-        { refresh: true },
-      ),
-    );
-  });
-
-  app.post("/auth/resend-verification", async (c) => {
-    const body = await readJson(c);
-    await resendVerification(
-      config.backendUrl,
-      text(body, "email"),
-      text(body, "password"),
-      optionalText(body, "turnstile_token"),
-    );
-    return json(c, 200, { ok: true });
-  });
-
-  app.post("/auth/verify-email", async (c) => {
-    const body = await readJson(c);
-    return json(
-      c,
-      200,
-      await sessionBody(
-        config.userDataRoot,
-        await verifyEmail(config.backendUrl, text(body, "email"), text(body, "code")),
-        { refresh: true },
-      ),
-    );
-  });
-
-  app.post("/auth/forgot-password", async (c) => {
-    const body = await readJson(c);
-    await forgotPassword(config.backendUrl, text(body, "email"), optionalText(body, "turnstile_token"));
-    return json(c, 200, { ok: true });
-  });
-
-  app.post("/auth/reset-password", async (c) => {
-    const body = await readJson(c);
-    return json(
-      c,
-      200,
-      await sessionBody(
-        config.userDataRoot,
-        await resetPassword(
-          config.backendUrl,
-          text(body, "email"),
-          text(body, "code"),
-          text(body, "password"),
-        ),
         { refresh: true },
       ),
     );
@@ -136,11 +67,6 @@ export function registerAuthRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): 
   app.post("/auth/desktop/handoff", async (c) => {
     const code = await desktopHandoff(config.backendUrl, bearer(c));
     return json(c, 200, { code });
-  });
-
-  app.get("/auth/turnstile", async (c) => {
-    const info = await turnstilePublic(config.backendUrl);
-    return json(c, 200, { site_key: info.siteKey, required: info.required });
   });
 
   /** 续签头像签名并刷新本机缓存；离线时仍尽量回落磁盘 data URL。 */

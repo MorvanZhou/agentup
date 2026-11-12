@@ -507,10 +507,6 @@ function scriptedSession(seen: string[]): PromptSession {
 
 function backendHandler(req: http.IncomingMessage, res: http.ServerResponse): void {
   const token = req.headers.authorization?.slice("Bearer ".length);
-  if (req.url === "/v1/register") {
-    json(res, 200, { email: "patient-a@example.com", status: "pending_verification" });
-    return;
-  }
   if (req.url === "/v1/login") {
     json(res, 200, {
       user_id: "patient-a",
@@ -551,10 +547,8 @@ function backendHandler(req: http.IncomingMessage, res: http.ServerResponse): vo
   json(res, 404, { error: "没有这个接口" });
 }
 
-/** 注册仅返回 pending；测业务时用 login 拿 session（不依赖真实邮件验证）。 */
+/** 测业务用 login 拿 session。 */
 async function createAccount(base: string, email: string, password: string) {
-  const pending = await post(base, "/register", { email, password });
-  expect(pending).toMatchObject({ email, status: "pending_verification" });
   return post(base, "/login", { email, password });
 }
 

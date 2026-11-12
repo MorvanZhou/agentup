@@ -436,7 +436,7 @@ export function exportLocalAgentSkill(
   }
   const out = path.resolve(destination);
   try {
-    writeZipFromDirectory(skillDir, out, { maxBytes: 5_000_000 });
+    writeZipFromDirectory(skillDir, out);
   } catch {
     throw new LocalAgentError(t("la.err.skillExportFailed", locale));
   }
@@ -470,7 +470,7 @@ export function exportVisitSkill(
   }
   const out = path.resolve(destination);
   try {
-    writeZipFromDirectory(skillDir, out, { maxBytes: 5_000_000 });
+    writeZipFromDirectory(skillDir, out);
   } catch {
     throw new LocalAgentError(t("la.err.skillExportFailed", locale));
   }

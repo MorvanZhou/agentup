@@ -27,11 +27,14 @@ export const LEGACY_ARCHIVE_LIMITS: ArchiveLimits = {
   maxMemberCount: 600,
 };
 
+/** 与 backend `SKILL_MAX_BYTES` 对齐：本机装入 / 导出 zip / 社区下载 / 上传对象同一闸。 */
+export const SKILL_MAX_BYTES = 20 * 1024 * 1024;
+
 /** 单个 skill：压缩 20MB，解压 80MB，单文件 20MB，文件数 1000。 */
 export const SKILL_ARCHIVE_LIMITS: ArchiveLimits = {
-  maxBytes: 20 * 1024 * 1024,
+  maxBytes: SKILL_MAX_BYTES,
   maxUnpackedBytes: 80 * 1024 * 1024,
-  maxFileBytes: 20 * 1024 * 1024,
+  maxFileBytes: SKILL_MAX_BYTES,
   maxFileCount: 1000,
   maxMemberCount: 2000,
 };
