@@ -169,13 +169,29 @@ function projectSkills(cwd: string, rel: string, skills: ProjectableSkill[]): st
       existing = null;
     }
     if (existing) {
+      // Windows junction 在 lstat 里也表现为 symbolic link
       if (existing.isSymbolicLink()) fs.unlinkSync(linkPath);
       else continue; // 用户自建实体：不覆盖
     }
-    fs.symlinkSync(skill.dir, linkPath, "dir");
+    linkSkillDir(skill.dir, linkPath);
     names.push(skill.name);
   }
   return names;
+}
+
+/**
+ * 把权威技能目录挂到厂商投影路径。
+ * Windows：用 junction（绝对路径、本机卷），无需管理员 / 开发者模式；
+ * `symlink type=dir` 在未提权机上常 EPERM，会阻断 SDK 开聊。
+ * POSIX：普通目录符号链接。
+ */
+export function linkSkillDir(targetDir: string, linkPath: string): void {
+  const absoluteTarget = path.resolve(targetDir);
+  if (process.platform === "win32") {
+    fs.symlinkSync(absoluteTarget, linkPath, "junction");
+    return;
+  }
+  fs.symlinkSync(absoluteTarget, linkPath, "dir");
 }
 
 function removeManagedProjection(cwd: string, rel: string, names?: string[]): void {

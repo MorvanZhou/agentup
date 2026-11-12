@@ -8,6 +8,7 @@ import * as providerTemplates from "../src/config/provider-templates.js";
 import type { Visit } from "../src/package/sync.js";
 import {
   clearSkillsProject,
+  linkSkillDir,
   normalizeSkillsProjectRel,
   syncSkillsProject,
 } from "../src/session/external/skills-project.js";
@@ -131,4 +132,29 @@ it("不覆盖用户自建的同名实体目录", () => {
 it("模板表声明 codebuddy skillsProjectRel，供切 provider 扫残留", () => {
   expect(providerTemplates.agentSdkSkillsProjectRel("codebuddy-sdk")).toBe(".codebuddy/skills");
   expect(providerTemplates.listAgentSdkSkillsProjectRels()).toContain(".codebuddy/skills");
+});
+
+it("linkSkillDir：Windows 用 junction，避免未提权 symlink EPERM", () => {
+  const symlinkSync = vi.spyOn(fs, "symlinkSync").mockImplementation(() => undefined);
+  const target = path.join(root, "skill-src");
+  const link = path.join(root, "skill-link");
+  fs.mkdirSync(target, { recursive: true });
+
+  const previous = process.platform;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  try {
+    linkSkillDir(target, link);
+    expect(symlinkSync).toHaveBeenCalledWith(path.resolve(target), link, "junction");
+  } finally {
+    Object.defineProperty(process, "platform", { value: previous });
+  }
+
+  symlinkSync.mockClear();
+  Object.defineProperty(process, "platform", { value: "darwin" });
+  try {
+    linkSkillDir(target, link);
+    expect(symlinkSync).toHaveBeenCalledWith(path.resolve(target), link, "dir");
+  } finally {
+    Object.defineProperty(process, "platform", { value: previous });
+  }
 });
