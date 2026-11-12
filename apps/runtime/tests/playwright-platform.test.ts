@@ -17,6 +17,8 @@ it("builds a deferred stdio playwright MCP entry", () => {
   const stdio = playwrightStdioConfig("/tmp/agentup-user");
   expect(stdio.args).toContain("--headless");
   expect(stdio.env.PLAYWRIGHT_BROWSERS_PATH).toContain("playwright-browsers");
+  // 只覆盖浏览器路径；整表拷 process.env 会在 Codex config.toml 里炸（点号键→嵌套 map）
+  expect(Object.keys(stdio.env)).toEqual(["PLAYWRIGHT_BROWSERS_PATH"]);
 });
 
 it("injectPlaywrightMcp forces platform entry over same-named user server", () => {

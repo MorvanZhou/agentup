@@ -83,9 +83,10 @@ export function codexClientOptionsOf(
   },
 ): CodexClientOptions {
   // 平台 MCP + agentup HTTP；AskUser 另挂 agentup_ask
-  const mcpServers: Record<string, unknown> = {
-    ...(mergeExternalTurnMcpServers(input, toCodexHttpMcp) ?? {}),
-  };
+  // 平台 stdio 可能带 Pi-only `exposure`，Codex 会告警并忽略 → 落盘前剥掉
+  const mcpServers = sanitizeCodexMcpServers(
+    mergeExternalTurnMcpServers(input, toCodexHttpMcp) ?? {},
+  );
   if (extras.askUserMcp) {
     mcpServers.agentup_ask = {
       url: extras.askUserMcp.url,
@@ -190,6 +191,47 @@ export function toCodexHttpMcp(server: Record<string, unknown>): Record<string, 
     url,
     http_headers: headers,
   };
+}
+
+/**
+ * 剥 Pi/AgentUp 专用 MCP 字段，并压平 stdio `env` 为「纯字符串、无点号键」。
+ * - `exposure` → Codex unrecognized session-flags 告警
+ * - `env` 带 `.` 的键经 --config 点路径展平后变成嵌套 map → config.toml type error
+ */
+export function stripHostOnlyCodexMcpFields(
+  server: Record<string, unknown>,
+): Record<string, unknown> {
+  const { exposure: _exposure, ...rest } = server;
+  if (!rest.env || typeof rest.env !== "object" || Array.isArray(rest.env)) {
+    return rest;
+  }
+  return { ...rest, env: sanitizeCodexMcpEnv(rest.env as Record<string, unknown>) };
+}
+
+/** Codex mcp env：只留 string 值；丢掉含 `.` 的键（避免 TOML 点路径嵌套）。 */
+export function sanitizeCodexMcpEnv(
+  env: Record<string, unknown>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!key || key.includes(".")) continue;
+    if (typeof value === "string") out[key] = value;
+  }
+  return out;
+}
+
+/** 整表清洗：平台 Playwright 等 stdio 条目去掉 Host-only 键并消毒 env。 */
+export function sanitizeCodexMcpServers(
+  servers: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(servers)) {
+    out[name] =
+      raw && typeof raw === "object" && !Array.isArray(raw)
+        ? stripHostOnlyCodexMcpFields(raw as Record<string, unknown>)
+        : raw;
+  }
+  return out;
 }
 
 /**

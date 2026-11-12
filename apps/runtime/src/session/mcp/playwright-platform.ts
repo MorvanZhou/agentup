@@ -24,16 +24,13 @@ export function playwrightStdioConfig(userDataRoot: string): {
   exposure: "deferred";
 } {
   const browsers = playwrightBrowsersDir(userDataRoot);
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === "string") env[key] = value;
-  }
-  // 必须盖过外层 PLAYWRIGHT_BROWSERS_PATH（如 CI/sandbox），落到 userData
-  env.PLAYWRIGHT_BROWSERS_PATH = browsers;
+  // 只覆盖浏览器路径；勿整表拷 process.env。
+  // Pi 默认 inheritEnv merge；Codex 会把 env 展平进 config.toml，
+  // 带 `.` 的键（如 asl.foo）会变成嵌套 map →「expected a string」。
   return {
     command: process.platform === "win32" ? "npx.cmd" : "npx",
     args: ["-y", PLAYWRIGHT_MCP_PACKAGE, "--headless"],
-    env,
+    env: { PLAYWRIGHT_BROWSERS_PATH: browsers },
     exposure: "deferred",
   };
 }

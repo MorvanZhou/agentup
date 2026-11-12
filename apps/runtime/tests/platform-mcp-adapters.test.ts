@@ -90,12 +90,16 @@ function baseInput(overrides: Partial<ExternalTurnRequest> = {}): ExternalTurnRe
 
 function expectPlatformKeysMerged(mcp: Record<string, unknown>, label: string): void {
   expect(mcp, `${label}: 应保留 agentup`).toHaveProperty("agentup");
-  expect(mcp[PLAYWRIGHT_MCP_NAME], `${label}: 应合并 playwright`).toEqual(
-    PLATFORM_PROBE[PLAYWRIGHT_MCP_NAME],
-  );
-  expect(mcp[PLATFORM_PROBE_NAME], `${label}: 应合并探针（勿写死只认 playwright）`).toEqual(
-    PLATFORM_PROBE[PLATFORM_PROBE_NAME],
-  );
+  // 只锁核心 stdio 字段；厂商可剥 Pi-only `exposure`（Codex 会告警 unrecognized）
+  for (const name of [PLAYWRIGHT_MCP_NAME, PLATFORM_PROBE_NAME]) {
+    const expected = PLATFORM_PROBE[name]!;
+    expect(mcp, `${label}: 应合并 ${name}`).toHaveProperty(name);
+    expect(mcp[name], `${label}: ${name} 核心字段`).toMatchObject({
+      command: expected.command,
+      args: expected.args,
+      env: expected.env,
+    });
+  }
 }
 
 const EXTRACTORS: Record<(typeof MERGING_DRIVERS)[number], ExtractMcp> = {

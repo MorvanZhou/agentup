@@ -15,6 +15,9 @@ import {
   codexThreadOptionsOf,
   CODEX_ASK_USER_INPUT_SCHEMA,
   CODEX_CONTEXT_HEADER,
+  sanitizeCodexMcpEnv,
+  sanitizeCodexMcpServers,
+  stripHostOnlyCodexMcpFields,
   toCodexHttpMcp,
 } from "../src/session/external/sdk/adapters/codex/options.js";
 import { parseCodexDebugModels } from "../src/session/external/sdk/adapters/codex/lifecycle.js";
@@ -119,6 +122,69 @@ it("toCodexHttpMcp 把 Host headers 改成 http_headers", () => {
   ).toEqual({
     url: "http://127.0.0.1/mcp",
     http_headers: { Authorization: "Bearer x" },
+  });
+});
+
+it("平台 Playwright 进 Codex 时剥 exposure，并丢掉 env 里带点号的键", () => {
+  expect(
+    stripHostOnlyCodexMcpFields({
+      command: "npx",
+      args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+      env: {
+        PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers",
+        "asl.foo": "bar",
+        NEST: { x: 1 },
+      },
+      exposure: "deferred",
+    }),
+  ).toEqual({
+    command: "npx",
+    args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+    env: { PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers" },
+  });
+  expect(sanitizeCodexMcpEnv({ "asl.foo": "bar", OK: "1" })).toEqual({ OK: "1" });
+  expect(sanitizeCodexMcpServers({ keep: { url: "http://x" } })).toEqual({
+    keep: { url: "http://x" },
+  });
+
+  const client = codexClientOptionsOf(
+    {
+      prompt: "hi",
+      cwd: "/tmp/proj",
+      additionalDirs: [],
+      systemAppend: "",
+      abortController: new AbortController(),
+      userDataRoot: "/tmp",
+      templateId: "codex-sdk",
+      mcpServer: {
+        type: "http",
+        url: "http://127.0.0.1:9/mcp",
+        headers: { Authorization: "Bearer t" },
+      },
+      platformMcpServers: {
+        playwright: {
+          command: "npx",
+          args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+          env: {
+            PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers",
+            "asl.foo": "nested-risk",
+          },
+          exposure: "deferred",
+        },
+      },
+    },
+    { cliPath: "/fake/codex", codexHome: "/tmp/codex-home" },
+  );
+  const servers = client.config.mcp_servers as Record<string, Record<string, unknown>>;
+  expect(servers.playwright).toEqual({
+    command: "npx",
+    args: ["-y", "@playwright/mcp@0.0.46", "--headless"],
+    env: { PLAYWRIGHT_BROWSERS_PATH: "/tmp/browsers" },
+  });
+  expect(servers.playwright).not.toHaveProperty("exposure");
+  expect(servers.agentup).toEqual({
+    url: "http://127.0.0.1:9/mcp",
+    http_headers: { Authorization: "Bearer t" },
   });
 });
 

@@ -21,6 +21,9 @@ export {
   CODEX_ASK_USER_INPUT_SCHEMA,
   CODEX_CONTEXT_HEADER,
   openCodexAskUserMcp,
+  sanitizeCodexMcpEnv,
+  sanitizeCodexMcpServers,
+  stripHostOnlyCodexMcpFields,
   toCodexHttpMcp,
 } from "./options.js";
 export {
