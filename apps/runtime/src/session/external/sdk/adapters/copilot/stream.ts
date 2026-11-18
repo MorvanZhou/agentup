@@ -1,5 +1,7 @@
 import type { WorkerResult } from "../../contract.js";
+import { stampContextOverflowIfMatched } from "../../host/context-overflow.js";
 import { resultFromSdkMessage } from "../../host/result.js";
+import { isCopilotContextOverflowText } from "./context-overflow.js";
 
 /**
  * 把 Copilot session 事件转成 Host 鸭子消息：
@@ -366,7 +368,10 @@ export function stringifyCopilotToolResult(raw: unknown): string {
 }
 
 export function workerResultFromCopilotMessage(message: unknown): WorkerResult | null {
-  return resultFromSdkMessage(message);
+  return stampContextOverflowIfMatched(
+    resultFromSdkMessage(message),
+    isCopilotContextOverflowText,
+  );
 }
 
 function resultMessageOf(

@@ -1,6 +1,8 @@
 import type { WorkerResult } from "../../contract.js";
+import { stampContextOverflowIfMatched } from "../../host/context-overflow.js";
 import { resultFromSdkMessage } from "../../host/result.js";
 import type { CodexAskUserIdBridge } from "./ask-user-bridge.js";
+import { isCodexContextOverflowText } from "./context-overflow.js";
 import type { CodexUsage } from "./load.js";
 
 /**
@@ -330,7 +332,10 @@ export function stringifyCodexToolResult(raw: unknown): string {
 }
 
 export function workerResultFromCodexMessage(message: unknown): WorkerResult | null {
-  return resultFromSdkMessage(message);
+  return stampContextOverflowIfMatched(
+    resultFromSdkMessage(message),
+    isCodexContextOverflowText,
+  );
 }
 
 /** 收尾时若 finalResponse 已知，补进空 result（stream 末尾常只有 usage）。 */

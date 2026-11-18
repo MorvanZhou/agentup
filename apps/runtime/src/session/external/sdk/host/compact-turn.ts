@@ -23,7 +23,11 @@ export function compactTurnOptions(input: {
   prefer: ModelConfig;
   signal?: AbortSignal;
 }): CompactTurnOptions {
-  const budgets = compactBudgetsFromContextWindow(input.prefer.contextWindow);
+  // 有效窗 = contextWindow − 输出预留（maxTokens）；勿只按广告总窗
+  const budgets = compactBudgetsFromContextWindow(
+    input.prefer.contextWindow,
+    input.prefer.maxTokens,
+  );
   const compactSummarize = createCompactSummarize({
     userDataRoot: input.userDataRoot,
     prefer: input.prefer,
@@ -57,7 +61,10 @@ export async function maybeCompactApiSession(input: {
   const manager = input.session.sessionManager;
   if (!manager?.getBranch) return;
 
-  const budgets = compactBudgetsFromContextWindow(input.model.contextWindow);
+  const budgets = compactBudgetsFromContextWindow(
+    input.model.contextWindow,
+    input.model.maxTokens,
+  );
   const compact = compactTurnOptions({
     userDataRoot: input.userDataRoot,
     prefer: input.model,
@@ -73,7 +80,8 @@ export async function maybeCompactApiSession(input: {
         summarize: compact.compactSummarize,
         sink: manager as ApiCompactionSink,
         budgetChars: compact.compactBudgetChars,
-        contextWindowTokens: budgets.contextWindowTokens,
+        // keepRecent 锚定有效输入窗，勿用未扣输出的广告总窗
+        contextWindowTokens: budgets.effectiveWindowTokens,
       });
       return;
     }

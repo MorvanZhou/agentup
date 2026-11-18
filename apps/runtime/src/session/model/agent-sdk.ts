@@ -50,10 +50,22 @@ export {
 export {
   compactBudgetsFromContextWindow,
   resolveContextWindowTokens,
+  resolveOutputReserveTokens,
+  resolveEffectivePromptWindowTokens,
   COMPACT_TRIGGER_RATIO,
   COMPACT_HARD_TRUNCATE_RATIO,
   CHARS_PER_TOKEN_ESTIMATE,
+  MAX_OUTPUT_RESERVE_RATIO,
 } from "../external/sdk/host/budget.js";
+export {
+  CONTEXT_OVERFLOW_CODE,
+  CONTEXT_OVERFLOW_MESSAGE_MAX_CHARS,
+  isShortOverflowCandidate,
+  matchContextOverflowText,
+  stampContextOverflowIfMatched,
+  isContextOverflowResult,
+  isContextOverflowError,
+} from "../external/sdk/host/context-overflow.js";
 export {
   compactTurnOptions,
   maybeCompactApiSession,

@@ -64,6 +64,11 @@ export type ExternalAgentQuery = {
   close?: () => Promise<void>;
   /** 本轮 driver 的 todo 投影；透传给 createExternalTranslator */
   todoProjector?: ExternalTodoProjector;
+  /**
+   * 本轮 driver 的结果归一（含 context_overflow stamp）。
+   * runExternalTurn 用它代替默认 resultFromSdkMessage。
+   */
+  normalizeResult?: (message: unknown) => import("../contract.js").WorkerResult | null;
 };
 
 /**

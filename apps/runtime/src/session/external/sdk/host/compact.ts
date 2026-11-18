@@ -66,6 +66,11 @@ export type MaybeCompactInput = {
    * 未传时回落旧固定闸（兼容测例）。
    */
   budgetChars?: number;
+  /**
+   * 厂商已报上下文超限时强制压一轮（忽略预算闸）。
+   * 无材料 / 摘要失败仍返回 false。
+   */
+  force?: boolean;
 };
 
 /**
@@ -75,7 +80,7 @@ export type MaybeCompactInput = {
 export async function maybeCompactBranch(input: MaybeCompactInput): Promise<boolean> {
   const budget = input.budgetChars ?? Math.floor(MAX_PROMPT_CHARS * 0.9);
   const probe = feedMessagesFromBranch(input.entries, input.userText);
-  if (!shouldCompactFeed(probe, budget)) return false;
+  if (!input.force && !shouldCompactFeed(probe, budget)) return false;
 
   // 边界前可喂视图（不含本轮 userText）作为待摘要材料
   const material = feedMessagesFromBranch(input.entries, "");

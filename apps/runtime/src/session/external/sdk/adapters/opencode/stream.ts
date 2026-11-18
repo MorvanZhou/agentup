@@ -1,5 +1,7 @@
 import type { WorkerResult } from "../../contract.js";
+import { stampContextOverflowIfMatched } from "../../host/context-overflow.js";
 import { resultFromSdkMessage } from "../../host/result.js";
+import { isOpencodeContextOverflowText } from "./context-overflow.js";
 
 export interface OpencodeQuestion {
   question: string;
@@ -173,7 +175,10 @@ export function unwrapOpencodeTool(
 }
 
 export function workerResultFromOpencodeMessage(message: unknown): WorkerResult | null {
-  return resultFromSdkMessage(message);
+  return stampContextOverflowIfMatched(
+    resultFromSdkMessage(message),
+    isOpencodeContextOverflowText,
+  );
 }
 
 function projectToolPart(

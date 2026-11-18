@@ -1,4 +1,5 @@
 import type { WorkerResult } from "../../contract.js";
+import { stampContextOverflowIfMatched } from "../../host/context-overflow.js";
 import { resultFromSdkMessage } from "../../host/result.js";
 import {
   formatAskUserResultText,
@@ -6,6 +7,7 @@ import {
   type AskUserItemAnswer,
   type AskUserQuestion,
 } from "../../../../tools/ask-user.js";
+import { isDshContextOverflowText } from "./context-overflow.js";
 import type { DshHarnessNotification, DshRunResult } from "./load.js";
 
 /**
@@ -357,7 +359,10 @@ export function unwrapDshMcpTool(
 }
 
 export function workerResultFromDshMessage(message: unknown): WorkerResult | null {
-  return resultFromSdkMessage(message);
+  return stampContextOverflowIfMatched(
+    resultFromSdkMessage(message),
+    isDshContextOverflowText,
+  );
 }
 
 function resultMessageOf(result: {

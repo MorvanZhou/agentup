@@ -34,7 +34,10 @@ import {
   projectCopilotEvent,
   stringifyCopilotToolResult,
   unwrapCopilotMcpTool,
+  workerResultFromCopilotMessage,
 } from "../src/session/external/sdk/adapters/copilot/stream.js";
+import { isCopilotContextOverflowText } from "../src/session/external/sdk/adapters/copilot/context-overflow.js";
+import { CONTEXT_OVERFLOW_CODE } from "../src/session/external/sdk/host/context-overflow.js";
 import { getExternalDriver } from "../src/session/external/sdk/registry.js";
 import { formatAskUserResultText } from "../src/session/tools/ask-user.js";
 
@@ -243,6 +246,27 @@ it("仅 auto/default 视为占位目录，应继续拉活列表", () => {
       { id: "gpt-5", name: "GPT-5" },
     ]),
   ).toBe(false);
+});
+
+it("Copilot overflow 文案 + normalizeResult stamp context_overflow", () => {
+  expect(
+    isCopilotContextOverflowText(
+      "Execution failed: Request exceeds the model's prompt budget after reserving output (1; limit 2).",
+    ),
+  ).toBe(true);
+  const result = workerResultFromCopilotMessage({
+    type: "result",
+    subtype: "error_during_execution",
+    result: "",
+    errors: [
+      "Execution failed: Request exceeds the model's prompt budget after reserving output (1; limit 2). Reduce context or compact before continuing.",
+    ],
+    session_id: "s",
+    permission_denials: [],
+  });
+  expect(result?.finishReason).toBe("error");
+  expect(result?.error?.code).toBe(CONTEXT_OVERFLOW_CODE);
+  expect(result?.error?.message).toMatch(/prompt budget/i);
 });
 
 it("unwrapCopilotMcpTool 解成 mcp__agentup__* / ask_user", () => {

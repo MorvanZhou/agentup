@@ -59,9 +59,15 @@ describe("SDK catalog contextWindow → compact budgets", () => {
     expect(model.contextWindow).toBe(200_000);
     expect(model.maxTokens).toBe(64_000);
 
-    const budgets = compactBudgetsFromContextWindow(model.contextWindow);
+    // 消费链须扣 maxTokens：有效窗 200k−64k，而非整窗 200k
+    const budgets = compactBudgetsFromContextWindow(model.contextWindow, model.maxTokens);
     expect(budgets.contextWindowTokens).toBe(200_000);
+    expect(budgets.outputReserveTokens).toBe(64_000);
+    expect(budgets.effectiveWindowTokens).toBe(136_000);
     expect(budgets.triggerChars).toBe(
+      compactBudgetsFromContextWindow(200_000, 64_000).triggerChars,
+    );
+    expect(budgets.triggerChars).not.toBe(
       compactBudgetsFromContextWindow(200_000).triggerChars,
     );
     expect(budgets.triggerChars).not.toBe(
@@ -89,7 +95,7 @@ describe("SDK catalog contextWindow → compact budgets", () => {
     });
     expect(model.contextWindow).toBe(DEFAULT_CONTEXT_WINDOW);
     expect(compactTurnOptions({ userDataRoot: root, prefer: model }).compactBudgetChars).toBe(
-      compactBudgetsFromContextWindow(DEFAULT_CONTEXT_WINDOW).triggerChars,
+      compactBudgetsFromContextWindow(DEFAULT_CONTEXT_WINDOW, model.maxTokens).triggerChars,
     );
   });
 

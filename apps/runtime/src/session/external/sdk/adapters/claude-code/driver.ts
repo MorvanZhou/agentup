@@ -8,7 +8,9 @@ import type {
   WorkerResult,
 } from "../../contract.js";
 import { closeIterable, collectCompactSummary } from "../../host/collect-compact-summary.js";
+import { stampContextOverflowIfMatched } from "../../host/context-overflow.js";
 import { resultFromSdkMessage } from "../../host/result.js";
+import { isClaudeCodeContextOverflowText } from "./context-overflow.js";
 import { hasClaudeApiKey } from "./home.js";
 import {
   checkClaudeLogin,
@@ -84,7 +86,10 @@ export const claudeCodeDriver: ExternalDriver = {
   },
 
   normalizeResult(message: unknown): WorkerResult | null {
-    return resultFromSdkMessage(message);
+    return stampContextOverflowIfMatched(
+      resultFromSdkMessage(message),
+      isClaudeCodeContextOverflowText,
+    );
   },
 
   async compactSummarize(input: ExternalCompactRequest): Promise<string> {

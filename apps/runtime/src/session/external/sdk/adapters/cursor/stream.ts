@@ -1,5 +1,7 @@
 import type { WorkerResult } from "../../contract.js";
+import { stampContextOverflowIfMatched } from "../../host/context-overflow.js";
 import { resultFromSdkMessage } from "../../host/result.js";
+import { isCursorContextOverflowText } from "./context-overflow.js";
 import type { CursorRunResult, CursorSdkAgent, CursorSdkRun } from "./load.js";
 
 /**
@@ -142,7 +144,10 @@ export function resultMessageOf(settled: CursorRunResult, sessionId?: string): u
 }
 
 export function workerResultFromCursorMessage(message: unknown): WorkerResult | null {
-  return resultFromSdkMessage(message);
+  return stampContextOverflowIfMatched(
+    resultFromSdkMessage(message),
+    isCursorContextOverflowText,
+  );
 }
 
 function usageOf(settled: CursorRunResult): Record<string, number | undefined> {

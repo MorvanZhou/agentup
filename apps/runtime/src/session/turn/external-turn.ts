@@ -19,6 +19,10 @@ import {
 import { AGENTUP_SUMMARY_CUSTOM_TYPE } from "../history/summary.js";
 import type { ApprovalRequest } from "../hitl/approval/types.js";
 import {
+  isContextOverflowError,
+  isContextOverflowResult,
+} from "../external/sdk/host/context-overflow.js";
+import {
   feedMessagesFromBranch,
   maybeCompactBranch,
   resultFromSdkMessage,
@@ -94,6 +98,15 @@ export type ExternalTurnInput = {
   replyModel?: AgentUpReplyModel;
   /** 本轮 driver 的 todo 投影（来自 ExternalAgentQuery）。 */
   todoProjector?: ExternalTodoProjector;
+  /**
+   * 本轮 driver 结果归一（含 context_overflow）；缺省 resultFromSdkMessage。
+   */
+  normalizeResult?: (message: unknown) => WorkerResult | null;
+  /**
+   * 上下文超限时：不 writeBack、不以错误 finish 结束本帧，返回 contextOverflow。
+   * 供 runExternalSessionTurn 强制压缩后单次重试。
+   */
+  holdContextOverflow?: boolean;
 };
 
 export type ExternalTurnResult = {
@@ -101,6 +114,11 @@ export type ExternalTurnResult = {
   visibleText: string;
   result: WorkerResult | null;
   aborted: boolean;
+  /**
+   * 厂商因上下文 / prompt budget 拒收。
+   * `holdContextOverflow` 时跳过 writeBack，供调用方 compact 后重试。
+   */
+  contextOverflow?: boolean;
 };
 
 export async function runExternalTurn(input: ExternalTurnInput): Promise<ExternalTurnResult> {
@@ -239,7 +257,8 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
         markDirty(event);
         input.write(projector.project(event));
       }
-      const done = resultFromSdkMessage(message);
+      const normalize = input.normalizeResult ?? resultFromSdkMessage;
+      const done = normalize(message);
       if (done) {
         result = done;
         break;
@@ -252,6 +271,12 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
     unsubscribeApproval?.();
     unsubscribeDelegationStarted?.();
     const raw = error instanceof Error && error.message ? error.message : "对话失败";
+    // 超限且可重试：关工具、收帧，不 writeBack，交给外层 compact
+    if (!aborted && input.holdContextOverflow && isContextOverflowError(error)) {
+      finishOpenTools(raw);
+      input.write(projector.finish());
+      return { visibleText, result, aborted: false, contextOverflow: true };
+    }
     const notice = assistantFailureNotice(raw, input.locale) ?? raw;
     finishOpenTools(aborted ? "已停止" : notice);
     writeBack(input, translator, visibleText || notice, result, aborted);
@@ -304,7 +329,15 @@ export async function runExternalTurn(input: ExternalTurnInput): Promise<Externa
   }
   if (result && result.finishReason === "error") {
     const raw = result.error?.message ?? "外部 agent 执行失败";
+    // 只认 adaptor stamp 的 context_overflow，不在 Host 扫各厂原文
+    const overflow = input.holdContextOverflow && isContextOverflowResult(result);
     finishOpenTools(raw);
+    if (overflow) {
+      // 关帧但不把超限当最终失败落盘；外层可 compact 后重试
+      input.write(projector.finish());
+      if (input.outcome) input.outcome.aborted = false;
+      return { visibleText, result, aborted: false, contextOverflow: true };
+    }
     input.write(projector.finish(assistantFailureNotice(raw, input.locale) ?? raw));
   } else {
     // 成功收尾：缺 tool_result 时补占位，但不标错误（真实结果已由 completeTool / fromUser 写入）
@@ -371,9 +404,14 @@ export async function runExternalSessionTurn(input: {
     });
   };
 
-  if (input.compactSummarize && input.session.sessionManager) {
+  const canRecoverOverflow = Boolean(
+    input.compactSummarize && input.session.sessionManager,
+  );
+
+  const preCompact = async (force: boolean) => {
+    if (!input.compactSummarize || !input.session.sessionManager) return false;
     try {
-      await maybeCompactBranch({
+      return await maybeCompactBranch({
         entries: input.session.sessionManager.getBranch?.() ?? [],
         userText: input.text,
         summarize: input.compactSummarize,
@@ -381,68 +419,107 @@ export async function runExternalSessionTurn(input: {
         ...(input.compactBudgetChars !== undefined
           ? { budgetChars: input.compactBudgetChars }
           : {}),
+        ...(force ? { force: true } : {}),
       });
     } catch {
       // 压缩失败不挡本轮；拼装侧仍有字符回退
+      return false;
     }
-  }
-
-  let query: Awaited<ReturnType<NonNullable<PromptSession["externalQuery"]>>>;
-  try {
-    // 把停止信号传进起流：Copilot 等冷启期间 Composer 停止才能 abort
-    query = await input.session.externalQuery(
-      externalPromptFromSession(input.session, input.text, {
-        ...(input.promptMaxChars !== undefined ? { maxChars: input.promptMaxChars } : {}),
-      }),
-      input.signal,
-    );
-  } catch (error) {
-    const failed = (async function* () {
-      throw error;
-      // 保持 AsyncGenerator 形状；实际永远走不到。
-      yield undefined;
-    })();
-    return runExternalTurn({
-      source: failed,
-      signal: input.signal,
-      write: input.write,
-      locale: input.locale,
-      errorPolicy: input.errorPolicy,
-      outcome: input.outcome,
-      onDirty: input.onDirty,
-      hitl: input.hitl,
-      delegationStarted: input.delegationStarted,
-      writeBack,
-      ...(replyModel ? { replyModel } : {}),
-    });
-  }
-  const abortExternal = () => {
-    query.controller.abort();
-    query.abort?.();
   };
-  if (input.signal?.aborted) abortExternal();
-  else input.signal?.addEventListener("abort", abortExternal, { once: true });
-  try {
-    return await runExternalTurn({
-      source: query.iterable,
-      signal: input.signal,
-      timeoutMs: query.timeoutMs,
-      onTimeout: abortExternal,
-      write: input.write,
-      locale: input.locale,
-      errorPolicy: input.errorPolicy,
-      outcome: input.outcome,
-      onDirty: input.onDirty,
-      hitl: input.hitl,
-      delegationStarted: input.delegationStarted,
-      writeBack,
-      ...(replyModel ? { replyModel } : {}),
-      ...(query.todoProjector ? { todoProjector: query.todoProjector } : {}),
-    });
-  } finally {
-    input.signal?.removeEventListener("abort", abortExternal);
-    await query.close?.().catch(() => undefined);
+
+  // 第一套：按有效窗预算，回合前近限则压
+  await preCompact(false);
+
+  const runAttempt = async (holdOverflow: boolean): Promise<ExternalTurnResult> => {
+    let query: Awaited<ReturnType<NonNullable<PromptSession["externalQuery"]>>>;
+    try {
+      // 把停止信号传进起流：Copilot 等冷启期间 Composer 停止才能 abort
+      query = await input.session.externalQuery!(
+        externalPromptFromSession(input.session, input.text, {
+          ...(input.promptMaxChars !== undefined ? { maxChars: input.promptMaxChars } : {}),
+        }),
+        input.signal,
+      );
+    } catch (error) {
+      // 起流前就超限：同样走 hold，便于外层 force compact
+      if (holdOverflow && isContextOverflowError(error)) {
+        const failed = (async function* () {
+          throw error;
+          yield undefined;
+        })();
+        return runExternalTurn({
+          source: failed,
+          signal: input.signal,
+          write: input.write,
+          locale: input.locale,
+          errorPolicy: input.errorPolicy,
+          outcome: input.outcome,
+          onDirty: input.onDirty,
+          hitl: input.hitl,
+          delegationStarted: input.delegationStarted,
+          writeBack,
+          holdContextOverflow: true,
+          ...(replyModel ? { replyModel } : {}),
+        });
+      }
+      const failed = (async function* () {
+        throw error;
+        yield undefined;
+      })();
+      return runExternalTurn({
+        source: failed,
+        signal: input.signal,
+        write: input.write,
+        locale: input.locale,
+        errorPolicy: input.errorPolicy,
+        outcome: input.outcome,
+        onDirty: input.onDirty,
+        hitl: input.hitl,
+        delegationStarted: input.delegationStarted,
+        writeBack,
+        ...(replyModel ? { replyModel } : {}),
+      });
+    }
+    const abortExternal = () => {
+      query.controller.abort();
+      query.abort?.();
+    };
+    if (input.signal?.aborted) abortExternal();
+    else input.signal?.addEventListener("abort", abortExternal, { once: true });
+    try {
+      return await runExternalTurn({
+        source: query.iterable,
+        signal: input.signal,
+        timeoutMs: query.timeoutMs,
+        onTimeout: abortExternal,
+        write: input.write,
+        locale: input.locale,
+        errorPolicy: input.errorPolicy,
+        outcome: input.outcome,
+        onDirty: input.onDirty,
+        hitl: input.hitl,
+        delegationStarted: input.delegationStarted,
+        writeBack,
+        ...(holdOverflow ? { holdContextOverflow: true } : {}),
+        ...(replyModel ? { replyModel } : {}),
+        ...(query.todoProjector ? { todoProjector: query.todoProjector } : {}),
+        ...(query.normalizeResult ? { normalizeResult: query.normalizeResult } : {}),
+      });
+    } finally {
+      input.signal?.removeEventListener("abort", abortExternal);
+      await query.close?.().catch(() => undefined);
+    }
+  };
+
+  // 第二套：厂商超限 → force compact → 最多再试一轮
+  const first = await runAttempt(canRecoverOverflow);
+  if (!first.contextOverflow || !canRecoverOverflow) return first;
+  const compacted = await preCompact(true);
+  if (!compacted) {
+    // 压不动：把首轮超限当最终失败再跑一遍（不再 hold）
+    return runAttempt(false);
   }
+  return runAttempt(false);
 }
 
 async function nextExternalMessage(
