@@ -1,7 +1,8 @@
 # 独立桌面安装包构建（mac arm64 + Windows x64 NSIS）。
 #
 # - workflow_dispatch / tag：产物进 Actions Artifacts
-# - 仅 push tag（v*）：挂到 GitHub Release Assets，再把 Artifact 同步到 Cloudflare R2
+# - 仅 push tag（v*）：挂到 GitHub Release Assets（版本化 + 稳定名，供 /releases/latest/download/…），
+#   再把 Artifact 同步到 Cloudflare R2
 #   （desktop/mac|win/{version,latest}/… + latest.yml / latest-mac.yml），并 purge CDN
 # - 上传后按 semver 只保留最近 2 个版本目录（latest/ 不动），删掉更旧的 versioned 包
 # - Secrets：CLOUDFLARE_API_TOKEN（R2 读/写/删 + Zone Cache Purge）、CLOUDFLARE_ACCOUNT_ID、
@@ -169,7 +170,7 @@ jobs:
           retention-days: 14
           compression-level: 0
 
-  # tag 构建成功后，把安装包挂到 GitHub Release（与 Actions Artifact 是两套东西）
+  # tag 构建成功后，把安装包挂到 GitHub Release（版本化 + 稳定名；与 Actions Artifact 是两套东西）
   release:
     needs: build
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -190,6 +191,41 @@ jobs:
 
       - name: List release assets
         run: ls -lh release-assets
+
+      # 另挂稳定文件名（无版本号），供 /releases/latest/download/<名> 跨 tag 复用
+      # 命名与 R2 desktop/.../latest/ 对齐；版本化包仍保留便于按 tag 归档
+      - name: Add stable-named release copies
+        env:
+          TAG: ${{ github.ref_name }}
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          PRODUCT_NAME=AgentUp
+          MAC_ARCH=arm64
+          DMG_NAME="${PRODUCT_NAME}-${VERSION}-${MAC_ARCH}.dmg"
+          ZIP_NAME="${PRODUCT_NAME}-${VERSION}-${MAC_ARCH}-mac.zip"
+          EXE_NAME="${PRODUCT_NAME}-${VERSION}-setup.exe"
+          LATEST_DMG_NAME="${PRODUCT_NAME}-${MAC_ARCH}.dmg"
+          LATEST_ZIP_NAME="${PRODUCT_NAME}-${MAC_ARCH}-mac.zip"
+          LATEST_EXE_NAME="${PRODUCT_NAME}-x64-setup.exe"
+
+          for f in "$DMG_NAME" "$EXE_NAME"; do
+            if [ ! -f "$f" ]; then
+              echo "缺少产物: $f" >&2
+              ls -lh . >&2 || true
+              exit 1
+            fi
+          done
+
+          cp -f "$DMG_NAME" "$LATEST_DMG_NAME"
+          cp -f "$EXE_NAME" "$LATEST_EXE_NAME"
+          if [ -f "$ZIP_NAME" ]; then
+            cp -f "$ZIP_NAME" "$LATEST_ZIP_NAME"
+          else
+            echo "⚠ 无 ${ZIP_NAME}，跳过稳定 zip 副本"
+          fi
+          ls -lh .
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v3
