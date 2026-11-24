@@ -18,6 +18,9 @@ import { isSafeSkillName } from "../../package/validate.js";
  */
 
 const MARKER_VERSION = 1;
+/** 宿主运行时状态目录（与包表面 `.pi` 并列，不进发布包）。 */
+const RUNTIME_DIR = ".agentup-runtime";
+const MARKER_FILE = "skills-project.json";
 
 type SkillsProjectMarker = {
   version: number;
@@ -227,12 +230,19 @@ function removeManagedProjection(cwd: string, rel: string, names?: string[]): vo
 }
 
 function markerPath(cwd: string): string {
-  return path.join(cwd, ".pi", "skills-project.json");
+  return path.join(cwd, RUNTIME_DIR, MARKER_FILE);
+}
+
+/** 旧版误写在包表面内；读时迁走。 */
+function legacyMarkerPath(cwd: string): string {
+  return path.join(cwd, ".pi", MARKER_FILE);
 }
 
 function readMarker(cwd: string): SkillsProjectMarker | null {
-  const file = markerPath(cwd);
-  if (!fs.existsSync(file)) return null;
+  const current = markerPath(cwd);
+  const legacy = legacyMarkerPath(cwd);
+  const file = fs.existsSync(current) ? current : fs.existsSync(legacy) ? legacy : null;
+  if (!file) return null;
   try {
     const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<SkillsProjectMarker>;
     const rel = typeof raw.rel === "string" ? normalizeSkillsProjectRel(raw.rel) : undefined;
@@ -241,7 +251,17 @@ function readMarker(cwd: string): SkillsProjectMarker | null {
     const names = Array.isArray(raw.names)
       ? raw.names.filter((name): name is string => typeof name === "string" && isSafeSkillName(name))
       : [];
-    return { version: MARKER_VERSION, templateId, rel, names };
+    const marker: SkillsProjectMarker = { version: MARKER_VERSION, templateId, rel, names };
+    // 旧路径一次迁移到 runtime 目录，避免再污染 `.pi`
+    if (file === legacy) {
+      writeMarker(cwd, marker);
+      try {
+        fs.unlinkSync(legacy);
+      } catch {
+        /* ignore */
+      }
+    }
+    return marker;
   } catch {
     return null;
   }
@@ -254,11 +274,12 @@ function writeMarker(cwd: string, marker: SkillsProjectMarker): void {
 }
 
 function clearMarker(cwd: string): void {
-  const file = markerPath(cwd);
-  try {
-    if (fs.existsSync(file)) fs.unlinkSync(file);
-  } catch {
-    /* ignore */
+  for (const file of [markerPath(cwd), legacyMarkerPath(cwd)]) {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch {
+      /* ignore */
+    }
   }
 }
 

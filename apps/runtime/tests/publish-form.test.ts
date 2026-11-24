@@ -45,6 +45,10 @@ it("publishes from form without creating loc-* under user agents", async () => {
       if (!stored) return json(res, 400, { error: "还没上传" });
       const unpacked = await unpackTarGz(stored);
       expect(unpacked["SYSTEM.md"]).toBeTruthy();
+      // 表单直发：staging 只含包表面，不得夹带宿主 runtime / skills-project
+      expect(Object.keys(unpacked).every((rel) => !rel.includes("skills-project"))).toBe(true);
+      expect(Object.keys(unpacked).every((rel) => !rel.includes("agentup-runtime"))).toBe(true);
+      expect(validateAgentPackage(unpacked)).toEqual([]);
       const manifest = { version: 1, tools: [], modelCapabilities: [] };
       return json(res, 200, {
         job_id: "job-1",

@@ -9,6 +9,7 @@ import {
   AgentIdentityError,
 } from "../local/agents/identity.js";
 import { type UiLocale } from "../i18n/index.js";
+import { PACKAGE_ROOT_DIRS, PACKAGE_ROOT_FILES, readPackageSurface } from "./surface.js";
 import { validateAgentPackage, type PackageIssue } from "./validate.js";
 
 /** 开发源运行包目录（小写）；加载时兼容旧名 `.agentUp`。 */
@@ -43,11 +44,17 @@ export function loadAgentSource(agentDir: string): AgentPublishSource {
   }
   const agentUp = resolveAgentUpRoot(agentDir);
   const piRoot = path.join(agentDir, "cwd", ".pi");
-  let packageRoot: string;
+  let files: Record<string, Uint8Array>;
   if (agentUp) {
-    packageRoot = agentUp;
+    // 开发源：整树读取，未知顶层仍由 assertRelative / validate 拒绝
+    files = readAuthoringPackage(agentUp);
   } else if (fs.existsSync(piRoot) && fs.statSync(piRoot).isDirectory()) {
-    packageRoot = piRoot;
+    // 活 cwd/.pi：只读包表面，跳过宿主 runtime 杂文件
+    try {
+      files = readPackageSurface(piRoot, { onSymlink: "throw" });
+    } catch (error) {
+      throw new AgentSourceError(error instanceof Error ? error.message : String(error));
+    }
   } else {
     throw new AgentSourceError("运行包校验失败", [
       {
@@ -56,7 +63,6 @@ export function loadAgentSource(agentDir: string): AgentPublishSource {
       },
     ]);
   }
-  const files = readPackage(packageRoot);
   // 源目录不要求 SYSTEM.md；手写 SYSTEM.md 发布时会被表单身份覆盖。
   const details = validateAgentPackage(files, { requireSystemMd: false });
   const avatar = readAvatar(agentDir);
@@ -115,7 +121,7 @@ function resolveAgentUpRoot(agentDir: string): string | undefined {
   return undefined;
 }
 
-function readPackage(packageRoot: string): Record<string, Uint8Array> {
+function readAuthoringPackage(packageRoot: string): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
   const walk = (directory: string) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -182,9 +188,6 @@ function readAvatar(agentDir: string): {
   return { content, mime };
 }
 
-const ALLOWED_ROOT_FILES = new Set(["SYSTEM.md", "AGENTS.md", "mcp.json", "settings.json"]);
-const ALLOWED_ROOT_DIRS = new Set(["skills", "hooks"]);
-
 function assertRelative(relative: string): void {
   const parts = relative.split("/");
   if (
@@ -207,12 +210,12 @@ function assertRelative(relative: string): void {
   }
   if (parts.length === 1) {
     // APPEND_SYSTEM.md 留给 validateAgentPackage 给出迁移提示。
-    if (!ALLOWED_ROOT_FILES.has(root) && root !== "APPEND_SYSTEM.md") {
+    if (!PACKAGE_ROOT_FILES.has(root) && root !== "APPEND_SYSTEM.md") {
       throw new AgentSourceError(`不允许的顶层文件: ${relative}`);
     }
     return;
   }
-  if (!ALLOWED_ROOT_DIRS.has(root)) {
+  if (!PACKAGE_ROOT_DIRS.has(root)) {
     throw new AgentSourceError(`不允许的顶层目录: ${root}/`);
   }
 }

@@ -69,7 +69,9 @@ it("codebuddy-sdk：把 .pi/skills 投影成 .codebuddy/skills 下的符号链�
   expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
   expect(fs.realpathSync(link)).toBe(fs.realpathSync(handoff));
   expect(fs.readFileSync(path.join(link, "SKILL.md"), "utf8")).toContain("交接");
-  expect(fs.existsSync(path.join(cwd, ".pi", "skills-project.json"))).toBe(true);
+  // marker 落在宿主 runtime 目录，不进 `.pi` 包表面
+  expect(fs.existsSync(path.join(cwd, ".agentup-runtime", "skills-project.json"))).toBe(true);
+  expect(fs.existsSync(path.join(cwd, ".pi", "skills-project.json"))).toBe(false);
 });
 
 it("切到 API 模板时拆掉旧厂商链", () => {
@@ -81,7 +83,7 @@ it("切到 API 模板时拆掉旧厂商链", () => {
   const cleared = syncSkillsProject({ cwd, templateId: "zai", visit: visit(cwd) });
   expect(cleared.rel).toBeUndefined();
   expect(fs.existsSync(path.join(cwd, ".codebuddy", "skills", "handoff"))).toBe(false);
-  expect(fs.existsSync(path.join(cwd, ".pi", "skills-project.json"))).toBe(false);
+  expect(fs.existsSync(path.join(cwd, ".agentup-runtime", "skills-project.json"))).toBe(false);
 });
 
 it("切到另一家 SDK 投影路径时拆旧建新", () => {
@@ -113,7 +115,28 @@ it("clearSkillsProject 清掉管理链", () => {
   syncSkillsProject({ cwd, templateId: "codebuddy-sdk", visit: visit(cwd) });
   clearSkillsProject(cwd);
   expect(fs.existsSync(path.join(cwd, ".codebuddy", "skills", "handoff"))).toBe(false);
-  expect(fs.existsSync(path.join(cwd, ".pi", "skills-project.json"))).toBe(false);
+  expect(fs.existsSync(path.join(cwd, ".agentup-runtime", "skills-project.json"))).toBe(false);
+});
+
+it("旧 .pi/skills-project.json 读时迁到 .agentup-runtime", () => {
+  const cwd = path.join(root, "cwd");
+  writeSkill(cwd, "handoff");
+  const legacy = path.join(cwd, ".pi", "skills-project.json");
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(
+    legacy,
+    `${JSON.stringify({
+      version: 1,
+      templateId: "codebuddy-sdk",
+      rel: ".codebuddy/skills",
+      names: ["handoff"],
+    })}\n`,
+  );
+
+  syncSkillsProject({ cwd, templateId: "codebuddy-sdk", visit: visit(cwd) });
+  expect(fs.existsSync(path.join(cwd, ".agentup-runtime", "skills-project.json"))).toBe(true);
+  expect(fs.existsSync(legacy)).toBe(false);
+  expect(fs.lstatSync(path.join(cwd, ".codebuddy", "skills", "handoff")).isSymbolicLink()).toBe(true);
 });
 
 it("不覆盖用户自建的同名实体目录", () => {

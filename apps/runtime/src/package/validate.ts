@@ -1,8 +1,8 @@
 import { parseDocument } from "yaml";
 
+import { PACKAGE_ROOT_DIRS, PACKAGE_ROOT_FILES } from "./surface.js";
+
 const USER_HEADER = "x-agentup-user-id";
-const ALLOWED_ROOT_FILES = new Set(["SYSTEM.md", "AGENTS.md", "mcp.json", "settings.json"]);
-const ALLOWED_ROOT_DIRS = new Set(["skills", "hooks"]);
 const SKILL_NAME_MAX = 64;
 
 /** 技能目录名：单路径段即可（允许大小写）；拒穿越 / 分隔符 / 控制字符。 */
@@ -87,12 +87,12 @@ function validatePaths(files: Record<string, Uint8Array>, issues: PackageIssue[]
     }
     if (parts.length === 1) {
       // APPEND_SYSTEM.md 有专用迁移提示，不重复报「不允许的顶层文件」。
-      if (!ALLOWED_ROOT_FILES.has(root) && root !== "APPEND_SYSTEM.md") {
+      if (!PACKAGE_ROOT_FILES.has(root) && root !== "APPEND_SYSTEM.md") {
         issues.push(issue(filePath, `不允许的顶层文件: ${filePath}`));
       }
       continue;
     }
-    if (!ALLOWED_ROOT_DIRS.has(root)) {
+    if (!PACKAGE_ROOT_DIRS.has(root)) {
       issues.push(issue(filePath, `不允许的顶层目录: ${root}/`));
     }
   }

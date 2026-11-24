@@ -5,6 +5,7 @@ import path from "node:path";
 import { t, type UiLocale } from "../../i18n/index.js";
 import { packageDigest } from "../../package/digest.js";
 import { normalizeMcpServers } from "../../package/mcp-document.js";
+import { readPackageSurface } from "../../package/surface.js";
 import type { Visit } from "../../package/sync.js";
 import { isSafeSkillName, validateAgentPackage } from "../../package/validate.js";
 import { ensureCwdLayout } from "../../session/workspace/cwd-layout.js";
@@ -661,24 +662,9 @@ function digestOfPi(cwd: string): string {
   return packageDigest(LOCAL_MANIFEST, readPiTree(path.join(cwd, ".pi")));
 }
 
+/** 编辑 / digest 只读包表面，忽略宿主写在 `.pi` 旁或误落在 `.pi` 内的 runtime 文件。 */
 function readPiTree(piRoot: string): Record<string, Uint8Array> {
-  if (!fs.existsSync(piRoot) || !fs.statSync(piRoot).isDirectory()) return {};
-  const files: Record<string, Uint8Array> = {};
-  const walk = (directory: string) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const full = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const relative = path.relative(piRoot, full).split(path.sep).join("/");
-      files[relative] = fs.readFileSync(full);
-    }
-  };
-  walk(piRoot);
-  return files;
+  return readPackageSurface(piRoot);
 }
 
 function normalizeIdentity(

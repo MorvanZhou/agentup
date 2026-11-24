@@ -98,6 +98,68 @@ it("loadAgentSource accepts visit root cwd/.pi for one-click publish", async () 
   expect(Buffer.from(source.files["SYSTEM.md"]!).toString("utf8")).toMatch(/汇率换算/);
 });
 
+it("开聊留下 runtime / 旧 .pi marker 后，编辑与一键发布仍可用", async () => {
+  const userDataRoot = tempRoot();
+  const created = await createLocalAgent(userDataRoot, "guest", {
+    name: "草稿",
+    role: "测试",
+    background: "最初简介",
+  });
+  const visitRoot = path.join(userDataRoot, "users", "guest", "agents", created.agentId);
+  const cwd = path.join(visitRoot, "cwd");
+  const pi = path.join(cwd, ".pi");
+  const digestBefore = created.packageDigest;
+
+  // 模拟 agent-sdk 会话：新路径 runtime marker + 历史误写在 .pi 内的 marker
+  fs.mkdirSync(path.join(cwd, ".agentup-runtime"), { recursive: true });
+  fs.writeFileSync(
+    path.join(cwd, ".agentup-runtime", "skills-project.json"),
+    `${JSON.stringify({
+      version: 1,
+      templateId: "codebuddy-sdk",
+      rel: ".codebuddy/skills",
+      names: [],
+    })}\n`,
+  );
+  fs.writeFileSync(
+    path.join(pi, "skills-project.json"),
+    `${JSON.stringify({
+      version: 1,
+      templateId: "codebuddy-sdk",
+      rel: ".codebuddy/skills",
+      names: [],
+    })}\n`,
+  );
+  fs.writeFileSync(path.join(pi, "future-host-cache.bin"), "junk");
+
+  const updated = await writeLocalAgentCard(userDataRoot, "guest", created.agentId, {
+    name: "定稿",
+    role: "测试员",
+    background: "更新后的简介",
+    rules: "先验证，再回答。",
+  });
+  expect(updated.name).toBe("定稿");
+  expect(updated.rules).toBe("先验证，再回答。");
+  // 仅改名片/规则：digest 不应被 runtime 杂文件拖偏（相对「只含表面」仍可算）
+  expect(updated.packageDigest).toBeTruthy();
+  expect(updated.packageDigest).not.toBe("");
+
+  const source = loadAgentSource(visitRoot);
+  expect(source.files["skills-project.json"]).toBeUndefined();
+  expect(source.files["future-host-cache.bin"]).toBeUndefined();
+  expect(Buffer.from(source.files["SYSTEM.md"]!).toString("utf8")).toMatch(/定稿/);
+  expect(Buffer.from(source.files["AGENTS.md"]!).toString("utf8")).toMatch(/先验证/);
+
+  // 再读 digest：旁路杂文件后与编辑后一致
+  const again = await writeLocalAgentCard(userDataRoot, "guest", created.agentId, {
+    name: "定稿",
+    role: "测试员",
+    background: "更新后的简介",
+  });
+  expect(again.packageDigest).toBe(updated.packageDigest);
+  expect(digestBefore).toBeTruthy();
+});
+
 it("writeLocalAgentCard updates SYSTEM and mcpServers", async () => {
   const userDataRoot = tempRoot();
   const created = await createLocalAgent(userDataRoot, "guest", {
