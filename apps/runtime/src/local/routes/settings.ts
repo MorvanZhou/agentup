@@ -52,6 +52,10 @@ import {
   writeUserAgentsMd,
   writeUserMcpServers,
 } from "../assistant/user-resources.js";
+import {
+  readBrowserUseSettings,
+  writeBrowserUseSettings,
+} from "../../session/mcp/browser-platform.js";
 
 export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
   const { config, chats } = deps;
@@ -104,6 +108,20 @@ export function registerSettingsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDep
     deleteUserSkill(config.userDataRoot, userId, c.req.param("name"));
     chats.invalidatePersonalAssistant(userId);
     return json(c, 200, { deleted: true });
+  });
+
+  // Browser Use：扩展挂真 Chrome vs 专用 profile（本机偏好，不进账号）
+  app.get("/settings/browser-use", (c) => {
+    bearer(c);
+    const settings = readBrowserUseSettings(config.userDataRoot);
+    return json(c, 200, { mode: settings.mode });
+  });
+
+  app.put("/settings/browser-use", async (c) => {
+    bearer(c);
+    const body = await readJson(c);
+    const settings = writeBrowserUseSettings(config.userDataRoot, { mode: body.mode });
+    return json(c, 200, { mode: settings.mode });
   });
 
   app.get("/settings/mcp", (c) => {

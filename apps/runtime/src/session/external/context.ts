@@ -206,8 +206,8 @@ export function formatExternalPreviewPrompt(): string {
     "",
     "After you start a local web server the user should see in the app, call `mcp__agentup__present_preview` with a short title, the localhost `preview_url`, and the shell command to restart that server.",
     "Static ARTIFACT HTML/Markdown/images use the file preview UI — do not call this tool for those.",
-    "Browser automation uses platform Playwright MCP (`mcp__playwright__browser_*`), not this tool — do not invent a local Playwright/Bash harness when those tools are available.",
-    "If Playwright tools are not listed, load/search the platform `playwright` MCP first; do not invent builtin `browser_*` tools.",
+    "Local preview verification uses platform Playwright MCP (`mcp__playwright__browser_*`). Logged-in external sites use platform Browser Use MCP (`mcp__browser__browser_*`). Native desktop apps use platform Computer Use MCP (`mcp__computer__*`). Search once for `playwright`, `browser`, or `computer` to load the whole suite; afterward (or if this session already used those names) call those tools directly. If the headed Browser Use window was closed, keep calling `mcp__browser__*` (same profile relaunches). Never switch to headless `mcp__playwright__*` for that logged-in task, even if tool search lists playwright. Do not invent a local Playwright/Bash harness when those tools are available.",
+    "If browser tools are not listed, load/search platform `playwright` (preview) or `browser` (logged-in external) once first; do not invent builtin `browser_*` tools. For desktop UI, search `computer` once — do not invent a pyautogui/AppleScript harness when `mcp__computer__*` is available.",
     "If `mcp__agentup__present_preview` is not listed this turn, do not invent it.",
   ].join("\n");
 }

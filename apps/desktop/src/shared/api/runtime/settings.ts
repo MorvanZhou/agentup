@@ -393,6 +393,27 @@ export async function uninstallAgentSdk(
   );
 }
 
+export type BrowserUseMode = "extension" | "profile";
+
+/** 本机 Browser Use：扩展挂真 Chrome vs 专用 profile。 */
+export async function browserUseSettings(
+  http: RuntimeHttp,
+  token: string,
+): Promise<{ mode: BrowserUseMode }> {
+  const payload = await http.request("/settings/browser-use", token);
+  const mode = payload.mode === "extension" ? "extension" : "profile";
+  return { mode };
+}
+
+export async function saveBrowserUseSettings(
+  http: RuntimeHttp,
+  token: string,
+  mode: BrowserUseMode,
+): Promise<{ mode: BrowserUseMode }> {
+  const payload = await http.request("/settings/browser-use", token, { mode }, "PUT");
+  return { mode: payload.mode === "extension" ? "extension" : "profile" };
+}
+
 export async function preferences(http: RuntimeHttp, token: string): Promise<UserPreferences> {
   return readPreferences(await http.request("/preferences", token));
 }

@@ -14,6 +14,8 @@ import { opencodeServerConfigOf } from "../src/session/external/sdk/adapters/ope
 import type { ExternalTurnRequest } from "../src/session/external/sdk/contract.js";
 import { mergeExternalTurnMcpServers } from "../src/session/external/sdk/mcp-servers.js";
 import { listExternalDriverIds } from "../src/session/external/sdk/registry.js";
+import { BROWSER_MCP_NAME } from "../src/session/mcp/browser-platform.js";
+import { COMPUTER_MCP_NAME, COMPUTER_MCP_PACKAGE } from "../src/session/mcp/computer-platform.js";
 import { PLAYWRIGHT_MCP_NAME } from "../src/session/mcp/playwright-platform.js";
 import { platformMcpServersOf } from "../src/session/mcp/platform-mcp.js";
 
@@ -146,16 +148,43 @@ it("mergeExternalTurnMcpServers 整表合并 platform 键（含探针）", () =>
   expectPlatformKeysMerged(merged!, "helper");
 });
 
-it("platformMcpServersOf 至少包含 playwright，且是 Host 唯一组装口的契约", async () => {
+it("platformMcpServersOf 含 playwright + browser + computer，且是 Host 唯一组装口的契约", async () => {
   const { PLATFORM_MCP_NAMES } = await import("../src/session/mcp/platform-mcp.js");
   const servers = platformMcpServersOf("/tmp/agentup-user");
-  // 审批官方免审名单与组装口同表，禁止只改一边
+  // 注入清单与组装口同表，禁止只改一边（审批按大功能见 capabilityAllowKey）
   expect([...PLATFORM_MCP_NAMES].sort()).toEqual(Object.keys(servers).sort());
-  expect(Object.keys(servers)).toContain(PLAYWRIGHT_MCP_NAME);
+  expect(Object.keys(servers)).toEqual(
+    expect.arrayContaining([PLAYWRIGHT_MCP_NAME, BROWSER_MCP_NAME, COMPUTER_MCP_NAME]),
+  );
   expect(servers[PLAYWRIGHT_MCP_NAME]).toMatchObject({
     exposure: "deferred",
     args: expect.arrayContaining(["--headless"]),
   });
+  // browser 经 mcp-bridge；上游才是 chrome + user-data-dir + init-script
+  expect(servers[BROWSER_MCP_NAME]).toMatchObject({
+    exposure: "deferred",
+    env: expect.objectContaining({
+      AGENTUP_BROWSER_UPSTREAM_ARGS_JSON: expect.stringContaining("--user-data-dir"),
+    }),
+  });
+  expect(String(servers[BROWSER_MCP_NAME]?.args?.[0] ?? "")).toContain("mcp-bridge.mjs");
+  const upstream = JSON.parse(
+    String(servers[BROWSER_MCP_NAME]?.env?.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON ?? "[]"),
+  ) as string[];
+  expect(upstream).toEqual(
+    expect.arrayContaining(["--browser", "chrome", "--user-data-dir", "--init-script"]),
+  );
+  expect(upstream).not.toContain("--headless");
+  expect(upstream).not.toContain("--extension");
+  expect(servers[COMPUTER_MCP_NAME]).toMatchObject({
+    exposure: "deferred",
+    command: process.execPath,
+  });
+  const computerArgs = servers[COMPUTER_MCP_NAME]?.args ?? [];
+  expect(computerArgs[0]).toMatch(/computer-mcp-launch\.js$/);
+  expect(computerArgs[1]).toBe("/tmp/agentup-user");
+  expect(computerArgs.join(" ")).not.toContain("npx");
+  expect(COMPUTER_MCP_PACKAGE).toMatch(/^open-computer-use@/);
 });
 
 it("Host turn-factory / stream-bridge 必须调用 platformMcpServersOf（禁止散落字面量）", () => {

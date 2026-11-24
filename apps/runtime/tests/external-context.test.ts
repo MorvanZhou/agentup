@@ -133,10 +133,17 @@ it("append 含 AgentUp Preview 指引（MCP 全名，无 Pi bg_run）", () => {
   });
   expect(append).toContain("## AgentUp Preview");
   expect(append).toContain("mcp__agentup__present_preview");
-  expect(append).toContain("Playwright MCP");
   expect(append).toContain("mcp__playwright__browser_");
-  expect(append).toContain("do not invent a local Playwright/Bash harness");
-  expect(append).toContain("load/search the platform `playwright` MCP");
+  expect(append).toContain("mcp__browser__browser_");
+  expect(append).toContain("mcp__computer__");
+  expect(append).toContain("Do not invent a local Playwright/Bash harness");
+  expect(append).toContain("playwright");
+  expect(append).toContain("browser");
+  expect(append).toContain("computer");
+  expect(append).toContain("Search once");
+  expect(append).toContain("whole suite");
+  expect(append).toContain("relaunches");
+  expect(append).toContain("Never switch to headless `mcp__playwright__*`");
   expect(append).not.toContain("bg_run");
   // 指引只用 MCP 全名，不出现裸 Pi 工具调用说法
   expect(append).not.toContain("call `present_preview`");
@@ -210,8 +217,8 @@ it(`AGENTS.md 超长按 ${MAX_AGENTS_MD_CHARS} 截断`, () => {
   expect(readAgentsMd(current.root).length).toBe(MAX_AGENTS_MD_CHARS + 500);
   const context = buildExternalAgentContext({ visit: current, cwd: path.join(current.root, "cwd") });
   expect(context.systemAppend).toContain("(truncated)");
-  // 协作 / Environment / Preview（含 Playwright MCP 指引）会占额外预算；只锁「AGENTS 截断后不失控」
-  expect(context.systemAppend.length).toBeLessThan(MAX_AGENTS_MD_CHARS + 4_000);
+  // 协作 / Environment / Preview（含 playwright/browser/computer 平台 MCP 指引）会占额外预算；只锁「AGENTS 截断后不失控」
+  expect(context.systemAppend.length).toBeLessThan(MAX_AGENTS_MD_CHARS + 5_000);
 });
 
 it("文件缺失不报错：人设与规则都为空也能拼出边界块", () => {

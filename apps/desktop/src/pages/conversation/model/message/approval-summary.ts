@@ -155,6 +155,29 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
     };
   }
 
+  // 平台大功能：Browser Use / Computer Use —— 一次授权覆盖该能力下全部 MCP 工具
+  const capability = platformCapabilityOf(toolName);
+  if (capability === "browser-use") {
+    return {
+      kind: "tool",
+      title: t("approvalBrowserUseTitle"),
+      description: t("approvalBrowserUseDesc"),
+      target: target || t("approvalBrowserUseTarget"),
+      command: false,
+      scopes: commandScopes(),
+    };
+  }
+  if (capability === "computer-use") {
+    return {
+      kind: "tool",
+      title: t("approvalComputerUseTitle"),
+      description: t("approvalComputerUseDesc"),
+      target: target || t("approvalComputerUseTarget"),
+      command: false,
+      scopes: commandScopes(),
+    };
+  }
+
   // MCP 须先于 write/edit 启发式：工具名常含 write（如 mcp__x__write）。
   if (isMcpApprovalTool(toolName)) {
     return {
@@ -214,4 +237,18 @@ export function summarizeApproval(approval: AgentUpApprovalData): ApprovalSummar
 
 function isMcpApprovalTool(toolName: string): boolean {
   return toolName.startsWith("mcp__");
+}
+
+/** 与 runtime `capabilityAllowKey` 对齐：按大功能展示，不暴露 MCP server 名。 */
+function platformCapabilityOf(
+  toolName: string,
+): "browser-use" | "computer-use" | undefined {
+  if (
+    toolName.startsWith("mcp__browser__") ||
+    toolName.startsWith("mcp__playwright__")
+  ) {
+    return "browser-use";
+  }
+  if (toolName.startsWith("mcp__computer__")) return "computer-use";
+  return undefined;
 }

@@ -396,7 +396,9 @@ it("injects the group roster into the holder prompt and drops agent search", asy
 });
 
 it("stamps the visit user onto hospital MCP, defaults exposure to deferred, and keeps explicit exposure", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mcp-"));
+  // 深度对齐 users/<uid>/agents/<id>，否则 userDataRootFromVisit 会指到 /var/folders
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-mcp-"));
+  const root = path.join(base, "users", "patient", "agents", "tax-advisor");
   const pi = path.join(root, "cwd", ".pi");
   fs.mkdirSync(pi, { recursive: true });
   fs.writeFileSync(

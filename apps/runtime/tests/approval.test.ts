@@ -56,7 +56,7 @@ it("lets mcp resource list/read tools run without approval", async () => {
   expect(seen).not.toHaveBeenCalled();
 });
 
-it("lets official AgentUp and platform MCP tools run like builtins, still asks for third-party MCP", async () => {
+it("lets host agentup MCP run like builtins, still asks for platform capabilities and third-party MCP", async () => {
   const broker = new ApprovalBroker();
   const handler = await bindToolHandler(broker);
   const seen = vi.fn();
@@ -65,13 +65,11 @@ it("lets official AgentUp and platform MCP tools run like builtins, still asks f
     broker.decide(request.id, false);
   });
 
-  // 官方 MCP（agentup 宿主能力 + 平台 playwright）与内建工具同性质：免审
+  // 宿主 agentup（委托除外）与内建同性质：免审
   for (const toolName of [
     "mcp__agentup__agent_search",
     "mcp__agentup__present_preview",
     "mcp__agentup__check_delegation",
-    "mcp__playwright__browser_console_messages",
-    "mcp__playwright__browser_navigate",
   ]) {
     await expect(
       handler({ type: "tool_call", toolCallId: toolName, toolName, input: {} }, { signal: undefined }),
@@ -79,7 +77,39 @@ it("lets official AgentUp and platform MCP tools run like builtins, still asks f
   }
   expect(seen).not.toHaveBeenCalled();
 
+  // Browser Use / Computer Use：大功能须审批（拒绝）
+  for (const toolName of [
+    "mcp__playwright__browser_navigate",
+    "mcp__browser__browser_click",
+    "mcp__computer__click",
+  ]) {
+    seen.mockClear();
+    await expect(
+      handler(
+        {
+          type: "tool_call",
+          toolCallId: toolName,
+          toolName,
+          input: toolName.startsWith("mcp__computer__")
+            ? { app: "Calculator", element_index: 1 }
+            : {},
+        },
+        { signal: undefined },
+      ),
+    ).resolves.toEqual({ block: true, reason: "用户拒绝了这次工具调用" });
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName,
+        allowKey: toolName.startsWith("mcp__computer__")
+          ? "capability:computer-use"
+          : "capability:browser-use",
+      }),
+    );
+  }
+
   // 用户 mcp.json 第三方 MCP 仍须审批
+  seen.mockClear();
   await expect(
     handler(
       {
@@ -109,6 +139,121 @@ it("lets official AgentUp and platform MCP tools run like builtins, still asks f
   expect(seen).toHaveBeenCalledWith(
     expect.objectContaining({ toolName: "mcp__agentup__delegate_to_agent" }),
   );
+});
+
+it("session-scoped Browser Use allow covers playwright and browser tools together", async () => {
+  const broker = new ApprovalBroker();
+  const handler = await bindToolHandler(broker);
+  const seen = vi.fn();
+  broker.subscribe((request) => {
+    seen(request);
+    broker.decide(request.id, true, "session");
+  });
+
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "br-1",
+        toolName: "mcp__browser__browser_navigate",
+        input: { url: "https://example.com" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).toHaveBeenCalledTimes(1);
+
+  // 同能力下另一 MCP（playwright）与另一工具：不再弹审
+  seen.mockClear();
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "pw-1",
+        toolName: "mcp__playwright__browser_navigate",
+        input: { url: "http://127.0.0.1:4173" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "br-2",
+        toolName: "mcp__browser__browser_click",
+        input: { element: "Submit" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).not.toHaveBeenCalled();
+
+  // Computer Use 仍独立要审
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "cu-1",
+        toolName: "mcp__computer__click",
+        input: { app: "Calculator", element_index: 1 },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).toHaveBeenCalledTimes(1);
+  expect(seen).toHaveBeenCalledWith(
+    expect.objectContaining({ allowKey: "capability:computer-use" }),
+  );
+});
+
+it("session-scoped Computer Use allow covers all computer tools", async () => {
+  const broker = new ApprovalBroker();
+  const handler = await bindToolHandler(broker);
+  const seen = vi.fn();
+  broker.subscribe((request) => {
+    seen(request);
+    broker.decide(request.id, true, "session");
+  });
+
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "cu-1",
+        toolName: "mcp__computer__click",
+        input: { app: "Calculator", element_index: 1 },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).toHaveBeenCalledTimes(1);
+
+  seen.mockClear();
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "cu-2",
+        toolName: "mcp__computer__screenshot",
+        input: {},
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  await expect(
+    handler(
+      {
+        type: "tool_call",
+        toolCallId: "cu-3",
+        toolName: "mcp__computer__type",
+        input: { text: "42" },
+      },
+      { signal: undefined },
+    ),
+  ).resolves.toBeUndefined();
+  expect(seen).not.toHaveBeenCalled();
+  expect(broker.allowsTool("patient", "agent", "mcp__computer__apps")).toBe(true);
 });
 
 it("lets write, edit, web_fetch, todo, and get_local_time run without approval", async () => {

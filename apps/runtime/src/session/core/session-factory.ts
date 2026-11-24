@@ -5,7 +5,6 @@ import {
   createAgentSession,
   createCodemodeExtension,
   createMcpExtension,
-  createToolSearchExtension,
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
@@ -14,6 +13,11 @@ import {
   type ExtensionFactory,
   type Skill,
 } from "@earendil-works/pi-coding-agent";
+import {
+  createPlatformPinState,
+  createPlatformToolSearchExtension,
+  installDeferredPlatformToolRescue,
+} from "../mcp/platform-tool-search.js";
 
 import type { ModelConfig } from "../../config/load.js";
 import { listEnabledUserSkillPaths } from "../../local/assistant/user-resources.js";
@@ -188,8 +192,10 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
     profile.personalMcp && personal && resourceRoot
       ? mergeVisitMcp(plan.cwd, resourceRoot, visit.userId)
       : projectVisitMcp(plan.cwd, visit.userId);
-  // 始终有平台 playwright → MCP / tool_search 默认可用
+  // 始终有平台 playwright + browser + computer → MCP / tool_search 默认可用
   const mcpEnabled = mcpConfig.servers.length > 0;
+  // 与 tool_search / snapshot 救援共享：钉住已用过的 browser 套件
+  const platformPins = createPlatformPinState();
   const settingsManager = SettingsManager.create(plan.cwd, plan.agentDir, { projectTrusted: true });
   // API/Pi：开内建 compact；阈值 = model.contextWindow - reserveTokens（窗长见 openModelRuntime）
   settingsManager.setCompactionEnabled(true);
@@ -269,7 +275,12 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
         : []),
       ...(profile.delegateTool || profile.backgroundTool ? parent.afterShell ?? [] : []),
       ...(mcpEnabled
-        ? [createToolSearchExtension(), createCodemodeExtension(), createMcpExtension({ loadConfig: () => mcpConfig })]
+        ? [
+            // 平台 browser/playwright：展开整套 + 钉住；优先 browser，防关窗后误用 playwright
+            createPlatformToolSearchExtension(platformPins),
+            createCodemodeExtension(),
+            createMcpExtension({ loadConfig: () => mcpConfig }),
+          ]
         : []),
       createApprovalExtension(input.approvals, visit.userId, visit.agentId, {
         hitl,
@@ -382,6 +393,10 @@ export async function openProfiledSession(input: ProfiledSessionRequest): Promis
   };
   const result = await createAgentSession(options);
   await result.session.bindExtensions({});
+  if (mcpEnabled) {
+    // deferred 平台浏览器：钉住套件 + snapshot 可执行 + sticky 声明
+    installDeferredPlatformToolRescue(result.session, platformPins);
+  }
   if (externalQuery) {
     // SDK 直连流挂在会话最小面上；VisitChats 据此切到 runExternalTurn。
     (result.session as typeof result.session & { externalQuery?: typeof externalQuery }).externalQuery =

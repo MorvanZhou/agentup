@@ -183,4 +183,43 @@ describe("summarizeApproval", () => {
     expect(summary.target).toBe("挂载：/Users/me/code/app");
     expect(summary.scopes.map((item) => item.scope)).toEqual(["once", "session", "agent"]);
   });
+
+  it("Browser Use 按大功能展示，不暴露 MCP 工具名", () => {
+    for (const toolName of [
+      "mcp__browser__browser_navigate",
+      "mcp__playwright__browser_click",
+    ]) {
+      const summary = summarizeApproval({
+        id: "a-br",
+        toolCallId: "c-br",
+        toolName,
+        args: { url: "https://example.com" },
+      });
+      expect(summary.title).toBe("要使用 Browser Use");
+      expect(summary.target).toBe("https://example.com");
+      expect(summary.description).toContain("不再按单个工具");
+      expect(summary.scopes.map((item) => item.scope)).toEqual([
+        "once",
+        "session",
+        "agent",
+      ]);
+    }
+  });
+
+  it("Computer Use 按大功能展示，不暴露 MCP 工具名", () => {
+    const summary = summarizeApproval({
+      id: "a-cu",
+      toolCallId: "c-cu",
+      toolName: "mcp__computer__click",
+      args: { app: "Calculator", element_index: 1 },
+    });
+    expect(summary.title).toBe("要使用 Computer Use");
+    expect(summary.target).toBe("本机桌面控制");
+    expect(summary.description).toContain("本机桌面");
+    expect(summary.scopes.map((item) => item.scope)).toEqual([
+      "once",
+      "session",
+      "agent",
+    ]);
+  });
 });

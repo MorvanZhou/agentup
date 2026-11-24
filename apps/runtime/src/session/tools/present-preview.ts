@@ -162,7 +162,7 @@ export function createPresentPreviewExtension(options: { workspaceRoot: string }
         promptGuidelines: [
           "After bg_run starts a local web server, call present_preview with the localhost URL and restart command.",
           "Static ARTIFACT HTML/Markdown/images use the file preview UI — do not call present_preview for those.",
-          "Browser automation/verification uses Playwright MCP via tool_search, not this tool.",
+          "Local preview verification uses platform Playwright MCP via tool_search; logged-in external sites use platform Browser Use MCP (`browser`) — not this tool.",
         ],
         parameters: PresentPreviewParams,
         executionMode: "sequential",

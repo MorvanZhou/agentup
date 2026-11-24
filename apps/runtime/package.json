@@ -6,7 +6,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node ./scripts/copy-browser-theater-assets.mjs",
     "test": "vitest run"
   },
   "dependencies": {

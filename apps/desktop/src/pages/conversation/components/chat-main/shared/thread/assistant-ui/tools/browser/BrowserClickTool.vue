@@ -2,43 +2,37 @@
 import { computed } from "vue";
 import { MousePointerClickIcon } from "@lucide/vue";
 
+import { imagesFromToolResult } from "../files/tool-read";
 import { useToolPart } from "../shared/useToolPart";
-import { browserToolDetail } from "./browser-tool-view";
+import BrowserActionImages from "./BrowserActionImages.vue";
+import { browserClickMarker, browserClickSummary } from "./browser-tool-view";
 import ToolCard from "../shared/ToolCard.vue";
 
-const {
-  args,
-  isError,
-  isInterrupted,
-  resultText,
-  hasResult,
-  isActive,
-} = useToolPart();
+const { args, result, hasResult, isActive } = useToolPart();
 
-const detail = computed(() => browserToolDetail("browser_click", args.value));
-const showOutput = computed(() => hasResult.value && Boolean(resultText.value));
+/** 一条最相关的点击信息（元素名 / Playwright 目标）；失败时由 ToolCard 错误条承接。 */
+const detail = computed(() => browserClickSummary(args.value, result.value));
+const images = computed(() => imagesFromToolResult(result.value));
+const marker = computed(() => browserClickMarker(args.value, result.value));
+const hasGraphics = computed(() => images.value.length > 0);
 </script>
 
 <template>
-  <!-- Playwright / 浏览器：点击页面元素 -->
+  <!--
+    Click：有截图 → 只展示图形（可叠准星）；
+    无截图 → 不展开长文，仅摘要行一条操作信息。
+  -->
   <ToolCard
     title="Click"
     :detail="detail"
     :icon="MousePointerClickIcon"
-    :expandable="hasResult"
-    :prefer-open="showOutput && isActive"
+    :expandable="hasGraphics"
+    :prefer-open="hasGraphics && (isActive || hasResult)"
   >
-    <div v-if="hasResult" class="min-w-0 px-2.5 py-2">
-      <pre
-        class="bg-paper max-h-56 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-all"
-        :class="
-          isError
-            ? 'text-destructive'
-            : isInterrupted
-              ? 'text-muted-foreground'
-              : 'text-foreground'
-        "
-      >{{ resultText }}</pre>
-    </div>
+    <BrowserActionImages
+      v-if="hasGraphics"
+      :images="images"
+      :marker="marker"
+    />
   </ToolCard>
 </template>

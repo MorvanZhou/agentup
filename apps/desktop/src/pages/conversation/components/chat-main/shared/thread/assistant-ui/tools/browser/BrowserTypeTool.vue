@@ -2,12 +2,15 @@
 import { computed } from "vue";
 import { KeyboardIcon } from "@lucide/vue";
 
+import { imagesFromToolResult, readImageNote } from "../files/tool-read";
 import { useToolPart } from "../shared/useToolPart";
-import { browserToolDetail } from "./browser-tool-view";
+import BrowserActionImages from "./BrowserActionImages.vue";
+import { browserClickMarker, browserToolDetail } from "./browser-tool-view";
 import ToolCard from "../shared/ToolCard.vue";
 
 const {
   args,
+  result,
   toolName,
   isError,
   isInterrupted,
@@ -27,19 +30,29 @@ const title = computed(() =>
   kind.value === "browser_fill_form" ? "Fill form" : kind.value === "browser_fill" ? "Fill" : "Type",
 );
 const detail = computed(() => browserToolDetail(kind.value, args.value));
-const showOutput = computed(() => hasResult.value && Boolean(resultText.value));
+const images = computed(() => imagesFromToolResult(result.value));
+const marker = computed(() => browserClickMarker(args.value, result.value));
+const showText = computed(
+  () => hasResult.value && Boolean(resultText.value) && images.value.length === 0,
+);
 </script>
 
 <template>
-  <!-- Playwright / 浏览器：向可编辑元素输入 -->
+  <!-- Playwright / Browser Use：输入（有截图可叠准星） -->
   <ToolCard
     :title="title"
     :detail="detail"
     :icon="KeyboardIcon"
     :expandable="hasResult"
-    :prefer-open="showOutput && isActive"
+    :prefer-open="images.length > 0 || (showText && isActive)"
   >
-    <div v-if="hasResult" class="min-w-0 px-2.5 py-2">
+    <BrowserActionImages
+      v-if="images.length > 0"
+      :images="images"
+      :note="readImageNote(result)"
+      :marker="marker"
+    />
+    <div v-else-if="showText" class="min-w-0 px-2.5 py-2">
       <pre
         class="bg-paper max-h-56 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-all"
         :class="

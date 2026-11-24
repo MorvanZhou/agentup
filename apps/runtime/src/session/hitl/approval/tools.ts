@@ -1,7 +1,17 @@
-import { PLATFORM_MCP_NAMES } from "../../mcp/platform-mcp.js";
+import { BROWSER_MCP_NAME } from "../../mcp/browser-platform.js";
+import { COMPUTER_MCP_NAME } from "../../mcp/computer-platform.js";
+import { PLAYWRIGHT_MCP_NAME } from "../../mcp/playwright-platform.js";
 
 /** Host 自有 MCP（每轮临时 HTTP）；与 PLATFORM_MCP_NAMES 同属官方注入。 */
 export const AGENTUP_MCP_NAME = "agentup";
+
+/**
+ * 平台大功能授权键（session/agent 落盘）：不按 MCP server / 单工具拆审。
+ * - Browser Use：`playwright`（headless）+ `browser`（有窗）共用一把钥匙
+ * - Computer Use：`computer` 整套桌面控制
+ */
+export const CAPABILITY_BROWSER_USE = "capability:browser-use";
+export const CAPABILITY_COMPUTER_USE = "capability:computer-use";
 
 /** 命令类工具：与 bash 同属命令审批（once / session / agent）。 */
 export function isCommandTool(toolName: string): boolean {
@@ -49,14 +59,25 @@ export function mcpServerAllowKey(toolName: string): string | undefined {
 }
 
 /**
- * AgentUp 官方注入的 MCP（宿主 agentup + platformMcpServers）。
- * 与用户 mcp.json 第三方区分：官方工具面按内建同性质免审（委托除外）。
+ * 平台 Browser Use / Computer Use → 大功能授权键。
+ * 第三方 MCP 与宿主 `agentup` 不走此键。
+ */
+export function capabilityAllowKey(toolName: string): string | undefined {
+  const name = mcpServerName(toolName);
+  if (!name) return undefined;
+  if (name === BROWSER_MCP_NAME || name === PLAYWRIGHT_MCP_NAME) {
+    return CAPABILITY_BROWSER_USE;
+  }
+  if (name === COMPUTER_MCP_NAME) return CAPABILITY_COMPUTER_USE;
+  return undefined;
+}
+
+/**
+ * 宿主 `agentup` MCP：与内建同性质免审（委托除外）。
+ * 平台 Browser / Computer 走 `capabilityAllowKey`，不算本函数意义下的免审官方面。
  */
 export function isOfficialMcpTool(toolName: string): boolean {
-  const name = mcpServerName(toolName);
-  if (!name) return false;
-  if (name === AGENTUP_MCP_NAME) return true;
-  return (PLATFORM_MCP_NAMES as readonly string[]).includes(name);
+  return mcpServerName(toolName) === AGENTUP_MCP_NAME;
 }
 
 /** 单专家 agent_id，或 tasks[].agent_id（扇出）。 */
@@ -80,7 +101,9 @@ export function targetAgentIds(args: Record<string, unknown>): string[] {
 
 export function requiresApproval(toolName: string): boolean {
   if (isCommandTool(toolName) || isDelegationTool(toolName)) return true;
-  // 第三方 MCP 仍逐步审批；官方 MCP 与内建工具同性质免审
+  // Browser Use / Computer Use：按大功能审一次（session/agent 后整套放行）
+  if (capabilityAllowKey(toolName)) return true;
+  // 第三方 MCP 仍逐步审批；宿主 agentup 与内建同性质免审
   if (isMcpTool(toolName) && !isOfficialMcpTool(toolName)) return true;
   return false;
 }

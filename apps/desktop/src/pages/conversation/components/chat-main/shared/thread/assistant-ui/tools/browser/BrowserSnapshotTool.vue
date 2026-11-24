@@ -3,42 +3,21 @@ import { computed } from "vue";
 import { ScanSearchIcon } from "@lucide/vue";
 
 import { useToolPart } from "../shared/useToolPart";
-import { browserToolDetail } from "./browser-tool-view";
+import { browserSnapshotSummary } from "./browser-tool-view";
 import ToolCard from "../shared/ToolCard.vue";
 
-const {
-  args,
-  isError,
-  isInterrupted,
-  resultText,
-  hasResult,
-  isActive,
-} = useToolPart();
+const { args, result } = useToolPart();
 
-const detail = computed(() => browserToolDetail("browser_snapshot", args.value));
-const showOutput = computed(() => hasResult.value && Boolean(resultText.value));
+/** Snapshot = 无障碍树，不是截图；给人只留标题/URL 一行，不展开 YAML。 */
+const detail = computed(() => browserSnapshotSummary(args.value, result.value));
 </script>
 
 <template>
-  <!-- Playwright / 浏览器：无障碍树快照 -->
+  <!-- Playwright / Browser Use：页面结构快照（给模型找 ref，非图片） -->
   <ToolCard
     title="Snapshot"
     :detail="detail"
     :icon="ScanSearchIcon"
-    :expandable="hasResult"
-    :prefer-open="showOutput && isActive"
-  >
-    <div v-if="hasResult" class="min-w-0 px-2.5 py-2">
-      <pre
-        class="bg-paper max-h-56 overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap break-all"
-        :class="
-          isError
-            ? 'text-destructive'
-            : isInterrupted
-              ? 'text-muted-foreground'
-              : 'text-foreground'
-        "
-      >{{ resultText }}</pre>
-    </div>
-  </ToolCard>
+    :expandable="false"
+  />
 </template>

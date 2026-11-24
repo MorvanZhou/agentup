@@ -114,6 +114,18 @@ xattr -cr /Applications/AgentUp.app
 - **在你的电脑上干活** — 整理、创建、保存都在这里完成，不只停在网页聊天里。
 - **结果出现在桌面上** — 做好的 PPT 和图表落到你的文件夹里，打开就能用。
 
+**Browser Use + Computer Use。** 一句话就能跨网页和桌面 App。
+
+跟它说：从后台导出报表，再放到 Finder → Quarterly。它会在浏览器里点 Export，再在本机打开对应文件夹 — Accessibility 帮它找到目标，文件落到该放的地方。
+
+<p align="center">
+  <img src="docs/images/computer-browser-use.png" alt="Browser Use 与 Computer Use — 从后台导出再归档到 Finder" width="640" />
+</p>
+
+- **Browser Use** — 在你日常用的网页里点按钮、填表单、把事办完。
+- **Computer Use** — 操控本机 Finder 和其他桌面 App，不只停在浏览器标签页里。
+- **一条聊天做完** — 从网页导出到放进对的文件夹，不用自己来回切换工具。
+
 聊天默认留在你的电脑上。我们不保存消息正文。如果需要外部服务，只发出完成这件事所必需的内容。
 
 ## 两种接入方式

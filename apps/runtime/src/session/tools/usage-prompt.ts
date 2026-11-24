@@ -29,8 +29,10 @@ export function formatToolsUsagePrompt(
     ...(toolSearch
       ? [
           "- MCP / deferred tools: call `tool_search` with a short query first (same idea as `agent_search`), then use the loaded tools. Do not assume MCP tools are already declared.",
-          // 与 bg_run 解耦：一对一 / 群场景只要有 tool_search 就注入
-          "- To operate a browser, `tool_search` for the platform `playwright` MCP (`mcp__playwright__browser_*`).",
+          // 两套平台浏览器 MCP：验 preview vs 外站登录态；一次 search 装齐套件；历史名可直接调
+          "- To verify a local `preview_url` / CI-style page check, `tool_search` once for platform `playwright` (`mcp__playwright__browser_*`, headless) — that loads the whole suite (navigate/click/type/snapshot/…).",
+          "- For logged-in external sites, `tool_search` once for platform `browser` (`mcp__browser__browser_*`, headed profile). Prefer `browser` over inventing a Bash/Playwright harness. After that search (or if this session already used those names), call `mcp__browser__*` directly — do not re-search each step. If the headed window was closed, keep calling `mcp__browser__*` (same profile relaunches). Never switch to `mcp__playwright__*` for that task — headless has no that login, even if `tool_search` lists playwright. The headed window shows a simulated cursor; click/type results may include a screenshot for the user — do not dump huge page YAML into chat.",
+          "- For native desktop apps (Finder, Calculator, System Settings, Electron apps), `tool_search` once for platform `computer` (`mcp__computer__*`, accessibility-first). Prefer element refs from `get_app_state` over pixel clicks. Prefer shell/API/files when they solve the task without UI. Do not use `computer` for ordinary web pages — use `browser` / `playwright`. macOS needs Accessibility + Screen Recording granted to Open Computer Use.",
         ]
       : []),
     "",

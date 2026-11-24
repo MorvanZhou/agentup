@@ -4,7 +4,9 @@ import path from "node:path";
 import type { LoadedMcpConfig, McpServerConfig, McpServerEntry } from "@earendil-works/pi-coding-agent";
 
 import { normalizeMcpServers } from "../../package/mcp-document.js";
-import { injectPlaywrightMcp } from "../mcp/playwright-platform.js";
+import { BROWSER_MCP_NAME, injectBrowserUseMcp } from "../mcp/browser-platform.js";
+import { COMPUTER_MCP_NAME, injectComputerUseMcp } from "../mcp/computer-platform.js";
+import { PLAYWRIGHT_MCP_NAME, injectPlaywrightMcp } from "../mcp/playwright-platform.js";
 
 /** 与医院 MCP 约定的请求头。运行包里的同名头会被这次出诊的用户覆盖。 */
 export const VISIT_USER_HEADER = "X-AgentUp-User-Id";
@@ -37,7 +39,7 @@ export function mergeVisitMcp(cwd: string, userRoot: string, userId: string): Lo
   const byName = new Map<string, McpServerEntry>();
   for (const server of user.servers) byName.set(server.name, server);
   for (const server of project.servers) byName.set(server.name, server);
-  return withPlatformPlaywright(
+  return withPlatformBrowserMcps(
     stampVisitUser(
       {
         servers: [...byName.values()],
@@ -51,23 +53,29 @@ export function mergeVisitMcp(cwd: string, userRoot: string, userId: string): Lo
 
 /** 第三方 Agent 只使用自己的运行包 MCP，不拼接私人助理 MCP。 */
 export function projectVisitMcp(cwd: string, userId: string): LoadedMcpConfig {
-  return withPlatformPlaywright(stampVisitUser(readProjectMcp(cwd), userId));
+  return withPlatformBrowserMcps(stampVisitUser(readProjectMcp(cwd), userId));
 }
 
-function withPlatformPlaywright(config: LoadedMcpConfig): LoadedMcpConfig {
+/** 平台 playwright（验 preview）+ browser（外站登录态）+ computer（本机桌面）。 */
+function withPlatformBrowserMcps(config: LoadedMcpConfig): LoadedMcpConfig {
   const root = platformUserDataRoot;
   if (!root) return config;
-  return injectPlaywrightMcp(config, root);
+  return injectComputerUseMcp(
+    injectBrowserUseMcp(injectPlaywrightMcp(config, root), root),
+    root,
+  );
 }
 
 /**
- * stamp 后再强制 playwright.exposure=deferred（用户 mcp.json 不得改成 direct）。
+ * stamp 后再强制平台 MCP exposure=deferred（用户 mcp.json 不得改成 direct）。
  */
 export function forcePlaywrightDeferred(config: LoadedMcpConfig): LoadedMcpConfig {
   return {
     ...config,
     servers: config.servers.map((server) =>
-      server.name === "playwright"
+      server.name === PLAYWRIGHT_MCP_NAME ||
+      server.name === BROWSER_MCP_NAME ||
+      server.name === COMPUTER_MCP_NAME
         ? { ...server, config: { ...server.config, exposure: DEFAULT_MCP_EXPOSURE } }
         : server,
     ),

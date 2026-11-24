@@ -114,6 +114,18 @@ The assistant runs on your own computer. It can see desktop files, then put a PP
 - **Works on your computer** — Organize, create, and save happen here, not only in a web chat.
 - **Results show up on your desktop** — Finished PPT and charts land in your folders, ready to open.
 
+**Browser Use + Computer Use.** One ask can span the web and your desktop apps.
+
+Tell it to export a report from admin, then file it in Finder → Quarterly. It clicks Export in the browser, then opens the folder on this PC — Accessibility finds the target so the drop lands in the right place.
+
+<p align="center">
+  <img src="docs/images/computer-browser-use.png" alt="Browser Use and Computer Use — export from admin, then file in Finder" width="640" />
+</p>
+
+- **Browser Use** — Click buttons, fill forms, and finish jobs in the pages you already use.
+- **Computer Use** — Drive Finder and other desktop apps on this machine, not only in a browser tab.
+- **One chat, end to end** — From web export to the right folder, without switching tools yourself.
+
 Chats stay on your computer by default. We do not keep the message body. If an outside service is needed, only what the job needs goes out.
 
 ## Two ways in

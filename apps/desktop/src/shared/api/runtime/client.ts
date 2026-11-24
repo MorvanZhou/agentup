@@ -366,6 +366,17 @@ export class DesktopApi {
     return settingsApi.preferences(this.http, token);
   }
 
+  browserUseSettings(token: string): Promise<{ mode: settingsApi.BrowserUseMode }> {
+    return settingsApi.browserUseSettings(this.http, token);
+  }
+
+  saveBrowserUseSettings(
+    token: string,
+    mode: settingsApi.BrowserUseMode,
+  ): Promise<{ mode: settingsApi.BrowserUseMode }> {
+    return settingsApi.saveBrowserUseSettings(this.http, token, mode);
+  }
+
   savePreferences(token: string, update: PreferencesUpdate): Promise<UserPreferences> {
     return settingsApi.savePreferences(this.http, token, update);
   }

@@ -15,6 +15,10 @@ import BrowserScreenshotTool from "./browser/BrowserScreenshotTool.vue";
 import BrowserSnapshotTool from "./browser/BrowserSnapshotTool.vue";
 import BrowserTool from "./browser/BrowserTool.vue";
 import BrowserTypeTool from "./browser/BrowserTypeTool.vue";
+import ComputerAppStateTool from "./computer/ComputerAppStateTool.vue";
+import ComputerClickTool from "./computer/ComputerClickTool.vue";
+import ComputerTool from "./computer/ComputerTool.vue";
+import ComputerTypeTool from "./computer/ComputerTypeTool.vue";
 import ShellHangDecideTool from "./shell/ShellHangDecideTool.vue";
 import CheckDelegationTool from "./delegation/CheckDelegationTool.vue";
 import DelegateToAgentTool from "./delegation/DelegateToAgentTool.vue";
@@ -39,6 +43,7 @@ import WebFetchTool from "./web/WebFetchTool.vue";
 import WebSearchTool from "./web/WebSearchTool.vue";
 import WriteTool from "./files/WriteTool.vue";
 import { resolveBrowserToolName } from "./browser/browser-tool-view";
+import { resolveComputerToolName } from "./computer/computer-tool-view";
 import { unwrapAgentUpMcpShell } from "./shared/tool-args";
 
 const toolPart = useAuiState((s) => (s.part.type === "tool-call" ? s.part : null));
@@ -49,7 +54,7 @@ function agentUpToolName(name: string): string {
   return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
-/** Playwright MCP `mcp__playwright__browser_*` 与裸名 `browser_*` 共用浏览器卡。 */
+/** Playwright / Browser Use MCP（mcp__playwright__* / mcp__browser__*）与裸名 browser_* 共用卡。 */
 function browserToolComponent(toolName: string) {
   const browser = resolveBrowserToolName(toolName);
   if (!browser) return null;
@@ -71,6 +76,26 @@ function browserToolComponent(toolName: string) {
   }
 }
 
+/** 平台 Computer Use（mcp__computer__*）：截图回放卡，优先于通用 MCP。 */
+function computerToolComponent(toolName: string) {
+  const computer = resolveComputerToolName(toolName);
+  if (!computer) return null;
+  switch (computer) {
+    case "get_app_state":
+    case "capture_display":
+      return ComputerAppStateTool;
+    case "click":
+    case "perform_secondary_action":
+      return ComputerClickTool;
+    case "type_text":
+    case "press_key":
+    case "set_value":
+      return ComputerTypeTool;
+    default:
+      return ComputerTool;
+  }
+}
+
 const component = computed(() => {
   // Cursor 元工具 mcp 壳先解成 mcp__agentup__* / ask_user（与 runtime unwrap 对齐）
   const projected = unwrapAgentUpMcpShell(
@@ -81,6 +106,9 @@ const component = computed(() => {
   // Playwright 浏览器工具优先于通用 MCP 卡
   const browser = browserToolComponent(raw);
   if (browser) return browser;
+  // Computer Use 截图卡优先于通用 MCP（否则图被丢掉）
+  const computer = computerToolComponent(raw);
+  if (computer) return computer;
   // 非 AgentUp 的第三方 MCP 仍用通用卡
   if (raw.startsWith("mcp__") && !raw.startsWith("mcp__agentup__")) return McpTool;
   const name = agentUpToolName(raw);

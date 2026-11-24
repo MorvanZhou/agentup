@@ -20,10 +20,20 @@ it("steers models toward dedicated search/read tools instead of the command shel
   expect(text).toContain("> ~20s");
   expect(text).toContain("same shell as `bash`");
   expect(text).toContain("shell_hang_decide");
-  // 有 tool_search 时提示用 playwright MCP 操作浏览器
-  expect(text).toContain("To operate a browser");
-  expect(text).toContain("`playwright` MCP");
+  // 有 tool_search 时区分验 preview（playwright）与外站登录态（browser）；一次 search 装齐
+  expect(text).toContain("`playwright`");
   expect(text).toContain("mcp__playwright__browser_*");
+  expect(text).toContain("`browser`");
+  expect(text).toContain("mcp__browser__browser_*");
+  expect(text).toContain("whole suite");
+  expect(text).toContain("call `mcp__browser__*` directly");
+  // 关窗后仍走 browser 重拉 profile，禁止回落无头 playwright
+  expect(text).toContain("relaunch");
+  expect(text).toContain("Never switch to `mcp__playwright__*`");
+  // 本机桌面 Computer Use
+  expect(text).toContain("`computer`");
+  expect(text).toContain("mcp__computer__*");
+  expect(text).toContain("get_app_state");
 });
 
 it("names powershell when that is the command tool", () => {
@@ -33,19 +43,21 @@ it("names powershell when that is the command tool", () => {
   expect(text).toContain("same shell as `powershell`");
 });
 
-it("群委派无 bg_run 时仍保留 Playwright MCP 浏览器指引（不绑 background）", () => {
+it("群委派无 bg_run 时仍保留平台浏览器 MCP 指引（不绑 background）", () => {
   // 与 TOOL_POLICY group-delegation 形状一致：有 tool_search、无 bg_run
   const text = formatToolsUsagePrompt("bash", { background: false, toolSearch: true });
-  expect(text).toContain("To operate a browser");
   expect(text).toContain("`tool_search`");
-  expect(text).toContain("`playwright` MCP");
+  expect(text).toContain("`playwright`");
+  expect(text).toContain("`browser`");
+  expect(text).toContain("mcp__browser__browser_*");
   expect(text).not.toContain("bg_run");
   expect(text).not.toContain("present_preview");
 });
 
-it("无 tool_search 时不提 Playwright / deferred MCP", () => {
+it("无 tool_search 时不提平台浏览器 / deferred MCP", () => {
   const text = formatToolsUsagePrompt("bash", { background: false, toolSearch: false });
-  expect(text).not.toContain("Playwright");
-  expect(text).not.toContain("tool_search");
   expect(text).not.toContain("mcp__playwright");
+  expect(text).not.toContain("mcp__browser");
+  expect(text).not.toContain("mcp__computer");
+  expect(text).not.toContain("tool_search");
 });

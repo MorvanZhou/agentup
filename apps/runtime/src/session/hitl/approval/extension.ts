@@ -4,6 +4,7 @@ import { hitlScopeFields } from "../origin.js";
 import type { ApprovalBroker } from "./broker.js";
 import { handleProjectMountGate } from "./project-mount.js";
 import {
+  capabilityAllowKey,
   isCommandTool,
   isDelegationTool,
   isFilePathTool,
@@ -55,6 +56,8 @@ export function createApprovalExtension(
         return undefined;
       }
       const args = await enrichApprovalArgs(event.toolName, event.input, options);
+      // Browser / Computer：allowKey 记大功能，session/agent 一次放行整套工具
+      const allowKey = capabilityAllowKey(event.toolName);
       const allowed = await broker.request(
         {
           userId,
@@ -62,6 +65,7 @@ export function createApprovalExtension(
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args,
+          ...(allowKey ? { allowKey } : {}),
           ...scope,
         },
         context.signal,

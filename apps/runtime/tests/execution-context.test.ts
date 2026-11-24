@@ -144,8 +144,9 @@ it("一对一与群委派系统提示都声明 Playwright MCP 为浏览器工具
       ...(mode === "group-delegation" ? { taskId: "t1", toAgentName: "Cody" } : {}),
     });
     const text = parts.join("\n");
-    expect(text, mode).toContain("To operate a browser");
-    expect(text, mode).toContain("`playwright` MCP");
+    expect(text, mode).toContain("`playwright`");
+    expect(text, mode).toContain("`browser`");
+    expect(text, mode).toContain("mcp__browser__browser_*");
     expect(text, mode).toContain("`tool_search`");
   }
 });

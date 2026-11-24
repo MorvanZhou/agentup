@@ -20,6 +20,7 @@ import { readHitlPending, writeHitlApprovals } from "../pending.js";
 import { hasDanglingToolCall, repairOrphanApproval } from "../repair.js";
 import {
   delegationKey,
+  capabilityAllowKey,
   isCommandTool,
   isDelegationTool,
   isMcpTool,
@@ -141,6 +142,11 @@ export class ApprovalBroker {
 
   allowsTool(userId: string, agentId: string, toolName: string): boolean {
     if (this.toolScope(userId, agentId, toolName) !== undefined) return true;
+    // Browser Use / Computer Use：大功能键覆盖该能力下全部 MCP 工具。
+    const capabilityKey = capabilityAllowKey(toolName);
+    if (capabilityKey && this.toolScope(userId, agentId, capabilityKey) !== undefined) {
+      return true;
+    }
     // 对话配置可按 MCP server 授权：`mcp__server` 覆盖 `mcp__server__*`。
     const serverKey = mcpServerAllowKey(toolName);
     return Boolean(serverKey && this.toolScope(userId, agentId, serverKey) !== undefined);
@@ -223,7 +229,12 @@ export class ApprovalBroker {
       return;
     }
     if (isMcpTool(request.toolName)) {
-      this.grantTool(request.userId, request.agentId, request.toolName, scope);
+      // 平台大功能优先用 capability 键；否则 allowKey / 单工具名。
+      const key =
+        capabilityAllowKey(request.toolName) ||
+        request.allowKey?.trim() ||
+        request.toolName;
+      this.grantTool(request.userId, request.agentId, key, scope);
       return;
     }
     // 外部 SDK 等不透明工具：按 allowKey（含 templateId）或原名写入 toolAllow，不做 Pi 名映射。
