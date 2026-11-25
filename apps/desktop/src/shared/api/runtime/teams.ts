@@ -23,16 +23,19 @@ export type TeamRecruitResult = {
 
 export async function publicTeams(
   http: RuntimeHttp,
-  options?: { q?: string },
+  options?: { userId?: string; q?: string },
 ): Promise<TeamCard[]> {
-  const payload = await http.request(`/teams/public${agentListQuery({ q: options?.q })}`);
+  // user_id：本机把成员头像落到 visit 缓存
+  const payload = await http.request(
+    `/teams/public${agentListQuery({ userId: options?.userId, q: options?.q })}`,
+  );
   return readTeamList(payload);
 }
 
 export async function teams(
   http: RuntimeHttp,
   token: string,
-  options?: { q?: string; recruited?: boolean },
+  options?: { userId?: string; q?: string; recruited?: boolean },
 ): Promise<TeamCard[]> {
   const payload = await http.request(`/teams${agentListQuery(options)}`, token);
   return readTeamList(payload);
@@ -41,14 +44,23 @@ export async function teams(
 export async function ownedTeams(
   http: RuntimeHttp,
   token: string,
-  options?: { q?: string },
+  options?: { userId?: string; q?: string },
 ): Promise<TeamCard[]> {
-  const payload = await http.request(`/teams/owned${agentListQuery({ q: options?.q })}`, token);
+  const payload = await http.request(
+    `/teams/owned${agentListQuery({ userId: options?.userId, q: options?.q })}`,
+    token,
+  );
   return readTeamList(payload);
 }
 
-export async function getTeam(http: RuntimeHttp, token: string, teamId: string): Promise<TeamCard> {
-  const payload = await http.request(`/teams/${encodeURIComponent(teamId)}`, token);
+export async function getTeam(
+  http: RuntimeHttp,
+  token: string,
+  teamId: string,
+  options?: { userId?: string },
+): Promise<TeamCard> {
+  const query = agentListQuery({ userId: options?.userId });
+  const payload = await http.request(`/teams/${encodeURIComponent(teamId)}${query}`, token);
   return readTeam(payload);
 }
 
@@ -56,8 +68,12 @@ export async function createTeam(
   http: RuntimeHttp,
   token: string,
   input: TeamUpsertInput,
+  options?: { userId?: string },
 ): Promise<TeamCard> {
-  const payload = await http.request("/teams", token, upsertBody(input));
+  const payload = await http.request("/teams", token, {
+    ...upsertBody(input),
+    ...(options?.userId ? { user_id: options.userId } : {}),
+  });
   return readTeam(payload);
 }
 
@@ -66,11 +82,15 @@ export async function updateTeam(
   token: string,
   teamId: string,
   input: TeamUpsertInput,
+  options?: { userId?: string },
 ): Promise<TeamCard> {
   const payload = await http.request(
     `/teams/${encodeURIComponent(teamId)}`,
     token,
-    upsertBody(input),
+    {
+      ...upsertBody(input),
+      ...(options?.userId ? { user_id: options.userId } : {}),
+    },
     "PUT",
   );
   return readTeam(payload);

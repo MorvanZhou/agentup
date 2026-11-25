@@ -93,7 +93,9 @@ async function loadExisting(): Promise<void> {
     return;
   }
   try {
-    const team: TeamCard = await api.getTeam(current.token, editingId.value);
+    const team: TeamCard = await api.getTeam(current.token, editingId.value, {
+      userId: current.userId,
+    });
     name.value = team.name;
     background.value = team.background;
     picked.value = team.members.map((m) => ({
@@ -174,10 +176,11 @@ async function save(): Promise<void> {
       memberIds: picked.value.map((m) => m.agentId),
       defaultHolderAgentId: defaultHolderId.value!,
     };
+    const userOpts = { userId: current.userId };
     if (editingId.value) {
-      await api.updateTeam(current.token, editingId.value, input);
+      await api.updateTeam(current.token, editingId.value, input, userOpts);
     } else {
-      await api.createTeam(current.token, input);
+      await api.createTeam(current.token, input, userOpts);
     }
     await refresh();
     showToast(t("teamsSaved"), "success");

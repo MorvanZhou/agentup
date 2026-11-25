@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import type { AddressInfo } from "node:net";
 
@@ -52,10 +53,15 @@ it("composes SYSTEM.md from publish identity fields", () => {
 const mockSkillFetch = path.resolve(import.meta.dirname, "helpers/mock-skill-fetch.mjs");
 
 function runSkillScript(scriptPath: string, args: string[]): string {
-  return execFileSync(process.execPath, ["--import", mockSkillFetch, scriptPath, ...args], {
-    encoding: "utf8",
-    timeout: 5_000,
-  });
+  // Win：--import 要 file://，裸 C:\… 会被当成非法 scheme `c:`
+  return execFileSync(
+    process.execPath,
+    ["--import", pathToFileURL(mockSkillFetch).href, scriptPath, ...args],
+    {
+      encoding: "utf8",
+      timeout: 5_000,
+    },
+  );
 }
 
 it("loads and runs the weather source without MCP", () => {

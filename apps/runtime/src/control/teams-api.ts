@@ -137,6 +137,22 @@ export async function recruitTeam(
   return teamRecruit(payload);
 }
 
+export async function unrecruitTeam(
+  backendUrl: string,
+  token: string,
+  teamId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  await requestJson(
+    fetchImpl,
+    backendUrl,
+    "DELETE",
+    `/v1/teams/${encodeURIComponent(teamId)}/recruit`,
+    undefined,
+    token,
+  );
+}
+
 function upsertBody(input: TeamUpsertInput): Record<string, unknown> {
   return {
     name: input.name,

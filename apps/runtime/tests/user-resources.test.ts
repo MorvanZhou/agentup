@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 
 import { expect, it } from "vitest";
 
+import { writeZipFromDirectory } from "../src/local/agents/zip-dir.js";
 import { startLocalServer } from "../src/local/server.js";
 import {
   UserResourceError,
@@ -133,7 +133,8 @@ it("installs a skill from zip through the loopback API", async () => {
   const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "skill-zip-"));
   const skillDir = writeSkillDir(packageRoot, "note-taker", "整理笔记");
   const zipPath = path.join(packageRoot, "note-taker.zip");
-  execFileSync("zip", ["-r", zipPath, "."], { cwd: skillDir });
+  // 用仓库自带 writeZipFromDirectory，避免 Win 无 GNU zip / Compress-Archive 拖慢超时
+  writeZipFromDirectory(skillDir, zipPath);
 
   const local = await startLocalServer({
     backendUrl: "http://127.0.0.1:9",

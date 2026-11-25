@@ -4,20 +4,30 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+/** bridge 入口 + 相对 import 依赖；须与入口同目录落到 userData。 */
+export const BROWSER_THEATER_BRIDGE_MODULES = [
+  "mcp-bridge.mjs",
+  "ndjson.mjs",
+  "upstream-hub.mjs",
+  "singleton.mjs",
+] as const;
+
 export type BrowserTheaterAssets = {
   dir: string;
   initScript: string;
   bridge: string;
 };
 
-/** 把剧场脚本落到 userData，供 npx/@playwright/mcp 与 bridge 用绝对路径加载。 */
+/** 把剧场脚本落到 userData，供 playwright-mcp 与 bridge 用绝对路径加载。 */
 export function ensureBrowserTheaterAssets(userDataRoot: string): BrowserTheaterAssets {
   const dir = path.join(userDataRoot, "runtime", "browser-theater");
   fs.mkdirSync(dir, { recursive: true });
   const initScript = path.join(dir, "theater-init.js");
   const bridge = path.join(dir, "mcp-bridge.mjs");
   copyIfNeeded(path.join(HERE, "theater-init.js"), initScript);
-  copyIfNeeded(path.join(HERE, "mcp-bridge.mjs"), bridge);
+  for (const name of BROWSER_THEATER_BRIDGE_MODULES) {
+    copyIfNeeded(path.join(HERE, name), path.join(dir, name));
+  }
   return { dir, initScript, bridge };
 }
 

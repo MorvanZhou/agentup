@@ -177,28 +177,40 @@ export class DesktopApi {
     return agentsApi.publicAgents(this.http, options);
   }
 
-  publicTeams(options?: { q?: string }): Promise<TeamCard[]> {
+  publicTeams(options?: { userId?: string; q?: string }): Promise<TeamCard[]> {
     return teamsApi.publicTeams(this.http, options);
   }
 
-  teams(token: string, options?: { q?: string; recruited?: boolean }): Promise<TeamCard[]> {
+  teams(
+    token: string,
+    options?: { userId?: string; q?: string; recruited?: boolean },
+  ): Promise<TeamCard[]> {
     return teamsApi.teams(this.http, token, options);
   }
 
-  ownedTeams(token: string, options?: { q?: string }): Promise<TeamCard[]> {
+  ownedTeams(token: string, options?: { userId?: string; q?: string }): Promise<TeamCard[]> {
     return teamsApi.ownedTeams(this.http, token, options);
   }
 
-  getTeam(token: string, teamId: string): Promise<TeamCard> {
-    return teamsApi.getTeam(this.http, token, teamId);
+  getTeam(token: string, teamId: string, options?: { userId?: string }): Promise<TeamCard> {
+    return teamsApi.getTeam(this.http, token, teamId, options);
   }
 
-  createTeam(token: string, input: teamsApi.TeamUpsertInput): Promise<TeamCard> {
-    return teamsApi.createTeam(this.http, token, input);
+  createTeam(
+    token: string,
+    input: teamsApi.TeamUpsertInput,
+    options?: { userId?: string },
+  ): Promise<TeamCard> {
+    return teamsApi.createTeam(this.http, token, input, options);
   }
 
-  updateTeam(token: string, teamId: string, input: teamsApi.TeamUpsertInput): Promise<TeamCard> {
-    return teamsApi.updateTeam(this.http, token, teamId, input);
+  updateTeam(
+    token: string,
+    teamId: string,
+    input: teamsApi.TeamUpsertInput,
+    options?: { userId?: string },
+  ): Promise<TeamCard> {
+    return teamsApi.updateTeam(this.http, token, teamId, input, options);
   }
 
   deleteTeam(token: string, teamId: string): Promise<void> {

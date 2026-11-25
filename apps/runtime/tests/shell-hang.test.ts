@@ -18,8 +18,8 @@ it("parks on idle and returns exit 124 without killing the child", async () => {
 
   const ops = createIdleAwareShellOperations({
     shell: "bash",
-    // 并行套件下 spawn 可能 >80ms；太短会在 ready 前就 park，onData 被吞。
-    idleMs: 400,
+    // 并行 / Win VM 上 bash→node 冷启常 >400ms；太短会在 ready 前 park，onData 被吞。
+    idleMs: process.platform === "win32" ? 3_000 : 400,
     onIdlePark: ({ child, command, cwd, startedAt }) => {
       const hang = broker.park({
         userId: "u",
@@ -35,9 +35,11 @@ it("parks on idle and returns exit 124 without killing the child", async () => {
     },
   });
 
+  // Win：经 Git Bash 时盘符反斜杠会被吃；统一成 / 再 JSON 引号包一层。
+  const nodePath = process.execPath.replace(/\\/g, "/");
   const chunks: Buffer[] = [];
   const result = await ops.exec(
-    `${JSON.stringify(process.execPath)} -e ${JSON.stringify("setInterval(() => {}, 1000); console.log('ready')")}`,
+    `${JSON.stringify(nodePath)} -e ${JSON.stringify("process.stdout.write('ready\\n'); setInterval(() => {}, 1000)")}`,
     process.cwd(),
     {
       onData: (b) => chunks.push(b),

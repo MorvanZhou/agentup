@@ -7,13 +7,18 @@ import {
   ensurePinnedPlatformSuites,
   expandPlatformMcpSuites,
   mergePlatformDeferredCallables,
+  parsePlatformToolNotFound,
+  pinnedPlatformToolsReady,
   platformMcpPrefix,
   preferBrowserSuite,
   preferComputerSuite,
   queryWantsComputer,
   queryWantsPlaywright,
+  rewritePlatformToolNotFound,
   rewriteToolSearchResult,
+  seedPinsFromMessages,
   seedPinsFromNames,
+  waitForPinnedPlatformTools,
 } from "../src/session/mcp/platform-tool-search.js";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
@@ -366,6 +371,122 @@ describe("回归：关窗后不得拐去无头 playwright", () => {
       expect.arrayContaining(["mcp__browser__browser_navigate", "mcp__browser__browser_click"]),
     );
     // 可执行集有了，模型点名 mcp__browser__* 才进得了 bridge → 才会重开有窗
+  });
+});
+
+describe("平台工具 not found 自愈", () => {
+  const all = [
+    "bash",
+    "tool_search",
+    "mcp__browser__browser_navigate",
+    "mcp__browser__browser_click",
+    "mcp__playwright__browser_navigate",
+  ];
+
+  it("解析 Error: Tool … not found（含引号）", () => {
+    expect(parsePlatformToolNotFound("Error: Tool mcp__browser__browser_navigate not found")).toBe(
+      "mcp__browser__browser_navigate",
+    );
+    expect(parsePlatformToolNotFound("Error: Tool 'mcp__browser__browser_navigate' not found")).toBe(
+      "mcp__browser__browser_navigate",
+    );
+    expect(parsePlatformToolNotFound("ok")).toBeUndefined();
+  });
+
+  it("registry 已有套件：钉住、写回 active、改写为立刻重试", () => {
+    const state = createPlatformPinState();
+    const setActive = vi.fn();
+    const out = rewritePlatformToolNotFound(
+      {
+        toolName: "mcp__browser__browser_navigate",
+        isError: true,
+        content: [{ type: "text", text: "Error: Tool mcp__browser__browser_navigate not found" }],
+      },
+      {
+        getAllTools: () => all.map((name) => ({ name, description: name })),
+        getActiveTools: () => ["bash", "tool_search"],
+        setActiveTools: setActive,
+      },
+      state,
+    );
+    expect(state.pinned.has("mcp__browser__")).toBe(true);
+    expect(setActive).toHaveBeenCalled();
+    const next = setActive.mock.calls[0]?.[0] as string[];
+    expect(next).toEqual(
+      expect.arrayContaining(["mcp__browser__browser_navigate", "mcp__browser__browser_click"]),
+    );
+    expect(out?.details.healed).toBe(true);
+    expect(out?.content[0]?.text).toContain("Call the SAME tool again immediately");
+    expect(out?.content[0]?.text).toMatch(/do NOT switch to mcp__playwright__/i);
+  });
+
+  it("尚未注册：引导 tool_search 一次再重试，禁止拐 playwright", () => {
+    const state = createPlatformPinState();
+    const out = rewritePlatformToolNotFound(
+      {
+        toolName: "mcp__browser__browser_navigate",
+        isError: true,
+        content: [{ type: "text", text: "Error: Tool 'mcp__browser__browser_navigate' not found" }],
+      },
+      {
+        getAllTools: () => [
+          { name: "bash", description: "bash" },
+          { name: "tool_search", description: "search" },
+        ],
+        getActiveTools: () => ["bash", "tool_search"],
+        setActiveTools: vi.fn(),
+      },
+      state,
+    );
+    expect(state.pinned.has("mcp__browser__")).toBe(true);
+    expect(out?.details.healed).toBe(false);
+    expect(out?.content[0]?.text).toContain("tool_search");
+    expect(out?.content[0]?.text).toContain("Do NOT use mcp__playwright__");
+  });
+
+  it("从历史消息钉住 browser（续会话 active 被清空）", () => {
+    const state = createPlatformPinState();
+    seedPinsFromMessages(state, [
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "mcp__browser__browser_navigate", id: "1" }],
+      },
+      {
+        role: "toolResult",
+        toolName: "mcp__browser__browser_click",
+        content: [{ type: "text", text: "ok" }],
+      },
+    ]);
+    expect(state.pinned.has("mcp__browser__")).toBe(true);
+  });
+
+  it("waitForPinnedPlatformTools：registry 就绪后立刻返回；超时返回 false", async () => {
+    const state = createPlatformPinState();
+    state.pinned.add("mcp__browser__");
+    let tick = 0;
+    const names = ["bash", "mcp__browser__browser_navigate"];
+    const ok = await waitForPinnedPlatformTools(
+      {
+        getAllTools: () => {
+          tick += 1;
+          return tick >= 3 ? names.map((name) => ({ name })) : [{ name: "bash" }];
+        },
+      },
+      state,
+      2_000,
+    );
+    expect(ok).toBe(true);
+    expect(pinnedPlatformToolsReady(["bash"], state.pinned)).toBe(false);
+    expect(pinnedPlatformToolsReady(names, state.pinned)).toBe(true);
+
+    const empty = createPlatformPinState();
+    empty.pinned.add("mcp__computer__");
+    const missed = await waitForPinnedPlatformTools(
+      { getAllTools: () => [{ name: "bash" }] },
+      empty,
+      250,
+    );
+    expect(missed).toBe(false);
   });
 });
 

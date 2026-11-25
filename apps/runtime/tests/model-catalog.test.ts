@@ -38,7 +38,10 @@ it("writes built-in context windows when connecting a native provider", () => {
   const entry = readCatalogEntry(root, "deepseek", modelId!);
   expect(entry?.contextWindow).toBeGreaterThan(100_000);
   expect(fs.existsSync(modelCatalogPath(root))).toBe(true);
-  expect(fs.statSync(modelCatalogPath(root)).mode & 0o777).toBe(0o600);
+  // Win NTFS 不保留 Unix mode；0o600 只在 posix 上可断言
+  if (process.platform !== "win32") {
+    expect(fs.statSync(modelCatalogPath(root)).mode & 0o777).toBe(0o600);
+  }
 
   setRuntimeProviderSecrets({ deepseek: "sk-test" });
   expect(loadModelConfig(root, {})).toMatchObject({

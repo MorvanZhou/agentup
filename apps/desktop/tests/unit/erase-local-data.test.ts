@@ -30,46 +30,49 @@ const {
   }): Promise<void>;
 };
 
+// Win 上 path.resolve("/Users/demo") 会带盘符；期望值统一用 resolve，避免 join 与 resolve 不一致
+const demoHome = path.resolve("/Users/demo");
+
 it("默认业务根为 ~/.agentup", () => {
-  expect(resolveAgentDataRoot({ env: {}, homedir: "/Users/demo" })).toBe(
-    path.join("/Users/demo", ".agentup"),
-  );
+  expect(resolveAgentDataRoot({ env: {}, homedir: demoHome })).toBe(path.join(demoHome, ".agentup"));
 });
 
 it("AGENTUP_USER_DATA_ROOT 指向真实业务根", () => {
+  const absData = path.resolve("/var/agentup-data");
   expect(
     resolveAgentDataRoot({
-      env: { AGENTUP_USER_DATA_ROOT: "/var/agentup-data" },
-      homedir: "/Users/demo",
+      env: { AGENTUP_USER_DATA_ROOT: absData },
+      homedir: demoHome,
     }),
-  ).toBe("/var/agentup-data");
+  ).toBe(absData);
   expect(
     resolveAgentDataRoot({
       env: { AGENTUP_USER_DATA_ROOT: "rel-data" },
-      homedir: "/Users/demo",
+      homedir: demoHome,
     }),
-  ).toBe(path.resolve("/Users/demo", "rel-data"));
+  ).toBe(path.resolve(demoHome, "rel-data"));
 });
 
 it("收集删除路径并合并子目录", () => {
-  const userData = path.join("/Users/demo", "Library", "Application Support", "AgentUp");
+  const agentRoot = path.join(demoHome, ".agentup");
+  const userData = path.join(demoHome, "Library", "Application Support", "AgentUp");
   const logs = path.join(userData, "logs");
   expect(
     collectErasePaths({
-      agentDataRoot: path.join("/Users/demo", ".agentup"),
+      agentDataRoot: agentRoot,
       userDataPath: userData,
       logsPath: logs,
     }),
-  ).toEqual([path.join("/Users/demo", ".agentup"), userData]);
+  ).toEqual([path.resolve(agentRoot), path.resolve(userData)]);
 
-  const macLogs = path.join("/Users/demo", "Library", "Logs", "AgentUp");
+  const macLogs = path.join(demoHome, "Library", "Logs", "AgentUp");
   expect(
     collectErasePaths({
-      agentDataRoot: path.join("/Users/demo", ".agentup"),
+      agentDataRoot: agentRoot,
       userDataPath: userData,
       logsPath: macLogs,
     }),
-  ).toEqual([path.join("/Users/demo", ".agentup"), userData, macLogs]);
+  ).toEqual([path.resolve(agentRoot), path.resolve(userData), path.resolve(macLogs)]);
 });
 
 it("按序删除路径", async () => {

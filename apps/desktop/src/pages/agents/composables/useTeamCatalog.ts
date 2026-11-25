@@ -38,13 +38,15 @@ export function useTeamCatalog(
     loading.value = true;
     try {
       const q = query.value.trim();
+      const userId = current.userId;
       let next: TeamCard[];
+      // 带 user_id：runtime 把成员头像落到本机缓存再回 data URL
       if (scope.value === "owned") {
-        next = await api.ownedTeams(current.token, { q });
+        next = await api.ownedTeams(current.token, { userId, q });
       } else if (guest) {
-        next = await api.publicTeams({ q });
+        next = await api.publicTeams({ userId, q });
       } else {
-        next = await api.teams(current.token, { q });
+        next = await api.teams(current.token, { userId, q });
       }
       if (seq === requestSeq) teams.value = next;
     } catch (caught) {

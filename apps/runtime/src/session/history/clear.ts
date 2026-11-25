@@ -25,8 +25,13 @@ export function clearContextAt(userDataRoot: string, cwd: string, sessionDir: st
   const created = SessionManager.create(cwd, sessionDir);
   const file = created.getSessionFile();
   if (!file) throw new Error("没有生成新会话");
+  // create 懒落盘：先占位空文件，open 会写入合法 session header。
   fs.writeFileSync(file, "");
   SessionManager.open(file, sessionDir, cwd);
+  // Win 上 mtime 常按秒（或同毫秒）对齐；与旧会话撞车时 continueRecent 会选到旧 jsonl，
+  // 下一轮写进旧文件，「新对话」边界就被排到时间线末尾。故意 +2s 保证最新。
+  const touched = new Date(Date.now() + 2_000);
+  fs.utimesSync(file, touched, touched);
   // 新对话继承上一 session 模型（无则 enabled 第一个）
   stampNewSessionModel(userDataRoot, cwd, sessionDir);
 }

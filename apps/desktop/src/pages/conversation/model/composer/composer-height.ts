@@ -16,13 +16,21 @@ export function maxComposerInputHeight(threadHeight: number): number {
 }
 
 export function loadComposerInputHeight(): number {
-  const raw = localStorage.getItem(COMPOSER_INPUT_KEY);
-  if (!raw) return COMPOSER_INPUT_DEFAULT_HEIGHT;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return COMPOSER_INPUT_DEFAULT_HEIGHT;
-  return clampComposerInputHeight(value, COMPOSER_INPUT_MIN_HEIGHT, Number.POSITIVE_INFINITY);
+  try {
+    const raw = localStorage.getItem(COMPOSER_INPUT_KEY);
+    if (!raw) return COMPOSER_INPUT_DEFAULT_HEIGHT;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return COMPOSER_INPUT_DEFAULT_HEIGHT;
+    return clampComposerInputHeight(value, COMPOSER_INPUT_MIN_HEIGHT, Number.POSITIVE_INFINITY);
+  } catch {
+    return COMPOSER_INPUT_DEFAULT_HEIGHT;
+  }
 }
 
 export function rememberComposerInputHeight(height: number): void {
-  localStorage.setItem(COMPOSER_INPUT_KEY, String(height));
+  try {
+    localStorage.setItem(COMPOSER_INPUT_KEY, String(height));
+  } catch {
+    /* 无 DOM / Node webstorage 未就绪 */
+  }
 }

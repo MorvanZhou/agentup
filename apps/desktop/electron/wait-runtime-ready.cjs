@@ -59,7 +59,8 @@ async function waitForOwnRuntime(options) {
   const deadlineMs =
     options.deadlineMs ??
     runtimeReadyDeadlineMs({ platform: options.platform, packaged: options.packaged });
-  const deadline = now() + deadlineMs;
+  const started = now();
+  const deadline = started + deadlineMs;
   let lastError = "";
 
   while (now() < deadline) {
@@ -76,28 +77,20 @@ async function waitForOwnRuntime(options) {
           lastError = `spawn 已退出 code=${options.getExitCode() ?? "null"}（端口 ${port} 被其他 AgentUp/runtime 占用）`;
           break;
         }
-        // 开发态核对 backend：发现「端口被正式版占用」；本机不连服务器时跳过
+        // 开发态核对 health.backendUrl（勿再打 /auth/turnstile：runtime 无此路由，会对正式 API 误杀）
         if (!options.packaged) {
           const expectedBackend = (options.expectedBackendUrl || "").replace(/\/$/, "");
           if (expectedBackend) {
-            let backendPayload;
+            let health;
             try {
-              const backendRes = await fetchImpl(`${expectedBackend}/v1/auth/turnstile`);
-              if (!backendRes.ok) throw new Error(`backend turnstile status=${backendRes.status}`);
-              backendPayload = await backendRes.json();
-            } catch {
-              return true;
-            }
-            try {
-              const viaRuntime = await fetchImpl(`${options.runtimeUrl}/auth/turnstile`).then((r) =>
-                r.json(),
-              );
-              if (JSON.stringify(viaRuntime) !== JSON.stringify(backendPayload)) {
-                lastError = `runtime 连的不是 ${expectedBackend}（可能仍是占用端口的正式版 AgentUp）`;
-                break;
-              }
+              health = await response.json();
             } catch (error) {
               lastError = error instanceof Error ? error.message : String(error);
+              break;
+            }
+            const got = String(health?.backendUrl ?? health?.backend_url ?? "").replace(/\/$/, "");
+            if (got !== expectedBackend) {
+              lastError = `runtime 连的不是 ${expectedBackend}（health.backendUrl=${got || "缺失"}；可能仍是占用端口的正式版 AgentUp）`;
               break;
             }
           }
@@ -111,8 +104,9 @@ async function waitForOwnRuntime(options) {
     await sleep(POLL_MS);
   }
   if (lastError) {
+    const waited = Math.max(0, now() - started);
     logError(
-      `runtime health 最后错误：${lastError}（已等 ${deadlineMs}ms；Win 冷启动慢属常见，勿只当 EADDRINUSE）`,
+      `runtime health 最后错误：${lastError}（已等 ${waited}ms / 上限 ${deadlineMs}ms；Win 冷启动慢属常见，勿只当 EADDRINUSE）`,
     );
   }
   return false;

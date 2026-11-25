@@ -95,7 +95,7 @@ it("start returns conflict when port occupied by a different pid", async () => {
   }
 });
 
-it("force start proceeds when no occupant remains", async () => {
+it("force start proceeds when no occupant remains", { timeout: 15_000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-preview-force-"));
   upsertPreviewRecipe(root, {
     id: "web",

@@ -20,7 +20,7 @@ import { registerPreviewRoutes } from "./preview.js";
 import { registerWorkspaceRoutes } from "./workspace.js";
 
 export function registerLocalRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps): void {
-  registerHealthRoutes(app);
+  registerHealthRoutes(app, deps);
   registerGroupRoutes(app, deps);
   registerAuthRoutes(app, deps);
   registerSettingsRoutes(app, deps);

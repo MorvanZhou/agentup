@@ -28,11 +28,32 @@ if [ -n "${AGENTUP_USER_DATA_ROOT:-}" ]; then
 fi
 
 # 正式版 AgentUp 也监听 47391；被占用时 Vite 会把换票代理到正式后端，出现「换票码无效或已过期」
+# Windows（UTM/Git Bash）无 lsof，用 netstat / PowerShell 回落
 RUNTIME_PORT="${AGENTUP_RUNTIME_PORT:-47391}"
-if lsof -nP -iTCP:"$RUNTIME_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+port_listening() {
+  _port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$_port" -sTCP:LISTEN >/dev/null 2>&1
+    return $?
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -an 2>/dev/null | grep -E "[:.]${_port}[^*].*LISTEN" >/dev/null 2>&1
+    return $?
+  fi
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command \
+      "exit [int](-not [bool](Get-NetTCPConnection -LocalPort ${_port} -State Listen -ErrorAction SilentlyContinue))" \
+      >/dev/null 2>&1
+    return $?
+  fi
+  return 1
+}
+if port_listening "$RUNTIME_PORT"; then
   echo "Desktop: 端口 ${RUNTIME_PORT} 已被占用，开发 runtime 无法启动：" >&2
-  lsof -nP -iTCP:"$RUNTIME_PORT" -sTCP:LISTEN >&2 || true
-  echo "请先退出 /Applications/AgentUp.app（或其他占用进程）再启动。" >&2
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$RUNTIME_PORT" -sTCP:LISTEN >&2 || true
+  fi
+  echo "请先退出 AgentUp（或其他占用进程）再启动。" >&2
   exit 1
 fi
 

@@ -170,6 +170,10 @@ it("allows CORS preflight from file:// packaged renderer (Origin null)", async (
     const health = await fetch(`${local.url}/health`, { headers: { origin: "null" } });
     expect(health.status).toBe(200);
     expect(health.headers.get("access-control-allow-origin")).toBe("null");
+    const healthBody = (await health.json()) as { ok?: boolean; backendUrl?: string };
+    expect(healthBody.ok).toBe(true);
+    expect(typeof healthBody.backendUrl).toBe("string");
+    expect(healthBody.backendUrl?.length).toBeGreaterThan(0);
   } finally {
     await local.close();
     fs.rmSync(root, { recursive: true, force: true });

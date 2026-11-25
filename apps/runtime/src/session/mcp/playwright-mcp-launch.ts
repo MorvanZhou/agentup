@@ -4,10 +4,14 @@
  *
  * 由 stdio 配置以 `node playwright-mcp-launch.js <userDataRoot> ...mcpArgs` 拉起。
  * 禁止 npx / .cmd，避免 Windows 弹 cmd → 系统 node。
+ *
+ * Browser Use 回落到钉版 Chromium 时，桥进程会带 AGENTUP_BROWSER_ENSURE_BROWSERS=1，
+ * 此处再 ensure 一次 browsers，避免首用竞态。
  */
 import { spawn } from "node:child_process";
 
 import {
+  ensurePlaywrightBrowsers,
   ensurePlaywrightMcpInstalled,
   playwrightCliPath,
 } from "./playwright-platform.js";
@@ -23,6 +27,9 @@ const mcpArgs = process.argv.slice(3);
 
 try {
   await ensurePlaywrightMcpInstalled(userDataRoot);
+  if (process.env.AGENTUP_BROWSER_ENSURE_BROWSERS === "1") {
+    await ensurePlaywrightBrowsers(userDataRoot);
+  }
 } catch (error) {
   console.error(
     `agentup playwright-mcp-launch: install failed: ${

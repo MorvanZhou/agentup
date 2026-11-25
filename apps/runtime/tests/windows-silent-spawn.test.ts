@@ -165,16 +165,16 @@ it("computer-mcp-launch 直 spawn 原生 exe 且 windowsHide（避开上游 fals
 });
 
 it("mcp-bridge 源码禁止 shell:true（Win 会经 cmd 弹窗）", () => {
-  const bridge = path.join(
-    import.meta.dirname,
-    "../src/session/mcp/browser-theater/mcp-bridge.mjs",
-  );
-  // 去掉注释再扫，避免「禁止 shell:true」说明文字误伤
-  const code = fs
-    .readFileSync(bridge, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
-  expect(code).not.toMatch(/shell\s*:\s*true/);
-  expect(code).not.toMatch(/shell\s*:\s*process\.platform\s*===\s*["']win32["']/);
-  expect(code.toLowerCase()).not.toContain("npx.cmd");
+  const dir = path.join(import.meta.dirname, "../src/session/mcp/browser-theater");
+  // 入口拆成多模块后整目录扫；去掉注释避免说明文字误伤
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith(".mjs")) continue;
+    const code = fs
+      .readFileSync(path.join(dir, name), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(code, name).not.toMatch(/shell\s*:\s*true/);
+    expect(code, name).not.toMatch(/shell\s*:\s*process\.platform\s*===\s*["']win32["']/);
+    expect(code.toLowerCase(), name).not.toContain("npx.cmd");
+  }
 });

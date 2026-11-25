@@ -329,17 +329,29 @@ it("reads the installed version and bundled cli path", () => {
   expect(info?.cliPath && fs.existsSync(info.cliPath)).toBe(true);
 });
 
-it("cancels a running install without leaving the temp directory", () => {
-  const root = tempRoot();
-  const jobId = startAgentSdkInstall(root, "codebuddy-sdk", "ms@2.1.3");
-  cancelAgentSdkInstall(jobId);
-  expect(readInstallJob(jobId).phase).toBe("cancelled");
-  expect(sdkOf(root)?.state).toBe("not_installed");
-  const leftovers = fs
-    .readdirSync(path.join(root, "agent-sdks"))
-    .filter((name) => name.startsWith(".tmp-"));
-  expect(leftovers).toEqual([]);
-});
+it(
+  "cancels a running install without leaving the temp directory",
+  { timeout: 20_000 },
+  async () => {
+    const root = tempRoot();
+    const jobId = startAgentSdkInstall(root, "codebuddy-sdk", "ms@2.1.3");
+    cancelAgentSdkInstall(jobId);
+    expect(readInstallJob(jobId).phase).toBe("cancelled");
+    expect(sdkOf(root)?.state).toBe("not_installed");
+    // Win：等 npm 子进程真正退出后再断言（installer 会在 close 时再 cleanupTmp）
+    const sdkRoot = path.join(root, "agent-sdks");
+    const deadline = Date.now() + 15_000;
+    let leftovers: string[] = [];
+    while (Date.now() < deadline) {
+      leftovers = fs.existsSync(sdkRoot)
+        ? fs.readdirSync(sdkRoot).filter((name) => name.startsWith(".tmp-"))
+        : [];
+      if (leftovers.length === 0) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(leftovers).toEqual([]);
+  },
+);
 
 it("cannot log in before the SDK is installed", async () => {
   const root = tempRoot();

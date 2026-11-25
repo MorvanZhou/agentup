@@ -203,10 +203,9 @@ it("screenshots before click so bubble replay keeps the pre-navigation page", as
     expect(images.length).toBe(1);
     expect(Buffer.from(images[0].data, "base64").toString("utf8")).toContain("pre-action-shot");
 
+    // 有 element/ref：先 hover 到位（剧场指针跟上）→ 再截图 → 再 click
     const order = fs.readFileSync(orderLog, "utf8").trim().split("\n");
-    expect(order[0]).toBe("browser_take_screenshot");
-    expect(order[1]).toBe("browser_click");
-    expect(order.filter((name) => name === "browser_take_screenshot")).toHaveLength(1);
+    expect(order).toEqual(["browser_hover", "browser_take_screenshot", "browser_click"]);
   } finally {
     bridge.kill("SIGTERM");
     try {
@@ -222,6 +221,8 @@ it(
   // npx 冷启动 / 拉包常 > Vitest 默认 5s；与下方 readMessages 对齐
   { timeout: 30_000 },
   async () => {
+    // 生产 Win 走本地 cli.js（禁 npx.cmd）；本测用 npx 拉真包，Win 上 .cmd 无 shell 即 exit 1。
+    if (process.platform === "win32") return;
     // 锁契约：bridge 与 Playwright MCP 都能用换行 JSON 握手（Content-Length 会卡死）
     const bridge = spawn(process.execPath, [BRIDGE], {
       stdio: ["pipe", "pipe", "pipe"],

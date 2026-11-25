@@ -132,6 +132,153 @@ it("recruits team members, syncs all, and creates a group with sourceTeamId", as
   }
 });
 
+it("unrecruits the market team when the sourced group is deleted", async () => {
+  const unrecruitCalls: string[] = [];
+  let teamRecruited = false;
+  const backend = await listen((req, res) => {
+    const url = req.url ?? "";
+    if (url === "/v1/login" && req.method === "POST") {
+      return readBody(req).then((raw) => {
+        const body = JSON.parse(raw) as { email: string };
+        const local = body.email.split("@")[0] ?? body.email;
+        json(res, 200, { user_id: local, email: body.email, nickname: local, token: local });
+      });
+    }
+    const token = req.headers.authorization?.slice("Bearer ".length);
+    if (!token) return json(res, 401, { error: "未登录" });
+
+    if (url === `/v1/teams/${teamId}/recruit` && req.method === "POST") {
+      teamRecruited = true;
+      return json(res, 200, {
+        team_id: teamId,
+        name: "开发小队",
+        default_holder_agent_id: agentA,
+        members: [
+          { agent_id: agentA, name: "澄清官", role: "澄清", sort_order: 0 },
+          { agent_id: agentB, name: "实现者", role: "实现", sort_order: 1 },
+        ],
+      });
+    }
+    if (url === `/v1/teams/${teamId}/recruit` && req.method === "DELETE") {
+      unrecruitCalls.push(teamId);
+      teamRecruited = false;
+      return json(res, 200, { status: "ok" });
+    }
+    if (url.startsWith("/v1/teams?") || url === "/v1/teams") {
+      return json(res, 200, {
+        teams: [
+          {
+            team_id: teamId,
+            name: "开发小队",
+            background: "交付",
+            default_holder_agent_id: agentA,
+            members: [
+              { agent_id: agentA, name: "澄清官", role: "澄清", sort_order: 0 },
+              { agent_id: agentB, name: "实现者", role: "实现", sort_order: 1 },
+            ],
+            recruited: teamRecruited,
+            recruit_count: 1,
+            has_avatar: false,
+            created_at: "now",
+            updated_at: "now",
+          },
+        ],
+      });
+    }
+    if (url === "/v1/recruits") {
+      return json(res, 200, {
+        recruits: [
+          {
+            user_id: token,
+            agent_id: agentA,
+            name: "澄清官",
+            latest_version: 1,
+            latest_digest: digestA,
+          },
+          {
+            user_id: token,
+            agent_id: agentB,
+            name: "实现者",
+            latest_version: 1,
+            latest_digest: digestB,
+          },
+        ],
+      });
+    }
+    if (url === `/v1/agents/${agentA}/package`) {
+      return archiveA.then((archive) => sendPackage(res, agentA, digestA, "澄清官", archive));
+    }
+    if (url === `/v1/agents/${agentB}/package`) {
+      return archiveB.then((archive) => sendPackage(res, agentB, digestB, "实现者", archive));
+    }
+    if (url === "/v1/groups" && req.method === "POST") {
+      return readBody(req).then((raw) => {
+        const body = JSON.parse(raw) as { group_id: string; title: string; members: string[] };
+        json(res, 200, {
+          group_id: body.group_id,
+          title: body.title,
+          members: body.members,
+          created_at: "now",
+          updated_at: "now",
+        });
+      });
+    }
+    if (url.startsWith("/v1/groups/") && req.method === "DELETE") {
+      return json(res, 200, { status: "ok" });
+    }
+    if (url === "/v1/groups" && req.method === "GET") {
+      return json(res, 200, { groups: [] });
+    }
+    return json(res, 404, { error: "没有这个接口" });
+  });
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-team-unrecruit-"));
+  const local = await startLocalServer({
+    backendUrl: `http://127.0.0.1:${backend.address.port}`,
+    userDataRoot: root,
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const account = await createAccount(local.url, "team-unrecruit@example.com");
+    const recruited = await postJson(
+      local.url,
+      `/teams/${teamId}/recruit`,
+      { user_id: account.user_id },
+      String(account.token),
+    );
+    const groupId = (recruited.group as { id: string }).id;
+
+    const before = await getJson(
+      local.url,
+      `/teams?user_id=${encodeURIComponent(String(account.user_id))}`,
+      String(account.token),
+    );
+    expect((before.teams as { team_id: string; recruited: boolean }[])[0]?.recruited).toBe(true);
+
+    const deleted = await fetch(
+      `${local.url}/groups/${encodeURIComponent(groupId)}?user_id=${encodeURIComponent(String(account.user_id))}`,
+      {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${String(account.token)}` },
+      },
+    );
+    expect(deleted.status).toBe(200);
+    expect(unrecruitCalls).toEqual([teamId]);
+
+    const after = await getJson(
+      local.url,
+      `/teams?user_id=${encodeURIComponent(String(account.user_id))}`,
+      String(account.token),
+    );
+    expect((after.teams as { team_id: string; recruited: boolean }[])[0]?.recruited).toBe(false);
+  } finally {
+    await local.close();
+    await close(backend);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 it("does not create a group when a member sync fails", async () => {
   const backend = await listen((req, res) => {
     const url = req.url ?? "";
@@ -254,6 +401,15 @@ async function postJson(base: string, pathName: string, body: unknown, token?: s
       "content-type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const payload = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(payload)}`);
+  return payload;
+}
+
+async function getJson(base: string, pathName: string, token?: string) {
+  const response = await fetch(`${base}${pathName}`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
   });
   const payload = (await response.json()) as Record<string, unknown>;
   if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(payload)}`);

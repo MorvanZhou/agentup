@@ -7,8 +7,14 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ModelConfig } from "../src/config/load.js";
 import type { Visit } from "../src/package/sync.js";
 import { groupConversation } from "../src/session/core/conversation-ref.js";
+import { detectHostEnvironment } from "../src/session/environment.js";
 import { openSession } from "../src/session/open.js";
 import { buildSessionPlan, SessionRefused } from "../src/session/plan.js";
+
+/** Win 上 shellTools 含 powershell（+ 可选 bash）；勿写死只有 bash。 */
+function expectedShellTools(): string[] {
+  return [...detectHostEnvironment().shellTools];
+}
 
 const created: unknown[] = [];
 const mcpFactories: Array<{
@@ -135,7 +141,7 @@ it("points Pi at the visit directory and keeps the user agent directory out", ()
     "ls",
     "write",
     "edit",
-    "bash",
+    ...expectedShellTools(),
     "get_local_time",
     "web_search",
     "web_fetch",
@@ -171,7 +177,7 @@ it("makes builtin tools available for runtime approval", async () => {
     "ls",
     "write",
     "edit",
-    "bash",
+    ...expectedShellTools(),
     "get_local_time",
     "web_search",
     "web_fetch",
@@ -247,7 +253,7 @@ it("passes the explicit session plan to the Pi SDK", async () => {
     "ls",
     "write",
     "edit",
-    "bash",
+    ...expectedShellTools(),
     "get_local_time",
     "web_search",
     "web_fetch",

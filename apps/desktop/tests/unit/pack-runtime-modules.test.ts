@@ -38,6 +38,18 @@ afterEach(() => {
   root = "";
 });
 
+/** Win：强制 System32 bsdtar，避免 Git Bash PATH 里的 GNU tar 把盘符路径当远程。 */
+function systemTar(): string {
+  if (process.platform !== "win32") return "tar";
+  const systemRoot = process.env.SystemRoot || "C:\\Windows";
+  const candidate = join(systemRoot, "System32", "tar.exe");
+  return existsSync(candidate) ? candidate : "tar.exe";
+}
+
+function listArchive(archivePath: string) {
+  return spawnSync(systemTar(), ["-tvzf", archivePath], { encoding: "utf8" });
+}
+
 function seedModules(runtimeRoot: string) {
   const real = join(runtimeRoot, "node_modules", ".pnpm", "pkg@1", "node_modules", "pkg");
   mkdirSync(real, { recursive: true });
@@ -61,7 +73,7 @@ it("packs with relative symlinks by default (mac / follow=false)", async () => {
   expect(existsSync(archivePath)).toBe(true);
 
   // mac 必须保留相对 symlink；误开 follow 会让 dmg 从 ~160MB 胀到 220MB+
-  const list = spawnSync("tar", ["-tvzf", archivePath], { encoding: "utf8" });
+  const list = listArchive(archivePath);
   expect(list.status).toBe(0);
   expect(list.stdout).toMatch(/node_modules\/pkg/);
   expect(list.stdout).toMatch(/^l.*node_modules\/pkg/m);
@@ -73,7 +85,7 @@ it("packs with follow=true as real files (win)", async () => {
 
   const { archivePath, follow } = await packRuntimeModules(root, { follow: true });
   expect(follow).toBe(true);
-  const list = spawnSync("tar", ["-tvzf", archivePath], { encoding: "utf8" });
+  const list = listArchive(archivePath);
   expect(list.status).toBe(0);
   // 解引用后顶层 pkg 是目录/文件，不再是 symlink 行
   expect(list.stdout).not.toMatch(/^l.*node_modules\/pkg$/m);
@@ -86,7 +98,9 @@ it("ensureRuntimeModules expands tgz back next to package.json", async () => {
   const userData = join(root, "ud");
   mkdirSync(runtimeRoot, { recursive: true });
   seedModules(runtimeRoot);
-  await packRuntimeModules(runtimeRoot);
+  // win 打包必须 follow，与生产 pack-win 一致；否则 bsdtar 解 symlink 归档易失败
+  const follow = process.platform === "win32";
+  await packRuntimeModules(runtimeRoot, { follow });
 
   const resolved = ensureRuntimeModules({
     runtimeRoot,
@@ -95,8 +109,12 @@ it("ensureRuntimeModules expands tgz back next to package.json", async () => {
   });
   expect(resolved).toBe(runtimeRoot);
   const pkgLink = join(runtimeRoot, "node_modules", "pkg");
-  expect(lstatSync(pkgLink).isSymbolicLink()).toBe(true);
-  expect(readlinkSync(pkgLink)).toContain(".pnpm");
+  if (follow) {
+    expect(lstatSync(pkgLink).isDirectory()).toBe(true);
+  } else {
+    expect(lstatSync(pkgLink).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(pkgLink)).toContain(".pnpm");
+  }
   expect(existsSync(join(pkgLink, "index.js"))).toBe(true);
   expect(readFileSync(join(pkgLink, "index.js"), "utf8")).toContain("ok");
   // 成功后尽量删掉归档

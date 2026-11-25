@@ -44,7 +44,9 @@ it("persists unread, previews, lastActiveAt and command allow under state.json",
     toolAllow: {},
     pathMountAllow: {},
   });
-  expect(fs.statSync(path.join(root, "users", "patient-a", "state.json")).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") {
+    expect(fs.statSync(path.join(root, "users", "patient-a", "state.json")).mode & 0o777).toBe(0o600);
+  }
 });
 
 it("keeps previews when unread and command allow change", () => {

@@ -127,10 +127,16 @@ function extractArchiveInPlace(archivePath, cwd) {
 }
 
 /**
+ * Win 必须用 System32\tar.exe（bsdtar）。
+ * Git Bash 会把 PATH 里的 tar.exe 指到 GNU tar，遇 Windows 路径会报
+ * 「Cannot execute remote shell」/ I/O error。
  * @returns {string}
  */
 function tarBinary() {
-  return process.platform === "win32" ? "tar.exe" : "tar";
+  if (process.platform !== "win32") return "tar";
+  const systemTar = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+  if (existsSync(systemTar)) return systemTar;
+  return "tar.exe";
 }
 
 /**

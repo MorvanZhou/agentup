@@ -89,3 +89,51 @@ it("waitForOwnRuntime fails fast when spawn already exited (EADDRINUSE path)", a
   expect(ok).toBe(false);
   expect(errors.some((line) => line.includes("spawn 已退出"))).toBe(true);
 });
+
+/** 开发态核对应读 health.backendUrl；旧逻辑打 /auth/turnstile（runtime 无此路由）会对正式 API 误杀。 */
+it("waitForOwnRuntime accepts matching health.backendUrl in unpackaged prod", async () => {
+  const fetchImpl = vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, backendUrl: "https://api.agentup.me" }),
+  }));
+  const ok = await waitForOwnRuntime({
+    runtimeUrl: "http://127.0.0.1:47391",
+    runtimePort: 47391,
+    isProcessExited: () => false,
+    getExitCode: () => null,
+    packaged: false,
+    deadlineMs: 5_000,
+    expectedBackendUrl: "https://api.agentup.me",
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+    sleep: async () => undefined,
+    now: () => 0,
+  });
+  expect(ok).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:47391/health");
+  expect(fetchImpl).not.toHaveBeenCalledWith(expect.stringContaining("/auth/turnstile"));
+});
+
+it("waitForOwnRuntime rejects health without backendUrl when expectedBackend set", async () => {
+  const errors: string[] = [];
+  const fetchImpl = vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true }),
+  }));
+  const ok = await waitForOwnRuntime({
+    runtimeUrl: "http://127.0.0.1:47391",
+    runtimePort: 47391,
+    isProcessExited: () => false,
+    getExitCode: () => null,
+    packaged: false,
+    deadlineMs: 5_000,
+    expectedBackendUrl: "https://api.agentup.me",
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+    sleep: async () => undefined,
+    now: () => 0,
+    logError: (msg) => errors.push(msg),
+  });
+  expect(ok).toBe(false);
+  expect(errors.some((line) => line.includes("health.backendUrl"))).toBe(true);
+});

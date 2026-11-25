@@ -50,6 +50,8 @@ interface InstallJob extends Omit<InstallJobView, "job_id"> {
   companionSpecs: string[];
   child?: ChildProcess;
   tmpDir?: string;
+  /** cancel 后仍记下路径，等 npm 退出再清（Win EBUSY） */
+  lastTmpDir?: string;
   /** npm 输出尾部，失败时带到错误里，不然只能看到退出码 */
   npmTail?: string;
 }
@@ -260,7 +262,11 @@ async function runInstall(
     });
 
     // phase 可能被 cancel 从外部改写，这里必须重新读，不能信 TS 的窄化
-    if ((job.phase as InstallPhase) === "cancelled") return;
+    if ((job.phase as InstallPhase) === "cancelled") {
+      // cancel 当时 npm 可能还占着目录（Win EBUSY）；子进程退出后再清一次
+      cleanupTmp(job);
+      return;
+    }
     if (code !== 0) {
       throw new ConfigError(
         job.npmTail ? `接入失败（npm 退出码 ${code}）：${job.npmTail}` : `接入失败（npm 退出码 ${code}）`,
@@ -283,7 +289,10 @@ async function runInstall(
     job.phase = "done";
     job.detail = `已接入 ${installed.version}`;
   } catch (error) {
-    if ((job.phase as InstallPhase) === "cancelled") return;
+    if ((job.phase as InstallPhase) === "cancelled") {
+      cleanupTmp(job);
+      return;
+    }
     const message = error instanceof Error ? error.message : "接入失败";
     job.phase = "failed";
     job.error = message;
@@ -345,11 +354,23 @@ function packageNameFromSpec(spec: string): string | null {
 }
 
 function cleanupTmp(job: InstallJob): void {
-  if (!job.tmpDir) return;
-  try {
-    fs.rmSync(job.tmpDir, { recursive: true, force: true });
-  } catch {
-    /* 清理失败不阻塞主流程 */
-  }
+  // 允许 cancel 后再清：即使 job.tmpDir 已被置空，仍用上次路径重试
+  const dir = job.tmpDir ?? job.lastTmpDir;
+  if (!dir) return;
+  job.lastTmpDir = dir;
   job.tmpDir = undefined;
+  // 少量短重试即可；长时间阻塞会拖死测例事件循环。顽固 EBUSY 留给子进程 exit 后再调一次。
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      if (!fs.existsSync(dir)) {
+        job.lastTmpDir = undefined;
+        return;
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+      job.lastTmpDir = undefined;
+      return;
+    } catch {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40 * (attempt + 1));
+    }
+  }
 }

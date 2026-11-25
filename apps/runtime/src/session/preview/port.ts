@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 
 /** 从本机 preview_url 解析 TCP 端口；非法或不含端口则 null。 */
 export function parsePreviewPort(previewUrl: string): number | null {
@@ -24,17 +25,29 @@ export function findTcpListenPid(port: number): number | null {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   try {
     if (process.platform === "win32") {
-      const out = execFileSync("netstat", ["-ano", "-p", "TCP"], {
+      // System32\netstat（避开 Git PATH 伪命令）；中文系统状态列是「侦听」。
+      // 勿在未命中时再 spawn powershell：waitUntilPortFree 会高频调用，PS 冷启会拖死测例。
+      const netstat = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "netstat.exe");
+      const out = execFileSync(netstat, ["-ano"], {
         encoding: "utf8",
         windowsHide: true,
       });
-      const re = new RegExp(
-        String.raw`(?:0\.0\.0\.0|127\.0\.0\.1|\[::1\]|\[::\]):${port}\s+\S+\s+LISTENING\s+(\d+)`,
-        "i",
-      );
-      const match = out.match(re);
-      const pid = match ? Number(match[1]) : NaN;
-      return Number.isInteger(pid) && pid > 0 ? pid : null;
+      for (const line of out.split(/\r?\n/)) {
+        if (!/\bTCP\b/i.test(line)) continue;
+        if (!/(?:LISTENING|侦听)/i.test(line)) continue;
+        const cols = line.trim().split(/\s+/);
+        // Proto LocalAddress ForeignAddress State PID
+        if (cols.length < 5) continue;
+        const local = cols[1] ?? "";
+        // `127.0.0.1:PORT` / `0.0.0.0:PORT` / `[::1]:PORT` / `[::]:PORT`
+        const localPort = local.includes("]:")
+          ? Number(local.slice(local.lastIndexOf("]:") + 2))
+          : Number(local.slice(local.lastIndexOf(":") + 1));
+        if (localPort !== port) continue;
+        const pid = Number(cols[cols.length - 1]);
+        if (Number.isInteger(pid) && pid > 0) return pid;
+      }
+      return null;
     }
     const out = execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
       encoding: "utf8",

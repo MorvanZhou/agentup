@@ -64,8 +64,10 @@ it("拼接块含身份、工作规则、技能清单与目录", () => {
   expect(context.systemAppend).toContain("check-weather: 查询城市天气");
   expect(context.systemAppend).toContain(".codebuddy/skills/<name>/SKILL.md");
   expect(context.systemAppend).toContain("do not call `mcp__agentup__skill_*`");
-  expect(context.systemAppend).toContain(path.join(current.root, "cwd"));
-  expect(context.systemAppend).toContain(mounted);
+  // compose 里路径统一成 `/`，Win 不能直接 toContain(path.join(...))
+  const asPromptPath = (p: string) => p.replace(/\\/g, "/");
+  expect(context.systemAppend).toContain(asPromptPath(path.join(current.root, "cwd")));
+  expect(context.systemAppend).toContain(asPromptPath(mounted));
 });
 
 it("边界声明写明没有 AgentUp 的工具", () => {

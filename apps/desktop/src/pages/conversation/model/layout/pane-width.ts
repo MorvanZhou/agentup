@@ -39,17 +39,29 @@ export function loadWorkspaceWidth(): number {
 }
 
 export function rememberSidebarWidth(width: number): void {
-  localStorage.setItem(SIDEBAR_KEY, String(width));
+  try {
+    localStorage.setItem(SIDEBAR_KEY, String(width));
+  } catch {
+    /* 无 DOM / 隐私模式 */
+  }
 }
 
 export function rememberWorkspaceWidth(width: number): void {
-  localStorage.setItem(WORKSPACE_KEY, String(width));
+  try {
+    localStorage.setItem(WORKSPACE_KEY, String(width));
+  } catch {
+    /* 无 DOM / 隐私模式 */
+  }
 }
 
 function loadWidth(key: string, fallback: number, min: number): number {
-  const raw = localStorage.getItem(key);
-  if (!raw) return fallback;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return fallback;
-  return clampPaneWidth(value, min, Number.POSITIVE_INFINITY);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return fallback;
+    return clampPaneWidth(value, min, Number.POSITIVE_INFINITY);
+  } catch {
+    return fallback;
+  }
 }

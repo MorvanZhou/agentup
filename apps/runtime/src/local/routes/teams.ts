@@ -12,12 +12,14 @@ import {
   recruitTeam,
   updateTeam,
   type TeamCard,
+  type TeamMember,
   type TeamUpsertInput,
 } from "../../control/client.js";
 import { BackendClientError } from "../../control/errors.js";
 import { GroupError } from "../../session/group/index.js";
 import { pageItems, TRANSCRIPT_PAGE_SIZE } from "../../session/transcript-page.js";
 import type { GroupRoom } from "../../session/group/types.js";
+import { ensureCachedAvatar } from "../agents/cached-avatar.js";
 import { pushGroupMeta } from "../group-cloud.js";
 import {
   bearer,
@@ -38,42 +40,54 @@ export function registerTeamsRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
 
   app.get("/teams/public", async (c) => {
     const q = c.req.query("q") ?? undefined;
+    const userId = c.req.query("user_id") ?? "";
     const teams = await listPublicTeams(config.backendUrl, { q });
-    return json(c, 200, { teams: teams.map(serializeTeamCard) });
+    const hydrated = await hydrateTeamCards(deps, userId, teams);
+    return json(c, 200, { teams: hydrated.map(serializeTeamCard) });
   });
 
   app.get("/teams", async (c) => {
     const q = c.req.query("q") ?? undefined;
     const recruited = c.req.query("recruited") === "true" ? true : undefined;
+    const userId = c.req.query("user_id") ?? "";
     const token = bearer(c);
     const teams = await listTeams(config.backendUrl, token, { q, recruited });
-    return json(c, 200, { teams: teams.map(serializeTeamCard) });
+    const hydrated = await hydrateTeamCards(deps, userId, teams);
+    return json(c, 200, { teams: hydrated.map(serializeTeamCard) });
   });
 
   app.get("/teams/owned", async (c) => {
     const q = c.req.query("q") ?? undefined;
+    const userId = c.req.query("user_id") ?? "";
     const teams = await listOwnedTeams(config.backendUrl, bearer(c), { q });
-    return json(c, 200, { teams: teams.map(serializeTeamCard) });
+    const hydrated = await hydrateTeamCards(deps, userId, teams);
+    return json(c, 200, { teams: hydrated.map(serializeTeamCard) });
   });
 
   app.get("/teams/:teamId", async (c) => {
     const teamId = requireAgentId(c.req.param("teamId"));
+    const userId = c.req.query("user_id") ?? "";
     const card = await getTeam(config.backendUrl, bearer(c), teamId);
-    return json(c, 200, serializeTeamCard(card));
+    const hydrated = await hydrateTeamCard(deps, userId, card);
+    return json(c, 200, serializeTeamCard(hydrated));
   });
 
   app.post("/teams", async (c) => {
     const body = await readJson(c);
     const input = parseUpsert(body);
+    const userId = typeof body.user_id === "string" ? body.user_id : "";
     const card = await createTeam(config.backendUrl, bearer(c), input);
-    return json(c, 200, serializeTeamCard(card));
+    const hydrated = await hydrateTeamCard(deps, userId, card);
+    return json(c, 200, serializeTeamCard(hydrated));
   });
 
   app.put("/teams/:teamId", async (c) => {
     const teamId = requireAgentId(c.req.param("teamId"));
     const body = await readJson(c);
+    const userId = typeof body.user_id === "string" ? body.user_id : "";
     const card = await updateTeam(config.backendUrl, bearer(c), teamId, parseUpsert(body));
-    return json(c, 200, serializeTeamCard(card));
+    const hydrated = await hydrateTeamCard(deps, userId, card);
+    return json(c, 200, serializeTeamCard(hydrated));
   });
 
   app.delete("/teams/:teamId", async (c) => {
@@ -180,6 +194,62 @@ function parseUpsert(body: Record<string, unknown>): TeamUpsertInput {
     memberIds: memberIdsRaw as string[],
     defaultHolderAgentId: defaultHolder,
   };
+}
+
+/**
+ * 成员头像落到本机 data URL（与 /agents 已招募路径同策略）。
+ * 「已加群」以本机是否仍有该 sourceTeamId 为准，避免删群后控制面台账卡住。
+ * 无 user_id 时跳过，仍回传远端 URL / 控制面 recruited。
+ */
+async function hydrateTeamCards(
+  deps: LocalAppDeps,
+  userId: string,
+  teams: TeamCard[],
+): Promise<TeamCard[]> {
+  if (!userId.trim()) return teams;
+  const localTeamIds = localSourceTeamIds(deps, userId);
+  return Promise.all(teams.map((team) => hydrateTeamCard(deps, userId, team, localTeamIds)));
+}
+
+async function hydrateTeamCard(
+  deps: LocalAppDeps,
+  userId: string,
+  card: TeamCard,
+  localTeamIds?: Set<string>,
+): Promise<TeamCard> {
+  if (!userId.trim()) return card;
+  const ids = localTeamIds ?? localSourceTeamIds(deps, userId);
+  const members = await Promise.all(
+    card.members.map((member) =>
+      hydrateTeamMember(deps.config.userDataRoot, userId, member),
+    ),
+  );
+  return { ...card, members, recruited: ids.has(card.teamId) };
+}
+
+function localSourceTeamIds(deps: LocalAppDeps, userId: string): Set<string> {
+  const ids = new Set<string>();
+  for (const room of deps.groups.list(userId)) {
+    const raw = typeof room.sourceTeamId === "string" ? room.sourceTeamId.trim() : "";
+    if (raw) ids.add(raw);
+  }
+  return ids;
+}
+
+async function hydrateTeamMember(
+  userDataRoot: string,
+  userId: string,
+  member: TeamMember,
+): Promise<TeamMember> {
+  if (!member.hasAvatar || !member.avatarUrl) return member;
+  const cached = await ensureCachedAvatar(
+    userDataRoot,
+    userId,
+    member.agentId,
+    member.avatarUrl,
+  );
+  if (!cached) return member;
+  return { ...member, hasAvatar: true, avatarUrl: cached };
 }
 
 function serializeTeamCard(card: TeamCard): Record<string, unknown> {

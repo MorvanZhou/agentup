@@ -2,6 +2,7 @@ import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import type { Hono } from "hono";
 import { createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessageChunk } from "ai";
 
+import { unrecruitTeam } from "../../control/client.js";
 import { BackendClientError } from "../../control/errors.js";
 import { DelegationError } from "../../session/delegation/index.js";
 import { tryEnabledModelRef } from "../../config/provider/index.js";
@@ -348,8 +349,36 @@ export function registerGroupRoutes(app: Hono<LocalAppEnv>, deps: LocalAppDeps):
     const userId = requireUserId(c.req.query("user_id") ?? "");
     const groupId = c.req.param("groupId") ?? "";
     try {
+      // 删前读 sourceTeamId：市场「已加群」跟当前本机群绑定，不能只清本地。
+      let sourceTeamId: string | null = null;
+      try {
+        const room = deps.groups.store.peek(userId, groupId);
+        const raw = typeof room.sourceTeamId === "string" ? room.sourceTeamId.trim() : "";
+        sourceTeamId = raw || null;
+      } catch (error) {
+        if (!(error instanceof GroupError)) throw error;
+      }
       await pushGroupDelete(deps.config.backendUrl, token, groupId);
       await deps.groupTurns.remove(userId, groupId);
+      if (sourceTeamId) {
+        const stillHas = deps.groups
+          .list(userId)
+          .some(
+            (room) =>
+              typeof room.sourceTeamId === "string" &&
+              room.sourceTeamId.trim() === sourceTeamId,
+          );
+        if (!stillHas) {
+          try {
+            await unrecruitTeam(deps.config.backendUrl, token, sourceTeamId);
+          } catch (error) {
+            // 已解除或历史脏台账：本机群已删，不因控制面 403 挡删群结果
+            if (!(error instanceof BackendClientError && error.status === 403)) {
+              rethrow(error);
+            }
+          }
+        }
+      }
       return json(c, 200, { deleted: true });
     } catch (error) {
       rethrow(error);

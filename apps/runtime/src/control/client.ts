@@ -55,6 +55,7 @@ export {
   listPublicTeams,
   listTeams,
   recruitTeam,
+  unrecruitTeam,
   updateTeam,
 } from "./teams-api.js";
 export { HttpPackageSource } from "./package-source.js";

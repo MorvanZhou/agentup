@@ -19,5 +19,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/unit/**/*.test.ts"],
+    // Node webstorage 占住 globalThis.localStorage 时 happy-dom 盖不上；setup 探测并 stub。
+    setupFiles: [path.resolve(root, "tests/setup-storage.ts")],
   },
 });
