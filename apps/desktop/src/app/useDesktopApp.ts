@@ -33,7 +33,7 @@ import {
   applyUiLocale,
   readDeviceLocale,
   readUiLocale,
-  resolveAccountLocaleOnLogin,
+  resolveAccountLocaleForSync,
   t,
   uiLocale,
   writeDeviceLocale,
@@ -296,7 +296,8 @@ export function useDesktopApp(api = new DesktopApi()) {
     }
     session.value = next;
     await saveSession(next);
-    await refresh();
+    // 仅登录换票：可做一次出厂 zh → 本机 en 补写；日常 refresh 不再做
+    await refresh({ alignLocaleOnLogin: true });
   }
 
   /** 进行中的浏览器登录地址；关掉网页后用同一 loopback 再打开。 */
@@ -463,13 +464,14 @@ export function useDesktopApp(api = new DesktopApi()) {
     })();
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(options: { alignLocaleOnLogin?: boolean } = {}): Promise<void> {
     if (!session.value) return;
     const epoch = ++refreshEpoch;
     const guest = isGuestSession(session.value);
     const { token, userId } = session.value;
     const accountForAvatar = !guest && isAccountSession(session.value) ? session.value : null;
     const stale = () => epoch !== refreshEpoch || !session.value;
+    const alignLocaleOnLogin = options.alignLocaleOnLogin === true;
 
     // 本机优先：先提交本机+磁盘投影到侧栏；账号头像续签与远端对齐并行、不挡首屏
     await loadAgentsLocalFirst({
@@ -513,7 +515,7 @@ export function useDesktopApp(api = new DesktopApi()) {
     }
     await pullAttention();
     if (stale() || !session.value) return;
-    await syncPreferences(token, userId, guest);
+    await syncPreferences(token, userId, guest, alignLocaleOnLogin);
     if (stale()) return;
     if (!conversations.value.some((agent) => agent.agentId === selectedId.value)) {
       selectedId.value = conversations.value[0]?.agentId ?? "";
@@ -521,7 +523,12 @@ export function useDesktopApp(api = new DesktopApi()) {
     if (selectedId.value) void clearUnread(selectedId.value);
   }
 
-  async function syncPreferences(token: string, userId: string, guest: boolean): Promise<void> {
+  async function syncPreferences(
+    token: string,
+    userId: string,
+    guest: boolean,
+    alignLocaleOnLogin = false,
+  ): Promise<void> {
     if (guest) {
       await applyUiLocale(readDeviceLocale());
       const mirrored = readThemeMirror(userId);
@@ -538,8 +545,12 @@ export function useDesktopApp(api = new DesktopApi()) {
     }
     try {
       let prefs = await api.preferences(token);
-      // 首次登录补齐：账号仍是出厂 zh、本机已是 en 时写入账号（注册经 Web 多半已带 ui_locale）
-      const aligned = resolveAccountLocaleOnLogin(readDeviceLocale(), prefs.uiLocale);
+      // 仅登录换票：出厂 zh + 本机 en → 补写账号；日常 refresh 只信账号 ui_locale
+      const aligned = resolveAccountLocaleForSync(
+        readDeviceLocale(),
+        prefs.uiLocale,
+        alignLocaleOnLogin,
+      );
       if (aligned.pushToAccount) {
         prefs = await api.savePreferences(token, { uiLocale: aligned.locale });
       }
@@ -560,13 +571,14 @@ export function useDesktopApp(api = new DesktopApi()) {
   async function setUiLocale(next: UiLocale): Promise<boolean> {
     const guest = !session.value || isGuestSession(session.value);
     if (uiLocale.value === next) {
-      if (guest) writeDeviceLocale(next);
+      writeDeviceLocale(next);
       return true;
     }
     const previous = uiLocale.value;
     await applyUiLocale(next);
+    // 显式选择同步本机镜像，避免本机仍是 en 时被「登录补写」逻辑误伤；登出也沿用此次选择
+    writeDeviceLocale(next);
     if (guest) {
-      writeDeviceLocale(next);
       void refresh();
       return true;
     }
@@ -586,6 +598,7 @@ export function useDesktopApp(api = new DesktopApi()) {
       return true;
     } catch (caught) {
       await applyUiLocale(previous);
+      writeDeviceLocale(previous);
       showToast(messageOf(caught), "error");
       return false;
     }

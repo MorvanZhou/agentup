@@ -4,6 +4,7 @@ import {
   applyUiLocale,
   localeFromSystemLanguages,
   readDeviceLocale,
+  resolveAccountLocaleForSync,
   resolveAccountLocaleOnLogin,
   resolveUiLocale,
   t,
@@ -103,6 +104,24 @@ it("keeps an existing account locale when it already differs from a Chinese devi
     pushToAccount: false,
   });
   expect(resolveAccountLocaleOnLogin("en", "en")).toEqual({
+    locale: "en",
+    pushToAccount: false,
+  });
+});
+
+it("日常 sync 不按本机 en 覆盖账号 zh（设置切中文后 refresh 不得写回 en）", () => {
+  expect(resolveAccountLocaleForSync("en", "zh", false)).toEqual({
+    locale: "zh",
+    pushToAccount: false,
+  });
+});
+
+it("仅登录换票时才允许本机 en 补写出厂账号 zh", () => {
+  expect(resolveAccountLocaleForSync("en", "zh", true)).toEqual({
+    locale: "en",
+    pushToAccount: true,
+  });
+  expect(resolveAccountLocaleForSync("zh", "en", true)).toEqual({
     locale: "en",
     pushToAccount: false,
   });

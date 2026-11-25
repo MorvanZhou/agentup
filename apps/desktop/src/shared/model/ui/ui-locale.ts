@@ -58,10 +58,9 @@ export function writeDeviceLocale(locale: UiLocale): void {
 }
 
 /**
- * 游客→账号后如何对齐语言。
- * 注册经 Web 已带 ui_locale；此处补齐「账号仍是出厂 zh、本机已是 en」
- *（英文系统首次安装后 OAuth / 未落偏好），避免登录被拽回中文。
- * 账号已是 en、或本机为 zh 时不覆盖账号偏好。
+ * 仅「登录换票成功」时调用一次（establishAccount → refresh）。
+ * 补齐「账号仍是出厂 zh、本机已是 en」（英文系统首次安装后 OAuth），避免登录被拽回中文。
+ * 禁止在每次 syncPreferences / 改语言后的 refresh 里调用：否则本机 en 时用户显式选中文会被立刻写回 en。
  */
 export function resolveAccountLocaleOnLogin(
   device: UiLocale,
@@ -71,6 +70,19 @@ export function resolveAccountLocaleOnLogin(
     return { locale: "en", pushToAccount: true };
   }
   return { locale: account, pushToAccount: false };
+}
+
+/**
+ * 拉账号偏好时是否做「出厂 zh → 本机 en」补写。
+ * 日常 refresh / 设置里改语言后的 refresh：只信账号 ui_locale，不再按本机覆盖。
+ */
+export function resolveAccountLocaleForSync(
+  device: UiLocale,
+  account: UiLocale,
+  alignOnLogin: boolean,
+): { locale: UiLocale; pushToAccount: boolean } {
+  if (!alignOnLogin) return { locale: account, pushToAccount: false };
+  return resolveAccountLocaleOnLogin(device, account);
 }
 
 /** 打开 Web 登录页时选用路径前缀（zh → /zh/auth/login，en → /auth/login）。 */

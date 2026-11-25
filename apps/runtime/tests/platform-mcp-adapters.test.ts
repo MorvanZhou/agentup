@@ -158,12 +158,19 @@ it("platformMcpServersOf 含 playwright + browser + computer，且是 Host 唯�
   );
   expect(servers[PLAYWRIGHT_MCP_NAME]).toMatchObject({
     exposure: "deferred",
+    command: process.execPath,
     args: expect.arrayContaining(["--headless"]),
   });
-  // browser 经 mcp-bridge；上游才是 chrome + user-data-dir + init-script
+  const playwrightArgs = servers[PLAYWRIGHT_MCP_NAME]?.args ?? [];
+  expect(playwrightArgs[0]).toMatch(/playwright-mcp-launch\.js$/);
+  expect(playwrightArgs[1]).toBe("/tmp/agentup-user");
+  expect(playwrightArgs.join(" ")).not.toContain("npx");
+  // browser 经 mcp-bridge；上游经同一 launch + chrome + user-data-dir + init-script
   expect(servers[BROWSER_MCP_NAME]).toMatchObject({
     exposure: "deferred",
+    command: process.execPath,
     env: expect.objectContaining({
+      AGENTUP_BROWSER_UPSTREAM_COMMAND: process.execPath,
       AGENTUP_BROWSER_UPSTREAM_ARGS_JSON: expect.stringContaining("--user-data-dir"),
     }),
   });
@@ -171,11 +178,14 @@ it("platformMcpServersOf 含 playwright + browser + computer，且是 Host 唯�
   const upstream = JSON.parse(
     String(servers[BROWSER_MCP_NAME]?.env?.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON ?? "[]"),
   ) as string[];
+  expect(upstream[0]).toMatch(/playwright-mcp-launch\.js$/);
+  expect(upstream[1]).toBe("/tmp/agentup-user");
   expect(upstream).toEqual(
     expect.arrayContaining(["--browser", "chrome", "--user-data-dir", "--init-script"]),
   );
   expect(upstream).not.toContain("--headless");
   expect(upstream).not.toContain("--extension");
+  expect(upstream.join(" ")).not.toContain("npx");
   expect(servers[COMPUTER_MCP_NAME]).toMatchObject({
     exposure: "deferred",
     command: process.execPath,

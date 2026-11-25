@@ -1,26 +1,50 @@
-import { expect, it } from "vitest";
+import path from "node:path";
+
+import { afterEach, expect, it } from "vitest";
 
 import {
   PLAYWRIGHT_MCP_NAME,
+  PLAYWRIGHT_MCP_PACKAGE,
+  PLAYWRIGHT_MCP_VERSION,
   injectPlaywrightMcp,
+  playwrightCliPath,
+  playwrightInstallDir,
   playwrightMcpEntry,
+  playwrightMcpLaunchPath,
   playwrightStdioConfig,
+  resetPlaywrightMcpInstallForTests,
 } from "../src/session/mcp/playwright-platform.js";
 
-it("builds a deferred stdio playwright MCP entry", () => {
+afterEach(() => {
+  resetPlaywrightMcpInstallForTests();
+});
+
+it("playwright 安装目录在 userData/runtime/playwright-mcp，不走系统 npx", () => {
+  const root = "/tmp/agentup-user";
+  expect(playwrightInstallDir(root)).toBe(path.join(root, "runtime", "playwright-mcp"));
+  expect(playwrightCliPath(root)).toBe(
+    path.join(root, "runtime", "playwright-mcp", "node_modules", "@playwright", "mcp", "cli.js"),
+  );
+  expect(PLAYWRIGHT_MCP_PACKAGE).toBe(`@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}`);
+});
+
+it("builds a deferred stdio playwright MCP entry via launch + execPath", () => {
   const entry = playwrightMcpEntry("/tmp/agentup-user");
   expect(entry.name).toBe(PLAYWRIGHT_MCP_NAME);
   expect(entry.config).toMatchObject({
     exposure: "deferred",
-    command: expect.any(String),
+    command: process.execPath,
   });
   const stdio = playwrightStdioConfig("/tmp/agentup-user");
+  expect(stdio.command).toBe(process.execPath);
+  expect(stdio.args[0]).toBe(playwrightMcpLaunchPath());
+  expect(stdio.args[0]).toMatch(/playwright-mcp-launch\.js$/);
+  expect(stdio.args[1]).toBe("/tmp/agentup-user");
   expect(stdio.args).toContain("--headless");
+  expect(stdio.args.join(" ")).not.toContain("npx");
   expect(stdio.env.PLAYWRIGHT_BROWSERS_PATH).toContain("playwright-browsers");
   // 只覆盖浏览器路径；整表拷 process.env 会在 Codex config.toml 里炸（点号键→嵌套 map）
   expect(Object.keys(stdio.env)).toEqual(["PLAYWRIGHT_BROWSERS_PATH"]);
-  // Windows 禁止 npx.cmd；其它平台也不应再写 .cmd
-  expect(String(stdio.command).toLowerCase()).not.toMatch(/npx\.cmd$/);
 });
 
 it("injectPlaywrightMcp forces platform entry over same-named user server", () => {
@@ -40,5 +64,8 @@ it("injectPlaywrightMcp forces platform entry over same-named user server", () =
   );
   expect(next.servers).toHaveLength(1);
   expect(next.servers[0]?.source).toBe("agentup:platform");
-  expect(next.servers[0]?.config).toMatchObject({ exposure: "deferred" });
+  expect(next.servers[0]?.config).toMatchObject({
+    exposure: "deferred",
+    command: process.execPath,
+  });
 });

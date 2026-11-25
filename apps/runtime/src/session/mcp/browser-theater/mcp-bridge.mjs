@@ -6,8 +6,8 @@
  * - 用户关掉真窗导致上游退出时：bridge 不跟着死；下次请求自动重拉上游并重握手
  *
  * env:
- *   AGENTUP_BROWSER_UPSTREAM_COMMAND  上游命令（Desktop 注入 node / npx-cli；勿用 npx.cmd）
- *   AGENTUP_BROWSER_UPSTREAM_ARGS_JSON  JSON 字符串数组，上游 args
+ *   AGENTUP_BROWSER_UPSTREAM_COMMAND  上游命令（须为 process.execPath；勿用 npx.cmd）
+ *   AGENTUP_BROWSER_UPSTREAM_ARGS_JSON  JSON：playwright-mcp-launch.js + userDataRoot + mcp args
  */
 import { spawn } from "node:child_process";
 import process from "node:process";
@@ -22,9 +22,7 @@ const ACTION_TOOLS = new Set([
   "browser_drag",
 ]);
 
-const upstreamCommand =
-  process.env.AGENTUP_BROWSER_UPSTREAM_COMMAND ||
-  (process.platform === "win32" ? process.execPath : "npx");
+const upstreamCommand = process.env.AGENTUP_BROWSER_UPSTREAM_COMMAND || process.execPath;
 let upstreamArgs = [];
 try {
   upstreamArgs = JSON.parse(process.env.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON || "[]");

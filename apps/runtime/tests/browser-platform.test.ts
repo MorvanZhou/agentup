@@ -14,7 +14,7 @@ import {
   readBrowserUseSettings,
   writeBrowserUseSettings,
 } from "../src/session/mcp/browser-platform.js";
-import { PLAYWRIGHT_MCP_PACKAGE } from "../src/session/mcp/playwright-platform.js";
+import { playwrightMcpLaunchPath } from "../src/session/mcp/playwright-platform.js";
 
 it("defaults to headed chrome profile with theater init-script via bridge", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-browser-"));
@@ -22,8 +22,6 @@ it("defaults to headed chrome profile with theater init-script via bridge", () =
   const upstream = browserUpstreamArgs(root);
   const profile = browserUseProfileDir(root);
   expect(upstream).toEqual([
-    "-y",
-    PLAYWRIGHT_MCP_PACKAGE,
     "--browser",
     "chrome",
     "--user-data-dir",
@@ -33,13 +31,18 @@ it("defaults to headed chrome profile with theater init-script via bridge", () =
   ]);
   expect(upstream).not.toContain("--headless");
   expect(upstream).not.toContain("--extension");
+  expect(upstream).not.toContain("-y");
   expect(fs.existsSync(profile)).toBe(true);
 
   const stdio = browserStdioConfig(root);
+  expect(stdio.command).toBe(process.execPath);
   expect(stdio.args[0]).toContain("mcp-bridge.mjs");
-  expect(stdio.env.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON).toContain("theater-init.js");
-  // 上游勿再写 npx.cmd（Windows 会弹 cmd）
-  expect(stdio.env.AGENTUP_BROWSER_UPSTREAM_COMMAND?.toLowerCase()).not.toMatch(/npx\.cmd$/);
+  expect(stdio.env.AGENTUP_BROWSER_UPSTREAM_COMMAND).toBe(process.execPath);
+  const upstreamFull = JSON.parse(stdio.env.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON) as string[];
+  expect(upstreamFull[0]).toBe(playwrightMcpLaunchPath());
+  expect(upstreamFull[1]).toBe(root);
+  expect(upstreamFull).toEqual(expect.arrayContaining(["--browser", "chrome", "--user-data-dir"]));
+  expect(upstreamFull.join(" ")).not.toContain("npx");
   expect(stdio.exposure).toBe("deferred");
 });
 
@@ -47,9 +50,10 @@ it("extension mode is opt-in and still gets theater init-script", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-browser-"));
   writeBrowserUseSettings(root, { mode: "extension" });
   const upstream = browserUpstreamArgs(root);
-  expect(upstream.slice(0, 3)).toEqual(["-y", PLAYWRIGHT_MCP_PACKAGE, "--extension"]);
+  expect(upstream[0]).toBe("--extension");
   expect(upstream).toContain("--init-script");
   expect(upstream).not.toContain("--headless");
+  expect(upstream).not.toContain("-y");
 });
 
 it("injectBrowserUseMcp forces platform entry over same-named user server", () => {
