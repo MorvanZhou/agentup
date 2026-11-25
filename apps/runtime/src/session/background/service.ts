@@ -7,6 +7,7 @@ import { isLocalAgentId } from "../../local/agents/local-agent.js";
 import { PERSONAL_ASSISTANT_ID } from "../../local/assistant/personal-assistant.js";
 import { spawnArgsForCommand } from "../environment.js";
 import type { AsyncWakeItem } from "../wake/index.js";
+import { shouldWindowsHideChild } from "../windows-hide.js";
 import { BackgroundJobStore } from "./store.js";
 import {
   BACKGROUND_RESULT_CUSTOM_TYPE,
@@ -218,7 +219,7 @@ export class BackgroundJobs {
         cwd: latest.cwd,
         env: process.env,
         stdio: [spawnSpec.stdinCommand != null ? "pipe" : "ignore", "pipe", "pipe"],
-        windowsHide: true,
+        windowsHide: shouldWindowsHideChild(),
       });
       if (spawnSpec.stdinCommand != null) {
         child.stdin?.on("error", () => {});

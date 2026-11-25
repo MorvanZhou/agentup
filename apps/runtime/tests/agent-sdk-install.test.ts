@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
+import { resolveNpxRunner } from "../src/config/npm-runner.js";
 import {
   agentSdkDir,
   cancelAgentSdkInstall,
@@ -256,6 +257,22 @@ it("Windows 仅有 npm.cmd、找不到 npm-cli.js 时返回 null（避免 spawn 
     existsSync: (filePath) => filePath === path.join(nodeDir, "npm.cmd"),
   });
   expect(runner).toBeNull();
+});
+
+it("resolveNpxRunner 与 npm 同布局，指向 npx-cli.js 而非 npx.cmd", () => {
+  const nodeDir = path.join("/fake", "nodejs");
+  const execPath = path.join("/fake", "AgentUp", "AgentUp.exe");
+  const npmCli = path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
+  const npxCli = path.join(nodeDir, "node_modules", "npm", "bin", "npx-cli.js");
+  const files = new Set([path.join(nodeDir, "node.exe"), path.join(nodeDir, "npm.cmd"), npmCli, npxCli]);
+  const runner = resolveNpxRunner({
+    platform: "win32",
+    execPath,
+    env: { PATH: nodeDir },
+    existsSync: (filePath) => files.has(filePath),
+  });
+  expect(runner).toEqual({ command: execPath, args: [npxCli] });
+  expect(String(runner?.args[0]).toLowerCase()).not.toMatch(/npx\.cmd$/);
 });
 
 it(

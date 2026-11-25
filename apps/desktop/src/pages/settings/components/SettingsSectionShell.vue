@@ -22,7 +22,8 @@ withDefaults(
       </template>
     </PageChromeHeader>
 
-    <div class="min-h-0 flex-1 overflow-auto">
+    <!-- app-no-drag：正文永不进窗口拖拽命中（Win 上顶栏 drag 易误伤下方选项） -->
+    <div class="app-no-drag min-h-0 flex-1 overflow-auto">
       <div
         class="mx-auto w-full px-4 py-4 sm:px-5 sm:py-5"
         :class="wide ? 'max-w-5xl' : 'max-w-3xl'"

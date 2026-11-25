@@ -19,6 +19,8 @@ it("builds a deferred stdio playwright MCP entry", () => {
   expect(stdio.env.PLAYWRIGHT_BROWSERS_PATH).toContain("playwright-browsers");
   // 只覆盖浏览器路径；整表拷 process.env 会在 Codex config.toml 里炸（点号键→嵌套 map）
   expect(Object.keys(stdio.env)).toEqual(["PLAYWRIGHT_BROWSERS_PATH"]);
+  // Windows 禁止 npx.cmd；其它平台也不应再写 .cmd
+  expect(String(stdio.command).toLowerCase()).not.toMatch(/npx\.cmd$/);
 });
 
 it("injectPlaywrightMcp forces platform entry over same-named user server", () => {

@@ -104,6 +104,7 @@ export async function startCodexLogin(
   const child = spawn(cli, ["login", "--device-auth"], {
     env: codexCliEnv(home),
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
   record.child = child;
 
@@ -267,6 +268,7 @@ export async function logoutCodex(userDataRoot: string, templateId: string): Pro
         const child = spawn(cli, ["logout"], {
           env: codexCliEnv(home),
           stdio: "ignore",
+          windowsHide: true,
         });
         child.on("close", () => resolve());
         child.on("error", () => resolve());
@@ -371,6 +373,7 @@ async function runCodexDebugModels(
       const child = spawn(cli, ["debug", "models"], {
         env: codexCliEnv(home),
         stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
       });
       let out = "";
       let err = "";
@@ -497,6 +500,7 @@ async function runCodexLoginStatus(
       const child = spawn(cli, ["login", "status"], {
         env: codexCliEnv(home),
         stdio: "ignore",
+        windowsHide: true,
       });
       child.on("close", (exit) => resolve(exit));
       child.on("error", () => resolve(null));

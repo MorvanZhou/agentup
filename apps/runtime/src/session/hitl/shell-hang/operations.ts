@@ -6,6 +6,7 @@ import os from "node:os";
 import type { BashOperations } from "@earendil-works/pi-coding-agent";
 import { getShellConfig, getPowerShellConfig } from "@earendil-works/pi-coding-agent";
 
+import { shouldWindowsHideChild } from "../../windows-hide.js";
 import { killProcessTree } from "./process-kill.js";
 
 /** 空闲无输出超过此时长 → park，让 agent 裁决。 */
@@ -78,7 +79,8 @@ export function createIdleAwareShellOperations(
           detached: process.platform !== "win32",
           env: env ?? { ...process.env },
           stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
-          windowsHide: true,
+          // Windows：无控制台时隐藏；有可继承控制台时勿 CREATE_NO_WINDOW（防孙子闪窗）
+          windowsHide: shouldWindowsHideChild(),
         },
       );
       if (commandFromStdin) {

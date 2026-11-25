@@ -123,8 +123,8 @@ it("stopChildProcess escalates to SIGKILL after forceMs", async () => {
   expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
 });
 
-it("stopChildProcess on win32 uses taskkill /T then /T /F for the process tree", async () => {
-  // 打包态 runtime 也是 AgentUp.exe；只 kill 本 pid 会留下树内孤儿，NSIS 仍报无法关闭
+it("stopChildProcess on win32 uses taskkill /F /T immediately for the process tree", async () => {
+  // 无 /F 的 /T 对 Chromium/MCP 孙子几乎总失败；打包态 runtime 也是 AgentUp.exe，须整树强杀
   const child = new EventEmitter() as EventEmitter & {
     pid: number;
     exitCode: number | null;
@@ -159,8 +159,7 @@ it("stopChildProcess on win32 uses taskkill /T then /T /F for the process tree",
   };
 
   const done = stopChildProcess(child, {
-    forceMs: 100,
-    hardMs: 200,
+    // 默认 win32 forceMs=0：经 setTimeout(0) 直接 /F /T
     platform: "win32",
     setTimeoutFn,
     clearTimeoutFn,
@@ -168,15 +167,12 @@ it("stopChildProcess on win32 uses taskkill /T then /T /F for the process tree",
   });
 
   expect(child.kill).not.toHaveBeenCalled();
-  expect(calls).toEqual([{ file: "taskkill", args: ["/T", "/PID", "4242"] }]);
+  expect(calls).toEqual([]);
 
-  const force = timers.find((t) => t.ms === 100);
+  const force = timers.find((t) => t.ms === 0);
   expect(force).toBeTruthy();
   force!.fn();
   await done;
 
-  expect(calls).toEqual([
-    { file: "taskkill", args: ["/T", "/PID", "4242"] },
-    { file: "taskkill", args: ["/F", "/T", "/PID", "4242"] },
-  ]);
+  expect(calls).toEqual([{ file: "taskkill", args: ["/F", "/T", "/PID", "4242"] }]);
 });

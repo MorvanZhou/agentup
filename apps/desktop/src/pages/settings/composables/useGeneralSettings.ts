@@ -41,9 +41,9 @@ export function useGeneralSettings(api = new DesktopApi()) {
 
   onMounted(() => void load());
 
+  /** 只对齐当前值；不把整页选项焊在 busy 上（否则请求慢/异常时点什么都没反应）。 */
   async function load(): Promise<void> {
     if (!session.value) return;
-    busy.value = true;
     try {
       if (isGuestSession(session.value)) {
         const mirrored = readThemeMirror(session.value.userId);
@@ -69,8 +69,6 @@ export function useGeneralSettings(api = new DesktopApi()) {
       await applyUiLocale(prefs.uiLocale);
     } catch (caught) {
       showToast(messageOf(caught), "error");
-    } finally {
-      busy.value = false;
     }
   }
 

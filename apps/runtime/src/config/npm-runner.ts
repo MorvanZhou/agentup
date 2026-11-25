@@ -18,6 +18,36 @@ import path from "node:path";
  */
 export type NpmRunner = { command: string; args: string[] };
 
+/** 与 {@link resolveNpmRunner} 同布局，指向 npx-cli.js（禁止 Windows 上 spawn npx.cmd）。 */
+export function resolveNpxRunner(options?: {
+  platform?: NodeJS.Platform;
+  execPath?: string;
+  env?: NodeJS.ProcessEnv;
+  existsSync?: (filePath: string) => boolean;
+}): NpmRunner | null {
+  const exists = options?.existsSync ?? ((filePath: string) => fs.existsSync(filePath));
+  const npm = resolveNpmRunner(options);
+  if (!npm) {
+    if ((options?.platform ?? process.platform) === "win32") return null;
+    const onPath = findOnPath("npx", options?.env ?? process.env, exists);
+    return onPath ? { command: onPath, args: [] } : null;
+  }
+  if (npm.args.length >= 1 && /npm-cli\.js$/i.test(npm.args[0]!)) {
+    const npxCli = npm.args[0]!.replace(/npm-cli\.js$/i, "npx-cli.js");
+    if (exists(npxCli)) return { command: npm.command, args: [npxCli] };
+    return null;
+  }
+  // Unix：PATH 上的 npm 脚本旁常有 npx
+  if (npm.args.length === 0 && npm.command) {
+    const dir = path.dirname(npm.command);
+    const sibling = path.join(dir, "npx");
+    if (exists(sibling)) return { command: sibling, args: [] };
+    const onPath = findOnPath("npx", options?.env ?? process.env, exists);
+    if (onPath) return { command: onPath, args: [] };
+  }
+  return null;
+}
+
 export function resolveNpmRunner(options?: {
   platform?: NodeJS.Platform;
   execPath?: string;

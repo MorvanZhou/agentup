@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { McpServerEntry } from "@earendil-works/pi-coding-agent";
 
+import { resolveNpxRunner } from "../../config/npm-runner.js";
 import { ensureBrowserTheaterAssets } from "./browser-theater/ensure-assets.js";
 import { PLAYWRIGHT_MCP_PACKAGE } from "./playwright-platform.js";
 
@@ -91,12 +92,21 @@ export function browserStdioConfig(userDataRoot: string): {
 } {
   const theater = ensureBrowserTheaterAssets(userDataRoot);
   const upstreamArgs = browserUpstreamArgs(userDataRoot);
+  // 上游也走 node+npx-cli，避免 Windows npx.cmd → cmd 弹窗
+  const npx = resolveNpxRunner();
+  if (!npx && process.platform === "win32") {
+    throw new Error(
+      "找不到 npx-cli.js，无法启动 Browser Use。请重装 AgentUp，或安装 Node.js 并加入 PATH。",
+    );
+  }
+  const upstreamCommand = npx?.command ?? "npx";
+  const upstreamFullArgs = npx ? [...npx.args, ...upstreamArgs] : upstreamArgs;
   return {
     command: process.execPath,
     args: [theater.bridge],
     env: {
-      AGENTUP_BROWSER_UPSTREAM_COMMAND: process.platform === "win32" ? "npx.cmd" : "npx",
-      AGENTUP_BROWSER_UPSTREAM_ARGS_JSON: JSON.stringify(upstreamArgs),
+      AGENTUP_BROWSER_UPSTREAM_COMMAND: upstreamCommand,
+      AGENTUP_BROWSER_UPSTREAM_ARGS_JSON: JSON.stringify(upstreamFullArgs),
     },
     exposure: "deferred",
   };

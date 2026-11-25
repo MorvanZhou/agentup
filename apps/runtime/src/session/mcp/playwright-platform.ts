@@ -4,6 +4,9 @@ import { spawn } from "node:child_process";
 
 import type { McpServerEntry } from "@earendil-works/pi-coding-agent";
 
+import { resolveNpxRunner } from "../../config/npm-runner.js";
+import { shouldWindowsHideChild } from "../windows-hide.js";
+
 /** 平台注入的 Playwright MCP 名（强制 deferred）。 */
 export const PLAYWRIGHT_MCP_NAME = "playwright";
 
@@ -16,6 +19,18 @@ export function playwrightBrowsersDir(userDataRoot: string): string {
   return path.join(userDataRoot, "runtime", "playwright-browsers");
 }
 
+/** Windows 禁用 npx.cmd（会经 cmd.exe 弹窗）；一律 node + npx-cli.js。 */
+function npxInvocation(): { command: string; prefixArgs: string[] } {
+  const runner = resolveNpxRunner();
+  if (runner) return { command: runner.command, prefixArgs: runner.args };
+  if (process.platform === "win32") {
+    throw new Error(
+      "找不到 npx-cli.js，无法启动 Playwright MCP。请重装 AgentUp，或安装 Node.js 并加入 PATH。",
+    );
+  }
+  return { command: "npx", prefixArgs: [] };
+}
+
 /** 厂商 SDK / Pi 共用的 stdio MCP 形。 */
 export function playwrightStdioConfig(userDataRoot: string): {
   command: string;
@@ -24,12 +39,13 @@ export function playwrightStdioConfig(userDataRoot: string): {
   exposure: "deferred";
 } {
   const browsers = playwrightBrowsersDir(userDataRoot);
+  const npx = npxInvocation();
   // 只覆盖浏览器路径；勿整表拷 process.env。
   // Pi 默认 inheritEnv merge；Codex 会把 env 展平进 config.toml，
   // 带 `.` 的键（如 asl.foo）会变成嵌套 map →「expected a string」。
   return {
-    command: process.platform === "win32" ? "npx.cmd" : "npx",
-    args: ["-y", PLAYWRIGHT_MCP_PACKAGE, "--headless"],
+    command: npx.command,
+    args: [...npx.prefixArgs, "-y", PLAYWRIGHT_MCP_PACKAGE, "--headless"],
     env: { PLAYWRIGHT_BROWSERS_PATH: browsers },
     exposure: "deferred",
   };
@@ -73,12 +89,23 @@ export function ensurePlaywrightBrowsers(userDataRoot: string): Promise<void> {
 
 function runPlaywrightInstall(browsersPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const command = process.platform === "win32" ? "npx.cmd" : "npx";
-    const child = spawn(command, ["-y", "playwright", "install", "chromium"], {
-      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browsersPath },
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: process.platform === "win32",
-    });
+    let npx: { command: string; prefixArgs: string[] };
+    try {
+      npx = npxInvocation();
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    const child = spawn(
+      npx.command,
+      [...npx.prefixArgs, "-y", "playwright", "install", "chromium"],
+      {
+        env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: browsersPath },
+        stdio: ["ignore", "pipe", "pipe"],
+        // 禁止 shell:true（Win 会经 cmd 弹窗）；直接跑 node/npx-cli
+        windowsHide: shouldWindowsHideChild(),
+      },
+    );
     let stderr = "";
     child.stderr?.on("data", (chunk) => {
       stderr += String(chunk);

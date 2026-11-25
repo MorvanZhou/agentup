@@ -38,6 +38,11 @@ const { createSecretCrypto } = require("./secret-crypto.cjs");
 const { createSessionVault } = require("./session-vault.cjs");
 const { mergeShellEnv, resolveUserShellEnv } = require("./shell-env.cjs");
 const { childAlive, stopChildProcess } = require("./stop-child.cjs");
+const {
+  runtimeReadyDeadlineMs,
+  waitForOwnRuntime: waitRuntimeHealth,
+} = require("./wait-runtime-ready.cjs");
+const { ensureHiddenConsole } = require("./windows-hidden-console.cjs");
 
 const { randomBytes } = require("node:crypto");
 
@@ -571,10 +576,12 @@ app.whenReady().then(async () => {
       }),
     ),
   );
+  const readyMs = runtimeReadyDeadlineMs({ platform: process.platform, packaged: app.isPackaged });
+  logInfo(`等待 runtime 就绪 ${runtimeUrl}（最长 ${readyMs}ms）`);
   const healthy = await waitForOwnRuntime();
   if (!healthy) {
     logError(
-      `runtime 未就绪：${runtimeUrl}。若日志含 EADDRINUSE，请先退出占用 ${runtimeHost}:${runtimePort} 的旧 AgentUp/runtime 再启动。`,
+      `runtime 未就绪：${runtimeUrl}。常见原因：1) Win 冷启动仍超时 2) EADDRINUSE 旧 AgentUp/runtime 占 ${runtimeHost}:${runtimePort}。可查 runtime.log；或设 AGENTUP_RUNTIME_READY_MS 加大等待。`,
     );
   } else {
     logInfo(`runtime 就绪：${runtimeUrl}`);
@@ -685,17 +692,27 @@ function spawnRuntime(packagedRuntimeRoot) {
     const logDir = path.dirname(logPath());
     const stdout = fs.openSync(path.join(logDir, "runtime.log"), "a");
     const stderr = fs.openSync(path.join(logDir, "runtime.log"), "a");
+    const cwd = packagedRuntimeRoot || path.join(process.resourcesPath, "runtime");
+    // Windows：打包 GUI 通常无 TTY → windowsHide 藏 runtime；有 TTY 则继承防孙子闪窗
+    const hiddenConsole = process.platform === "win32" && ensureHiddenConsole();
+    if (hiddenConsole) {
+      env.AGENTUP_HIDDEN_CONSOLE = "1";
+    }
     return spawn(process.execPath, [cli], {
       stdio: ["ignore", stdout, stderr],
       env,
-      cwd: packagedRuntimeRoot || path.join(process.resourcesPath, "runtime"),
-      // Windows：无控制台闪窗；与 UI 同为 AgentUp.exe，退出/安装靠 taskkill /T 清树
-      windowsHide: true,
+      cwd,
+      windowsHide: !hiddenConsole,
     });
+  }
+  // 开发态从终端拉起：标记可继承控制台，bash 勿再 CREATE_NO_WINDOW
+  if (process.platform === "win32" && ensureHiddenConsole()) {
+    env.AGENTUP_HIDDEN_CONSOLE = "1";
   }
   return spawn(process.env.AGENTUP_NODE || "node", [cli], {
     stdio: "inherit",
     env,
+    windowsHide: false,
   });
 }
 
@@ -732,55 +749,15 @@ function runtimeProcessExited() {
 }
 
 /** 确认是本进程拉起的 runtime，避免端口被旧 AgentUp 占用时误判 /health 成功。 */
-async function waitForOwnRuntime() {
-  const deadline = Date.now() + 8000;
-  let lastError = "";
-  while (Date.now() < deadline) {
-    if (runtimeProcessExited()) {
-      lastError = `spawn 已退出 code=${runtime.exitCode ?? "null"}（若为 EADDRINUSE，请先退出占用 ${runtimeHost}:${runtimePort} 的正式版 AgentUp）`;
-      break;
-    }
-    try {
-      const response = await fetch(`${runtimeUrl}/health`);
-      if (response.ok) {
-        // EADDRINUSE 时旧进程仍会响应 health；多等一会确认子进程没有随后退出。
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        if (runtimeProcessExited()) {
-          lastError = `spawn 已退出 code=${runtime.exitCode ?? "null"}（端口 ${runtimePort} 被其他 AgentUp/runtime 占用）`;
-          break;
-        }
-        // 开发态核对 backend：仅用于发现「端口被正式版占用」；本机不连服务器时跳过，勿挡本地使用
-        if (!app.isPackaged) {
-          const expectedBackend = (process.env.AGENTUP_BACKEND_URL || releaseBackendUrl || "").replace(/\/$/, "");
-          if (expectedBackend) {
-            let backendPayload;
-            try {
-              const backendRes = await fetch(`${expectedBackend}/v1/auth/turnstile`);
-              if (!backendRes.ok) throw new Error(`backend turnstile status=${backendRes.status}`);
-              backendPayload = await backendRes.json();
-            } catch {
-              return true;
-            }
-            try {
-              const viaRuntime = await fetch(`${runtimeUrl}/auth/turnstile`).then((r) => r.json());
-              if (JSON.stringify(viaRuntime) !== JSON.stringify(backendPayload)) {
-                lastError = `runtime 连的不是 ${expectedBackend}（可能仍是占用端口的正式版 AgentUp）`;
-                break;
-              }
-            } catch (error) {
-              lastError = error instanceof Error ? error.message : String(error);
-              break;
-            }
-          }
-        }
-        return true;
-      }
-      lastError = `status=${response.status}`;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  if (lastError) logError(`runtime health 最后错误：${lastError}`);
-  return false;
+function waitForOwnRuntime() {
+  return waitRuntimeHealth({
+    runtimeUrl,
+    runtimePort,
+    packaged: app.isPackaged,
+    platform: process.platform,
+    isProcessExited: runtimeProcessExited,
+    getExitCode: () => (runtime ? runtime.exitCode : null),
+    expectedBackendUrl: process.env.AGENTUP_BACKEND_URL || releaseBackendUrl || "",
+    logError,
+  });
 }

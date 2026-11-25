@@ -244,9 +244,14 @@ html[data-chat-font="lg"] {
   background-color: var(--color-paper);
 }
 
+/*
+  Electron 窗口拖拽：只在 macOS hiddenInset 启用。
+  Windows / Linux 用系统标题栏；内容区再设 drag 会吞点击（与 z-index 无关），
+  设置页顶栏下的语言/主题等选项砖首当其冲。
+  Tailwind 4 拒空 @utility，故用自定义属性作标记（切勿写 app-region: drag）。
+*/
 @utility app-drag {
-  -webkit-app-region: drag;
-  app-region: drag;
+  --app-drag-region: marker;
 }
 
 @utility app-no-drag {
@@ -254,12 +259,16 @@ html[data-chat-font="lg"] {
   app-region: no-drag;
 }
 
+.electron.darwin .app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
 /*
-  Electron：-webkit-app-region:drag 会吞掉指针事件（与 z-index 无关）。
   下拉/弹层经 Portal 挂到 body，点在 drag 区时 DismissableLayer 收不到
   pointerdown，无法点外侧收起。浮层打开期间暂停拖拽即可。
 */
-body:has([data-dismissable-layer]) .app-drag {
+body:has([data-dismissable-layer]) .electron.darwin .app-drag {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }

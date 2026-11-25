@@ -6,7 +6,7 @@
  * - 用户关掉真窗导致上游退出时：bridge 不跟着死；下次请求自动重拉上游并重握手
  *
  * env:
- *   AGENTUP_BROWSER_UPSTREAM_COMMAND  上游命令（默认 npx / npx.cmd）
+ *   AGENTUP_BROWSER_UPSTREAM_COMMAND  上游命令（Desktop 注入 node / npx-cli；勿用 npx.cmd）
  *   AGENTUP_BROWSER_UPSTREAM_ARGS_JSON  JSON 字符串数组，上游 args
  */
 import { spawn } from "node:child_process";
@@ -24,7 +24,7 @@ const ACTION_TOOLS = new Set([
 
 const upstreamCommand =
   process.env.AGENTUP_BROWSER_UPSTREAM_COMMAND ||
-  (process.platform === "win32" ? "npx.cmd" : "npx");
+  (process.platform === "win32" ? process.execPath : "npx");
 let upstreamArgs = [];
 try {
   upstreamArgs = JSON.parse(process.env.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON || "[]");
@@ -186,10 +186,11 @@ function attachChild(next) {
 }
 
 function spawnUpstream() {
+  // 禁止 shell:true：Windows 会经 cmd.exe 弹黑框；上游应为 node + npx-cli.js
   const next = spawn(upstreamCommand, upstreamArgs, {
     stdio: ["pipe", "pipe", "inherit"],
     env: process.env,
-    shell: process.platform === "win32",
+    windowsHide: process.platform === "win32" && process.env.AGENTUP_HIDDEN_CONSOLE !== "1",
   });
   attachChild(next);
   return next;

@@ -3,7 +3,8 @@
  * 供 Desktop 退出时清理 runtime，避免孤儿占端口 / 锁住安装目录。
  *
  * Windows：打包态 runtime 是 ELECTRON_RUN_AS_NODE 的同名 AgentUp.exe，
- * `child.kill` 只打本 pid、不带进程树；改用 `taskkill /T`（必要时再 `/F`）。
+ * `child.kill` 只打本 pid、不带进程树。实测无 `/F` 的 `taskkill /T` 对
+ * Chromium/MCP 等孙子进程几乎总是失败，须直接 `/F /T`。
  *
  * @param {import("node:child_process").ChildProcess | null | undefined} child
  * @param {{
@@ -24,9 +25,10 @@
  * @returns {Promise<void>}
  */
 function stopChildProcess(child, options = {}) {
-  const forceMs = options.forceMs ?? 1500;
-  const hardMs = options.hardMs ?? forceMs + 500;
   const platform = options.platform ?? process.platform;
+  // Win 直接强杀树；Unix 仍先 SIGTERM，1.5s 后再 SIGKILL
+  const forceMs = options.forceMs ?? (platform === "win32" ? 0 : 1500);
+  const hardMs = options.hardMs ?? Math.max(forceMs + 500, platform === "win32" ? 3000 : forceMs + 500);
   const logInfo = options.logInfo ?? (() => {});
   const logError = options.logError ?? (() => {});
   const setTimeoutFn = options.setTimeoutFn ?? setTimeout;
@@ -52,25 +54,25 @@ function stopChildProcess(child, options = {}) {
     };
     child.once("exit", finish);
 
-    const winTreeKill = (force) => {
+    const winTreeKill = () => {
       if (!child.pid) return;
-      const args = force ? ["/F", "/T", "/PID", String(child.pid)] : ["/T", "/PID", String(child.pid)];
+      const args = ["/F", "/T", "/PID", String(child.pid)];
       execFileFn("taskkill", args, { windowsHide: true, timeout: 8000 }, (error) => {
         // 进程已不在时 taskkill 非 0，当作成功
         if (error && childAlive(child)) {
           logError(
-            `taskkill ${force ? "/F /T" : "/T"} pid=${child.pid} 失败：${error instanceof Error ? error.message : String(error)}`,
+            `taskkill /F /T pid=${child.pid} 失败：${error instanceof Error ? error.message : String(error)}`,
           );
         }
       });
-      logInfo(`stop child pid=${child.pid} taskkill ${force ? "/F /T" : "/T"}`);
+      logInfo(`stop child pid=${child.pid} taskkill /F /T`);
     };
 
     const forceTimer = setTimeoutFn(() => {
       try {
         if (!childAlive(child) || !child.pid) return;
         if (platform === "win32") {
-          winTreeKill(true);
+          winTreeKill();
         } else {
           child.kill("SIGKILL");
           logInfo(`stop child pid=${child.pid} SIGKILL`);
@@ -84,7 +86,8 @@ function stopChildProcess(child, options = {}) {
 
     try {
       if (platform === "win32") {
-        winTreeKill(false);
+        // forceMs===0 时上面定时器会立刻 /F /T；此处不再先发无 /F 的 /T
+        if (forceMs > 0) winTreeKill();
       } else {
         child.kill("SIGTERM");
         logInfo(`stop child pid=${child.pid ?? "?"} SIGTERM`);

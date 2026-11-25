@@ -217,38 +217,45 @@ it("screenshots before click so bubble replay keeps the pre-navigation page", as
   }
 });
 
-it("speaks NDJSON with real @playwright/mcp initialize (headed args via isolated)", async () => {
-  // 锁契约：bridge 与 Playwright MCP 都能用换行 JSON 握手（Content-Length 会卡死）
-  const bridge = spawn(process.execPath, [BRIDGE], {
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      AGENTUP_BROWSER_UPSTREAM_COMMAND: "npx",
-      AGENTUP_BROWSER_UPSTREAM_ARGS_JSON: JSON.stringify([
-        "-y",
-        "@playwright/mcp@0.0.46",
-        "--browser",
-        "chrome",
-        "--isolated",
-        "--headless",
-      ]),
-    },
-  });
-
-  try {
-    writeMessage(bridge, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "test", version: "0.0.0" },
+it(
+  "speaks NDJSON with real @playwright/mcp initialize (headed args via isolated)",
+  // npx 冷启动 / 拉包常 > Vitest 默认 5s；与下方 readMessages 对齐
+  { timeout: 30_000 },
+  async () => {
+    // 锁契约：bridge 与 Playwright MCP 都能用换行 JSON 握手（Content-Length 会卡死）
+    const bridge = spawn(process.execPath, [BRIDGE], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        // 部分镜像（如 npmmirror）对 @playwright/mcp 返回 403；测例直连 npmjs
+        npm_config_registry: "https://registry.npmjs.org",
+        AGENTUP_BROWSER_UPSTREAM_COMMAND: "npx",
+        AGENTUP_BROWSER_UPSTREAM_ARGS_JSON: JSON.stringify([
+          "-y",
+          "@playwright/mcp@0.0.46",
+          "--browser",
+          "chrome",
+          "--isolated",
+          "--headless",
+        ]),
       },
     });
-    const initMsgs = await readMessages(bridge, 1, 20000);
-    expect(initMsgs[0]?.result?.serverInfo?.name).toBe("Playwright");
-  } finally {
-    bridge.kill("SIGTERM");
-  }
-});
+
+    try {
+      writeMessage(bridge, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "test", version: "0.0.0" },
+        },
+      });
+      const initMsgs = await readMessages(bridge, 1, 25_000);
+      expect(initMsgs[0]?.result?.serverInfo?.name).toBe("Playwright");
+    } finally {
+      bridge.kill("SIGTERM");
+    }
+  },
+);

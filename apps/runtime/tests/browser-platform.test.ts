@@ -38,6 +38,8 @@ it("defaults to headed chrome profile with theater init-script via bridge", () =
   const stdio = browserStdioConfig(root);
   expect(stdio.args[0]).toContain("mcp-bridge.mjs");
   expect(stdio.env.AGENTUP_BROWSER_UPSTREAM_ARGS_JSON).toContain("theater-init.js");
+  // 上游勿再写 npx.cmd（Windows 会弹 cmd）
+  expect(stdio.env.AGENTUP_BROWSER_UPSTREAM_COMMAND?.toLowerCase()).not.toMatch(/npx\.cmd$/);
   expect(stdio.exposure).toBe("deferred");
 });
 
