@@ -33,7 +33,7 @@ export function computerInstallDir(userDataRoot: string): string {
   return path.join(userDataRoot, "runtime", "open-computer-use");
 }
 
-/** 已安装 CLI：`node_modules/open-computer-use/bin/open-computer-use`。 */
+/** 已安装 npm 入口：`node_modules/open-computer-use/bin/open-computer-use`（JS 启动器）。 */
 export function computerCliPath(userDataRoot: string): string {
   return path.join(
     computerInstallDir(userDataRoot),
@@ -44,7 +44,35 @@ export function computerCliPath(userDataRoot: string): string {
   );
 }
 
-/** MCP 启动器：先 ensure 安装，再 exec CLI `mcp`（避免首用竞态）。 */
+/**
+ * 原生 MCP 可执行文件（与上游 bin 的 platformPackages 对齐）。
+ * Windows 上必须直接 spawn 此 exe 并 windowsHide：上游 JS launcher 写死了
+ * `windowsHide: false`，经它转发会弹黑框（用户进程快照已证实）。
+ */
+export function computerNativeExecutablePath(
+  userDataRoot: string,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): string | null {
+  const root = path.join(
+    computerInstallDir(userDataRoot),
+    "node_modules",
+    COMPUTER_MCP_PACKAGE_NAME,
+  );
+  const key = `${platform}-${arch}`;
+  const segments: Record<string, string[]> = {
+    "darwin-arm64": ["dist", "Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse"],
+    "darwin-x64": ["dist", "Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse"],
+    "linux-arm64": ["dist", "linux", "arm64", "open-computer-use"],
+    "linux-x64": ["dist", "linux", "amd64", "open-computer-use"],
+    "win32-arm64": ["dist", "windows", "arm64", "open-computer-use.exe"],
+    "win32-x64": ["dist", "windows", "amd64", "open-computer-use.exe"],
+  };
+  const rel = segments[key];
+  return rel ? path.join(root, ...rel) : null;
+}
+
+/** MCP 启动器：先 ensure 安装，再 exec 原生 `mcp`（避免首用竞态 / 禁上游 windowsHide:false）。 */
 export function computerMcpLaunchPath(): string {
   return path.join(HERE, "computer-mcp-launch.js");
 }

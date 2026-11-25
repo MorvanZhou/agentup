@@ -184,7 +184,7 @@ function attachChild(next) {
 }
 
 function spawnUpstream() {
-  // 禁止 shell:true：Windows 会经 cmd.exe 弹黑框；上游应为 node + npx-cli.js
+  // 禁止经 cmd 拉起（Windows 会弹黑框）；上游为 execPath + playwright-mcp-launch
   const next = spawn(upstreamCommand, upstreamArgs, {
     stdio: ["pipe", "pipe", "inherit"],
     env: process.env,

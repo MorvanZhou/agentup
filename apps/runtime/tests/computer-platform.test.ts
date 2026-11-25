@@ -12,6 +12,7 @@ import {
   computerInstallDir,
   computerMcpEntry,
   computerMcpLaunchPath,
+  computerNativeExecutablePath,
   computerStdioConfig,
   ensureComputerUseInstalled,
   injectComputerUseMcp,
@@ -51,6 +52,38 @@ it("computer stdio 经启动器 + userDataRoot，不用 npx", () => {
   expect(stdio.args[0]).toMatch(/computer-mcp-launch\.js$/);
   expect(stdio.args.join(" ")).not.toContain("npx");
   expect(stdio.env).toEqual({});
+});
+
+it("Windows 原生 exe 路径对齐上游包布局（launch 直 spawn，避开 windowsHide:false）", () => {
+  const root = "/tmp/agentup-user";
+  expect(computerNativeExecutablePath(root, "win32", "x64")).toBe(
+    path.join(
+      root,
+      "runtime",
+      "open-computer-use",
+      "node_modules",
+      "open-computer-use",
+      "dist",
+      "windows",
+      "amd64",
+      "open-computer-use.exe",
+    ),
+  );
+  expect(computerNativeExecutablePath(root, "darwin", "arm64")).toContain(
+    path.join("Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse"),
+  );
+  expect(computerNativeExecutablePath(root, "aix" as NodeJS.Platform, "x64")).toBeNull();
+});
+
+it("computer-mcp-launch 源码直 spawn 原生 exe 且 windowsHide", () => {
+  const src = fs.readFileSync(
+    path.join(import.meta.dirname, "../src/session/mcp/computer-mcp-launch.ts"),
+    "utf8",
+  );
+  expect(src).toContain("computerNativeExecutablePath");
+  expect(src).toMatch(/windowsHide:\s*true/);
+  // 禁止再经 JS bin 转发（上游写死 windowsHide: false）
+  expect(src).not.toMatch(/spawn\(process\.execPath,\s*\[cli/);
 });
 
 it("injectComputerUseMcp 强制平台条目覆盖同名用户 server", () => {
