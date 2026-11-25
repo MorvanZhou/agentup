@@ -14,6 +14,7 @@ import {
   computerMcpLaunchPath,
   computerNativeExecutablePath,
   computerStdioConfig,
+  diagnoseComputerUseInstall,
   ensureComputerUseInstalled,
   injectComputerUseMcp,
   isComputerUseInstalled,
@@ -122,6 +123,8 @@ it("ensureComputerUseInstalled 把钉版装进 runtime 并写 ready 标记", asy
     await ensureComputerUseInstalled(root);
     expect(isComputerUseInstalled(root)).toBe(true);
     expect(fs.existsSync(computerCliPath(root))).toBe(true);
+    const native = computerNativeExecutablePath(root);
+    if (native) expect(fs.existsSync(native)).toBe(true);
     expect(
       fs.readFileSync(path.join(computerInstallDir(root), ".agentup-ready"), "utf8").trim(),
     ).toBe(COMPUTER_MCP_VERSION);
@@ -133,3 +136,27 @@ it("ensureComputerUseInstalled 把钉版装进 runtime 并写 ready 标记", asy
     fs.rmSync(root, { recursive: true, force: true });
   }
 }, 120_000);
+
+it("仅有 CLI、缺原生 exe 时不算已安装（Win 黑框/起不来同类坑）", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-computer-corrupt-"));
+  try {
+    const cli = computerCliPath(root);
+    fs.mkdirSync(path.dirname(cli), { recursive: true });
+    fs.writeFileSync(cli, "#!/usr/bin/env node\n", "utf8");
+    fs.writeFileSync(
+      path.join(computerInstallDir(root), ".agentup-ready"),
+      `${COMPUTER_MCP_VERSION}\n`,
+      "utf8",
+    );
+    // 当前平台若支持原生路径，缺 exe → corrupt；不支持则只认 CLI
+    const native = computerNativeExecutablePath(root);
+    if (native) {
+      expect(diagnoseComputerUseInstall(root)).toBe("corrupt");
+      expect(isComputerUseInstalled(root)).toBe(false);
+    } else {
+      expect(isComputerUseInstalled(root)).toBe(true);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

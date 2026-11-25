@@ -262,7 +262,12 @@ const previewRecipes = computed((): AgentUpPreview | null =>
           </template>
         </TabsList>
         <div v-else class="min-h-8 min-w-0 flex-1" aria-hidden="true" />
-        <ReplyModelMark v-if="replyModel" class="mb-1.5 ml-auto shrink-0 self-center" :model="replyModel" />
+        <!-- 与左侧 min-h-8 页签同高底对齐；勿 self-center，否则会贴顶栏右上角 -->
+        <ReplyModelMark
+          v-if="replyModel"
+          class="mb-1.5 ml-auto flex min-h-8 shrink-0 items-center"
+          :model="replyModel"
+        />
       </div>
 
       <!-- 水平 padding 下沉到内容层，过程区滚动条可贴气泡右缘 -->

@@ -7,13 +7,18 @@
  *
  * Browser Use 回落到钉版 Chromium 时，桥进程会带 AGENTUP_BROWSER_ENSURE_BROWSERS=1，
  * 此处再 ensure 一次 browsers，避免首用竞态。
+ *
+ * Win 曾出现缺 zipBundle 仍写 ready：ensure 完整性门禁会重装；若仍 MODULE_NOT_FOUND
+ * 秒崩，再 invalidate + 重装并重试一次（stdout 保持 MCP stdio，只 tee stderr）。
  */
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 
 import {
   ensurePlaywrightBrowsers,
   ensurePlaywrightMcpInstalled,
+  invalidatePlaywrightMcpInstall,
   playwrightCliPath,
+  playwrightUpstreamCrashLooksLikeCorruptInstall,
 } from "./playwright-platform.js";
 import { shouldWindowsHideChild } from "../windows-hide.js";
 
@@ -25,10 +30,73 @@ if (!userDataRoot) {
 
 const mcpArgs = process.argv.slice(3);
 
-try {
+async function ensureInstalled(): Promise<void> {
   await ensurePlaywrightMcpInstalled(userDataRoot);
   if (process.env.AGENTUP_BROWSER_ENSURE_BROWSERS === "1") {
     await ensurePlaywrightBrowsers(userDataRoot);
+  }
+}
+
+function spawnCli(): ChildProcess {
+  const cli = playwrightCliPath(userDataRoot);
+  return spawn(process.execPath, [cli, ...mcpArgs], {
+    // stdin/stdout 必须交给 MCP；stderr 可 tee，便于识别 MODULE_NOT_FOUND
+    stdio: ["inherit", "inherit", "pipe"],
+    windowsHide: shouldWindowsHideChild(),
+    env: process.env,
+  });
+}
+
+function forwardSignals(child: ChildProcess): void {
+  const relay = (signal: NodeJS.Signals) => {
+    try {
+      child.kill(signal);
+    } catch {
+      // ignore
+    }
+  };
+  process.once("SIGTERM", () => relay("SIGTERM"));
+  process.once("SIGINT", () => relay("SIGINT"));
+}
+
+async function runOnce(): Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }> {
+  await ensureInstalled();
+  const child = spawnCli();
+  let stderr = "";
+  child.stderr?.on("data", (chunk: Buffer | string) => {
+    const text = String(chunk);
+    stderr += text;
+    process.stderr.write(text);
+  });
+  forwardSignals(child);
+  return await new Promise((resolve, reject) => {
+    child.on("error", (error) => {
+      console.error(
+        `agentup playwright-mcp-launch: spawn failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      reject(error);
+    });
+    child.on("exit", (code, signal) => {
+      resolve({ code, signal, stderr });
+    });
+  });
+}
+
+try {
+  let result = await runOnce();
+  if (playwrightUpstreamCrashLooksLikeCorruptInstall(result.stderr, result.code)) {
+    console.error(
+      "agentup playwright-mcp-launch: corrupt install detected (MODULE_NOT_FOUND); reinstalling once",
+    );
+    invalidatePlaywrightMcpInstall(userDataRoot);
+    result = await runOnce();
+  }
+  if (result.signal) {
+    process.kill(process.pid, result.signal);
+  } else {
+    process.exit(result.code ?? 1);
   }
 } catch (error) {
   console.error(
@@ -38,27 +106,3 @@ try {
   );
   process.exit(1);
 }
-
-const cli = playwrightCliPath(userDataRoot);
-const child = spawn(process.execPath, [cli, ...mcpArgs], {
-  stdio: "inherit",
-  windowsHide: shouldWindowsHideChild(),
-  env: process.env,
-});
-
-child.on("error", (error) => {
-  console.error(
-    `agentup playwright-mcp-launch: spawn failed: ${
-      error instanceof Error ? error.message : String(error)
-    }`,
-  );
-  process.exit(1);
-});
-
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exit(code ?? 1);
-});

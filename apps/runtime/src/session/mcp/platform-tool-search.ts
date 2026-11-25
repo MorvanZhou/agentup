@@ -4,10 +4,30 @@ import {
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 
+import {
+  diagnoseComputerUseInstall,
+  ensureComputerUseInstalled,
+  invalidateComputerUseInstall,
+} from "./computer-platform.js";
+import {
+  diagnosePlaywrightMcpInstall,
+  ensurePlaywrightMcpInstalled,
+  invalidatePlaywrightMcpInstall,
+} from "./playwright-platform.js";
+import { getPlatformMcpUserDataRoot } from "../workspace/mcp.js";
+
 /** 平台 Browser Use / Playwright / Computer Use MCP 工具名前缀。 */
 export const PLATFORM_BROWSER_MCP_PREFIX = "mcp__browser__";
 export const PLATFORM_PLAYWRIGHT_MCP_PREFIX = "mcp__playwright__";
 export const PLATFORM_COMPUTER_MCP_PREFIX = "mcp__computer__";
+
+/** tool_search 装 computer 套件时的共用说明（读屏唯一源 + 禁旁路截屏）。 */
+export const COMPUTER_SUITE_SCREENSHOT_BLURB =
+  "platform computer suite (accessibility-first). Prefer element refs from get_app_state; screenshots are inline images in tool results — read those, never OS screencapture/crop/CGWindow. Use for native desktop apps — do not call mcp__browser__* / mcp__playwright__* for that task";
+
+/** 带图的 computer tool_result 前缀；与 usage-prompt 对齐，每回合提醒一次。 */
+export const COMPUTER_SCREENSHOT_RESULT_HINT =
+  "[AgentUp] Screenshot is the inline image part of this tool result — read it here. Do not search disk for PNGs; never OS screencapture / AppleScript / CGWindow / ScreenCaptureKit / custom crop (wrong coordinates; often Electron/AgentUp or blank). If unclear, call get_app_state again.";
 
 const PLATFORM_PREFIXES = [
   PLATFORM_BROWSER_MCP_PREFIX,
@@ -271,13 +291,19 @@ export function createPlatformToolSearchExtension(state: PlatformPinState = crea
     };
 
     pi.on("tool_result", (event) => {
-      // 注意：immediate「not found」不会进到这里；此分支只覆盖真执行后的错误 / tool_search 文案
+      // 注意：immediate「not found」不会进到这里；此分支只覆盖真执行后的错误 / tool_search 文案 / computer 读屏提醒
       if (event.isError) {
         const healed = rewritePlatformToolNotFound(event, pi, state);
         if (healed) return healed;
       }
-      if (event.toolName !== "tool_search" || event.isError) return;
-      return rewriteToolSearchResult(event, pi, state);
+      if (event.toolName === "tool_search" && !event.isError) {
+        return rewriteToolSearchResult(event, pi, state);
+      }
+      // 带图的 computer 结果：前缀写死「只认 inline image」，阻断 screencapture/crop 旁路
+      const hinted = prefixComputerScreenshotHint(event);
+      if (!hinted) return;
+      // 与 Pi ToolResultEventResult.content 对齐（保留原 image 部件）
+      return { content: hinted.content as typeof event.content, details: hinted.details };
     });
 
     if (typeof stock === "function") stock(pi);
@@ -452,8 +478,7 @@ export function rewriteToolSearchResult(
   // 桌面 computer：优先改写为 computer 套件（BM25 常误命中 playwright/browser）
   if (wantsComputer && !wantsBr && !wantsPw) {
     if (computerAll.length === 0) {
-      const text =
-        "Platform Computer Use (`mcp__computer__*`) is not registered right now (MCP may still be starting, or open-computer-use failed to launch). Do NOT use `mcp__browser__*` / `mcp__playwright__*` for native desktop apps. Retry `tool_search` with query `computer` shortly; on macOS grant Accessibility + Screen Recording to Open Computer Use.";
+      const text = computerSuiteUnavailableMessage();
       return { content: [{ type: "text", text }], details: { loaded: [] } };
     }
     const active = new Set(pi.getActiveTools());
@@ -466,7 +491,7 @@ export function rewriteToolSearchResult(
           text: formatLoadedSuite(
             names,
             allInfos,
-            "platform computer suite (accessibility-first). Use these for native desktop apps — do not call mcp__browser__* / mcp__playwright__* for that task",
+            COMPUTER_SUITE_SCREENSHOT_BLURB,
           ),
         },
       ],
@@ -476,8 +501,7 @@ export function rewriteToolSearchResult(
 
   // 要 headed browser 但 registry 里没有：说清楚，禁止改用 playwright
   if ((wantsBr || (!wantsPw && !wantsComputer && loadedPw)) && browserAll.length === 0) {
-    const text =
-      "Platform headed Browser Use (`mcp__browser__*`) is not registered right now (MCP may still be starting, or the headed server dropped). Do NOT use `mcp__playwright__*` for logged-in sites — headless has no that login. Retry `tool_search` with query `browser` shortly; once listed, call `mcp__browser__browser_navigate` (closing the window only pauses Chrome — the next call relaunches the same profile).";
+    const text = browserSuiteUnavailableMessage();
     return {
       content: [{ type: "text", text }],
       details: { loaded: [] },
@@ -525,7 +549,7 @@ export function rewriteToolSearchResult(
           text: formatLoadedSuite(
             names,
             allInfos,
-            "platform computer suite. Prefer element refs from get_app_state",
+            COMPUTER_SUITE_SCREENSHOT_BLURB,
           ),
         },
       ],
@@ -534,6 +558,44 @@ export function rewriteToolSearchResult(
   }
 
   return undefined;
+}
+
+type ComputerHintEvent = {
+  toolName: string;
+  isError?: boolean;
+  content: ToolResultContent;
+  details?: unknown;
+};
+
+/**
+ * 若 computer 工具结果含 image，在 content 前插入读屏提醒。
+ * 无图 / 非 computer / 已提醒过 → undefined（不改写）。
+ */
+export function prefixComputerScreenshotHint(
+  event: ComputerHintEvent,
+): { content: ToolResultContent; details?: unknown } | undefined {
+  if (event.isError) return undefined;
+  if (!event.toolName.startsWith(PLATFORM_COMPUTER_MCP_PREFIX)) return undefined;
+  const content = Array.isArray(event.content) ? event.content : [];
+  const hasImage = content.some(
+    (part) => typeof part === "object" && part !== null && (part as { type?: string }).type === "image",
+  );
+  if (!hasImage) return undefined;
+  const already = content.some((part) => {
+    if (typeof part !== "object" || part === null) return false;
+    const text = (part as { type?: string; text?: string }).text;
+    return (
+      (part as { type?: string }).type === "text" &&
+      typeof text === "string" &&
+      text.includes("[AgentUp] Screenshot is the inline image part")
+    );
+  });
+  if (already) return undefined;
+  // 前缀 text + 原 content（含 image）；调用方按 Pi 事件 content 类型断言
+  return {
+    content: [{ type: "text", text: COMPUTER_SCREENSHOT_RESULT_HINT }, ...content],
+    details: event.details,
+  };
 }
 
 function formatToolLines(
@@ -555,6 +617,75 @@ function formatLoadedSuite(
   blurb: string,
 ): string {
   return `Loaded ${names.length} tool${names.length === 1 ? "" : "s"} (${blurb}):\n${formatToolLines(names, allInfos)}`;
+}
+
+/** 同进程内坏包重装只踢一次，避免模型连搜多次打爆 npm。 */
+const reinstallKicked = new Set<string>();
+
+/** 坏包时踢一次重装（异步）；文案与「还在启动」分流，避免模型 Sleep 空转。 */
+function kickPlaywrightReinstall(root: string): void {
+  const key = `pw:${root}`;
+  if (reinstallKicked.has(key)) return;
+  reinstallKicked.add(key);
+  void (async () => {
+    invalidatePlaywrightMcpInstall(root);
+    await ensurePlaywrightMcpInstalled(root);
+  })().catch(() => {
+    reinstallKicked.delete(key);
+  });
+}
+
+function kickComputerReinstall(root: string): void {
+  const key = `cu:${root}`;
+  if (reinstallKicked.has(key)) return;
+  reinstallKicked.add(key);
+  void (async () => {
+    invalidateComputerUseInstall(root);
+    await ensureComputerUseInstalled(root);
+  })().catch(() => {
+    reinstallKicked.delete(key);
+  });
+}
+
+function browserSuiteUnavailableMessage(): string {
+  const root = getPlatformMcpUserDataRoot();
+  const disk = root ? diagnosePlaywrightMcpInstall(root) : "absent";
+  if (disk === "corrupt" && root) {
+    kickPlaywrightReinstall(root);
+    return (
+      "Platform headed Browser Use (`mcp__browser__*`) install is incomplete/corrupt " +
+      "(e.g. missing playwright-core zipBundle). AgentUp is reinstalling now — wait briefly, " +
+      "then `tool_search` once with query `browser`. Do NOT use `mcp__playwright__*` for logged-in sites — " +
+      "headless has no that login."
+    );
+  }
+  return (
+    "Platform headed Browser Use (`mcp__browser__*`) is not registered right now " +
+    "(MCP may still be starting, or the headed server dropped). Do NOT use `mcp__playwright__*` " +
+    "for logged-in sites — headless has no that login. Retry `tool_search` with query `browser` shortly; " +
+    "once listed, call `mcp__browser__browser_navigate` (closing the window only pauses Chrome — " +
+    "the next call relaunches the same profile)."
+  );
+}
+
+function computerSuiteUnavailableMessage(): string {
+  const root = getPlatformMcpUserDataRoot();
+  const disk = root ? diagnoseComputerUseInstall(root) : "absent";
+  if (disk === "corrupt" && root) {
+    kickComputerReinstall(root);
+    return (
+      "Platform Computer Use (`mcp__computer__*`) install is incomplete/corrupt " +
+      "(CLI or native binary missing). AgentUp is reinstalling now — wait briefly, " +
+      "then `tool_search` once with query `computer`. Do NOT use `mcp__browser__*` / `mcp__playwright__*` " +
+      "for native desktop apps; on macOS grant Accessibility + Screen Recording to Open Computer Use."
+    );
+  }
+  return (
+    "Platform Computer Use (`mcp__computer__*`) is not registered right now " +
+    "(MCP may still be starting, or open-computer-use failed to launch). " +
+    "Do NOT use `mcp__browser__*` / `mcp__playwright__*` for native desktop apps. " +
+    "Retry `tool_search` with query `computer` shortly; on macOS grant Accessibility + Screen Recording to Open Computer Use."
+  );
 }
 
 type AgentWithSnapshot = {

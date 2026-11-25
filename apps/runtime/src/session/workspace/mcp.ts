@@ -18,7 +18,13 @@ export const DEFAULT_MCP_EXPOSURE = "deferred" as const;
 let platformUserDataRoot: string | undefined;
 
 export function setPlatformMcpUserDataRoot(root: string): void {
-  platformUserDataRoot = root;
+  // 空串清掉，便于测例隔离
+  platformUserDataRoot = root.trim() ? root : undefined;
+}
+
+/** tool_search 等读盘诊断安装态（无会话 root 时返回 undefined）。 */
+export function getPlatformMcpUserDataRoot(): string | undefined {
+  return platformUserDataRoot;
 }
 
 export function readProjectMcp(cwd: string): LoadedMcpConfig {

@@ -81,17 +81,56 @@ function readyMarkerPath(userDataRoot: string): string {
   return path.join(computerInstallDir(userDataRoot), ".agentup-ready");
 }
 
-/** 盘上已是钉版且 CLI 存在。 */
-export function isComputerUseInstalled(userDataRoot: string): boolean {
+/** 相对安装前缀：JS CLI；当前平台有原生路径时一并检查。 */
+export function computerUseTreeComplete(
+  installRoot: string,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): boolean {
+  const pkg = path.join(installRoot, "node_modules", COMPUTER_MCP_PACKAGE_NAME);
+  if (!fs.existsSync(path.join(pkg, "bin", "open-computer-use"))) return false;
+  // 与 computerNativeExecutablePath 同一套平台布局（此处不经 userDataRoot）
+  const key = `${platform}-${arch}`;
+  const segments: Record<string, string[]> = {
+    "darwin-arm64": ["dist", "Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse"],
+    "darwin-x64": ["dist", "Open Computer Use.app", "Contents", "MacOS", "OpenComputerUse"],
+    "linux-arm64": ["dist", "linux", "arm64", "open-computer-use"],
+    "linux-x64": ["dist", "linux", "amd64", "open-computer-use"],
+    "win32-arm64": ["dist", "windows", "arm64", "open-computer-use.exe"],
+    "win32-x64": ["dist", "windows", "amd64", "open-computer-use.exe"],
+  };
+  const rel = segments[key];
+  if (!rel) return true;
+  return fs.existsSync(path.join(pkg, ...rel));
+}
+
+export type ComputerUseDiskStatus = "absent" | "corrupt" | "ready";
+
+/** 盘上安装态：与 playwright 同形，供 tool_search 文案分流。 */
+export function diagnoseComputerUseInstall(userDataRoot: string): ComputerUseDiskStatus {
+  const install = computerInstallDir(userDataRoot);
+  if (!fs.existsSync(install)) return "absent";
   const ready = readyMarkerPath(userDataRoot);
-  if (!fs.existsSync(ready)) return false;
+  if (!fs.existsSync(ready)) return "corrupt";
   try {
     const version = fs.readFileSync(ready, "utf8").trim();
-    if (version !== COMPUTER_MCP_VERSION) return false;
+    if (version !== COMPUTER_MCP_VERSION) return "corrupt";
   } catch {
-    return false;
+    return "corrupt";
   }
-  return fs.existsSync(computerCliPath(userDataRoot));
+  return computerUseTreeComplete(install) ? "ready" : "corrupt";
+}
+
+/** 盘上已是钉版且 CLI（+ 当前平台原生二进制）齐全。 */
+export function isComputerUseInstalled(userDataRoot: string): boolean {
+  return diagnoseComputerUseInstall(userDataRoot) === "ready";
+}
+
+/** 清掉坏/旧安装，供 ensure 或 launch 自愈重装。 */
+export function invalidateComputerUseInstall(userDataRoot: string): void {
+  installPromise = null;
+  const target = computerInstallDir(userDataRoot);
+  if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
 }
 
 /**
@@ -102,6 +141,8 @@ export function ensureComputerUseInstalled(userDataRoot: string): Promise<void> 
   if (installPromise) return installPromise;
   installPromise = (async () => {
     if (isComputerUseInstalled(userDataRoot)) return;
+    const existing = computerInstallDir(userDataRoot);
+    if (fs.existsSync(existing)) fs.rmSync(existing, { recursive: true, force: true });
     await installComputerUse(userDataRoot);
   })().catch((error) => {
     installPromise = null;
@@ -134,15 +175,8 @@ async function installComputerUse(userDataRoot: string): Promise<void> {
 
   try {
     await runNpmInstall(runner, tmp);
-    const cli = path.join(
-      tmp,
-      "node_modules",
-      COMPUTER_MCP_PACKAGE_NAME,
-      "bin",
-      "open-computer-use",
-    );
-    if (!fs.existsSync(cli)) {
-      throw new Error("open-computer-use 安装完成但未找到 CLI，已回滚");
+    if (!computerUseTreeComplete(tmp)) {
+      throw new Error("open-computer-use 安装完成但不完整（缺 CLI 或当前平台原生二进制），已回滚");
     }
 
     fs.mkdirSync(path.dirname(target), { recursive: true });

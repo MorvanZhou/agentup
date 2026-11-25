@@ -67,17 +67,66 @@ function browsersReadyMarkerPath(userDataRoot: string): string {
   return path.join(playwrightBrowsersDir(userDataRoot), ".agentup-ready");
 }
 
-/** 盘上已是钉版且 cli.js 存在。 */
-export function isPlaywrightMcpInstalled(userDataRoot: string): boolean {
+/**
+ * 安装树完整性：Win 上曾出现只剩 cli、缺 `zipBundle` 仍写 ready → Browser MCP 永久秒崩。
+ * 相对 `playwright-mcp` 前缀（临时目录或最终目录均可）。
+ */
+export const PLAYWRIGHT_MCP_INTEGRITY_REL_PATHS = [
+  path.join("node_modules", ...PLAYWRIGHT_MCP_PACKAGE_NAME.split("/"), "cli.js"),
+  path.join("node_modules", "playwright-core", "lib", "zipBundle.js"),
+  path.join("node_modules", "playwright-core", "lib", "zipBundleImpl.js"),
+] as const;
+
+/** 安装前缀内关键文件是否齐全（不看 ready 标记）。 */
+export function playwrightMcpTreeComplete(installRoot: string): boolean {
+  return PLAYWRIGHT_MCP_INTEGRITY_REL_PATHS.every((rel) =>
+    fs.existsSync(path.join(installRoot, rel)),
+  );
+}
+
+export type PlaywrightMcpDiskStatus = "absent" | "corrupt" | "ready";
+
+/**
+ * 盘上安装态：absent=无树；corrupt=有残留但不完整/版本不对；ready=可启动。
+ * tool_search 用此区分「还在启动」vs「坏包需重装」。
+ */
+export function diagnosePlaywrightMcpInstall(userDataRoot: string): PlaywrightMcpDiskStatus {
+  const install = playwrightInstallDir(userDataRoot);
+  if (!fs.existsSync(install)) return "absent";
   const ready = mcpReadyMarkerPath(userDataRoot);
-  if (!fs.existsSync(ready)) return false;
+  if (!fs.existsSync(ready)) return "corrupt";
   try {
     const version = fs.readFileSync(ready, "utf8").trim();
-    if (version !== PLAYWRIGHT_MCP_VERSION) return false;
+    if (version !== PLAYWRIGHT_MCP_VERSION) return "corrupt";
   } catch {
-    return false;
+    return "corrupt";
   }
-  return fs.existsSync(playwrightCliPath(userDataRoot));
+  return playwrightMcpTreeComplete(install) ? "ready" : "corrupt";
+}
+
+/** 盘上已是钉版且完整性门禁通过（含 zipBundle）。 */
+export function isPlaywrightMcpInstalled(userDataRoot: string): boolean {
+  return diagnosePlaywrightMcpInstall(userDataRoot) === "ready";
+}
+
+/** 清掉坏/旧安装，供 ensure 或 launch 自愈重装。 */
+export function invalidatePlaywrightMcpInstall(userDataRoot: string): void {
+  mcpInstallPromise = null;
+  browsersInstallPromise = null;
+  const target = playwrightInstallDir(userDataRoot);
+  if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+}
+
+/**
+ * 上游进程因缺模块立刻退出（code=1）时，判定为安装损坏应重装。
+ * 用户关窗等正常退出不要命中。
+ */
+export function playwrightUpstreamCrashLooksLikeCorruptInstall(
+  stderr: string,
+  code: number | null,
+): boolean {
+  if (code !== 1) return false;
+  return /Cannot find module|MODULE_NOT_FOUND/i.test(stderr);
 }
 
 /**
@@ -88,6 +137,9 @@ export function ensurePlaywrightMcpInstalled(userDataRoot: string): Promise<void
   if (mcpInstallPromise) return mcpInstallPromise;
   mcpInstallPromise = (async () => {
     if (isPlaywrightMcpInstalled(userDataRoot)) return;
+    // 坏树 / 半截安装：先清掉再装，避免 rename 前误用旧 ready
+    const existing = playwrightInstallDir(userDataRoot);
+    if (fs.existsSync(existing)) fs.rmSync(existing, { recursive: true, force: true });
     await installPlaywrightMcp(userDataRoot);
   })().catch((error) => {
     mcpInstallPromise = null;
@@ -118,9 +170,13 @@ async function installPlaywrightMcp(userDataRoot: string): Promise<void> {
 
   try {
     await runNpmInstall(runner, tmp);
-    const cli = path.join(tmp, "node_modules", ...PLAYWRIGHT_MCP_PACKAGE_NAME.split("/"), "cli.js");
-    if (!fs.existsSync(cli)) {
-      throw new Error("@playwright/mcp 安装完成但未找到 cli.js，已回滚");
+    if (!playwrightMcpTreeComplete(tmp)) {
+      const missing = PLAYWRIGHT_MCP_INTEGRITY_REL_PATHS.filter(
+        (rel) => !fs.existsSync(path.join(tmp, rel)),
+      );
+      throw new Error(
+        `@playwright/mcp 安装完成但不完整（缺 ${missing.join(", ")}），已回滚`,
+      );
     }
 
     fs.mkdirSync(path.dirname(target), { recursive: true });

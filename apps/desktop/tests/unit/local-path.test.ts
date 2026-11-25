@@ -25,6 +25,13 @@ describe("extractLocalPathCandidates", () => {
     expect(hits).toContain("file:///tmp/x.png");
   });
 
+  it("still picks posix absolute under known roots even without extension", () => {
+    expect(extractLocalPathCandidates("见 /Users/me/proj/notes 与 /tmp/out")).toEqual([
+      "/Users/me/proj/notes",
+      "/tmp/out",
+    ]);
+  });
+
   it("picks path-only inline code and markdown hrefs", () => {
     expect(extractLocalPathCandidates("看 `ARTIFACT/out.md` 与 [x](./note.md)")).toEqual([
       "ARTIFACT/out.md",
@@ -41,6 +48,14 @@ describe("extractLocalPathCandidates", () => {
       "ok",
     ].join("\n");
     expect(extractLocalPathCandidates(text)).toEqual([]);
+  });
+
+  it("skips web route absolute paths without filesystem root or extension", () => {
+    // 聊天里常把站点 path 写成 `/v2/.../list`；勿当本机文件链成 basename「list」
+    const text =
+      "主题营（`/v2/camps/topic/list`）、班级（`/v2/camps/camp/list`）、/api/users";
+    expect(extractLocalPathCandidates(text)).toEqual([]);
+    expect(injectLocalPathMarkdownLinks(text)).toBe(text);
   });
 
   it("skips bare file:// protocol mentions (inline code or prose)", () => {

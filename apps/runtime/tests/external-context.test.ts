@@ -146,6 +146,9 @@ it("append 含 AgentUp Preview 指引（MCP 全名，无 Pi bg_run）", () => {
   expect(append).toContain("whole suite");
   expect(append).toContain("relaunches");
   expect(append).toContain("Never switch to headless `mcp__playwright__*`");
+  // Computer Use 读屏：inline image，禁 OS 截屏旁路（与 API usage-prompt 对齐）
+  expect(append).toContain("inline image");
+  expect(append).toContain("screencapture");
   expect(append).not.toContain("bg_run");
   // 指引只用 MCP 全名，不出现裸 Pi 工具调用说法
   expect(append).not.toContain("call `present_preview`");

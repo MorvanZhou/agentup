@@ -30,10 +30,12 @@ it("steers models toward dedicated search/read tools instead of the command shel
   // 关窗后仍走 browser 重拉 profile，禁止回落无头 playwright
   expect(text).toContain("relaunch");
   expect(text).toContain("Never switch to `mcp__playwright__*`");
-  // 本机桌面 Computer Use
+  // 本机桌面 Computer Use：读屏只认 inline image，禁 OS 截屏旁路
   expect(text).toContain("`computer`");
   expect(text).toContain("mcp__computer__*");
   expect(text).toContain("get_app_state");
+  expect(text).toContain("inline image");
+  expect(text).toContain("screencapture");
 });
 
 it("names powershell when that is the command tool", () => {

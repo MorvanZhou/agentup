@@ -274,9 +274,10 @@ const showWorking = computed(() => {
             </TabsTrigger>
           </TabsList>
           <div v-else-if="replyModel" class="min-h-8 min-w-0 flex-1" aria-hidden="true" />
+          <!-- 与左侧 min-h-8 页签同高底对齐；勿 self-center，否则会贴顶栏右上角 -->
           <ReplyModelMark
             v-if="replyModel"
-            class="mb-1.5 ml-auto shrink-0 self-center"
+            class="mb-1.5 ml-auto flex min-h-8 shrink-0 items-center"
             :model="replyModel"
           />
         </div>

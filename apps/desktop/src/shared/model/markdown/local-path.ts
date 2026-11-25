@@ -53,6 +53,16 @@ const URLISH_RE = /^(https?:|mailto:|www\.)/i;
 const VERSION_RE = /^\d+(?:\.\d+){1,3}$/;
 const AND_OR_RE = /^and\/or$/i;
 
+/**
+ * POSIX 绝对路径的可信本机根（Mac/Linux/WSL 常见前缀）。
+ * 无扩展名且不落在这些根下的 `/v2/camps/.../list` 视为站点 route，不链成本地文件。
+ */
+const POSIX_FS_ROOT_RE =
+  /^\/(?:Users|home|tmp|var|private|opt|usr|etc|Volumes|mnt|root|data|Library|System|Applications|sbin|bin)(?:\/|$)/i;
+
+/** 末段带常见文件扩展名（目录尾 `/` 先剥掉再判）。 */
+const FILE_EXT_RE = /\.[A-Za-z0-9]{1,12}$/;
+
 export type NormalizedLocalPath =
   | { kind: "relative"; path: string }
   | { kind: "absolute"; path: string };
@@ -82,17 +92,32 @@ function collectFromRegex(text: string, re: RegExp, group: number, hits: Indexed
   }
 }
 
+/**
+ * `/v2/camps/topic/list` 这类站点 path 也长得像 POSIX 绝对路径；
+ * 仅当落在本机根，或末段带文件扩展名时才当真路径。
+ */
+function isPlausiblePosixAbsolutePath(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/");
+  const trimmed = normalized.replace(/\/+$/, "") || normalized;
+  if (FILE_EXT_RE.test(trimmed)) return true;
+  return POSIX_FS_ROOT_RE.test(normalized);
+}
+
 function looksLikePathToken(token: string): boolean {
   const t = token.trim();
   if (!t || URLISH_RE.test(t) || AND_OR_RE.test(t) || VERSION_RE.test(t)) return false;
   // 只要带真实路径体的 file://；裸 `file://` / `file:///` 是协议名，不是可开路径
   if (/^file:\/\//i.test(t)) {
-    return /^file:\/\/\/.+/i.test(t) || /^file:\/\/[^/].+/i.test(t);
+    if (!(/^file:\/\/\/.+/i.test(t) || /^file:\/\/[^/].+/i.test(t))) return false;
+    // file:///abs：同样挡住站点 route；file://rel 仍按相对路径放行
+    const rest = t.replace(/^file:\/\//i, "");
+    if (rest.startsWith("/")) return isPlausiblePosixAbsolutePath(rest);
+    return true;
   }
   if (/^[A-Za-z]:[\\/]/.test(t) || t.startsWith("\\\\")) return true;
-  if (t.startsWith("/") && t.includes("/", 1)) return true;
+  if (t.startsWith("/") && t.includes("/", 1)) return isPlausiblePosixAbsolutePath(t);
   if (t.startsWith("./") || t.startsWith("../")) return true;
-  if ((t.includes("/") || t.includes("\\")) && /\.[A-Za-z0-9]{1,12}$/.test(t)) return true;
+  if ((t.includes("/") || t.includes("\\")) && FILE_EXT_RE.test(t)) return true;
   return false;
 }
 
@@ -136,6 +161,8 @@ export function extractLocalPathCandidates(source: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const hit of hits) {
+    // 正则命中仍过 looksLikePathToken，挡住 `/v2/.../list` 等站点 route
+    if (!looksLikePathToken(hit.raw)) continue;
     pushUnique(out, seen, hit.raw);
     if (out.length >= MAX_CANDIDATES) break;
   }

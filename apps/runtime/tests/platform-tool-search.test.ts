@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
+import { setPlatformMcpUserDataRoot } from "../src/session/workspace/mcp.js";
 import {
   createPlatformPinState,
   ensurePinnedPlatformSuites,
@@ -14,13 +18,13 @@ import {
   preferComputerSuite,
   queryWantsComputer,
   queryWantsPlaywright,
+  prefixComputerScreenshotHint,
   rewritePlatformToolNotFound,
   rewriteToolSearchResult,
   seedPinsFromMessages,
   seedPinsFromNames,
   waitForPinnedPlatformTools,
 } from "../src/session/mcp/platform-tool-search.js";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 describe("platformMcpPrefix", () => {
   it("认 browser / playwright / computer 平台前缀", () => {
@@ -229,6 +233,8 @@ describe("rewriteToolSearchResult", () => {
     );
     expect(out?.content[0]?.text).toContain("mcp__computer__get_app_state");
     expect(out?.content[0]?.text).toMatch(/computer/i);
+    expect(out?.content[0]?.text).toContain("inline image");
+    expect(out?.content[0]?.text).toContain("screencapture");
     expect(out?.content[0]?.text).not.toContain("platform headed browser suite");
     expect(out?.details.loaded?.some((n) => n.startsWith("mcp__browser__"))).toBe(false);
   });
@@ -258,6 +264,52 @@ describe("rewriteToolSearchResult", () => {
     expect(out?.content[0]?.text).not.toContain("mcp__playwright__browser_click");
   });
 
+  it("带图的 computer 结果前缀提醒只认 inline image、禁 OS 截屏", () => {
+    const out = prefixComputerScreenshotHint({
+      toolName: "mcp__computer__get_app_state",
+      content: [
+        { type: "text", text: 'App=WeChat\nWindow: "Weixin"' },
+        { type: "image", data: "abc", mimeType: "image/png" },
+      ],
+      details: { server: "computer", tool: "get_app_state" },
+    });
+    expect(out?.content[0]).toEqual(
+      expect.objectContaining({ type: "text", text: expect.stringContaining("inline image") }),
+    );
+    expect(out?.content[0]).toEqual(
+      expect.objectContaining({ type: "text", text: expect.stringContaining("screencapture") }),
+    );
+    expect(out?.content[1]).toEqual({ type: "text", text: 'App=WeChat\nWindow: "Weixin"' });
+    expect(out?.content[2]).toEqual({ type: "image", data: "abc", mimeType: "image/png" });
+    expect(out?.details).toEqual({ server: "computer", tool: "get_app_state" });
+  });
+
+  it("无图或非 computer 工具不加截屏前缀；已加过不重复", () => {
+    expect(
+      prefixComputerScreenshotHint({
+        toolName: "mcp__computer__list_apps",
+        content: [{ type: "text", text: "WeChat — running" }],
+      }),
+    ).toBeUndefined();
+    expect(
+      prefixComputerScreenshotHint({
+        toolName: "mcp__browser__browser_take_screenshot",
+        content: [{ type: "image", data: "x", mimeType: "image/png" }],
+      }),
+    ).toBeUndefined();
+    const once = prefixComputerScreenshotHint({
+      toolName: "mcp__computer__click",
+      content: [{ type: "image", data: "x", mimeType: "image/png" }],
+    });
+    expect(once).toBeDefined();
+    expect(
+      prefixComputerScreenshotHint({
+        toolName: "mcp__computer__click",
+        content: once!.content as Array<{ type: string; text?: string }>,
+      }),
+    ).toBeUndefined();
+  });
+
   it("registry 没有 browser 时明确禁止改用 playwright", () => {
     const state = createPlatformPinState();
     state.lastSearchQuery = "browser click";
@@ -275,6 +327,43 @@ describe("rewriteToolSearchResult", () => {
     );
     expect(out?.details.loaded).toEqual([]);
     expect(out?.content[0]?.text).toContain("Do NOT use `mcp__playwright__*`");
+  });
+
+  it("盘上 playwright-mcp 损坏时文案说 corrupt/reinstall，不谎称还在启动", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentup-ts-corrupt-"));
+    try {
+      const install = path.join(root, "runtime", "playwright-mcp");
+      const cli = path.join(install, "node_modules", "@playwright", "mcp", "cli.js");
+      fs.mkdirSync(path.dirname(cli), { recursive: true });
+      fs.writeFileSync(cli, "export {};\n", "utf8");
+      fs.mkdirSync(path.join(install, "node_modules", "playwright-core", "lib"), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(install, ".agentup-ready"), "0.0.46\n", "utf8");
+      setPlatformMcpUserDataRoot(root);
+
+      const state = createPlatformPinState();
+      state.lastSearchQuery = "browser";
+      const pi = {
+        getAllTools: () => infos.filter((t) => t.name.startsWith("mcp__playwright__")),
+        getActiveTools: () => [],
+      };
+      const out = rewriteToolSearchResult(
+        {
+          content: [{ type: "text", text: "Loaded…" }],
+          details: { loaded: ["mcp__playwright__browser_click"] },
+        },
+        pi,
+        state,
+      );
+      const text = out?.content[0]?.text ?? "";
+      expect(text).toMatch(/corrupt|incomplete|reinstall/i);
+      expect(text).not.toMatch(/may still be starting/i);
+      expect(text).toContain("Do NOT use `mcp__playwright__*`");
+    } finally {
+      setPlatformMcpUserDataRoot("");
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
